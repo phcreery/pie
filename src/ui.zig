@@ -5,7 +5,8 @@ const util = @import("util.zig");
 const builtin = @import("builtin");
 
 const build = @import("build_options");
-const print = @import("std").debug.print;
+const zdt = @import("zdt");
+const Datetime = zdt.Datetime;
 
 // https://www.openmymind.net/Zig-Interfaces/
 // https://medium.com/@jerrythomas_in/exploring-compile-time-interfaces-in-zig-5c1a1a9e59fd
@@ -61,6 +62,7 @@ pub const About = struct {
     size: ig.ImVec2,
     cimgui_version: []const u8,
     // libraw_version: string = libraw.libraw_version().ostr,
+    build_date: []const u8,
 
     fn render(self: *About) void {
         // std.debug.print("About.render self\n", .{});
@@ -81,8 +83,7 @@ pub const About = struct {
         const zig_version_text = std.fmt.allocPrintZ(util.gpa, "zig version: {s}", .{builtin.zig_version_string}) catch unreachable;
         ig.igText(zig_version_text.ptr);
 
-        // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
-        const build_time_text = std.fmt.allocPrintZ(util.gpa, "build date: {}", .{build.timestamp}) catch unreachable;
+        const build_time_text = std.fmt.allocPrintZ(util.gpa, "build date: {s}", .{self.build_date}) catch unreachable;
         ig.igText(build_time_text.ptr);
 
         // https://ziggit.dev/t/how-to-return-a-c-string-from-u8/4569/2
@@ -108,12 +109,15 @@ pub const About = struct {
         ig.igEnd();
     }
 
-    // pub fn new() *About {
-    //     const about = &About{};
-    //     return about;
-    // }
-
     pub fn init(self: *About, allocator: std.mem.Allocator) void {
+
+        // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
+        var buf = std.ArrayList(u8).init(allocator);
+        defer buf.deinit();
+        const now = zdt.Datetime.fromUnix(build.timestamp, zdt.Duration.Resolution.second, null) catch unreachable;
+        zdt.Datetime.format(now, "%Y-%m-%d %H:%M:%S", .{}, buf.writer()) catch unreachable;
+        const build_date = buf.toOwnedSlice() catch unreachable;
+
         self.* = .{
             .allocator = allocator,
             .is_open = true,
@@ -122,6 +126,7 @@ pub const About = struct {
             // https://stackoverflow.com/questions/72736997/how-to-pass-a-c-string-into-a-zig-function-expecting-a-zig-string
             // https://dev.to/jmatth11/quick-zig-and-c-string-conversion-conundrums-203b
             .cimgui_version = std.mem.span(ig.igGetVersion())[0..],
+            .build_date = build_date,
         };
     }
 

@@ -22,7 +22,8 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
+    const dep_pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
+    const dep_zdt = b.dependency("zdt", .{ .target = target, .optimize = optimize });
 
     // see tigerbeetle for advanced build options handling
     // https://github.com/tigerbeetle/tigerbeetle/blob/main/build.zig
@@ -45,7 +46,8 @@ pub fn build(b: *Build) !void {
         .imports = &.{
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = "cimgui", .module = dep_cimgui.module("cimgui") },
-            .{ .name = "pretty", .module = pretty.module("pretty") },
+            .{ .name = "pretty", .module = dep_pretty.module("pretty") },
+            .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "build_options", .module = build_options.createModule() },
         },
     });

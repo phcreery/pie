@@ -64,6 +64,10 @@
             .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
             .hash = "12209290db27d058b481801cf9a79c706fb0c482e7f6378d50495750aae19524d4b7",
         },
+        .zdt = .{
+            .url = "git+https://github.com/FObersteiner/zdt.git#9b49bd2b11a808600facfee5e8eaeb5ee6c817a7",
+            .hash = "1220d66916574bf097f3edbeaa0c9231087a766f123262e72dabf3615b18f7544e3d",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.
