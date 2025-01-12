@@ -24,6 +24,16 @@ pub fn build(b: *Build) !void {
     });
     const pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
 
+    // see tigerbeetle for advanced build options handling
+    // https://github.com/tigerbeetle/tigerbeetle/blob/main/build.zig
+    // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
+    const build_options = b.addOptions();
+    build_options.addOption(
+        i64,
+        "timestamp",
+        std.time.timestamp(),
+    );
+
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path("src"));
 
@@ -36,6 +46,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = "cimgui", .module = dep_cimgui.module("cimgui") },
             .{ .name = "pretty", .module = pretty.module("pretty") },
+            .{ .name = "build_options", .module = build_options.createModule() },
         },
     });
     // mod_main.addImport("pretty", pretty.module("pretty"));

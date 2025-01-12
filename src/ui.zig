@@ -2,40 +2,71 @@ const std = @import("std");
 const ig = @import("cimgui");
 const pretty = @import("pretty");
 const util = @import("util.zig");
+const builtin = @import("builtin");
+
+const build = @import("build_options");
+const print = @import("std").debug.print;
 
 // https://www.openmymind.net/Zig-Interfaces/
 // https://medium.com/@jerrythomas_in/exploring-compile-time-interfaces-in-zig-5c1a1a9e59fd
+/// IIgWindow is an interface for rendering an ImGui window.
+/// It is recommended to use a heap allocated struct as the context.
 pub const IIgWindow = struct {
     ptr: *anyopaque,
-    renderFn: *const fn (ptr: *anyopaque) void,
+    impl: *const Interface,
+
+    pub const Interface = struct {
+        renderFn: *const fn (ptr: *anyopaque) void,
+        destroyFn: *const fn (ptr: *anyopaque) void,
+    };
 
     pub fn render(self: IIgWindow) void {
-        return self.renderFn(self.ptr);
+        return self.impl.renderFn(self.ptr);
     }
 
-    // pub fn from(ctx: *anyopaque, comptime T: type) IIgWindow {
-    //     const self: *T = @ptrCast(@alignCast(ctx));
-    //     return .{
-    //         .ptr = self,
-    //         // .impl = &.{ .area = T.area },
-    //         .renderFn = T.render,
-    //     };
-    // }
+    pub fn destroy(self: IIgWindow) void {
+        return self.impl.destroyFn(self.ptr);
+    }
+
+    // This is new
+    pub fn from(ptr: anytype) IIgWindow {
+        const T = @TypeOf(ptr);
+        const ptr_info = @typeInfo(T);
+
+        if (ptr_info != .pointer) @compileError("ptr must be a pointer");
+        if (ptr_info.pointer.size != .One) @compileError("ptr must be a single item pointer");
+
+        const gen = struct {
+            pub fn render(pointer: *anyopaque) void {
+                const self: T = @ptrCast(@alignCast(pointer));
+                return ptr_info.pointer.child.render(self);
+            }
+            pub fn destroy(pointer: *anyopaque) void {
+                const self: T = @ptrCast(@alignCast(pointer));
+                return ptr_info.pointer.child.destroy(self);
+            }
+        };
+
+        return .{
+            .ptr = ptr,
+            .impl = &.{ .renderFn = gen.render, .destroyFn = gen.destroy },
+        };
+    }
 };
 
 pub const About = struct {
+    allocator: std.mem.Allocator,
     is_open: bool,
     pos: ig.ImVec2,
     size: ig.ImVec2,
-    cimgui_version: [:0]const u8,
+    cimgui_version: []const u8,
     // libraw_version: string = libraw.libraw_version().ostr,
 
-    fn render(ptr: *anyopaque) void {
-        // This re-establishs the type: *anyopaque -> *File
-        const self: *About = @ptrCast(@alignCast(ptr));
+    fn render(self: *About) void {
         // std.debug.print("About.render self\n", .{});
         // pretty.print(util.gpa, self, .{}) catch unreachable;
         // std.process.exit(1);
+
         if (!self.is_open) {
             return;
         }
@@ -46,19 +77,17 @@ pub const About = struct {
 
         _ = ig.igBegin("About", &self.is_open, ig.ImGuiWindowFlags_None);
         ig.igText("PIE: Peyton's Image Editor v0.0.0");
-        // ig.igText(std.fmt("v hash: {}", @VHASH));
-        // ig.igText(std.fmt("build date: {} {}", @BUILD_DATE, @BUILD_TIME));
-        // const version_text = std.fmt("cimgui version: {}", self.cimgui_version);
 
-        // var version_text: [256]u8 = undefined;
-        // const version_text2 = std.fmt.bufPrint(&version_text, "cimgui version: {s}", .{self.cimgui_version}) catch unreachable;
-        // ig.igText(version_text2[0.. :0]);
+        const zig_version_text = std.fmt.allocPrintZ(util.gpa, "zig version: {s}", .{builtin.zig_version_string}) catch unreachable;
+        ig.igText(zig_version_text.ptr);
 
-        // https://ziggit.dev/t/how-to-return-a-c-string-from-u8/4569/11
-        const str = std.fmt.allocPrint(util.gpa, "cimgui version: {s}", .{self.cimgui_version[0..]}) catch unreachable;
-        const c_str = util.gpa.dupeZ(u8, str) catch unreachable;
-        defer util.gpa.free(c_str);
-        ig.igText(c_str);
+        // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
+        const build_time_text = std.fmt.allocPrintZ(util.gpa, "build date: {}", .{build.timestamp}) catch unreachable;
+        ig.igText(build_time_text.ptr);
+
+        // https://ziggit.dev/t/how-to-return-a-c-string-from-u8/4569/2
+        const cimgui_version_text = std.fmt.allocPrintZ(util.gpa, "cimgui version: {s}", .{self.cimgui_version}) catch unreachable;
+        ig.igText(cimgui_version_text.ptr);
 
         // ig.igText(std.fmt("LibRaw version: {}", self.libraw_version));
 
@@ -84,23 +113,29 @@ pub const About = struct {
     //     return about;
     // }
 
-    pub fn init() About {
-        return .{
+    pub fn init(self: *About, allocator: std.mem.Allocator) void {
+        self.* = .{
+            .allocator = allocator,
             .is_open = true,
             .pos = ig.ImVec2{ .x = 10, .y = 10 },
             .size = ig.ImVec2{ .x = 300, .y = 400 },
             // https://stackoverflow.com/questions/72736997/how-to-pass-a-c-string-into-a-zig-function-expecting-a-zig-string
-            .cimgui_version = std.mem.span(ig.igGetVersion()),
+            // https://dev.to/jmatth11/quick-zig-and-c-string-conversion-conundrums-203b
+            .cimgui_version = std.mem.span(ig.igGetVersion())[0..],
         };
     }
 
-    pub fn imguiWindow(self: *About) IIgWindow {
-        // std.debug.print("About.imguiWindow self\n", .{});
-        // pretty.print(util.gpa, self, .{}) catch unreachable;
-        return .{
-            // this "erases" the type: *About -> *anyopaque
-            .ptr = self,
-            .renderFn = render,
-        };
+    /// Allocates and initializes an About struct.
+    pub fn create(allocator: std.mem.Allocator) *About {
+        const result = allocator.create(About) catch unreachable;
+        errdefer allocator.destroy(result);
+
+        result.init(allocator);
+        return result;
+    }
+
+    pub fn destroy(self: *About) void {
+        // Free the resources
+        self.allocator.destroy(self);
     }
 };

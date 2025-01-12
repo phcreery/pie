@@ -11,8 +11,6 @@ const util = @import("util.zig");
 
 const ui = @import("ui.zig");
 
-// const test_alloc = std.heap.page_allocator;
-
 const AppState = struct {
     alloc: std.mem.Allocator,
     pass_action: sg.PassAction = .{},
@@ -20,17 +18,12 @@ const AppState = struct {
     windows: ui.IIgWindow,
 
     fn init(alloc: std.mem.Allocator) AppState {
-        // var about = ui.About.init();
-
-        // gpa alloc ui.About
-        // const about = ui.About.init(alloc);
-        const about = alloc.create(ui.About) catch unreachable;
-        about.* = ui.About.init();
-
-        // std.debug.print("AppState.init about\n", .{});
-        // pretty.print(alloc, about, .{}) catch unreachable;
-
-        const windows = about.*.imguiWindow();
+        // Construct larger structs in-place by passing an out pointer during initialization.
+        // https://github.com/tigerbeetle/tigerbeetle/blob/5b485508373f5eed99cb52a75ec692ec569a6990/docs/TIGER_STYLE.md#cache-invalidation
+        // const about: ui.About = undefined;
+        // about.init();
+        const about = ui.About.create(alloc);
+        const windows = ui.IIgWindow.from(about);
 
         return .{
             .alloc = alloc,
