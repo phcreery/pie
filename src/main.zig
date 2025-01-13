@@ -14,18 +14,10 @@ const ui = @import("ui.zig");
 const AppState = struct {
     allocator: std.mem.Allocator,
     pass_action: sg.PassAction = .{},
-    // windows: []const ui.IIgWindow, // https://github.com/ziglang/zig/issues/10529
-    windows: ui.IIgWindow,
+    windows: *ui.WindowManager,
 
     fn init(self: *AppState, allocator: std.mem.Allocator) void {
-        // const about: ui.About = undefined;
-        // about.init();
-
-        // const about = ui.About.create(allocator);
-        const about = allocator.create(ui.About) catch unreachable;
-        errdefer allocator.destroy(about);
-        about.init(allocator);
-        const windows = ui.IIgWindow.from(about);
+        const windows = ui.WindowManager.createAndInit(allocator);
 
         self.* = .{
             .allocator = allocator,
@@ -90,9 +82,6 @@ export fn frame(ptr: ?*anyopaque) void {
     // _ = ig.igColorEdit3("Background", &state.pass_action.colors[0].clear_value.r, ig.ImGuiColorEditFlags_None);
     // ig.igEnd();
 
-    // for (state.windows) |window| {
-    //     window.render();
-    // }
     state.windows.render();
 
     //=== UI CODE ENDS HERE
@@ -124,18 +113,15 @@ pub fn main() void {
     const state = AppState.create(allocator);
     defer state.destroy(allocator);
 
-    // defer allocator.destroy(state);
-
     sapp.run(.{
         .user_data = @constCast(@ptrCast(@alignCast(state))),
         .init_userdata_cb = init,
         .frame_userdata_cb = frame,
         .cleanup_userdata_cb = cleanup,
         .event_userdata_cb = event,
-        .window_title = "sokol-zig + Dear Imgui",
+        .window_title = "PIE",
         .width = 800,
         .height = 600,
-        .icon = .{ .sokol_default = true },
         .logger = .{ .func = slog.func },
     });
 }

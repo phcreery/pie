@@ -8,6 +8,52 @@ const build = @import("build_options");
 const zdt = @import("zdt");
 const Datetime = zdt.Datetime;
 
+pub const WindowManager = struct {
+    allocator: std.mem.Allocator,
+    windows: std.ArrayList(IIgWindow),
+
+    pub fn init(self: *WindowManager, allocator: std.mem.Allocator) void {
+        var windows = std.ArrayList(IIgWindow).init(allocator);
+
+        const about = About.createAndInit(allocator);
+        const window = IIgWindow.from(about);
+        windows.append(window) catch unreachable;
+
+        self.* = .{
+            .allocator = allocator,
+            .windows = windows,
+        };
+    }
+
+    pub fn createAndInit(allocator: std.mem.Allocator) *WindowManager {
+        const window_manager = allocator.create(WindowManager) catch unreachable;
+        errdefer allocator.destroy(window_manager);
+
+        window_manager.init(allocator);
+        return window_manager;
+    }
+
+    pub fn render(self: *WindowManager) void {
+        const open = &true;
+        ig.igShowMetricsWindow(@constCast(@ptrCast(open)));
+        for (self.windows.items) |window| {
+            window.render();
+        }
+    }
+
+    pub fn add(self: *WindowManager, window: IIgWindow) void {
+        self.windows.append(window) catch unreachable;
+    }
+
+    pub fn destroy(self: *WindowManager, allocator: std.mem.Allocator) void {
+        for (self.windows.items) |window| {
+            window.destroy(self.allocator);
+        }
+        self.windows.deinit();
+        allocator.destroy(self);
+    }
+};
+
 // https://www.openmymind.net/Zig-Interfaces/
 // https://medium.com/@jerrythomas_in/exploring-compile-time-interfaces-in-zig-5c1a1a9e59fd
 /// IIgWindow is an interface for rendering an ImGui window.
@@ -132,7 +178,7 @@ pub const About = struct {
     }
 
     /// Allocates and initializes an About struct.
-    pub fn create(allocator: std.mem.Allocator) *About {
+    pub fn createAndInit(allocator: std.mem.Allocator) *About {
         const result = allocator.create(About) catch unreachable;
         errdefer allocator.destroy(result);
 
