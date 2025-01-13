@@ -74,7 +74,7 @@ pub fn build(b: *Build) !void {
 
 fn buildNative(b: *Build, mod: *Build.Module) !void {
     const exe = b.addExecutable(.{
-        .name = "demo",
+        .name = "pie",
         .root_module = mod,
     });
     b.installArtifact(exe);
@@ -84,8 +84,8 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
 fn buildWasm(b: *Build, mod: *Build.Module, dep_sokol: *Dependency, dep_cimgui: *Dependency) !void {
     // build the main file into a library, this is because the WASM 'exe'
     // needs to be linked in a separate build step with the Emscripten linker
-    const demo = b.addStaticLibrary(.{
-        .name = "demo",
+    const pie = b.addStaticLibrary(.{
+        .name = "pie",
         .root_module = mod,
     });
 
@@ -106,7 +106,7 @@ fn buildWasm(b: *Build, mod: *Build.Module, dep_sokol: *Dependency, dep_cimgui: 
 
     // create a build step which invokes the Emscripten linker
     const link_step = try sokol.emLinkStep(b, .{
-        .lib_main = demo,
+        .lib_main = pie,
         .target = mod.resolved_target.?,
         .optimize = mod.optimize.?,
         .emsdk = dep_emsdk,
@@ -116,7 +116,7 @@ fn buildWasm(b: *Build, mod: *Build.Module, dep_sokol: *Dependency, dep_cimgui: 
         .shell_file_path = dep_sokol.path("src/sokol/web/shell.html"),
     });
     // ...and a special run step to start the web build output via 'emrun'
-    const run = sokol.emRunStep(b, .{ .name = "demo", .emsdk = dep_emsdk });
+    const run = sokol.emRunStep(b, .{ .name = "pie", .emsdk = dep_emsdk });
     run.step.dependOn(&link_step.step);
-    b.step("run", "Run demo").dependOn(&run.step);
+    b.step("run", "Run pie").dependOn(&run.step);
 }

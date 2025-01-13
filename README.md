@@ -6,6 +6,10 @@ Peyton's Image Editor
 
 `zig build test --watch`
 
+To build and run the web version:
+
+`zig build --release=small -Dtarget=wasm32-emscripten run`
+
 ## Zig notes
 
 - Examples
