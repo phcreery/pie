@@ -2,6 +2,8 @@
 
 Peyton's Image Editor
 
+Requires latest zig from master branch
+
 `zig build run --watch`
 
 `zig build test --watch`
