@@ -18,15 +18,15 @@ pub const IIgWindow = struct {
 
     pub const Interface = struct {
         renderFn: *const fn (ptr: *anyopaque) void,
-        destroyFn: *const fn (ptr: *anyopaque) void,
+        destroyFn: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator) void,
     };
 
     pub fn render(self: IIgWindow) void {
         return self.impl.renderFn(self.ptr);
     }
 
-    pub fn destroy(self: IIgWindow) void {
-        return self.impl.destroyFn(self.ptr);
+    pub fn destroy(self: IIgWindow, allocator: std.mem.Allocator) void {
+        return self.impl.destroyFn(self.ptr, allocator);
     }
 
     // This is new
@@ -42,9 +42,9 @@ pub const IIgWindow = struct {
                 const self: T = @ptrCast(@alignCast(pointer));
                 return ptr_info.pointer.child.render(self);
             }
-            pub fn destroy(pointer: *anyopaque) void {
+            pub fn destroy(pointer: *anyopaque, allocator: std.mem.Allocator) void {
                 const self: T = @ptrCast(@alignCast(pointer));
-                return ptr_info.pointer.child.destroy(self);
+                return ptr_info.pointer.child.destroy(self, allocator);
             }
         };
 
@@ -58,8 +58,8 @@ pub const IIgWindow = struct {
 pub const About = struct {
     allocator: std.mem.Allocator,
     is_open: bool,
-    pos: ig.ImVec2,
-    size: ig.ImVec2,
+    init_pos: ig.ImVec2,
+    init_size: ig.ImVec2,
     cimgui_version: []const u8,
     // libraw_version: string = libraw.libraw_version().ostr,
     build_date: []const u8,
@@ -73,8 +73,8 @@ pub const About = struct {
             return;
         }
 
-        ig.igSetNextWindowPosEx(self.pos, ig.ImGuiCond_Once, ig.ImVec2{ .x = 0, .y = 0 });
-        ig.igSetNextWindowSize(self.size, ig.ImGuiCond_Once);
+        ig.igSetNextWindowPosEx(self.init_pos, ig.ImGuiCond_Once, ig.ImVec2{ .x = 0, .y = 0 });
+        ig.igSetNextWindowSize(self.init_size, ig.ImGuiCond_Once);
         // ig.igSetNextWindowCollapsed(true, ig.ImGuiCond_Once);
 
         _ = ig.igBegin("About", &self.is_open, ig.ImGuiWindowFlags_None);
@@ -113,19 +113,20 @@ pub const About = struct {
 
         // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
         var buf = std.ArrayList(u8).init(allocator);
-        defer buf.deinit();
+        defer buf.deinit(); // just in case
         const now = zdt.Datetime.fromUnix(build.timestamp, zdt.Duration.Resolution.second, null) catch unreachable;
         zdt.Datetime.format(now, "%Y-%m-%d %H:%M:%S", .{}, buf.writer()) catch unreachable;
+        // https://github.com/ziglang/zig/issues/1552
         const build_date = buf.toOwnedSlice() catch unreachable;
 
         self.* = .{
             .allocator = allocator,
             .is_open = true,
-            .pos = ig.ImVec2{ .x = 10, .y = 10 },
-            .size = ig.ImVec2{ .x = 300, .y = 400 },
+            .init_pos = ig.ImVec2{ .x = 10, .y = 10 },
+            .init_size = ig.ImVec2{ .x = 300, .y = 400 },
             // https://stackoverflow.com/questions/72736997/how-to-pass-a-c-string-into-a-zig-function-expecting-a-zig-string
             // https://dev.to/jmatth11/quick-zig-and-c-string-conversion-conundrums-203b
-            .cimgui_version = std.mem.span(ig.igGetVersion())[0..],
+            .cimgui_version = std.mem.span(ig.igGetVersion()), // [0..]
             .build_date = build_date,
         };
     }
@@ -139,8 +140,24 @@ pub const About = struct {
         return result;
     }
 
-    pub fn destroy(self: *About) void {
+    pub fn destroy(self: *About, allocator: std.mem.Allocator) void {
         // Free the resources
-        self.allocator.destroy(self);
+        allocator.free(self.build_date);
+        allocator.destroy(self);
     }
 };
+
+test "About" {
+    const allocator = std.testing.allocator;
+    const about = About.create(allocator);
+    defer about.destroy(allocator);
+    try std.testing.expectEqual(about.is_open, true);
+
+    // expect the first 2 digits of the year to be "20" and imgui version to be "1."
+    // this test ensures the slice allocated for the zdt formatter does not
+    // become a dangling pointer after leaving init() **and**
+    // ensures there is mo memory leak from forgetting to free it
+    // std.debug.print("about.build_date: {s}\n", .{about.build_date[0..2]});
+    try std.testing.expectEqualSlices(u8, about.build_date[0..2], "20"[0..]);
+    try std.testing.expectEqualSlices(u8, about.cimgui_version[0..2], "1."[0..]);
+}

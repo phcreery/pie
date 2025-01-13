@@ -53,6 +53,17 @@ pub fn build(b: *Build) !void {
     });
     // mod_main.addImport("pretty", pretty.module("pretty"));
 
+    const unit_tests = b.addTest(.{
+        // .name = "tests",
+        .target = target,
+        .optimize = optimize,
+        .test_runner = b.path("testing/test_runner.zig"), // add this line
+        .root_module = mod_main,
+    });
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_unit_tests.step);
+
     // from here on different handling for native vs wasm builds
     if (target.result.isWasm()) {
         try buildWasm(b, mod_main, dep_sokol, dep_cimgui);

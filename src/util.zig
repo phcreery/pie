@@ -5,5 +5,7 @@ const std = @import("std");
 // pub const gpa = std.heap.c_allocator;
 
 // Zig allocator
-var zig_gpa = std.heap.GeneralPurposeAllocator(.{}){};
-pub const gpa = zig_gpa.allocator();
+var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+pub const gpa = general_purpose_allocator.allocator();
+
+// pub const gpa = std.testing.allocator;

@@ -12,29 +12,47 @@ const util = @import("util.zig");
 const ui = @import("ui.zig");
 
 const AppState = struct {
-    alloc: std.mem.Allocator,
+    allocator: std.mem.Allocator,
     pass_action: sg.PassAction = .{},
     // windows: []const ui.IIgWindow, // https://github.com/ziglang/zig/issues/10529
     windows: ui.IIgWindow,
 
-    fn init(alloc: std.mem.Allocator) AppState {
-        // Construct larger structs in-place by passing an out pointer during initialization.
-        // https://github.com/tigerbeetle/tigerbeetle/blob/5b485508373f5eed99cb52a75ec692ec569a6990/docs/TIGER_STYLE.md#cache-invalidation
+    fn init(self: *AppState, allocator: std.mem.Allocator) void {
         // const about: ui.About = undefined;
         // about.init();
-        const about = ui.About.create(alloc);
+
+        // const about = ui.About.create(allocator);
+        const about = allocator.create(ui.About) catch unreachable;
+        errdefer allocator.destroy(about);
+        about.init(allocator);
         const windows = ui.IIgWindow.from(about);
 
-        return .{
-            .alloc = alloc,
+        self.* = .{
+            .allocator = allocator,
             .pass_action = .{},
             .windows = windows,
         };
     }
 
-    // pub fn deinit(self: *State) void {
-    // Free the resources
-    // }
+    fn deinit(self: *AppState) void {
+        self.* = undefined;
+    }
+
+    /// Allocates and initializes
+    pub fn create(allocator: std.mem.Allocator) *AppState {
+        const result = allocator.create(AppState) catch unreachable;
+        errdefer allocator.destroy(result);
+
+        result.init(allocator);
+        return result;
+    }
+
+    pub fn destroy(self: *AppState, allocator: std.mem.Allocator) void {
+        // Free the resources
+        self.windows.destroy(allocator);
+        self.deinit();
+        allocator.destroy(self);
+    }
 };
 export fn init(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
@@ -103,10 +121,13 @@ pub fn main() void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const state = AppState.init(allocator);
+    const state = AppState.create(allocator);
+    defer state.destroy(allocator);
+
+    // defer allocator.destroy(state);
 
     sapp.run(.{
-        .user_data = @constCast(@ptrCast(@alignCast(&state))),
+        .user_data = @constCast(@ptrCast(@alignCast(state))),
         .init_userdata_cb = init,
         .frame_userdata_cb = frame,
         .cleanup_userdata_cb = cleanup,
