@@ -16,8 +16,15 @@ pub const WindowManager = struct {
         var windows = std.ArrayList(IIgWindow).init(allocator);
 
         const about = About.createAndInit(allocator);
+        std.debug.print("WindowManager.init about\n", .{});
+        pretty.print(util.gpa, about, .{}) catch unreachable;
+
         const window = IIgWindow.from(about);
+        std.debug.print("WindowManager.init window\n", .{});
+        pretty.print(util.gpa, window, .{}) catch unreachable;
         windows.append(window) catch unreachable;
+        std.debug.print("WindowManager.init windows\n", .{});
+        pretty.print(util.gpa, windows, .{}) catch unreachable;
 
         self.* = .{
             .allocator = allocator,
@@ -34,6 +41,9 @@ pub const WindowManager = struct {
     }
 
     pub fn render(self: *WindowManager) void {
+        std.debug.print("WindowManager.render self\n", .{});
+        pretty.print(util.gpa, self, .{}) catch unreachable;
+
         const open = &true;
         ig.igShowMetricsWindow(@constCast(@ptrCast(open)));
         for (self.windows.items) |window| {
@@ -111,13 +121,13 @@ pub const About = struct {
     build_date: []const u8,
 
     fn render(self: *About) void {
-        // std.debug.print("About.render self\n", .{});
-        // pretty.print(util.gpa, self, .{}) catch unreachable;
+        std.debug.print("About.render self\n", .{});
+        pretty.print(util.gpa, self, .{}) catch unreachable;
         // std.process.exit(1);
 
-        if (!self.is_open) {
-            return;
-        }
+        // if (!self.is_open) {
+        //     return;
+        // }
 
         ig.igSetNextWindowPosEx(self.init_pos, ig.ImGuiCond_Once, ig.ImVec2{ .x = 0, .y = 0 });
         ig.igSetNextWindowSize(self.init_size, ig.ImGuiCond_Once);
