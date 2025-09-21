@@ -29,6 +29,9 @@ To build and run the web version:
 
     - large build.zig
 
+  - https://github.com/foxnne/pixi
+  - https://github.com/ghostty-org/ghostty
+
   - ["raw doggin' interfaces"](https://www.youtube.com/watch?v=ZOllg8C3ows): https://www.openmymind.net/Zig-Interfaces/
 
 ```

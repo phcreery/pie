@@ -45,7 +45,7 @@ pub const WindowManager = struct {
         pretty.print(util.gpa, self, .{}) catch unreachable;
 
         const open = &true;
-        ig.igShowMetricsWindow(@constCast(@ptrCast(open)));
+        ig.igShowMetricsWindow(@ptrCast(@constCast(open)));
         for (self.windows.items) |window| {
             window.render();
         }
@@ -70,7 +70,7 @@ pub const WindowManager = struct {
 /// It is recommended to use a heap allocated struct as the context.
 pub const IIgWindow = struct {
     ptr: *anyopaque,
-    impl: *const Interface,
+    impl: Interface,
 
     pub const Interface = struct {
         renderFn: *const fn (ptr: *anyopaque) void,
@@ -78,6 +78,8 @@ pub const IIgWindow = struct {
     };
 
     pub fn render(self: IIgWindow) void {
+        std.debug.print("IIgWindow.render self\n", .{});
+        pretty.print(util.gpa, self, .{}) catch unreachable;
         return self.impl.renderFn(self.ptr);
     }
 
@@ -91,11 +93,14 @@ pub const IIgWindow = struct {
         const ptr_info = @typeInfo(T);
 
         if (ptr_info != .pointer) @compileError("ptr must be a pointer");
-        if (ptr_info.pointer.size != .One) @compileError("ptr must be a single item pointer");
+        if (ptr_info.pointer.size != .one) @compileError("ptr must be a single item pointer");
 
         const gen = struct {
             pub fn render(pointer: *anyopaque) void {
                 const self: T = @ptrCast(@alignCast(pointer));
+                std.debug.print("IIgWindow.from.render self\n", .{});
+                pretty.print(util.gpa, self, .{}) catch unreachable;
+
                 return ptr_info.pointer.child.render(self);
             }
             pub fn destroy(pointer: *anyopaque, allocator: std.mem.Allocator) void {
@@ -106,7 +111,7 @@ pub const IIgWindow = struct {
 
         return .{
             .ptr = ptr,
-            .impl = &.{ .renderFn = gen.render, .destroyFn = gen.destroy },
+            .impl = .{ .renderFn = gen.render, .destroyFn = gen.destroy },
         };
     }
 };
@@ -120,7 +125,7 @@ pub const About = struct {
     // libraw_version: string = libraw.libraw_version().ostr,
     build_date: []const u8,
 
-    fn render(self: *About) void {
+    pub fn render(self: *About) void {
         std.debug.print("About.render self\n", .{});
         pretty.print(util.gpa, self, .{}) catch unreachable;
         // std.process.exit(1);
@@ -136,14 +141,14 @@ pub const About = struct {
         _ = ig.igBegin("About", &self.is_open, ig.ImGuiWindowFlags_None);
         ig.igText("PIE: Peyton's Image Editor v0.0.0");
 
-        const zig_version_text = std.fmt.allocPrintZ(util.gpa, "zig version: {s}", .{builtin.zig_version_string}) catch unreachable;
+        const zig_version_text = std.fmt.allocPrint(util.gpa, "zig version: {s}", .{builtin.zig_version_string}) catch unreachable;
         ig.igText(zig_version_text.ptr);
 
-        const build_time_text = std.fmt.allocPrintZ(util.gpa, "build date: {s}", .{self.build_date}) catch unreachable;
+        const build_time_text = std.fmt.allocPrint(util.gpa, "build date: {s}", .{self.build_date}) catch unreachable;
         ig.igText(build_time_text.ptr);
 
         // https://ziggit.dev/t/how-to-return-a-c-string-from-u8/4569/2
-        const cimgui_version_text = std.fmt.allocPrintZ(util.gpa, "cimgui version: {s}", .{self.cimgui_version}) catch unreachable;
+        const cimgui_version_text = std.fmt.allocPrint(util.gpa, "cimgui version: {s}", .{self.cimgui_version}) catch unreachable;
         ig.igText(cimgui_version_text.ptr);
 
         // ig.igText(std.fmt("LibRaw version: {}", self.libraw_version));
@@ -168,10 +173,12 @@ pub const About = struct {
     pub fn init(self: *About, allocator: std.mem.Allocator) void {
 
         // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
-        var buf = std.ArrayList(u8).init(allocator);
+        var buf = std.array_list.Managed(u8).init(allocator);
         defer buf.deinit(); // just in case
         const now = zdt.Datetime.fromUnix(build.timestamp, zdt.Duration.Resolution.second, null) catch unreachable;
-        zdt.Datetime.format(now, "%Y-%m-%d %H:%M:%S", .{}, buf.writer()) catch unreachable;
+        var adapter = buf.writer().adaptToNewApi(&.{});
+        const w: *std.Io.Writer = &adapter.new_interface;
+        now.toString("%Y-%m-%d %H:%M:%S", w) catch unreachable;
         // https://github.com/ziglang/zig/issues/1552
         const build_date = buf.toOwnedSlice() catch unreachable;
 

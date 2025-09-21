@@ -6,7 +6,7 @@
     //
     // It is redundant to include "zig" in this name because it is already
     // within the Zig package namespace.
-    .name = "pie",
+    .name = .pie,
 
     // This is a [Semantic Version](https://semver.org/).
     // In a future version of Zig it will be used for package deduplication.
@@ -15,7 +15,9 @@
     // This field is optional.
     // This is currently advisory only; Zig does not yet do anything
     // with this value.
-    //.minimum_zig_version = "0.11.0",
+    .minimum_zig_version = "0.15.1",
+
+    .fingerprint = 0x2257f47b657d2acb,
 
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
@@ -53,20 +55,20 @@
         //    .lazy = false,
         //},
         .sokol = .{
-            .url = "git+https://github.com/floooh/sokol-zig#3443c2880afdcd8a6ecdd387174544e71c85ba87",
-            .hash = "1220b23309471165b60f40ba6a0979feecb9cbc110b512d7b30e02cd64909847aab5",
+            .url = "git+https://github.com/floooh/sokol-zig.git#64416d9093182728d5b7239d83adbec9d3e6282f",
+            .hash = "sokol-0.1.0-pb1HK1HTLQAsjVm5gHGpGI85Rwhwvu2KgCOTH-ZJ9sCS",
         },
         .cimgui = .{
-            .url = "git+https://github.com/floooh/dcimgui.git#6d054aaf23a2a21903023b87316877b1dd4e66a0",
-            .hash = "12200aded8c04f0f18420f41bd97392d67da33b74833e8474932ad58e2fedd2f905c",
+            .url = "git+https://github.com/floooh/dcimgui.git#581c2e909c899c21923c779d4c41ea56ab93bbb4",
+            .hash = "cimgui-0.1.0-44ClkQ14kwAiwcr3ioDjxvPuiWQctWrt-tIFtsfP6xmU",
         },
         .pretty = .{
             .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
-            .hash = "12209290db27d058b481801cf9a79c706fb0c482e7f6378d50495750aae19524d4b7",
+            .hash = "pretty-0.10.4-Tm65r5pKAQDdxCFNtL6huo7lHc_HWn6v4VO5WaTufpRQ",
         },
         .zdt = .{
-            .url = "git+https://github.com/FObersteiner/zdt.git#9b49bd2b11a808600facfee5e8eaeb5ee6c817a7",
-            .hash = "1220d66916574bf097f3edbeaa0c9231087a766f123262e72dabf3615b18f7544e3d",
+            .url = "git+https://github.com/FObersteiner/zdt#8b551a0a3e5ae64a32b5bad0e6a93119787b43af",
+            .hash = "zdt-0.8.1-xr0_vAxUDwCJRDh9pcAS_mdZBIsvcGTtN-K8JJSWY4I6",
         },
     },
 

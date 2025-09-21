@@ -15,18 +15,32 @@ const ui = @import("ui.zig");
 const AppState = struct {
     allocator: std.mem.Allocator,
     pass_action: sg.PassAction = .{},
-    windows: *ui.WindowManager,
+    // windows: *ui.WindowManager,
+    window: ui.IIgWindow,
+    // window: *ui.About,
 
     fn init(self: *AppState, allocator: std.mem.Allocator) void {
-        const windows = ui.WindowManager.createAndInit(allocator);
+        // const windows = ui.WindowManager.createAndInit(allocator);
 
-        std.debug.print("AppState.init windows\n", .{});
-        pretty.print(util.gpa, windows, .{}) catch unreachable;
+        // std.debug.print("AppState.init windows\n", .{});
+        // pretty.print(util.gpa, windows, .{}) catch unreachable;
+
+        const about = ui.About.createAndInit(allocator);
+        std.debug.print("WindowManager.init about\n", .{});
+        pretty.print(util.gpa, about, .{}) catch unreachable;
+
+        const window = ui.IIgWindow.from(about);
+        // const window = allocator.create(ui.IIgWindow) catch unreachable;
+        // window.* = ui.IIgWindow.from(about);
+        std.debug.print("WindowManager.init window\n", .{});
+        pretty.print(util.gpa, window, .{}) catch unreachable;
 
         self.* = .{
             .allocator = allocator,
             .pass_action = .{},
-            .windows = windows,
+            // .windows = windows,
+            .window = window,
+            // .window = about,
         };
     }
 
@@ -45,7 +59,8 @@ const AppState = struct {
 
     pub fn destroy(self: *AppState, allocator: std.mem.Allocator) void {
         // Free the resources
-        self.windows.destroy(allocator);
+        // self.windows.destroy(allocator);
+        self.window.destroy(allocator);
         self.deinit();
         allocator.destroy(self);
     }
@@ -94,7 +109,9 @@ export fn frame(ptr: ?*anyopaque) void {
     std.debug.print("frame state\n", .{});
     std.debug.print("{}\n", .{state});
     pretty.print(util.gpa, state, .{}) catch unreachable;
-    state.windows.render();
+
+    // state.windows.render();
+    state.window.render();
 
     //=== UI CODE ENDS HERE
 
