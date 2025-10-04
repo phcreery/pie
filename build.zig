@@ -134,7 +134,7 @@ fn buildWasm(b: *Build, opts: BuildWasmOptions) !void {
         .use_webgl2 = true,
         .use_emmalloc = true,
         .use_filesystem = false,
-        .shell_file_path = opts.dep_sokol.path("src/web/shell.html"),
+        .shell_file_path = b.path("src/web/shell.html"),
     });
     // attach to default target
     b.getInstallStep().dependOn(&link_step.step);

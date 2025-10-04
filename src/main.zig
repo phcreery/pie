@@ -26,6 +26,9 @@ const AppState = struct {
         // pretty.print(util.gpa, windows, .{}) catch unreachable;
 
         const about = ui.About.createAndInit(allocator);
+        // const about = try allocator.create(ui.About);
+        // errdefer allocator.destroy(about);
+        // about.init(allocator);
         std.debug.print("WindowManager.init about\n", .{});
         pretty.print(util.gpa, about, .{}) catch unreachable;
 
@@ -122,14 +125,16 @@ export fn frame(ptr: ?*anyopaque) void {
     sg.commit();
 }
 
-export fn cleanup(_: ?*anyopaque) void {
-    // const state: *AppState = @ptrCast(@alignCast(ptr));
+export fn cleanup(ptr: ?*anyopaque) void {
+    const state: *AppState = @ptrCast(@alignCast(ptr));
+    _ = state;
     simgui.shutdown();
     sg.shutdown();
 }
 
-export fn event(ev: [*c]const sapp.Event, _: ?*anyopaque) void {
-    // const state: *AppState = @ptrCast(@alignCast(ptr));
+export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
+    const state: *AppState = @ptrCast(@alignCast(ptr));
+    _ = state;
     // forward input events to sokol-imgui
     _ = simgui.handleEvent(ev.*);
 }
@@ -144,10 +149,6 @@ pub fn main() void {
         .frame_userdata_cb = frame,
         .cleanup_userdata_cb = cleanup,
         .event_userdata_cb = event,
-        // .init_cb = init,
-        // .frame_cb = frame,
-        // .cleanup_cb = cleanup,
-        // .event_cb = event,
         .window_title = "PIE",
         .width = 800,
         .height = 600,

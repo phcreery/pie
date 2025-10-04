@@ -173,23 +173,22 @@ pub const About = struct {
     pub fn init(self: *About, allocator: std.mem.Allocator) void {
 
         // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
-        var buf = std.array_list.Managed(u8).init(allocator);
-        defer buf.deinit(); // just in case
         const now = zdt.Datetime.fromUnix(build.timestamp, zdt.Duration.Resolution.second, null) catch unreachable;
-        var adapter = buf.writer().adaptToNewApi(&.{});
-        const w: *std.Io.Writer = &adapter.new_interface;
-        now.toString("%Y-%m-%d %H:%M:%S", w) catch unreachable;
-        // https://github.com/ziglang/zig/issues/1552
-        const build_date = buf.toOwnedSlice() catch unreachable;
+        const build_date_buf = allocator.alloc(u8, 64) catch unreachable;
+        errdefer allocator.free(build_date_buf);
+        var w = std.Io.Writer.fixed(build_date_buf);
+        now.toString("%Y-%m-%d %H:%M:%S", &w) catch unreachable;
+        // https://stackoverflow.com/questions/72736997/how-to-pass-a-c-string-into-a-zig-function-expecting-a-zig-string
+        // https://dev.to/jmatth11/quick-zig-and-c-string-conversion-conundrums-203b
+        const cimgui_version: []const u8 = std.mem.span(ig.igGetVersion()); // [0..]
+        const build_date = w.buffered(); // or build_date_buf[0..];
 
         self.* = .{
             .allocator = allocator,
             .is_open = true,
             .init_pos = ig.ImVec2{ .x = 10, .y = 10 },
             .init_size = ig.ImVec2{ .x = 300, .y = 400 },
-            // https://stackoverflow.com/questions/72736997/how-to-pass-a-c-string-into-a-zig-function-expecting-a-zig-string
-            // https://dev.to/jmatth11/quick-zig-and-c-string-conversion-conundrums-203b
-            .cimgui_version = std.mem.span(ig.igGetVersion()), // [0..]
+            .cimgui_version = cimgui_version,
             .build_date = build_date,
         };
     }
