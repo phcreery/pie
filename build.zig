@@ -64,6 +64,7 @@ pub fn build(b: *Build) !void {
     });
     mod_main.addOptions("build_options", mod_options);
 
+    // build and run the unit tests
     const unit_tests = b.addTest(.{
         .name = "tests",
         .root_module = mod_main,

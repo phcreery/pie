@@ -12,6 +12,12 @@ To build and run the web version:
 
 `zig build --release=small -Dtarget=wasm32-emscripten run`
 
+This may require changing the default allocator.
+
+## Build Requirements
+
+zig 0.15.1
+
 ## Zig notes
 
 - Examples

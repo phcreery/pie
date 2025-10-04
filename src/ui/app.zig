@@ -110,8 +110,8 @@ export fn frame(ptr: ?*anyopaque) void {
     ig.igEnd();
 
     std.debug.print("frame state\n", .{});
-    std.debug.print("{}\n", .{state});
-    // pretty.print(util.allocator, state, .{}) catch unreachable;
+    // std.debug.print("{}\n", .{state});
+    pretty.print(util.allocator, state, .{}) catch unreachable;
 
     // state.windows.render();
     state.window.render();
