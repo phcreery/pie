@@ -1,7 +1,10 @@
 const std = @import("std");
-const ig = @import("cimgui");
+const use_docking = @import("build_options").docking;
+const ig = if (use_docking) @import("cimgui_docking") else @import("cimgui");
+const sokol = @import("sokol");
+const sg = sokol.gfx;
 const pretty = @import("pretty");
-const util = @import("util.zig");
+const util = @import("../util.zig");
 const builtin = @import("builtin");
 
 const build = @import("build_options");
@@ -10,21 +13,26 @@ const Datetime = zdt.Datetime;
 
 pub const WindowManager = struct {
     allocator: std.mem.Allocator,
+    aa: std.heap.Allocator,
     windows: std.ArrayList(IIgWindow),
 
     pub fn init(self: *WindowManager, allocator: std.mem.Allocator) void {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        self.aa = arena.allocator();
+
         var windows = std.ArrayList(IIgWindow).init(allocator);
 
         const about = About.createAndInit(allocator);
         std.debug.print("WindowManager.init about\n", .{});
-        pretty.print(util.gpa, about, .{}) catch unreachable;
+        // pretty.print(util.allocator, about, .{}) catch unreachable;
 
         const window = IIgWindow.from(about);
         std.debug.print("WindowManager.init window\n", .{});
-        pretty.print(util.gpa, window, .{}) catch unreachable;
+        // pretty.print(util.allocator, window, .{}) catch unreachable;
         windows.append(window) catch unreachable;
         std.debug.print("WindowManager.init windows\n", .{});
-        pretty.print(util.gpa, windows, .{}) catch unreachable;
+        // pretty.print(util.allocator, windows, .{}) catch unreachable;
 
         self.* = .{
             .allocator = allocator,
@@ -42,7 +50,7 @@ pub const WindowManager = struct {
 
     pub fn render(self: *WindowManager) void {
         std.debug.print("WindowManager.render self\n", .{});
-        pretty.print(util.gpa, self, .{}) catch unreachable;
+        // pretty.print(util.allocator, self, .{}) catch unreachable;
 
         const open = &true;
         ig.igShowMetricsWindow(@ptrCast(@constCast(open)));
@@ -79,7 +87,7 @@ pub const IIgWindow = struct {
 
     pub fn render(self: IIgWindow) void {
         std.debug.print("IIgWindow.render self\n", .{});
-        pretty.print(util.gpa, self, .{}) catch unreachable;
+        // pretty.print(util.allocator, self, .{}) catch unreachable;
         return self.impl.renderFn(self.ptr);
     }
 
@@ -99,7 +107,7 @@ pub const IIgWindow = struct {
             pub fn render(pointer: *anyopaque) void {
                 const self: T = @ptrCast(@alignCast(pointer));
                 std.debug.print("IIgWindow.from.render self\n", .{});
-                pretty.print(util.gpa, self, .{}) catch unreachable;
+                // pretty.print(util.allocator, self, .{}) catch unreachable;
 
                 return ptr_info.pointer.child.render(self);
             }
@@ -127,12 +135,23 @@ pub const About = struct {
 
     pub fn render(self: *About) void {
         std.debug.print("About.render self\n", .{});
-        pretty.print(util.gpa, self, .{}) catch unreachable;
+        // pretty.print(util.allocator, self, .{}) catch unreachable;
         // std.process.exit(1);
 
         // if (!self.is_open) {
         //     return;
         // }
+
+        const backend_name: [*c]const u8 = switch (sg.queryBackend()) {
+            .D3D11 => "Direct3D11",
+            .GLCORE => "OpenGL",
+            .GLES3 => "OpenGLES3",
+            .METAL_IOS => "Metal iOS",
+            .METAL_MACOS => "Metal macOS",
+            .METAL_SIMULATOR => "Metal Simulator",
+            .WGPU => "WebGPU",
+            .DUMMY => "Dummy",
+        };
 
         ig.igSetNextWindowPosEx(self.init_pos, ig.ImGuiCond_Once, ig.ImVec2{ .x = 0, .y = 0 });
         ig.igSetNextWindowSize(self.init_size, ig.ImGuiCond_Once);
@@ -141,14 +160,18 @@ pub const About = struct {
         _ = ig.igBegin("About", &self.is_open, ig.ImGuiWindowFlags_None);
         ig.igText("PIE: Peyton's Image Editor v0.0.0");
 
-        const zig_version_text = std.fmt.allocPrint(util.gpa, "zig version: {s}", .{builtin.zig_version_string}) catch unreachable;
+        // https://ziggit.dev/t/how-to-return-a-c-string-from-u8/4569/2
+        var text_buf: [100]u8 = undefined;
+
+        const zig_version_text = std.fmt.bufPrintZ(&text_buf, "zig version: {s}\n", .{builtin.zig_version_string}) catch unreachable;
         ig.igText(zig_version_text.ptr);
 
-        const build_time_text = std.fmt.allocPrint(util.gpa, "build date: {s}", .{self.build_date}) catch unreachable;
+        const build_time_text = std.fmt.bufPrintZ(&text_buf, "build date: {s}", .{self.build_date}) catch unreachable;
         ig.igText(build_time_text.ptr);
 
-        // https://ziggit.dev/t/how-to-return-a-c-string-from-u8/4569/2
-        const cimgui_version_text = std.fmt.allocPrint(util.gpa, "cimgui version: {s}", .{self.cimgui_version}) catch unreachable;
+        ig.igText("Graphics Backend: %s", backend_name);
+
+        const cimgui_version_text = std.fmt.bufPrintZ(&text_buf, "cimgui version: {s}", .{self.cimgui_version}) catch unreachable;
         ig.igText(cimgui_version_text.ptr);
 
         // ig.igText(std.fmt("LibRaw version: {}", self.libraw_version));
