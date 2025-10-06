@@ -3,10 +3,6 @@ const Allocator = std.mem.Allocator;
 
 const cl = @import("opencl");
 
-pub const std_options: std.Options = .{
-    .log_level = .info,
-};
-
 fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.log.err(fmt, args);
     std.process.exit(1);
@@ -15,48 +11,6 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
 const Options = struct {
     platform: ?[]const u8,
     device: ?[]const u8,
-
-    fn parse(a: Allocator) !Options {
-        var args = try std.process.argsWithAllocator(a);
-        _ = args.next(); // executable name
-
-        var platform: ?[]const u8 = null;
-        var device: ?[]const u8 = null;
-        var help: bool = false;
-
-        while (args.next()) |arg| {
-            if (std.mem.eql(u8, arg, "--platform") or std.mem.eql(u8, arg, "-p")) {
-                platform = args.next() orelse fail("missing argument to option {s}", .{arg});
-            } else if (std.mem.eql(u8, arg, "--device") or std.mem.eql(u8, arg, "-d")) {
-                device = args.next() orelse fail("missing argument to option {s}", .{arg});
-            } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-                help = true;
-            } else {
-                fail("unknown option '{s}'", .{arg});
-            }
-        }
-
-        if (help) {
-            var out: std.fs.File = .stdout();
-            try out.writeAll(
-                \\usage: saxpy [options...]
-                \\
-                \\Options:
-                \\--platform|-p <platform>  OpenCL platform name to use. By default, uses the
-                \\                          first platform that has any devices available.
-                \\--device|-d <device>      OpenCL device name to use. If --platform is left
-                \\                          unspecified, all devices of all platforms are
-                \\                          matched. By default, uses the first device of the
-                \\                          platform.
-            );
-            std.process.exit(0);
-        }
-
-        return .{
-            .platform = platform,
-            .device = device,
-        };
-    }
 };
 
 pub fn main() !void {
@@ -64,7 +18,10 @@ pub fn main() !void {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    const options = try Options.parse(alloc);
+    const options = Options{
+        .platform = null, // e.g. "Intel"
+        .device = null, // e.g. "HD Graphics"
+    };
 
     const platforms = try cl.getPlatforms(alloc);
     std.log.info("{} opencl platform(s) available", .{platforms.len});
