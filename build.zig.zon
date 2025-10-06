@@ -70,14 +70,18 @@
             .url = "git+https://github.com/FObersteiner/zdt#8b551a0a3e5ae64a32b5bad0e6a93119787b43af",
             .hash = "zdt-0.8.1-xr0_vAxUDwCJRDh9pcAS_mdZBIsvcGTtN-K8JJSWY4I6",
         },
-        .shdc = .{
-            .url = "git+https://github.com/floooh/sokol-tools-bin#a06f19929ff8f9824ec6dd87c21329b1f205809e",
-            .hash = "sokolshdc-0.1.0-r2KZDr4qbAT_0SJoZpYt2S0-vHgOmOdU4ulPIeUt5Ato",
-        },
+        // .shdc = .{
+        //     .url = "git+https://github.com/floooh/sokol-tools-bin#a06f19929ff8f9824ec6dd87c21329b1f205809e",
+        //     .hash = "sokolshdc-0.1.0-r2KZDr4qbAT_0SJoZpYt2S0-vHgOmOdU4ulPIeUt5Ato",
+        // },
         // .emsdk = .{
         //     .url = "git+https://github.com/emscripten-core/emsdk?ref=4.0.14#eff90ca04a3785f571a8095b3a42b63799cf384a",
         //     .hash = "N-V-__8AAMGsDwC6L1OfDgzRF1zFI2t-CaR0sVhEm8pmrpxm",
         // },
+        .opencl = .{
+            .url = "git+https://github.com/Snektron/opencl-zig#a5807beb62c84e72c6a976b5a589c862e2c12f12",
+            .hash = "opencl-0.1.0-W4Df3TKTAAC8QuJaPvbD9Q1tlKv7qzH9LTI3qYnoeU0i",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.

@@ -33,6 +33,10 @@ pub fn build(b: *Build) !void {
     });
     const dep_pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
     const dep_zdt = b.dependency("zdt", .{ .target = target, .optimize = optimize });
+    const dep_opencl = b.dependency("opencl", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // see tigerbeetle for advanced build options handling
     // https://github.com/tigerbeetle/tigerbeetle/blob/main/build.zig
@@ -59,7 +63,7 @@ pub fn build(b: *Build) !void {
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "pretty", .module = dep_pretty.module("pretty") },
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
-            // .{ .name = "build_options", .module = build_options.createModule() },
+            .{ .name = "opencl", .module = dep_opencl.module("opencl") },
         },
     });
     mod_main.addOptions("build_options", mod_options);
@@ -92,6 +96,13 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
         .name = "pie",
         .root_module = mod,
     });
+    if (builtin.os.tag == .windows) {
+        // zig does not include System32 in the default library search path
+        // so we need to add it manually here
+        // https://github.com/ziglang/zig/blob/ddc815e3d88d32b8f3df0610ee59c8d34b8ff8eb/lib/std/zig/system/NativePaths.zig#L130
+        const system_library_path: std.Build.LazyPath = .{ .cwd_relative = "C:\\Windows\\System32" };
+        exe.addLibraryPath(system_library_path);
+    }
     b.installArtifact(exe);
     b.step("run", "Run pie").dependOn(&b.addRunArtifact(exe).step);
 }
