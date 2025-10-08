@@ -40,6 +40,10 @@ zig 0.15.1
 
   - ["raw doggin' interfaces"](https://www.youtube.com/watch?v=ZOllg8C3ows): https://www.openmymind.net/Zig-Interfaces/
 
+  - https://github.com/karlseguin/zul
+
+  - https://ziggit.dev/t/convention-for-init-deinit/4865/2
+
 ```
   // if (builtin.target.os.tag == .emscripten) {
   //     // console.log("Hello, Emscripten!");

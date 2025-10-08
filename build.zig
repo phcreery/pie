@@ -37,6 +37,10 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const dep_libraw = b.dependency("libraw", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // see tigerbeetle for advanced build options handling
     // https://github.com/tigerbeetle/tigerbeetle/blob/main/build.zig
@@ -64,6 +68,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "pretty", .module = dep_pretty.module("pretty") },
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "opencl", .module = dep_opencl.module("opencl") },
+            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
         },
     });
     mod_main.addOptions("build_options", mod_options);

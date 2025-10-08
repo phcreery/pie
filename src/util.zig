@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 // C allocator, fast and works with wasm
-// pub const gpa = std.heap.c_allocator;
+// pub const allocator = std.heap.c_allocator;
 
 // Zig GeneralPurposeAllocator/DebugAllocator allocator
 var gpa = std.heap.DebugAllocator(.{

@@ -10,45 +10,35 @@ const builtin = @import("builtin");
 const build = @import("build_options");
 const zdt = @import("zdt");
 const Datetime = zdt.Datetime;
+const libraw = @import("libraw");
 
 pub const WindowManager = struct {
-    allocator: std.mem.Allocator,
-    aa: std.heap.Allocator,
     windows: std.ArrayList(IIgWindow),
 
-    pub fn init(self: *WindowManager, allocator: std.mem.Allocator) void {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        self.aa = arena.allocator();
+    const Self = @This();
 
-        var windows = std.ArrayList(IIgWindow).init(allocator);
+    pub fn init(allocator: std.mem.Allocator) Self {
+        var windows = std.ArrayList(IIgWindow).initCapacity(allocator, 20) catch unreachable;
 
-        const about = About.createAndInit(allocator);
-        std.debug.print("WindowManager.init about\n", .{});
-        // pretty.print(util.allocator, about, .{}) catch unreachable;
-
+        const about = &About.init(allocator);
         const window = IIgWindow.from(about);
-        std.debug.print("WindowManager.init window\n", .{});
-        // pretty.print(util.allocator, window, .{}) catch unreachable;
         windows.append(window) catch unreachable;
-        std.debug.print("WindowManager.init windows\n", .{});
-        // pretty.print(util.allocator, windows, .{}) catch unreachable;
 
-        self.* = .{
-            .allocator = allocator,
+        return .{
+            // .allocator = allocator,
             .windows = windows,
         };
     }
 
-    pub fn createAndInit(allocator: std.mem.Allocator) *WindowManager {
-        const window_manager = allocator.create(WindowManager) catch unreachable;
-        errdefer allocator.destroy(window_manager);
-
-        window_manager.init(allocator);
-        return window_manager;
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        for (self.windows.items) |window| {
+            window.destroy(self.allocator);
+        }
+        self.windows.deinit();
+        allocator.destroy(self);
     }
 
-    pub fn render(self: *WindowManager) void {
+    pub fn render(self: *Self) void {
         std.debug.print("WindowManager.render self\n", .{});
         // pretty.print(util.allocator, self, .{}) catch unreachable;
 
@@ -59,16 +49,8 @@ pub const WindowManager = struct {
         }
     }
 
-    pub fn add(self: *WindowManager, window: IIgWindow) void {
+    pub fn add(self: *Self, window: IIgWindow) void {
         self.windows.append(window) catch unreachable;
-    }
-
-    pub fn destroy(self: *WindowManager, allocator: std.mem.Allocator) void {
-        for (self.windows.items) |window| {
-            window.destroy(self.allocator);
-        }
-        self.windows.deinit();
-        allocator.destroy(self);
     }
 };
 
@@ -82,17 +64,17 @@ pub const IIgWindow = struct {
 
     pub const Interface = struct {
         renderFn: *const fn (ptr: *anyopaque) void,
-        destroyFn: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator) void,
+        deinitFn: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator) void,
     };
 
     pub fn render(self: IIgWindow) void {
-        std.debug.print("IIgWindow.render self\n", .{});
+        // std.debug.print("IIgWindow.render self\n", .{});
         // pretty.print(util.allocator, self, .{}) catch unreachable;
         return self.impl.renderFn(self.ptr);
     }
 
-    pub fn destroy(self: IIgWindow, allocator: std.mem.Allocator) void {
-        return self.impl.destroyFn(self.ptr, allocator);
+    pub fn deinit(self: IIgWindow, allocator: std.mem.Allocator) void {
+        return self.impl.deinitFn(self.ptr, allocator);
     }
 
     // This is new
@@ -111,15 +93,15 @@ pub const IIgWindow = struct {
 
                 return ptr_info.pointer.child.render(self);
             }
-            pub fn destroy(pointer: *anyopaque, allocator: std.mem.Allocator) void {
+            pub fn deinit(pointer: *anyopaque, allocator: std.mem.Allocator) void {
                 const self: T = @ptrCast(@alignCast(pointer));
-                return ptr_info.pointer.child.destroy(self, allocator);
+                return ptr_info.pointer.child.deinit(self, allocator);
             }
         };
 
         return .{
             .ptr = ptr,
-            .impl = .{ .renderFn = gen.render, .destroyFn = gen.destroy },
+            .impl = .{ .renderFn = gen.render, .deinitFn = gen.deinit },
         };
     }
 };
@@ -130,14 +112,41 @@ pub const About = struct {
     init_pos: ig.ImVec2,
     init_size: ig.ImVec2,
     cimgui_version: []const u8,
-    // libraw_version: string = libraw.libraw_version().ostr,
+    libraw_version: []const u8,
     build_date: []const u8,
 
-    pub fn render(self: *About) void {
-        std.debug.print("About.render self\n", .{});
-        // pretty.print(util.allocator, self, .{}) catch unreachable;
-        // std.process.exit(1);
+    const Self = @This();
 
+    pub fn init(allocator: std.mem.Allocator) Self {
+        // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
+        const now = zdt.Datetime.fromUnix(build.timestamp, zdt.Duration.Resolution.second, null) catch unreachable;
+        const build_date_buf = allocator.alloc(u8, 64) catch unreachable;
+        errdefer allocator.free(build_date_buf);
+        var w = std.Io.Writer.fixed(build_date_buf);
+        now.toString("%Y-%m-%d %H:%M:%S", &w) catch unreachable;
+        // https://stackoverflow.com/questions/72736997/how-to-pass-a-c-string-into-a-zig-function-expecting-a-zig-string
+        // https://dev.to/jmatth11/quick-zig-and-c-string-conversion-conundrums-203b
+        const cimgui_version: []const u8 = std.mem.span(ig.igGetVersion()); // [0..]
+        const libraw_version: []const u8 = std.mem.span(libraw.libraw_version()); // [0..]
+        const build_date = w.buffered(); // or build_date_buf[0..];
+
+        return .{
+            .allocator = allocator,
+            .is_open = true,
+            .init_pos = ig.ImVec2{ .x = 10, .y = 10 },
+            .init_size = ig.ImVec2{ .x = 300, .y = 400 },
+            .cimgui_version = cimgui_version,
+            .libraw_version = libraw_version,
+            .build_date = build_date,
+        };
+    }
+
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        // Free the resources
+        allocator.free(self.build_date);
+    }
+
+    pub fn render(self: *Self) void {
         // if (!self.is_open) {
         //     return;
         // }
@@ -175,6 +184,8 @@ pub const About = struct {
         ig.igText(cimgui_version_text.ptr);
 
         // ig.igText(std.fmt("LibRaw version: {}", self.libraw_version));
+        const libraw_version_text = std.fmt.bufPrintZ(&text_buf, "LibRaw version: {s}", .{self.libraw_version}) catch unreachable;
+        ig.igText(libraw_version_text.ptr);
 
         // for backend in state.center_image_pixpipe.backends {
         //     ig.igText(std.fmt("Backend: {} {}", backend.name, backend.version));
@@ -192,50 +203,12 @@ pub const About = struct {
 
         ig.igEnd();
     }
-
-    pub fn init(self: *About, allocator: std.mem.Allocator) void {
-
-        // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
-        const now = zdt.Datetime.fromUnix(build.timestamp, zdt.Duration.Resolution.second, null) catch unreachable;
-        const build_date_buf = allocator.alloc(u8, 64) catch unreachable;
-        errdefer allocator.free(build_date_buf);
-        var w = std.Io.Writer.fixed(build_date_buf);
-        now.toString("%Y-%m-%d %H:%M:%S", &w) catch unreachable;
-        // https://stackoverflow.com/questions/72736997/how-to-pass-a-c-string-into-a-zig-function-expecting-a-zig-string
-        // https://dev.to/jmatth11/quick-zig-and-c-string-conversion-conundrums-203b
-        const cimgui_version: []const u8 = std.mem.span(ig.igGetVersion()); // [0..]
-        const build_date = w.buffered(); // or build_date_buf[0..];
-
-        self.* = .{
-            .allocator = allocator,
-            .is_open = true,
-            .init_pos = ig.ImVec2{ .x = 10, .y = 10 },
-            .init_size = ig.ImVec2{ .x = 300, .y = 400 },
-            .cimgui_version = cimgui_version,
-            .build_date = build_date,
-        };
-    }
-
-    /// Allocates and initializes an About struct.
-    pub fn createAndInit(allocator: std.mem.Allocator) *About {
-        const result = allocator.create(About) catch unreachable;
-        errdefer allocator.destroy(result);
-
-        result.init(allocator);
-        return result;
-    }
-
-    pub fn destroy(self: *About, allocator: std.mem.Allocator) void {
-        // Free the resources
-        allocator.free(self.build_date);
-        allocator.destroy(self);
-    }
 };
 
 test "About" {
     const allocator = std.testing.allocator;
-    const about = About.create(allocator);
-    defer about.destroy(allocator);
+    const about = About.init(allocator);
+    defer about.deinit(allocator);
     try std.testing.expectEqual(about.is_open, true);
 
     // expect the first 2 digits of the year to be "20" and imgui version to be "1."

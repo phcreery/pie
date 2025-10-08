@@ -13,22 +13,21 @@ const builtin = @import("builtin");
 const window = @import("window.zig");
 
 const AppState = struct {
-    allocator: std.mem.Allocator,
     pass_action: sg.PassAction = .{},
     // windows: *ui.WindowManager,
     window: window.IIgWindow,
-    // window: *ui.About,
 
-    fn init(self: *AppState, allocator: std.mem.Allocator) void {
-        // const windows = ui.WindowManager.createAndInit(allocator);
+    const Self = @This();
 
+    fn init(allocator: std.mem.Allocator) AppState {
         // std.debug.print("AppState.init windows\n", .{});
         // pretty.print(util.gpa, windows, .{}) catch unreachable;
 
-        const about = window.About.createAndInit(allocator);
-        // const about = try allocator.create(ui.About);
-        // errdefer allocator.destroy(about);
-        // about.init(allocator);
+        const about = allocator.create(window.About) catch unreachable;
+        // const about = window.About.init(allocator);
+        errdefer allocator.destroy(about);
+        about.* = window.About.init(allocator);
+
         std.debug.print("WindowManager.init about\n", .{});
         // pretty.print(util.allocator, about, .{}) catch unreachable;
 
@@ -38,32 +37,20 @@ const AppState = struct {
         std.debug.print("WindowManager.init window\n", .{});
         // pretty.print(util.allocator, about_window, .{}) catch unreachable;
 
-        self.* = .{
-            .allocator = allocator,
+        return .{
             .pass_action = .{},
             // .windows = windows,
             .window = about_window,
-            // .window = about,
         };
     }
 
-    fn deinit(self: *AppState) void {
+    fn deinit(self: *Self) void {
         self.* = undefined;
     }
 
-    /// Allocates and initializes
-    pub fn create(allocator: std.mem.Allocator) *AppState {
-        const result = allocator.create(AppState) catch unreachable;
-        errdefer allocator.destroy(result);
-
-        result.init(allocator);
-        return result;
-    }
-
-    pub fn destroy(self: *AppState, allocator: std.mem.Allocator) void {
+    pub fn destroy(self: *Self, allocator: std.mem.Allocator) void {
         // Free the resources
-        // self.windows.destroy(allocator);
-        self.window.destroy(allocator);
+        self.window.deinit(allocator);
         self.deinit();
         allocator.destroy(self);
     }
@@ -140,8 +127,14 @@ export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
 }
 
 pub fn run() void {
-    const state = AppState.create(util.allocator);
-    defer state.destroy(util.allocator);
+    // Allocate the application state on the heap to ensure it lives long enough.
+    // const state = util.allocator.create(AppState) catch unreachable;
+    // errdefer util.allocator.destroy(state);
+    // state.* = AppState.init(util.allocator);
+
+    // Alternatively, allocate the application state on the stack
+    const state: *AppState = @constCast(&AppState.init(util.allocator));
+    defer state.deinit();
 
     sapp.run(.{
         .user_data = state,
