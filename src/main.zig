@@ -1,9 +1,12 @@
 const std = @import("std");
 const app = @import("ui/app.zig");
-// const tester = @import("engine/pipe/modules/opencl_test.zig");
-// const tester = @import("engine/libraw_test.zig");
+// const opencl_tester = @import("engine/pipe/modules/opencl_test.zig");
+const webgpu_tester = @import("engine/pipe/modules/webgpu_test.zig");
+// const libraw_tester = @import("engine/libraw_test.zig");
 
 pub fn main() !void {
-    app.run();
-    // try tester.main();
+    // app.run();
+    // try opencl_tester.main();
+    // try libraw_tester.main();
+    try webgpu_tester.main();
 }

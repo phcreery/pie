@@ -89,6 +89,14 @@
             .url = "git+https://github.com/phcreery/LibRaw-zig#a4d81d0807b854030bd8679d271eb123a047db16",
             .hash = "libraw-0.21.4-c166SWyCAAAWs6cJOBqUK2uN4zkIzPp_Ry4pS3chqmsV",
         },
+        // .wgpu_native_zig = .{
+        //     .url = "git+https://github.com/bronter/wgpu_native_zig#ed408d55240160b6fea9a51e317dc40851b48102",
+        //     .hash = "wgpu_native_zig-6.5.0-B9jeDFtzAwB1vPOiXTd2BqrP1j4phYk-oBbxbpLKY3xD",
+        // },
+        .wgpu_native_zig = .{
+            .url = "git+https://github.com/carrot-sticks/wgpu_native_zig?ref=zig-v0.15.1#12533f6899dc8d8b7b159d47acfa4dd9cb766930",
+            .hash = "wgpu_native_zig-6.5.0-B9jeDGhzAwDKk_uGG5fG5vO7uzmzwj-EQ-DLrmR2wpdK",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.

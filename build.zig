@@ -41,6 +41,7 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const wgpu_native_dep = b.dependency("wgpu_native_zig", .{ .target = target, .optimize = optimize });
 
     // see tigerbeetle for advanced build options handling
     // https://github.com/tigerbeetle/tigerbeetle/blob/main/build.zig
@@ -69,6 +70,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "opencl", .module = dep_opencl.module("opencl") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            .{ .name = "wgpu", .module = wgpu_native_dep.module("wgpu") },
         },
     });
     mod_main.addOptions("build_options", mod_options);
