@@ -33,10 +33,10 @@ pub fn build(b: *Build) !void {
     });
     const dep_pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
     const dep_zdt = b.dependency("zdt", .{ .target = target, .optimize = optimize });
-    const dep_opencl = b.dependency("opencl", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    // const dep_opencl = b.dependency("opencl", .{
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
     const dep_libraw = b.dependency("libraw", .{
         .target = target,
         .optimize = optimize,
@@ -68,7 +68,7 @@ pub fn build(b: *Build) !void {
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "pretty", .module = dep_pretty.module("pretty") },
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
-            .{ .name = "opencl", .module = dep_opencl.module("opencl") },
+            // .{ .name = "opencl", .module = dep_opencl.module("opencl") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu", .module = wgpu_native_dep.module("wgpu") },
         },

@@ -78,16 +78,16 @@
         //     .url = "git+https://github.com/emscripten-core/emsdk?ref=4.0.14#eff90ca04a3785f571a8095b3a42b63799cf384a",
         //     .hash = "N-V-__8AAMGsDwC6L1OfDgzRF1zFI2t-CaR0sVhEm8pmrpxm",
         // },
-        .opencl = .{
-            .url = "git+https://github.com/Snektron/opencl-zig#a5807beb62c84e72c6a976b5a589c862e2c12f12",
-            .hash = "opencl-0.1.0-W4Df3TKTAAC8QuJaPvbD9Q1tlKv7qzH9LTI3qYnoeU0i",
-        },
+        // .opencl = .{
+        //     .url = "git+https://github.com/Snektron/opencl-zig#a5807beb62c84e72c6a976b5a589c862e2c12f12",
+        //     .hash = "opencl-0.1.0-W4Df3TKTAAC8QuJaPvbD9Q1tlKv7qzH9LTI3qYnoeU0i",
+        // },
         // .libraw = .{
         //     .path = "../LibRaw-zig",
         // },
         .libraw = .{
-            .url = "git+https://github.com/phcreery/LibRaw-zig#a4d81d0807b854030bd8679d271eb123a047db16",
-            .hash = "libraw-0.21.4-c166SWyCAAAWs6cJOBqUK2uN4zkIzPp_Ry4pS3chqmsV",
+            .url = "git+https://github.com/phcreery/LibRaw-zig#360c0bd5e5263cd9cc91d935398472c82f5bde1f",
+            .hash = "libraw-0.21.4-c166SaOCAABnwCAwPECgFypND-jT9Ws-iidaxsJC_N05",
         },
         // .wgpu_native_zig = .{
         //     .url = "git+https://github.com/bronter/wgpu_native_zig#ed408d55240160b6fea9a51e317dc40851b48102",
