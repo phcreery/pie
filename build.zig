@@ -8,6 +8,7 @@ const sokol = @import("sokol");
 const cimgui = @import("cimgui");
 
 pub fn build(b: *Build) !void {
+    // CONFIGURATION
     const target = b.standardTargetOptions(.{});
     // for testing only, forces a native build
     // const target = b.resolveTargetQuery(.{
@@ -21,6 +22,7 @@ pub fn build(b: *Build) !void {
     // vanilla imgui vs the imgui docking branch.
     const cimgui_conf = cimgui.getConfig(opt_docking);
 
+    // DEPENDENCIES
     // note that the sokol dependency is built with `.with_sokol_imgui = true`
     const dep_sokol = b.dependency("sokol", .{
         .target = target,
@@ -43,10 +45,12 @@ pub fn build(b: *Build) !void {
     });
     const wgpu_native_dep = b.dependency("wgpu_native_zig", .{ .target = target, .optimize = optimize });
 
+    // inject the cimgui header search path into the sokol C library compile step
+    dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
+
+    // OPTIONS
     // see tigerbeetle for advanced build options handling
     // https://github.com/tigerbeetle/tigerbeetle/blob/main/build.zig
-    // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
-    // const build_time_options = b.addOptions();
     const mod_options = b.addOptions();
     mod_options.addOption(
         i64,
@@ -55,9 +59,7 @@ pub fn build(b: *Build) !void {
     );
     mod_options.addOption(bool, "docking", opt_docking);
 
-    // inject the cimgui header search path into the sokol C library compile step
-    dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
-
+    // MAIN MODULE
     // main module with sokol and cimgui imports
     const mod_main = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -76,15 +78,36 @@ pub fn build(b: *Build) !void {
     });
     mod_main.addOptions("build_options", mod_options);
 
+    // UNIT TESTS
     // build and run the unit tests
     const unit_tests = b.addTest(.{
-        .name = "tests",
+        .name = "unit tests",
         .root_module = mod_main,
-        .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    // INTEGRATION TESTS
+    const mod_integration_test = b.createModule(.{
+        .root_source_file = b.path("testing/integration.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "pie", .module = mod_main }},
+    });
+    const integration_tests = b.addExecutable(.{
+        .name = "integration tests",
+        .root_module = mod_integration_test,
+    });
+    // integration_tests.root_module.addImport("pie", mod_main);
+    const test_runner_options = b.addOptions();
+    integration_tests.root_module.addOptions("build_options", test_runner_options);
+    // test_runner_options.addOption(bool, "test_all_allocation_failures", test_all_allocation_failures);
+    const integration_test_runner = b.addRunArtifact(integration_tests);
+    // integration_test_runner.addArg(b.pathFromRoot("test/cases"));
+    // integration_test_runner.addArg(b.zig_exe);
+    test_step.dependOn(&integration_test_runner.step);
 
     // from here on different handling for native vs wasm builds
     if (target.result.cpu.arch.isWasm()) {

@@ -1,6 +1,4 @@
 // This is for the Zig 0.15.
-// See https://gist.github.com/karlseguin/c6bea5b35e4e8d26af6f81c22cb5d76b/1f317ebc9cd09bc50fd5591d09c34255e15d1d85
-// for a version that workson Zig 0.14.1.
 
 // in your build.zig, you can specify a custom test runner:
 // const tests = b.addTest(.{

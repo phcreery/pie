@@ -7,7 +7,7 @@ const sglue = sokol.glue;
 const simgui = sokol.imgui;
 const std = @import("std");
 const pretty = @import("pretty");
-const util = @import("../util.zig");
+const util = @import("../mem.zig");
 const builtin = @import("builtin");
 
 const window = @import("window.zig");

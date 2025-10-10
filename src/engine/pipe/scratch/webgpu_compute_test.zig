@@ -61,9 +61,7 @@ pub fn main() !void {
     const COPY_BUFFER_ALIGNMENT: u64 = 4;
     const unpadded_size = @sizeOf(@TypeOf(init_contents));
     const align_mask = COPY_BUFFER_ALIGNMENT - 1;
-    // const align_mask = 255;
     const padded_size = (unpadded_size + align_mask) & ~align_mask;
-    // const padded_size = 4;
     std.debug.print("unpadded_size: {d}, padded_size: {d}\n", .{ unpadded_size, padded_size });
 
     const input_storage_buffer = device.createBuffer(&wgpu.BufferDescriptor{
@@ -75,10 +73,6 @@ pub fn main() !void {
     defer input_storage_buffer.release();
 
     const buf_ptr: [*]f32 = @ptrCast(@alignCast(input_storage_buffer.getMappedRange(0, padded_size).?));
-    // in rust
-    // buffer.slice(..).get_mapped_range_mut()[..unpadded_size as usize]
-    //             .copy_from_slice(descriptor.contents);
-    // in zig
     // std.mem.copyForwards(u32, buf_ptr, init_contents[0..unpadded_size]);
     @memcpy(buf_ptr, &init_contents);
     input_storage_buffer.unmap();
@@ -183,6 +177,9 @@ pub fn main() !void {
         const workgroup_size = 64;
         const workgroup_count_x = (output_size + workgroup_size - 1) / workgroup_size;
         const workgroup_count_y = 1;
+        std.debug.print("workgroup_count_x: {d}\n", .{workgroup_count_x});
+        std.debug.print("workgroup_count_y: {d}\n", .{workgroup_count_y});
+        std.debug.print("workgroup_count_z: {d}\n", .{1});
         compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, 1);
         compute_pass.end();
 

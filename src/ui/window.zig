@@ -4,7 +4,7 @@ const ig = if (use_docking) @import("cimgui_docking") else @import("cimgui");
 const sokol = @import("sokol");
 const sg = sokol.gfx;
 const pretty = @import("pretty");
-const util = @import("../util.zig");
+const util = @import("../mem.zig");
 const builtin = @import("builtin");
 
 const build = @import("build_options");
