@@ -71,6 +71,7 @@ pub fn build(b: *Build) !void {
             // .{ .name = "opencl", .module = dep_opencl.module("opencl") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu", .module = wgpu_native_dep.module("wgpu") },
+            .{ .name = "wgpu-c", .module = wgpu_native_dep.module("wgpu-c") },
         },
     });
     mod_main.addOptions("build_options", mod_options);
