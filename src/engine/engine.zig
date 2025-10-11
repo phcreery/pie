@@ -14,6 +14,12 @@ const align_mask = COPY_BUFFER_ALIGNMENT - 1;
 const padded_size = @max((unpadded_size + align_mask) & ~align_mask, COPY_BUFFER_ALIGNMENT);
 // std.debug.print("unpadded_size: {d}, padded_size: {d}\n", .{ unpadded_size, padded_size });
 
+fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
+    std.log.info("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
+    const complete: *bool = @ptrCast(@alignCast(userdata1));
+    complete.* = true;
+}
+
 /// Engine manages the WebGPU instance, adapter, device, and queue.
 ///
 /// We are going to do a double buffered setup where we have three buffers:
@@ -30,7 +36,7 @@ const padded_size = @max((unpadded_size + align_mask) & ~align_mask, COPY_BUFFER
 /// and shader code.
 ///
 /// For now, we will be dealing with f32 data
-const Engine = struct {
+pub const Engine = struct {
     instance: *wgpu.Instance = undefined,
     adapter: *wgpu.Adapter = undefined,
     device: *wgpu.Device = undefined,
@@ -42,12 +48,13 @@ const Engine = struct {
     bind_group_2: *wgpu.BindGroup = undefined,
     bind_group_layout: *wgpu.BindGroupLayout = undefined,
     pipeline_layout: *wgpu.PipelineLayout = undefined,
+    encoder: *wgpu.CommandEncoder = undefined,
 
     is_swapped: bool = false,
 
     const Self = @This();
 
-    pub fn init() Self {
+    pub fn init() !Self {
         std.log.info("Initializing Engine", .{});
 
         const instance = wgpu.Instance.create(null).?;
@@ -188,6 +195,12 @@ const Engine = struct {
             .bind_group_layouts = &bind_group_layouts,
         }).?;
 
+        // The command encoder allows us to record commands that we will later submit to the GPU.
+        const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
+            .label = wgpu.StringView.fromSlice("Command Encoder"),
+        }).?;
+        errdefer encoder.release();
+
         return Self{
             .instance = instance,
             .adapter = adapter,
@@ -201,6 +214,7 @@ const Engine = struct {
             .bind_group_layout = bind_group_layout,
             .pipeline_layout = pipeline_layout,
             .is_swapped = false,
+            .encoder = encoder,
         };
     }
 
@@ -219,10 +233,19 @@ const Engine = struct {
         self.bind_group_2.release();
         self.bind_group_layout.release();
         self.pipeline_layout.release();
+        self.encoder.release();
     }
 
-    pub fn swapBuffers(self: *Self) void {
-        self.is_swapped = !self.is_swapped;
+    pub fn compileShader(self: *Self, shader_source: []const u8) !*wgpu.ShaderModule {
+        std.log.info("Compiling shader", .{});
+
+        // Create the shader module from WGSL source code.
+        // You can also load SPIR-V or use the Naga IR.
+        const shader_module = self.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
+            .code = shader_source, // @embedFile("./shader2.wgsl"),
+        })).?;
+
+        return shader_module;
     }
 
     pub fn writeData(self: *Self, data: []const f32) void {
@@ -240,5 +263,119 @@ const Engine = struct {
             @memcpy(buffer_a_ptr, data);
             self.buffer_a.unmap();
         }
+    }
+
+    pub fn swapBuffers(self: *Self) void {
+        self.is_swapped = !self.is_swapped;
+    }
+
+    pub fn enqueue(self: *Self, shader_module: *wgpu.ShaderModule, entry_point: []const u8) void {
+        std.log.info("Running compute shader", .{});
+
+        // The pipeline is the ready-to-go program state for the GPU. It contains the shader modules,
+        // the interfaces (bind group layouts) and the shader entry point.
+        const pipeline = self.device.createComputePipeline(&wgpu.ComputePipelineDescriptor{
+            .label = wgpu.StringView.fromSlice("Compute Pipeline"),
+            .layout = self.pipeline_layout,
+            .compute = wgpu.ProgrammableStageDescriptor{
+                .module = shader_module,
+                .entry_point = wgpu.StringView.fromSlice(entry_point),
+            },
+        }).?;
+        defer pipeline.release();
+
+        std.log.info("Dispatching compute work", .{});
+        // A compute pass is a single series of compute operations. While we are recording a compute
+        // pass, we cannot record to the encoder.
+        const compute_pass = self.encoder.beginComputePass(&wgpu.ComputePassDescriptor{
+            .label = wgpu.StringView.fromSlice("Compute Pass"),
+        }).?;
+        // Set the pipeline that we want to use
+        compute_pass.setPipeline(pipeline);
+        // Set the bind group that we want to use
+        if (self.is_swapped) {
+            compute_pass.setBindGroup(0, self.bind_group_2, 0, null);
+        } else {
+            compute_pass.setBindGroup(0, self.bind_group_1, 0, null);
+        }
+
+        // Now we dispatch a series of workgroups. Each workgroup is a 3D grid of individual programs.
+        //
+        // We defined the workgroup size in the shader as 64x1x1. So in order to process all of our
+        // inputs, we ceiling divide the number of inputs by 64. If the user passes 32 inputs, we will
+        // dispatch 1 workgroups. If the user passes 65 inputs, we will dispatch 2 workgroups, etc.
+        const workgroup_size = 64;
+        const workgroup_count_x = (output_size + workgroup_size - 1) / workgroup_size;
+        const workgroup_count_y = 1;
+        const workgroup_count_z = 1;
+        // std.debug.print("workgroup_count_x: {d}\n", .{workgroup_count_x});
+        // std.debug.print("workgroup_count_y: {d}\n", .{workgroup_count_y});
+        // std.debug.print("workgroup_count_z: {d}\n", .{workgroup_count_z});
+        compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
+        // Now we drop the compute pass, giving us access to the encoder again.
+        compute_pass.end();
+    }
+
+    pub fn run(self: *Self) void {
+        std.log.info("Submitting command buffer to GPU", .{});
+
+        // We finish the encoder, giving us a fully recorded command buffer.
+        const command_buffer = self.encoder.finish(&wgpu.CommandBufferDescriptor{
+            .label = wgpu.StringView.fromSlice("Command Buffer"),
+        }).?;
+        defer command_buffer.release();
+
+        // At this point nothing has actually been executed on the gpu. We have recorded a series of
+        // commands that we want to execute, but they haven't been sent to the gpu yet.
+        //
+        // Submitting to the queue sends the command buffer to the gpu. The gpu will then execute the
+        // commands in the command buffer in order.
+        self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
+
+        // We now map the download buffer so we can read it. Mapping tells wgpu that we want to read/write
+        // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
+        //
+        // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
+        // to tell you when the mapping is complete.
+        var buffer_map_complete = false;
+        _ = self.download_buffer.mapAsync(wgpu.MapModes.read, 0, output_size, wgpu.BufferMapCallbackInfo{
+            .callback = handleBufferMap,
+            .userdata1 = @ptrCast(&buffer_map_complete),
+        });
+
+        // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
+        // to rely on the callback to know when the buffer is mapped.
+        self.instance.processEvents();
+        while (!buffer_map_complete) {
+            self.instance.processEvents();
+        }
+        // _ = device.poll(true, null);
+
+    }
+
+    pub fn enqueueReadData(self: *Self) void {
+        // We add a copy operation to the encoder. This will copy the data from the output buffer on the
+        // GPU to the download buffer on the CPU.
+        if (self.is_swapped) {
+            self.encoder.copyBufferToBuffer(self.buffer_a, 0, self.download_buffer, 0, self.buffer_a.getSize());
+        } else {
+            self.encoder.copyBufferToBuffer(self.buffer_b, 0, self.download_buffer, 0, self.buffer_b.getSize());
+        }
+    }
+
+    pub fn readData(self: *Self) ![]f32 {
+        std.log.info("Reading data from GPU buffers", .{});
+
+        // We can now read the data from the buffer.
+        // Convert the data back to a slice of f32.
+        const download_buffer_ptr: [*]f32 = @ptrCast(@alignCast(self.download_buffer.getMappedRange(0, output_size).?));
+        defer self.download_buffer.unmap();
+
+        // const result: [output_size]f32 = undefined;
+        // @memcpy(result[0..], download_buffer_ptr);
+
+        const result = download_buffer_ptr[0..output_size];
+
+        return result;
     }
 };

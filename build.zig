@@ -78,15 +78,15 @@ pub fn build(b: *Build) !void {
     });
     mod_main.addOptions("build_options", mod_options);
 
+    // TESTS
+    const test_step = b.step("test", "Run unit tests");
     // UNIT TESTS
-    // build and run the unit tests
     const unit_tests = b.addTest(.{
         .name = "unit tests",
         .root_module = mod_main,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
-    const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
 
     // INTEGRATION TESTS
@@ -100,14 +100,19 @@ pub fn build(b: *Build) !void {
         .name = "integration tests",
         .root_module = mod_integration_test,
     });
-    // integration_tests.root_module.addImport("pie", mod_main);
-    const test_runner_options = b.addOptions();
-    integration_tests.root_module.addOptions("build_options", test_runner_options);
+    // const test_runner_options = b.addOptions();
+    // integration_tests.root_module.addOptions("build_options", test_runner_options);
     // test_runner_options.addOption(bool, "test_all_allocation_failures", test_all_allocation_failures);
     const integration_test_runner = b.addRunArtifact(integration_tests);
     // integration_test_runner.addArg(b.pathFromRoot("test/cases"));
     // integration_test_runner.addArg(b.zig_exe);
     test_step.dependOn(&integration_test_runner.step);
+    const integration_tests_tests = b.addTest(.{
+        .name = "integration tests tests",
+        .root_module = mod_integration_test,
+    });
+    const run_integration_tests = b.addRunArtifact(integration_tests_tests);
+    test_step.dependOn(&run_integration_tests.step);
 
     // from here on different handling for native vs wasm builds
     if (target.result.cpu.arch.isWasm()) {
