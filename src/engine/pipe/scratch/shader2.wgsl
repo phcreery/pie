@@ -23,5 +23,5 @@ fn doubleMe(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     // Do the multiply by two and write to the output.
-    output[global_id.x] = input[global_id.x] * 2.0 + 1.0;
+    output[global_id.x] = input[global_id.x] * 2.0;
 }

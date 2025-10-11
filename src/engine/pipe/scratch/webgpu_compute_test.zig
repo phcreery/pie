@@ -61,14 +61,18 @@ pub fn main() !void {
 
     const init_contents: [output_size]f32 = [_]f32{ 1, 2, 3, 4 };
     const unpadded_size = @sizeOf(@TypeOf(init_contents));
+    // Valid vulkan usage is
+    // 1. buffer size must be a multiple of COPY_BUFFER_ALIGNMENT.
+    // 2. buffer size must be greater than 0.
+    // Therefore we round the value up to the nearest multiple, and ensure it's at least COPY_BUFFER_ALIGNMENT.
     const align_mask = COPY_BUFFER_ALIGNMENT - 1;
-    const padded_size = (unpadded_size + align_mask) & ~align_mask;
+    const padded_size = @max((unpadded_size + align_mask) & ~align_mask, COPY_BUFFER_ALIGNMENT);
     std.debug.print("unpadded_size: {d}, padded_size: {d}\n", .{ unpadded_size, padded_size });
 
     // Create a for the data we want to process on the GPU.
     const input_storage_buffer = device.createBuffer(&wgpu.BufferDescriptor{
         .label = wgpu.StringView.fromSlice("input_storage_buffer"),
-        .usage = wgpu.BufferUsages.storage,
+        .usage = wgpu.BufferUsages.storage | wgpu.BufferUsages.copy_src,
         .size = padded_size,
         .mapped_at_creation = @as(f32, @intFromBool(true)),
     }).?;
@@ -132,7 +136,7 @@ pub fn main() !void {
     //
     // Even when the buffers are individually dropped, wgpu will keep the bind group and buffers
     // alive until the bind group itself is dropped.
-    const bind_group_entries = [_]wgpu.BindGroupEntry{
+    const bind_group_entries_1 = [_]wgpu.BindGroupEntry{
         // Binding 0: input storage buffer
         wgpu.BindGroupEntry{
             .binding = 0,
@@ -148,13 +152,37 @@ pub fn main() !void {
             .size = output_storage_buffer.getSize(),
         },
     };
-    const bind_group = device.createBindGroup(&wgpu.BindGroupDescriptor{
-        .label = wgpu.StringView.fromSlice("Bind Group"),
+    const bind_group_1 = device.createBindGroup(&wgpu.BindGroupDescriptor{
+        .label = wgpu.StringView.fromSlice("Bind Group 1"),
         .layout = bind_group_layout,
         .entry_count = 2,
-        .entries = &bind_group_entries,
+        .entries = &bind_group_entries_1,
     }).?;
-    defer bind_group.release();
+    defer bind_group_1.release();
+    // 2
+    const bind_group_entries_2 = [_]wgpu.BindGroupEntry{
+        // Binding 0: output storage buffer
+        wgpu.BindGroupEntry{
+            .binding = 0,
+            .buffer = output_storage_buffer,
+            .offset = 0,
+            .size = output_storage_buffer.getSize(),
+        },
+        // Binding 1: input storage buffer
+        wgpu.BindGroupEntry{
+            .binding = 1,
+            .buffer = input_storage_buffer,
+            .offset = 0,
+            .size = input_storage_buffer.getSize(),
+        },
+    };
+    const bind_group_2 = device.createBindGroup(&wgpu.BindGroupDescriptor{
+        .label = wgpu.StringView.fromSlice("Bind Group 2"),
+        .layout = bind_group_layout,
+        .entry_count = 2,
+        .entries = &bind_group_entries_2,
+    }).?;
+    defer bind_group_2.release();
 
     // The pipeline layout describes the bind groups that a pipeline expects
     const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout};
@@ -192,7 +220,7 @@ pub fn main() !void {
         // Set the pipeline that we want to use
         compute_pass.setPipeline(pipeline);
         // Set the bind group that we want to use
-        compute_pass.setBindGroup(0, bind_group, 0, null);
+        compute_pass.setBindGroup(0, bind_group_1, 0, null);
 
         // Now we dispatch a series of workgroups. Each workgroup is a 3D grid of individual programs.
         //
@@ -206,12 +234,15 @@ pub fn main() !void {
         std.debug.print("workgroup_count_y: {d}\n", .{workgroup_count_y});
         std.debug.print("workgroup_count_z: {d}\n", .{1});
         compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, 1);
+        compute_pass.setBindGroup(0, bind_group_2, 0, null);
+        compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, 1);
         // Now we drop the compute pass, giving us access to the encoder again.
         compute_pass.end();
 
         // We add a copy operation to the encoder. This will copy the data from the output buffer on the
         // GPU to the download buffer on the CPU.
-        encoder.copyBufferToBuffer(output_storage_buffer, 0, download_storage_buffer, 0, output_storage_buffer.getSize());
+        // encoder.copyBufferToBuffer(output_storage_buffer, 0, download_storage_buffer, 0, output_storage_buffer.getSize());
+        encoder.copyBufferToBuffer(input_storage_buffer, 0, download_storage_buffer, 0, input_storage_buffer.getSize());
 
         // We finish the encoder, giving us a fully recorded command buffer.
         const command_buffer = encoder.finish(&wgpu.CommandBufferDescriptor{
