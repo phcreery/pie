@@ -20,6 +20,20 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
     complete.* = true;
 }
 
+pub const ShaderPipe = struct {
+    shader_module: *wgpu.ShaderModule,
+    pipeline: *wgpu.ComputePipeline,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        std.log.info("Deinitializing ShaderPass", .{});
+
+        self.shader_module.release();
+        self.pipeline.release();
+    }
+};
+
 /// Engine manages the WebGPU instance, adapter, device, and queue.
 ///
 /// We are going to do a double buffered setup where we have three buffers:
@@ -41,16 +55,16 @@ pub const Engine = struct {
     adapter: *wgpu.Adapter = undefined,
     device: *wgpu.Device = undefined,
     queue: *wgpu.Queue = undefined,
-    buffer_a: *wgpu.Buffer = undefined,
-    buffer_b: *wgpu.Buffer = undefined,
+    buffer: [2]*wgpu.Buffer = [_]*wgpu.Buffer{ undefined, undefined },
     download_buffer: *wgpu.Buffer = undefined,
-    bind_group_1: *wgpu.BindGroup = undefined,
-    bind_group_2: *wgpu.BindGroup = undefined,
+    bind_group: [2]*wgpu.BindGroup = [_]*wgpu.BindGroup{ undefined, undefined },
     bind_group_layout: *wgpu.BindGroupLayout = undefined,
-    pipeline_layout: *wgpu.PipelineLayout = undefined,
     encoder: *wgpu.CommandEncoder = undefined,
+    pipeline_layout: *wgpu.PipelineLayout = undefined,
 
-    is_swapped: bool = false,
+    src_index: usize = 0,
+    dst_index: usize = 1,
+    // is_swapped: bool = false,
 
     const Self = @This();
 
@@ -140,7 +154,7 @@ pub const Engine = struct {
         //
         // Even when the buffers are individually dropped, wgpu will keep the bind group and buffers
         // alive until the bind group itself is dropped.
-        const bind_group_entries_1 = [_]wgpu.BindGroupEntry{
+        const bind_group_entries_a_to_b = [_]wgpu.BindGroupEntry{
             // Binding 0: input storage buffer
             wgpu.BindGroupEntry{
                 .binding = 0,
@@ -156,14 +170,15 @@ pub const Engine = struct {
                 .size = buffer_b.getSize(),
             },
         };
-        const bind_group_1 = device.createBindGroup(&wgpu.BindGroupDescriptor{
+        const bind_group_a_to_b = device.createBindGroup(&wgpu.BindGroupDescriptor{
             .label = wgpu.StringView.fromSlice("Bind Group 1"),
             .layout = bind_group_layout,
             .entry_count = 2,
-            .entries = &bind_group_entries_1,
+            .entries = &bind_group_entries_a_to_b,
         }).?;
-        errdefer bind_group_1.release();
-        const bind_group_entries_2 = [_]wgpu.BindGroupEntry{
+        errdefer bind_group_a_to_b.release();
+
+        const bind_group_entries_b_to_a = [_]wgpu.BindGroupEntry{
             // Binding 0: output storage buffer
             wgpu.BindGroupEntry{
                 .binding = 0,
@@ -179,14 +194,21 @@ pub const Engine = struct {
                 .size = buffer_a.getSize(),
             },
         };
-        const bind_group_2 = device.createBindGroup(&wgpu.BindGroupDescriptor{
+        const bind_group_b_to_a = device.createBindGroup(&wgpu.BindGroupDescriptor{
             .label = wgpu.StringView.fromSlice("Bind Group 2"),
             .layout = bind_group_layout,
             .entry_count = 2,
-            .entries = &bind_group_entries_2,
+            .entries = &bind_group_entries_b_to_a,
         }).?;
-        errdefer bind_group_2.release();
+        errdefer bind_group_b_to_a.release();
 
+        // The command encoder allows us to record commands that we will later submit to the GPU.
+        const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
+            .label = wgpu.StringView.fromSlice("Command Encoder"),
+        }).?;
+        errdefer encoder.release();
+
+        // TODO: Cache the pipeline and layout for each shader module and entry point combination.
         // The pipeline layout describes the bind groups that a pipeline expects
         const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout};
         const pipeline_layout = device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
@@ -195,26 +217,19 @@ pub const Engine = struct {
             .bind_group_layouts = &bind_group_layouts,
         }).?;
 
-        // The command encoder allows us to record commands that we will later submit to the GPU.
-        const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
-            .label = wgpu.StringView.fromSlice("Command Encoder"),
-        }).?;
-        errdefer encoder.release();
-
         return Self{
             .instance = instance,
             .adapter = adapter,
             .device = device,
             .queue = queue,
-            .buffer_a = buffer_a,
-            .buffer_b = buffer_b,
+            .src_index = 0,
+            .dst_index = 1,
+            .buffer = [_]*wgpu.Buffer{ buffer_a, buffer_b },
             .download_buffer = download_storage_buffer,
-            .bind_group_1 = bind_group_1,
-            .bind_group_2 = bind_group_2,
+            .bind_group = [2]*wgpu.BindGroup{ bind_group_a_to_b, bind_group_b_to_a },
             .bind_group_layout = bind_group_layout,
-            .pipeline_layout = pipeline_layout,
-            .is_swapped = false,
             .encoder = encoder,
+            .pipeline_layout = pipeline_layout,
         };
     }
 
@@ -226,17 +241,26 @@ pub const Engine = struct {
         self.device.release();
         self.queue.release();
 
-        self.buffer_a.release();
-        self.buffer_b.release();
+        self.buffer[0].release();
+        self.buffer[1].release();
         self.download_buffer.release();
-        self.bind_group_1.release();
-        self.bind_group_2.release();
+        self.bind_group[0].release();
+        self.bind_group[1].release();
         self.bind_group_layout.release();
-        self.pipeline_layout.release();
         self.encoder.release();
     }
 
-    pub fn compileShader(self: *Self, shader_source: []const u8) !*wgpu.ShaderModule {
+    pub fn swapBuffers(self: *Self) void {
+        self.src_index = 1 - self.src_index;
+        self.dst_index = 1 - self.dst_index;
+
+        // check that the buffers are swapped
+        // std.debug.assert(self.src_index > 0 and self.src_index < 2);
+        // std.debug.assert(self.dst_index > 0 and self.dst_index < 2);
+        // std.debug.assert(self.src_index != self.dst_index);
+    }
+
+    pub fn compileShader(self: *Self, shader_source: []const u8, entry_point: []const u8) !ShaderPipe {
         std.log.info("Compiling shader", .{});
 
         // Create the shader module from WGSL source code.
@@ -244,33 +268,8 @@ pub const Engine = struct {
         const shader_module = self.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
             .code = shader_source, // @embedFile("./shader2.wgsl"),
         })).?;
-
-        return shader_module;
-    }
-
-    pub fn writeData(self: *Self, data: []const f32) void {
-        std.log.info("Writing data to GPU buffers", .{});
-
-        // Write data to the appropriate buffer based on the swap state.
-        if (self.is_swapped) {
-            // Write to buffer_b
-            const buffer_b_ptr: [*]f32 = @ptrCast(@alignCast(self.buffer_b.getMappedRange(0, padded_size).?));
-            @memcpy(buffer_b_ptr, data);
-            self.buffer_b.unmap();
-        } else {
-            // Write to buffer_a
-            const buffer_a_ptr: [*]f32 = @ptrCast(@alignCast(self.buffer_a.getMappedRange(0, padded_size).?));
-            @memcpy(buffer_a_ptr, data);
-            self.buffer_a.unmap();
-        }
-    }
-
-    pub fn swapBuffers(self: *Self) void {
-        self.is_swapped = !self.is_swapped;
-    }
-
-    pub fn enqueue(self: *Self, shader_module: *wgpu.ShaderModule, entry_point: []const u8) void {
-        std.log.info("Running compute shader", .{});
+        // defer shader_module.release();
+        // return shader_module;
 
         // The pipeline is the ready-to-go program state for the GPU. It contains the shader modules,
         // the interfaces (bind group layouts) and the shader entry point.
@@ -282,7 +281,17 @@ pub const Engine = struct {
                 .entry_point = wgpu.StringView.fromSlice(entry_point),
             },
         }).?;
-        defer pipeline.release();
+        // defer pipeline.release();
+
+        // return pipeline;
+        return ShaderPipe{
+            .shader_module = shader_module,
+            .pipeline = pipeline,
+        };
+    }
+
+    pub fn enqueue(self: *Self, shader_pass: ShaderPipe) void {
+        std.log.info("Running compute shader", .{});
 
         std.log.info("Dispatching compute work", .{});
         // A compute pass is a single series of compute operations. While we are recording a compute
@@ -291,13 +300,8 @@ pub const Engine = struct {
             .label = wgpu.StringView.fromSlice("Compute Pass"),
         }).?;
         // Set the pipeline that we want to use
-        compute_pass.setPipeline(pipeline);
-        // Set the bind group that we want to use
-        if (self.is_swapped) {
-            compute_pass.setBindGroup(0, self.bind_group_2, 0, null);
-        } else {
-            compute_pass.setBindGroup(0, self.bind_group_1, 0, null);
-        }
+        compute_pass.setPipeline(shader_pass.pipeline);
+        compute_pass.setBindGroup(0, self.bind_group[self.src_index], 0, null);
 
         // Now we dispatch a series of workgroups. Each workgroup is a 3D grid of individual programs.
         //
@@ -314,6 +318,12 @@ pub const Engine = struct {
         compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
         // Now we drop the compute pass, giving us access to the encoder again.
         compute_pass.end();
+    }
+
+    pub fn enqueueDownload(self: *Self) void {
+        // We add a copy operation to the encoder. This will copy the data from the output buffer on the
+        // GPU to the download buffer on the CPU.
+        self.encoder.copyBufferToBuffer(self.buffer[self.dst_index], 0, self.download_buffer, 0, self.buffer[self.dst_index].getSize());
     }
 
     pub fn run(self: *Self) void {
@@ -353,17 +363,15 @@ pub const Engine = struct {
 
     }
 
-    pub fn enqueueReadData(self: *Self) void {
-        // We add a copy operation to the encoder. This will copy the data from the output buffer on the
-        // GPU to the download buffer on the CPU.
-        if (self.is_swapped) {
-            self.encoder.copyBufferToBuffer(self.buffer_a, 0, self.download_buffer, 0, self.buffer_a.getSize());
-        } else {
-            self.encoder.copyBufferToBuffer(self.buffer_b, 0, self.download_buffer, 0, self.buffer_b.getSize());
-        }
-    }
+    pub fn upload(self: *Self, data: []const f32) void {
+        std.log.info("Writing data to GPU buffers", .{});
 
-    pub fn readData(self: *Self) ![]f32 {
+        // write to write buffer
+        const write_buffer_ptr: [*]f32 = @ptrCast(@alignCast(self.buffer[self.src_index].getMappedRange(0, padded_size).?));
+        @memcpy(write_buffer_ptr, data);
+        self.buffer[self.src_index].unmap();
+    }
+    pub fn download(self: *Self) ![]f32 {
         std.log.info("Reading data from GPU buffers", .{});
 
         // We can now read the data from the buffer.
@@ -375,7 +383,6 @@ pub const Engine = struct {
         // @memcpy(result[0..], download_buffer_ptr);
 
         const result = download_buffer_ptr[0..output_size];
-
         return result;
     }
 };

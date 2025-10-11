@@ -110,6 +110,7 @@ pub fn build(b: *Build) !void {
     const integration_tests_tests = b.addTest(.{
         .name = "integration tests tests",
         .root_module = mod_integration_test,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
     const run_integration_tests = b.addRunArtifact(integration_tests_tests);
     test_step.dependOn(&run_integration_tests.step);
