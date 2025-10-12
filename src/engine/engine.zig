@@ -2,17 +2,8 @@ const std = @import("std");
 const wgpu = @import("wgpu");
 
 const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
-
-const output_size = 4;
-const init_contents: [output_size]f32 = [_]f32{ 1, 2, 3, 4 };
-const unpadded_size = @sizeOf(@TypeOf(init_contents));
-// Valid vulkan usage is
-// 1. buffer size must be a multiple of COPY_BUFFER_ALIGNMENT.
-// 2. buffer size must be greater than 0.
-// Therefore we round the value up to the nearest multiple, and ensure it's at least COPY_BUFFER_ALIGNMENT.
-const align_mask = COPY_BUFFER_ALIGNMENT - 1;
-const padded_size = @max((unpadded_size + align_mask) & ~align_mask, COPY_BUFFER_ALIGNMENT);
-// std.debug.print("unpadded_size: {d}, padded_size: {d}\n", .{ unpadded_size, padded_size });
+const OUTPUT_SIZE = 4;
+const WIDTH = 256 * 4; // bytes per row has to be a multiple of 256
 
 fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
     std.log.info("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
@@ -55,8 +46,11 @@ pub const Engine = struct {
     adapter: *wgpu.Adapter = undefined,
     device: *wgpu.Device = undefined,
     queue: *wgpu.Queue = undefined,
-    buffer: [2]*wgpu.Buffer = [_]*wgpu.Buffer{ undefined, undefined },
+    // buffer: [2]*wgpu.Buffer = [_]*wgpu.Buffer{ undefined, undefined },
+    textures: [2]*wgpu.Texture = [_]*wgpu.Texture{ undefined, undefined },
+    upload_buffer: *wgpu.Buffer = undefined,
     download_buffer: *wgpu.Buffer = undefined,
+    // download_texture: *wgpu.Texture = undefined,
     bind_group: [2]*wgpu.BindGroup = [_]*wgpu.BindGroup{ undefined, undefined },
     bind_group_layout: *wgpu.BindGroupLayout = undefined,
     encoder: *wgpu.CommandEncoder = undefined,
@@ -81,10 +75,23 @@ pub const Engine = struct {
         };
         errdefer adapter.release();
 
+        var info: wgpu.AdapterInfo = undefined;
+        const status = adapter.getInfo(&info);
+        if (status != .success) {
+            std.log.info("Failed to get adapter info", .{});
+            return error.AdapterInfo;
+        } else {
+            const name = info.device.toSlice();
+            if (name) |value| {
+                std.log.info("Using adapter: {s} (backend={s}, type={s})", .{ value, @tagName(info.backend_type), @tagName(info.adapter_type) });
+            } else {
+                std.log.info("Failed to get adapter name", .{});
+            }
+        }
+
         // We then create a `Device` and a `Queue` from the `Adapter`.
-        const device_request = adapter.requestDeviceSync(instance, &wgpu.DeviceDescriptor{
-            .required_limits = null,
-        }, 0);
+        const required_features = [_]wgpu.FeatureName{ .shader_f16, .texture_adapter_specific_format_features };
+        const device_request = adapter.requestDeviceSync(instance, &wgpu.DeviceDescriptor{ .required_limits = null, .required_features = &required_features }, 0);
         const device = switch (device_request.status) {
             .success => device_request.device.?,
             else => return error.NoDevice,
@@ -94,60 +101,124 @@ pub const Engine = struct {
         const queue = device.getQueue().?;
         errdefer queue.release();
 
-        const buffer_a = device.createBuffer(&wgpu.BufferDescriptor{
-            .label = wgpu.StringView.fromSlice("input_storage_buffer"),
-            .usage = wgpu.BufferUsages.storage | wgpu.BufferUsages.copy_src,
-            .size = padded_size,
-            .mapped_at_creation = @as(f32, @intFromBool(true)),
+        var limits = wgpu.Limits{};
+        _ = adapter.getLimits(&limits);
+
+        // const buffer_a = device.createBuffer(&wgpu.BufferDescriptor{
+        //     .label = wgpu.StringView.fromSlice("input_storage_buffer"),
+        //     .usage = wgpu.BufferUsages.storage | wgpu.BufferUsages.copy_src,
+        //     .size = padded_size,
+        //     .mapped_at_creation = @as(f32, @intFromBool(true)),
+        // }).?;
+        // errdefer buffer_a.release();
+
+        const texture_a = device.createTexture(&wgpu.TextureDescriptor{
+            .label = wgpu.StringView.fromSlice("input_storage_texture"),
+            .size = wgpu.Extent3D{
+                .width = WIDTH,
+                .height = WIDTH,
+                .depth_or_array_layers = 1,
+            },
+            .mip_level_count = 1,
+            .sample_count = 1,
+            .dimension = wgpu.TextureDimension.@"2d",
+            .format = wgpu.TextureFormat.rgba16_float,
+            .usage = wgpu.TextureUsages.storage_binding | wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst,
         }).?;
-        errdefer buffer_a.release();
+        errdefer texture_a.release();
+
+        // const texture_a_view = texture_a.createView(null);
 
         // Now we create a buffer to store the output data. Same size and usage as the input buffer.
-        const buffer_b = device.createBuffer(&wgpu.BufferDescriptor{
-            .label = wgpu.StringView.fromSlice("output_storage_buffer"),
-            .usage = wgpu.BufferUsages.storage | wgpu.BufferUsages.copy_src,
-            .size = buffer_a.getSize(),
-            .mapped_at_creation = @as(u32, @intFromBool(false)),
+        // const buffer_b = device.createBuffer(&wgpu.BufferDescriptor{
+        //     .label = wgpu.StringView.fromSlice("output_storage_buffer"),
+        //     .usage = wgpu.BufferUsages.storage | wgpu.BufferUsages.copy_src,
+        //     .size = buffer_a.getSize(),
+        //     .mapped_at_creation = @as(u32, @intFromBool(false)),
+        // }).?;
+        // errdefer buffer_b.release();
+
+        const texture_b = device.createTexture(&wgpu.TextureDescriptor{
+            .label = wgpu.StringView.fromSlice("output_storage_texture"),
+            .size = wgpu.Extent3D{
+                .width = WIDTH,
+                .height = WIDTH,
+                .depth_or_array_layers = 1,
+            },
+            .mip_level_count = 1,
+            .sample_count = 1,
+            .dimension = wgpu.TextureDimension.@"2d",
+            .format = wgpu.TextureFormat.rgba16_float,
+            .usage = wgpu.TextureUsages.storage_binding | wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst,
         }).?;
 
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        const download_storage_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+        const buffer_size = WIDTH * WIDTH * 8;
+        const upload_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("upload_storage_buffer"),
+            .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
+            .size = buffer_size,
+            .mapped_at_creation = @as(u32, @intFromBool(true)),
+        }).?;
+        errdefer upload_buffer.release();
+        const download_buffer = device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("download_storage_buffer"),
-            .usage = wgpu.BufferUsages.map_read | wgpu.BufferUsages.copy_dst,
-            .size = buffer_a.getSize(),
+            .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
+            .size = buffer_size,
             .mapped_at_creation = @as(u32, @intFromBool(false)),
         }).?;
-        errdefer download_storage_buffer.release();
+        errdefer download_buffer.release();
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
         // of this like a C-style header declaration, ensuring both the pipeline and bind group agree
         // on the types of resources.
-        const bind_group_layout_entry = &[_]wgpu.BindGroupLayoutEntry{
+        const bind_group_layout_entries = &[_]wgpu.BindGroupLayoutEntry{
             // Binding 0: input storage buffer
             wgpu.BindGroupLayoutEntry{
                 .binding = 0,
                 .visibility = wgpu.ShaderStages.compute,
-                .buffer = wgpu.BufferBindingLayout{
-                    .type = wgpu.BufferBindingType.read_only_storage,
-                    .has_dynamic_offset = @as(u32, @intFromBool(false)),
+                // .buffer = wgpu.BufferBindingLayout{
+                //     // .type = wgpu.BufferBindingType.read_only_storage,
+                //     .type = wgpu.BufferBindingType.storage,
+                //     .has_dynamic_offset = @as(u32, @intFromBool(false)),
+                // },
+                .texture = wgpu.TextureBindingLayout{
+                    // .sample_type = wgpu.SampleType.float,
+                    .view_dimension = wgpu.ViewDimension.@"2d",
+                    // .multisampled = @as(u32, @intFromBool(false)),
                 },
+                // .storage_texture = wgpu.StorageTextureBindingLayout{
+                //     .access = wgpu.StorageTextureAccess.read_only,
+                //     .format = wgpu.TextureFormat.rgba16_float,
+                //     .view_dimension = wgpu.ViewDimension.@"2d",
+                // },
             },
             // Binding 1: output storage buffer
             wgpu.BindGroupLayoutEntry{
                 .binding = 1,
                 .visibility = wgpu.ShaderStages.compute,
-                .buffer = wgpu.BufferBindingLayout{
-                    .type = wgpu.BufferBindingType.storage,
-                    .has_dynamic_offset = @as(u32, @intFromBool(false)),
+                // .buffer = wgpu.BufferBindingLayout{
+                //     .type = wgpu.BufferBindingType.storage,
+                //     .has_dynamic_offset = @as(u32, @intFromBool(false)),
+                // },
+                // .texture = wgpu.TextureBindingLayout{
+                //     // .sample_type = wgpu.SampleType.float,
+                //     .view_dimension = wgpu.ViewDimension.@"2d",
+                //     // .multisampled = @as(u32, @intFromBool(false)),
+                // },
+                .storage_texture = wgpu.StorageTextureBindingLayout{
+                    .access = wgpu.StorageTextureAccess.write_only,
+                    .format = wgpu.TextureFormat.rgba16_float,
+                    .view_dimension = wgpu.ViewDimension.@"2d",
                 },
             },
         };
         const bind_group_layout = device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
             .label = wgpu.StringView.fromSlice("Bind Group Layout"),
             .entry_count = 2,
-            .entries = bind_group_layout_entry,
+            .entries = bind_group_layout_entries,
         }).?;
 
         // The bind group contains the actual resources to bind to the pipeline.
@@ -158,16 +229,18 @@ pub const Engine = struct {
             // Binding 0: input storage buffer
             wgpu.BindGroupEntry{
                 .binding = 0,
-                .buffer = buffer_a,
+                // .buffer = texture_a,
+                .texture_view = texture_a.createView(null),
                 .offset = 0,
-                .size = buffer_a.getSize(),
+                .size = texture_a.getWidth() * texture_a.getHeight() * 4, // width * height * RGBA
             },
             // Binding 1: output storage buffer
             wgpu.BindGroupEntry{
                 .binding = 1,
-                .buffer = buffer_b,
+                // .buffer = texture_b,
+                .texture_view = texture_b.createView(null),
                 .offset = 0,
-                .size = buffer_b.getSize(),
+                .size = texture_b.getWidth() * texture_b.getHeight() * 4, // width * height * RGBA
             },
         };
         const bind_group_a_to_b = device.createBindGroup(&wgpu.BindGroupDescriptor{
@@ -182,16 +255,16 @@ pub const Engine = struct {
             // Binding 0: output storage buffer
             wgpu.BindGroupEntry{
                 .binding = 0,
-                .buffer = buffer_b,
+                .texture_view = texture_b.createView(null),
                 .offset = 0,
-                .size = buffer_b.getSize(),
+                .size = texture_b.getWidth() * texture_b.getHeight() * 4, // width * height * RGBA
             },
             // Binding 1: input storage buffer
             wgpu.BindGroupEntry{
                 .binding = 1,
-                .buffer = buffer_a,
+                .texture_view = texture_a.createView(null),
                 .offset = 0,
-                .size = buffer_a.getSize(),
+                .size = texture_a.getWidth() * texture_a.getHeight() * 4, // width * height * RGBA
             },
         };
         const bind_group_b_to_a = device.createBindGroup(&wgpu.BindGroupDescriptor{
@@ -224,8 +297,10 @@ pub const Engine = struct {
             .queue = queue,
             .src_index = 0,
             .dst_index = 1,
-            .buffer = [_]*wgpu.Buffer{ buffer_a, buffer_b },
-            .download_buffer = download_storage_buffer,
+            // .buffer = [_]*wgpu.Buffer{ buffer_a, buffer_b },
+            .textures = [_]*wgpu.Texture{ texture_a, texture_b },
+            .upload_buffer = upload_buffer,
+            .download_buffer = download_buffer,
             .bind_group = [2]*wgpu.BindGroup{ bind_group_a_to_b, bind_group_b_to_a },
             .bind_group_layout = bind_group_layout,
             .encoder = encoder,
@@ -241,8 +316,12 @@ pub const Engine = struct {
         self.device.release();
         self.queue.release();
 
-        self.buffer[0].release();
-        self.buffer[1].release();
+        // self.buffer[0].release();
+        // self.buffer[1].release();
+        self.textures[0].release();
+        self.textures[1].release();
+
+        self.upload_buffer.release();
         self.download_buffer.release();
         self.bind_group[0].release();
         self.bind_group[1].release();
@@ -266,6 +345,7 @@ pub const Engine = struct {
         // Create the shader module from WGSL source code.
         // You can also load SPIR-V or use the Naga IR.
         const shader_module = self.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
+            .label = "Compute Shader",
             .code = shader_source, // @embedFile("./shader2.wgsl"),
         })).?;
         // defer shader_module.release();
@@ -309,7 +389,7 @@ pub const Engine = struct {
         // inputs, we ceiling divide the number of inputs by 64. If the user passes 32 inputs, we will
         // dispatch 1 workgroups. If the user passes 65 inputs, we will dispatch 2 workgroups, etc.
         const workgroup_size = 64;
-        const workgroup_count_x = (output_size + workgroup_size - 1) / workgroup_size;
+        const workgroup_count_x = (OUTPUT_SIZE + workgroup_size - 1) / workgroup_size;
         const workgroup_count_y = 1;
         const workgroup_count_z = 1;
         // std.debug.print("workgroup_count_x: {d}\n", .{workgroup_count_x});
@@ -320,10 +400,65 @@ pub const Engine = struct {
         compute_pass.end();
     }
 
+    pub fn enqueueUpload(self: *Self) void {
+        std.log.info("Writing GPU buffer to Shader Buffer", .{});
+        // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
+        // CPU to the input buffer on the GPU.
+        // self.encoder.copyBufferToBuffer(self.upload_buffer, 0, self.buffer[self.src_index], 0, self.buffer[self.src_index].getSize());
+        // const copy_size = self.textures[self.src_index].getWidth() * self.textures[self.src_index].getHeight() * 4; // width * height * RGBA
+        const copy_size = wgpu.Extent3D{
+            .width = self.textures[self.src_index].getWidth(),
+            .height = self.textures[self.src_index].getHeight(),
+            .depth_or_array_layers = 1,
+        };
+        std.log.info("copy_size.width: {d}", .{copy_size.width});
+        std.log.info("copy_size.height: {d}", .{copy_size.height});
+        std.log.info("copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
+        const bytes_per_pixel: u32 = 8; // RGBAf16
+        const source = wgpu.TexelCopyBufferInfo{
+            .buffer = self.upload_buffer,
+            .layout = wgpu.TexelCopyBufferLayout{
+                .offset = 0,
+                .bytes_per_row = self.textures[self.src_index].getWidth() * bytes_per_pixel, // width * RGBA
+                .rows_per_image = self.textures[self.src_index].getHeight(),
+            },
+        };
+        std.log.info("source.buffer size: {d}", .{self.upload_buffer.getSize()});
+        std.log.info("source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
+        std.log.info("source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
+        const destination = wgpu.TexelCopyTextureInfo{
+            .texture = self.textures[self.src_index],
+            .mip_level = 0,
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+        self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
+    }
     pub fn enqueueDownload(self: *Self) void {
+        std.log.info("Reading GPU buffer from Shader Buffer", .{});
         // We add a copy operation to the encoder. This will copy the data from the output buffer on the
         // GPU to the download buffer on the CPU.
-        self.encoder.copyBufferToBuffer(self.buffer[self.dst_index], 0, self.download_buffer, 0, self.buffer[self.dst_index].getSize());
+        // self.encoder.copyBufferToBuffer(self.buffer[self.dst_index], 0, self.download_buffer, 0, self.buffer[self.dst_index].getSize());
+        // const copy_size = self.textures[self.dst_index].getWidth() * self.textures[self.dst_index].getHeight() * 4; // width * height * RGBA
+        const copy_size = wgpu.Extent3D{
+            .width = self.textures[self.dst_index].getWidth(),
+            .height = self.textures[self.dst_index].getHeight(),
+            .depth_or_array_layers = 1,
+        };
+        const bytes_per_pixel: u32 = 8; // RGBAf16
+        const source = wgpu.TexelCopyTextureInfo{
+            .texture = self.textures[self.dst_index],
+            .mip_level = 0,
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+        const destination = wgpu.TexelCopyBufferInfo{
+            .buffer = self.download_buffer,
+            .layout = wgpu.TexelCopyBufferLayout{
+                .offset = 0,
+                .bytes_per_row = self.textures[self.dst_index].getWidth() * bytes_per_pixel, // width * RGBA
+                .rows_per_image = self.textures[self.dst_index].getHeight(),
+            },
+        };
+        self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
     }
 
     pub fn run(self: *Self) void {
@@ -348,7 +483,7 @@ pub const Engine = struct {
         // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
         // to tell you when the mapping is complete.
         var buffer_map_complete = false;
-        _ = self.download_buffer.mapAsync(wgpu.MapModes.read, 0, output_size, wgpu.BufferMapCallbackInfo{
+        _ = self.download_buffer.mapAsync(wgpu.MapModes.read, 0, OUTPUT_SIZE, wgpu.BufferMapCallbackInfo{
             .callback = handleBufferMap,
             .userdata1 = @ptrCast(&buffer_map_complete),
         });
@@ -363,26 +498,28 @@ pub const Engine = struct {
 
     }
 
-    pub fn upload(self: *Self, data: []const f32) void {
+    pub fn upload(self: *Self, data: []const f16) void {
         std.log.info("Writing data to GPU buffers", .{});
 
         // write to write buffer
-        const write_buffer_ptr: [*]f32 = @ptrCast(@alignCast(self.buffer[self.src_index].getMappedRange(0, padded_size).?));
-        @memcpy(write_buffer_ptr, data);
-        self.buffer[self.src_index].unmap();
+        // const write_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.buffer[self.src_index].getMappedRange(0, padded_size).?));
+        // defer self.buffer[self.src_index].unmap();
+        // const write_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.textures[self.src_index].getMappedRange(0, padded_size).?));
+        // defer self.textures[self.src_index].unmap();
+
+        const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, OUTPUT_SIZE).?));
+        defer self.upload_buffer.unmap();
+        @memcpy(upload_buffer_ptr, data);
     }
-    pub fn download(self: *Self) ![]f32 {
+    pub fn download(self: *Self) ![]f16 {
         std.log.info("Reading data from GPU buffers", .{});
 
         // We can now read the data from the buffer.
-        // Convert the data back to a slice of f32.
-        const download_buffer_ptr: [*]f32 = @ptrCast(@alignCast(self.download_buffer.getMappedRange(0, output_size).?));
+        // Convert the data back to a slice of f16.
+        const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.download_buffer.getMappedRange(0, OUTPUT_SIZE).?));
         defer self.download_buffer.unmap();
 
-        // const result: [output_size]f32 = undefined;
-        // @memcpy(result[0..], download_buffer_ptr);
-
-        const result = download_buffer_ptr[0..output_size];
+        const result = download_buffer_ptr[0..OUTPUT_SIZE];
         return result;
     }
 };

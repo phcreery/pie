@@ -21,6 +21,12 @@ zig 0.15.1
 
 ## Zig notes
 
+- Image Loaders
+
+  - LibRaw
+  - rawloader
+  - rawspeed
+
 - Examples
 
   - https://github.com/riverwm/river/
