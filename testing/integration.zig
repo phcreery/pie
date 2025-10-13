@@ -18,7 +18,7 @@ test "simple compute test" {
         \\//requires readonly_and_readwrite_storage_textures;
         \\@group(0) @binding(0) var input:  texture_2d<f32>;
         \\@group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
-        \\@compute @workgroup_size(64)
+        \\@compute @workgroup_size(8, 8, 1)
         \\fn doubleMe(@builtin(global_invocation_id) global_id: vec3<u32>) {
         \\    let coords = vec2<i32>(global_id.xy);
         \\    var pixel = vec4<f32>(textureLoad(input, coords, 0));
@@ -39,14 +39,11 @@ test "simple compute test" {
 
     const result = try engine.mapDownload();
 
-    var output = [_]f16{ 0, 0, 0, 0 };
-    for (result, 0..) |value, i| {
-        output[i] += value;
-    }
+    const output = [_]f16{ 0, 0, 0, 0 };
     std.log.info("Compute shader output: {any}", .{output});
 
-    const expected = [_]f16{ 2, 4, 6, 8 };
-    try std.testing.expect(std.mem.eql(f16, expected[0..], &output));
+    const expected_contents = [_]f16{ 2, 4, 6, 8 };
+    try std.testing.expect(std.mem.eql(f16, expected_contents[0..], result));
 }
 
 test "simple compute double buffer test" {
@@ -59,10 +56,9 @@ test "simple compute double buffer test" {
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
     const shader_code: []const u8 =
         \\enable f16;
-        \\//requires readonly_and_readwrite_storage_textures;
         \\@group(0) @binding(0) var input:  texture_2d<f32>;
         \\@group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
-        \\@compute @workgroup_size(64)
+        \\@compute @workgroup_size(8, 8, 1)
         \\fn doubleMe(@builtin(global_invocation_id) global_id: vec3<u32>) {
         \\    let coords = vec2<i32>(global_id.xy);
         \\    var pixel = vec4<f32>(textureLoad(input, coords, 0));
@@ -84,13 +80,8 @@ test "simple compute double buffer test" {
     engine.run();
 
     const result = try engine.mapDownload();
+    std.log.info("Download buffer contents: {any}", .{result});
 
-    var output = [_]f16{ 0, 0, 0, 0 };
-    for (result, 0..) |value, i| {
-        output[i] += value;
-    }
-    std.log.info("Compute shader output: {any}", .{output});
-
-    const expected = [_]f16{ 4, 8, 12, 16 };
-    try std.testing.expect(std.mem.eql(f16, expected[0..], result));
+    const expected_contents = [_]f16{ 4, 8, 12, 16 };
+    try std.testing.expect(std.mem.eql(f16, expected_contents[0..], result));
 }

@@ -54,6 +54,7 @@ pub const Engine = struct {
     encoder: *wgpu.CommandEncoder = undefined,
     pipeline_layout: *wgpu.PipelineLayout = undefined,
     is_swapped: bool = false,
+    adapter_name: []const u8 = "",
 
     const Self = @This();
 
@@ -98,6 +99,17 @@ pub const Engine = struct {
 
         var limits = wgpu.Limits{};
         _ = adapter.getLimits(&limits);
+
+        std.log.info("Adapter limits:", .{});
+        std.log.info(" max_texture_dimension_1d: {d}", .{limits.max_texture_dimension_1d});
+        std.log.info(" max_texture_dimension_2d: {d}", .{limits.max_texture_dimension_2d});
+        std.log.info(" max_texture_dimension_3d: {d}", .{limits.max_texture_dimension_3d});
+        std.log.info(" max_texture_array_layers: {d}", .{limits.max_texture_array_layers});
+        std.log.info(" max_compute_invocations_per_workgroup: {d}", .{limits.max_compute_invocations_per_workgroup});
+        std.log.info(" max_compute_workgroup_size_x: {d}", .{limits.max_compute_workgroup_size_x});
+        std.log.info(" max_compute_workgroup_size_y: {d}", .{limits.max_compute_workgroup_size_y});
+        std.log.info(" max_compute_workgroup_size_z: {d}", .{limits.max_compute_workgroup_size_z});
+        std.log.info(" max_compute_workgroups_per_dimension: {d}", .{limits.max_compute_workgroups_per_dimension});
 
         // const buffer_a = device.createBuffer(&wgpu.BufferDescriptor{
         //     .label = wgpu.StringView.fromSlice("input_storage_buffer"),
@@ -303,6 +315,7 @@ pub const Engine = struct {
             .bind_group_layout = bind_group_layout,
             .encoder = encoder,
             .pipeline_layout = pipeline_layout,
+            .adapter_name = info.device.toSlice() orelse "Unknown",
         };
     }
 
@@ -425,7 +438,7 @@ pub const Engine = struct {
         std.log.info("source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
         std.log.info("source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
         const destination = wgpu.TexelCopyTextureInfo{
-            .texture = self.textures[self.get_dst_index()],
+            .texture = self.textures[self.get_src_index()],
             .mip_level = 0,
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
