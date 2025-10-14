@@ -1,13 +1,6 @@
 const std = @import("std");
 const pie = @import("pie");
 
-fn simpleCompute() !void {}
-pub fn main() !void {
-    std.log.info("Starting WebGPU compute test", .{});
-    try simpleCompute();
-    // TODO: test swapping buffers
-}
-
 test "simple compute test" {
     var engine = try pie.engine.Engine.init();
     defer engine.deinit();

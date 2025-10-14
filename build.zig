@@ -91,10 +91,16 @@ pub fn build(b: *Build) !void {
 
     // INTEGRATION TESTS
     const mod_integration_test = b.createModule(.{
-        .root_source_file = b.path("testing/integration.zig"),
+        .root_source_file = b.path("testing/integration/integration.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "pie", .module = mod_main }},
+        .imports = &.{
+            .{
+                .name = "pie",
+                .module = mod_main,
+            },
+            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+        },
     });
     const integration_tests = b.addExecutable(.{
         .name = "integration tests",
