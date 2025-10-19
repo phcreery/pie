@@ -2,14 +2,20 @@ const std = @import("std");
 const wgpu = @import("wgpu");
 
 const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
-const OUTPUT_SIZE = 4;
-const WIDTH = 256 * 4; // bytes per row has to be a multiple of 256
+// const OUTPUT_SIZE = 8;
+// const WIDTH = 256 * 4; // bytes per row has to be a multiple of 256
+const BYTES_PER_PIXEL_RGBAf16: u32 = 8; // RGBAf16
 
 fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
     std.log.info("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
     const complete: *bool = @ptrCast(@alignCast(userdata1));
     complete.* = true;
 }
+
+pub const CopyRegionParams = struct {
+    w: u32,
+    h: u32,
+};
 
 pub const ShaderPipe = struct {
     shader_module: *wgpu.ShaderModule,
@@ -110,6 +116,8 @@ pub const Engine = struct {
         std.log.info(" max_compute_workgroup_size_y: {d}", .{limits.max_compute_workgroup_size_y});
         std.log.info(" max_compute_workgroup_size_z: {d}", .{limits.max_compute_workgroup_size_z});
         std.log.info(" max_compute_workgroups_per_dimension: {d}", .{limits.max_compute_workgroups_per_dimension});
+        std.log.info(" max_buffer_size: {d}", .{limits.max_buffer_size});
+        std.log.info(" max_storage_buffer_binding_size: {d}", .{limits.max_storage_buffer_binding_size});
 
         // const buffer_a = device.createBuffer(&wgpu.BufferDescriptor{
         //     .label = wgpu.StringView.fromSlice("input_storage_buffer"),
@@ -122,8 +130,8 @@ pub const Engine = struct {
         const texture_a = device.createTexture(&wgpu.TextureDescriptor{
             .label = wgpu.StringView.fromSlice("input_storage_texture"),
             .size = wgpu.Extent3D{
-                .width = WIDTH,
-                .height = WIDTH,
+                .width = limits.max_texture_dimension_2d / 2,
+                .height = limits.max_texture_dimension_2d / 2,
                 .depth_or_array_layers = 1,
             },
             .mip_level_count = 1,
@@ -148,8 +156,8 @@ pub const Engine = struct {
         const texture_b = device.createTexture(&wgpu.TextureDescriptor{
             .label = wgpu.StringView.fromSlice("output_storage_texture"),
             .size = wgpu.Extent3D{
-                .width = WIDTH,
-                .height = WIDTH,
+                .width = limits.max_texture_dimension_2d / 2,
+                .height = limits.max_texture_dimension_2d / 2,
                 .depth_or_array_layers = 1,
             },
             .mip_level_count = 1,
@@ -162,18 +170,18 @@ pub const Engine = struct {
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        const buffer_size = WIDTH * WIDTH * 8;
+        // const buffer_size = WIDTH * WIDTH * BYTES_PER_PIXEL_RGBAf16;
         const upload_buffer = device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("upload_storage_buffer"),
             .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
-            .size = buffer_size,
+            .size = limits.max_buffer_size / 16,
             .mapped_at_creation = @as(u32, @intFromBool(true)),
         }).?;
         errdefer upload_buffer.release();
         const download_buffer = device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("download_storage_buffer"),
             .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
-            .size = buffer_size,
+            .size = limits.max_buffer_size / 16,
             .mapped_at_creation = @as(u32, @intFromBool(false)),
         }).?;
         errdefer download_buffer.release();
@@ -381,7 +389,7 @@ pub const Engine = struct {
         };
     }
 
-    pub fn enqueueShader(self: *Self, shader_pipe: ShaderPipe) void {
+    pub fn enqueueShader(self: *Self, shader_pipe: ShaderPipe, region: CopyRegionParams) void {
         std.log.info("Running compute shader", .{});
 
         std.log.info("Dispatching compute work", .{});
@@ -396,42 +404,59 @@ pub const Engine = struct {
 
         // Now we dispatch a series of workgroups. Each workgroup is a 3D grid of individual programs.
         //
-        // We defined the workgroup size in the shader as 64x1x1. So in order to process all of our
-        // inputs, we ceiling divide the number of inputs by 64. If the user passes 32 inputs, we will
+        // If the user passes 32 inputs, we will
         // dispatch 1 workgroups. If the user passes 65 inputs, we will dispatch 2 workgroups, etc.
-        const workgroup_size = 64;
-        const workgroup_count_x = (OUTPUT_SIZE + workgroup_size - 1) / workgroup_size;
-        const workgroup_count_y = 1;
+        const output_size = region.w * region.h;
+        std.log.info("output_size: {d}", .{output_size});
+        const workgroup_size = 64; // 8*8*1
+        // const workgroup_count_x = @min((output_size + workgroup_size - 1) / workgroup_size, 65535);
+        // const workgroup_count_y = 1;
+
+        // const uint32_t num_tiles_x = (wd + tile_size_x - 1)/tile_size_x;
+        // const uint32_t num_tiles_y = (ht + tile_size_y - 1)/tile_size_y;
+        const workgroup_count_x = (region.w + 7) / 8;
+        const workgroup_count_y = (region.h + 7) / 8;
+
         const workgroup_count_z = 1;
-        // std.debug.print("workgroup_count_x: {d}\n", .{workgroup_count_x});
-        // std.debug.print("workgroup_count_y: {d}\n", .{workgroup_count_y});
-        // std.debug.print("workgroup_count_z: {d}\n", .{workgroup_count_z});
+        std.log.info("workgroup_size: {d}", .{workgroup_size});
+        std.log.info("workgroup_count_x: {d}", .{workgroup_count_x});
+        std.log.info("workgroup_count_y: {d}", .{workgroup_count_y});
+        std.log.info("workgroup_count_z: {d}", .{workgroup_count_z});
+        std.log.info("total workgroups: {d}", .{workgroup_count_x * workgroup_count_y * workgroup_count_z});
+        std.log.info("total invocations: {d}", .{@as(u32, workgroup_count_x) * workgroup_count_y * workgroup_count_z * workgroup_size});
         compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
         // Now we drop the compute pass, giving us access to the encoder again.
         compute_pass.end();
     }
 
-    pub fn enqueueUpload(self: *Self) void {
+    pub fn enqueueUpload(self: *Self, region: CopyRegionParams) !void {
         std.log.info("Writing GPU buffer to Shader Buffer", .{});
+
+        // check bytes_per_row is a multiple of 256
+        const bytes_per_row = region.w * BYTES_PER_PIXEL_RGBAf16;
+        if (bytes_per_row % 256 != 0) {
+            std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
+            return error.InvalidInput;
+        }
+
         // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
         // CPU to the input buffer on the GPU.
         // self.encoder.copyBufferToBuffer(self.upload_buffer, 0, self.buffer[self.src_index], 0, self.buffer[self.src_index].getSize());
         // const copy_size = self.textures[self.src_index].getWidth() * self.textures[self.src_index].getHeight() * 4; // width * height * RGBA
         const copy_size = wgpu.Extent3D{
-            .width = self.textures[self.get_src_index()].getWidth(),
-            .height = self.textures[self.get_src_index()].getHeight(),
+            .width = region.w,
+            .height = region.h,
             .depth_or_array_layers = 1,
         };
         std.log.info("copy_size.width: {d}", .{copy_size.width});
         std.log.info("copy_size.height: {d}", .{copy_size.height});
         std.log.info("copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
-        const bytes_per_pixel: u32 = 8; // RGBAf16
         const source = wgpu.TexelCopyBufferInfo{
             .buffer = self.upload_buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 .offset = 0,
-                .bytes_per_row = self.textures[self.get_src_index()].getWidth() * bytes_per_pixel, // width * RGBA
-                .rows_per_image = self.textures[self.get_src_index()].getHeight(),
+                .bytes_per_row = region.w * BYTES_PER_PIXEL_RGBAf16, // width * RGBA
+                .rows_per_image = region.h,
             },
         };
         std.log.info("source.buffer size: {d}", .{self.upload_buffer.getSize()});
@@ -444,18 +469,25 @@ pub const Engine = struct {
         };
         self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
     }
-    pub fn enqueueDownload(self: *Self) void {
+    pub fn enqueueDownload(self: *Self, region: CopyRegionParams) !void {
         std.log.info("Reading GPU buffer from Shader Buffer", .{});
+
+        // check bytes_per_row is a multiple of 256
+        const bytes_per_row = region.w * BYTES_PER_PIXEL_RGBAf16;
+        if (bytes_per_row % 256 != 0) {
+            std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
+            return error.InvalidInput;
+        }
+
         // We add a copy operation to the encoder. This will copy the data from the output buffer on the
         // GPU to the download buffer on the CPU.
         // self.encoder.copyBufferToBuffer(self.buffer[self.dst_index], 0, self.download_buffer, 0, self.buffer[self.dst_index].getSize());
         // const copy_size = self.textures[self.dst_index].getWidth() * self.textures[self.dst_index].getHeight() * 4; // width * height * RGBA
         const copy_size = wgpu.Extent3D{
-            .width = self.textures[self.get_dst_index()].getWidth(),
-            .height = self.textures[self.get_dst_index()].getHeight(),
+            .width = region.w,
+            .height = region.h,
             .depth_or_array_layers = 1,
         };
-        const bytes_per_pixel: u32 = 8; // RGBAf16
         const source = wgpu.TexelCopyTextureInfo{
             .texture = self.textures[self.get_dst_index()],
             .mip_level = 0,
@@ -465,8 +497,8 @@ pub const Engine = struct {
             .buffer = self.download_buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 .offset = 0,
-                .bytes_per_row = self.textures[self.get_dst_index()].getWidth() * bytes_per_pixel, // width * RGBA
-                .rows_per_image = self.textures[self.get_dst_index()].getHeight(),
+                .bytes_per_row = region.w * BYTES_PER_PIXEL_RGBAf16, // width * RGBA
+                .rows_per_image = region.h,
             },
         };
         self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
@@ -489,15 +521,18 @@ pub const Engine = struct {
         self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
     }
 
-    pub fn mapUpload(self: *Self, data: []const f16) void {
+    pub fn mapUpload(self: *Self, data: []const f16, region: CopyRegionParams) void {
         std.log.info("Writing data to GPU buffers", .{});
 
-        const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, OUTPUT_SIZE).?));
+        const size = region.w * region.h * BYTES_PER_PIXEL_RGBAf16;
+        const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size).?));
         defer self.upload_buffer.unmap();
         @memcpy(upload_buffer_ptr, data);
     }
-    pub fn mapDownload(self: *Self) ![]f16 {
+    pub fn mapDownload(self: *Self, region: CopyRegionParams) ![]f16 {
         std.log.info("Reading data from GPU buffers", .{});
+
+        const size = region.w * region.h * BYTES_PER_PIXEL_RGBAf16;
 
         // We now map the download buffer so we can read it. Mapping tells wgpu that we want to read/write
         // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
@@ -505,7 +540,7 @@ pub const Engine = struct {
         // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
         // to tell you when the mapping is complete.
         var buffer_map_complete = false;
-        _ = self.download_buffer.mapAsync(wgpu.MapModes.read, 0, OUTPUT_SIZE, wgpu.BufferMapCallbackInfo{
+        _ = self.download_buffer.mapAsync(wgpu.MapModes.read, 0, size, wgpu.BufferMapCallbackInfo{
             .callback = handleBufferMap,
             .userdata1 = @ptrCast(&buffer_map_complete),
         });
@@ -520,10 +555,10 @@ pub const Engine = struct {
 
         // We can now read the data from the buffer.
         // Convert the data back to a slice of f16.
-        const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.download_buffer.getMappedRange(0, OUTPUT_SIZE).?));
+        const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.download_buffer.getMappedRange(0, size).?));
         defer self.download_buffer.unmap();
 
-        const result = download_buffer_ptr[0..OUTPUT_SIZE];
+        const result = download_buffer_ptr[0..size];
         return result;
     }
 };

@@ -44,6 +44,10 @@ pub fn build(b: *Build) !void {
         .optimize = optimize,
     });
     const wgpu_native_dep = b.dependency("wgpu_native_zig", .{ .target = target, .optimize = optimize });
+    const zigimg_dependency = b.dependency("zigimg", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -74,6 +78,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu", .module = wgpu_native_dep.module("wgpu") },
             .{ .name = "wgpu-c", .module = wgpu_native_dep.module("wgpu-c") },
+            .{ .name = "zigimg", .module = zigimg_dependency.module("zigimg") },
         },
     });
     mod_main.addOptions("build_options", mod_options);
@@ -100,6 +105,7 @@ pub fn build(b: *Build) !void {
                 .module = mod_main,
             },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            .{ .name = "zigimg", .module = zigimg_dependency.module("zigimg") },
         },
     });
     const integration_tests = b.addExecutable(.{
