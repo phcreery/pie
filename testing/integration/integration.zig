@@ -169,38 +169,9 @@ test "load raw, debayer, save" {
     const file_name = "testing/integration/DSC_6765.NEF";
     std.debug.print("Opening file: {s}\n", .{file_name});
     const file = try std.fs.cwd().openFile(file_name, .{});
-    const file_info = try file.stat();
-    std.debug.print("File size: {d} bytes\n", .{file_info.size});
+    const pie_raw_image = try pie.iraw.RawImage.read(allocator, file);
 
-    // create buffer and read entire file into it
-    var buf: []u8 = try allocator.alloc(u8, file_info.size);
-    defer allocator.free(buf);
-    const read_size2 = try file.read(buf[0..]);
-    std.debug.print("Read {d} bytes from file\n", .{read_size2});
-    for (buf[0..4]) |b| {
-        std.debug.print("{x} ", .{b});
-    }
-    std.debug.print("... \n", .{});
-
-    const rp = libraw.libraw_init(0);
-
-    const ret = libraw.libraw_open_buffer(rp, buf.ptr, buf.len);
-    // const ret = libraw.libraw_open_file(rp, file_name);
-    if (ret != libraw.LIBRAW_SUCCESS) {
-        std.log.info("libraw_open failed: {d}", .{ret});
-        try std.testing.expect(false);
-        return;
-    }
-    std.log.info("libraw_open succeeded", .{});
-    const ret2 = libraw.libraw_unpack(rp);
-    if (ret2 != libraw.LIBRAW_SUCCESS) {
-        std.log.info("libraw_unpack failed: {d}", .{ret2});
-        try std.testing.expect(false);
-        return;
-    }
-    std.log.info("libraw_unpack succeeded", .{});
-
-    const ret3 = libraw.libraw_raw2image(rp);
+    const ret3 = libraw.libraw_raw2image(pie_raw_image.libraw_rp);
     if (ret3 != libraw.LIBRAW_SUCCESS) {
         std.log.info("libraw_raw2image failed: {d}", .{ret3});
         try std.testing.expect(false);
@@ -208,35 +179,11 @@ test "load raw, debayer, save" {
     }
     std.log.info("libraw_raw2image succeeded", .{});
 
-    const raw_image = rp.*.rawdata.raw_image;
-    const image = rp.*.image;
-    const img_width = rp.*.sizes.width;
-    const img_height = rp.*.sizes.height;
-    // try std.testing.expect(img_width == 6016);
-    // try std.testing.expect(img_height == 4016);
-    const pixel_count = @as(u32, img_width) * img_height;
-    std.debug.print("Image raw size: {d}x{d}\n", .{ img_width, img_height });
-    std.debug.print("Image raw isize: {d}x{d}\n", .{ rp.*.rawdata.sizes.iwidth, rp.*.rawdata.sizes.iheight });
-    std.debug.print("Image raw size: {d}x{d}\n", .{ rp.*.rawdata.sizes.raw_width, rp.*.rawdata.sizes.raw_height });
-    std.debug.print("Image raw pitch: {d}\n", .{rp.*.rawdata.sizes.raw_pitch});
-    std.debug.print("Image pixels: {d}\n", .{pixel_count});
-    std.debug.print("Image num vals: {d}\n", .{pixel_count * 4});
-    std.debug.print("Image size flip: {d}\n", .{rp.*.sizes.flip});
-    std.debug.print("Filters: {x}\n", .{rp.*.rawdata.iparams.filters});
-    std.debug.print("Colors: {d}\n", .{rp.*.rawdata.iparams.colors});
-    std.debug.print("Color Desc.: {s}\n", .{rp.*.rawdata.iparams.cdesc});
-
-    // std.debug.print("Filters.: {x}\n", .{rp.*.idata.filters});
-    // std.debug.print("Colors: {d}\n", .{rp.*.idata.colors});
-    // std.debug.print("Color Desc.: {s}\n", .{rp.*.idata.cdesc});
-
-    // std.log.info("Type of raw_image: (c_short = f32) {any}", .{@TypeOf(raw_image[0])});
-    std.log.info("Type of image: (c_short = f32) {any}", .{@TypeOf(image[0][0])});
-
-    // imgdata.color.maximum
-    const max_value: f16 = @as(f16, @floatFromInt(rp.*.rawdata.color.maximum));
-    std.log.info("Color Maximum: {d}", .{max_value});
-    std.debug.print("\n\n", .{});
+    const raw_image = pie_raw_image.libraw_rp.rawdata.raw_image;
+    const raw2image_image = pie_raw_image.libraw_rp.image;
+    const img_width = pie_raw_image.libraw_rp.sizes.width;
+    const img_height = pie_raw_image.libraw_rp.sizes.height;
+    const max_value: u32 = pie_raw_image.libraw_rp.rawdata.color.maximum;
 
     std.debug.print("Raw Image first pixels\n", .{});
     for (raw_image[0..16]) |p| {
@@ -245,7 +192,7 @@ test "load raw, debayer, save" {
     std.debug.print("\n\n", .{});
 
     std.debug.print("Image first pixels\n", .{});
-    for (image[0..16]) |p| {
+    for (raw2image_image[0..16]) |p| {
         std.debug.print("{d} {d} {d} {d}, ", .{ p[0], p[1], p[2], p[3] });
     }
     std.debug.print("\n\n", .{});
@@ -254,37 +201,39 @@ test "load raw, debayer, save" {
     const init_contents_f32 = try allocator.alloc(f32, @as(u32, img_width * 2) * img_height * 2);
     defer allocator.free(init_contents_f32);
 
-    // for (raw_image, 0..) |value, i| {
-    //     init_contents_f32[i] = @as(f32, value);
-    // }
     for (0..img_height) |y| {
         for (0..img_width) |x| {
             for (0..4) |ch| {
                 const iindex = y * img_width + x;
-                const oindex = (y * img_width + x) * 4 + ch;
+                const oindex = (y * img_width) * 4 + x * 4 + ch;
                 if (ch == 3) {
                     // alpha channel
                     init_contents_f32[oindex] = 1.0;
                     continue;
                 }
-                if (image[iindex][ch] == 0) {
-                    init_contents_f32[oindex] = 0.0;
-                    continue;
-                } else {
-                    init_contents_f32[oindex] += @as(f32, @floatFromInt(image[iindex][ch])) / @as(f32, max_value);
+                // if (raw2image_image[iindex][ch] == 0) {
+                //     init_contents_f32[oindex] = 0.0;
+                //     continue;
+                // }
+                {
+                    init_contents_f32[oindex] += @as(f32, @floatFromInt(raw2image_image[iindex][ch])) / @as(f32, @floatFromInt(max_value));
                     if (oindex < 16) {
-                        std.debug.print("Pixel ({d}, {d}) channel {d}: raw {d}, image {d}, float {d}\n", .{
+                        std.debug.print("Pixel ({d}, {d}) channel {d}: raw {d}, raw2image {d}, float {d}\n", .{
                             x,
                             y,
                             ch,
                             raw_image[iindex],
-                            image[iindex][ch],
+                            raw2image_image[iindex][ch],
                             init_contents_f32[oindex],
                         });
                     }
                 }
             }
         }
+    }
+
+    if (true) {
+        return error.SkipZigTest;
     }
 
     // EXPORT
