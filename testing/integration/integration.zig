@@ -11,89 +11,11 @@ pub fn main() !void {
 //     _ = @import("engine.zig");
 // }
 
-inline fn to_bytes(num: anytype) []const u8 {
-    return &@as([@sizeOf(@TypeOf(num))]u8, @bitCast(num));
-}
-
-test "libraw open bayer" {
-    if (true) {
-        return error.SkipZigTest;
-    }
-    const allocator = std.testing.allocator;
-    // Read contents from file
-    const file_name = "testing/integration/DSC_6765.NEF";
-    std.debug.print("Opening file: {s}\n", .{file_name});
-    const file = try std.fs.cwd().openFile(file_name, .{});
-    const file_info = try file.stat();
-    std.debug.print("File size: {d} bytes\n", .{file_info.size});
-
-    // create buffer and read entire file into it
-    var buf: []u8 = try allocator.alloc(u8, file_info.size);
-    defer allocator.free(buf);
-    const read_size2 = try file.read(buf[0..]);
-    std.debug.print("Read {d} bytes from file\n", .{read_size2});
-    for (buf[0..4]) |b| {
-        std.debug.print("{x} ", .{b});
-    }
-    std.debug.print("... \n", .{});
-
-    const rp = libraw.libraw_init(0);
-
-    const ret = libraw.libraw_open_buffer(rp, buf.ptr, buf.len);
-    // const ret = libraw.libraw_open_file(rp, file_name);
-    if (ret != libraw.LIBRAW_SUCCESS) {
-        std.debug.print("libraw_open failed: {d}\n", .{ret});
-        try std.testing.expect(false);
-        return;
-    }
-    std.debug.print("libraw_open succeeded\n", .{});
-    const ret2 = libraw.libraw_unpack(rp);
-    if (ret2 != libraw.LIBRAW_SUCCESS) {
-        std.debug.print("libraw_unpack failed: {d}\n", .{ret2});
-        try std.testing.expect(false);
-        return;
-    }
-    std.debug.print("libraw_unpack succeeded\n", .{});
-    const img_width = rp.*.sizes.width;
-    const img_height = rp.*.sizes.height;
-    try std.testing.expect(img_width == 6016);
-    try std.testing.expect(img_height == 4016);
-    std.debug.print("Image size: {d}x{d}\n", .{ img_width, img_height });
-    std.debug.print("Filters: {x}\n", .{rp.*.rawdata.iparams.filters});
-    std.debug.print("Colors: {d}\n", .{rp.*.rawdata.iparams.colors});
-    std.debug.print("Color Desc.: {s}\n", .{rp.*.rawdata.iparams.cdesc});
-    const raw_image = rp.*.rawdata.raw_image;
-    // print first 16 pixels
-    for (raw_image[0..16]) |p| {
-        std.debug.print("{d} ", .{p});
-    }
-    std.debug.print("... \n", .{});
-
-    // convert from RGBG to RGGB
-    var buf_rggb: []u16 = try allocator.alloc(u16, @as(u32, img_width) * img_height * 4);
-    defer allocator.free(buf_rggb);
-    for (0..img_height) |y| {
-        for (0..img_width) |x| {
-            const src_index = y * img_width + x * 4;
-            const dst_index = y * img_width + x * 4;
-            buf_rggb[dst_index] = raw_image[src_index];
-            buf_rggb[dst_index + 1] = raw_image[src_index + 1];
-            buf_rggb[dst_index + 2] = raw_image[src_index + 3];
-            buf_rggb[dst_index + 3] = raw_image[src_index + 2];
-        }
-    }
-    std.debug.print("First 16 pixels of rggb: \n", .{});
-    for (buf_rggb[0..16]) |p| {
-        std.debug.print("{d} ", .{p});
-    }
-    std.debug.print("... \n", .{});
-}
-
 test "debayer" {
     if (true) {
         return error.SkipZigTest;
     }
-    var engine = try pie.engine.Engine.init();
+    var engine = try pie.gpu.GPU.init();
     defer engine.deinit();
 
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
@@ -160,16 +82,19 @@ test "debayer" {
     const expected_contents = [_]f16{ 1, 2.5, 4, 1 };
     try std.testing.expect(std.mem.eql(f16, expected_contents[0..4], result[0..4]));
 }
+
 test "load raw, debayer, save" {
     // if (true) {
     //     return error.SkipZigTest;
     // }
     const allocator = std.testing.allocator;
+
     // Read contents from file
     const file_name = "testing/integration/DSC_6765.NEF";
     std.debug.print("Opening file: {s}\n", .{file_name});
     const file = try std.fs.cwd().openFile(file_name, .{});
-    const pie_raw_image = try pie.iraw.RawImage.read(allocator, file);
+    var pie_raw_image = try pie.iraw.RawImage.read(allocator, file);
+    defer pie_raw_image.deinit();
 
     const ret3 = libraw.libraw_raw2image(pie_raw_image.libraw_rp);
     if (ret3 != libraw.LIBRAW_SUCCESS) {
@@ -179,79 +104,81 @@ test "load raw, debayer, save" {
     }
     std.log.info("libraw_raw2image succeeded", .{});
 
-    const raw_image = pie_raw_image.libraw_rp.rawdata.raw_image;
+    // const raw_image = pie_raw_image.libraw_rp.rawdata.raw_image;
     const raw2image_image = pie_raw_image.libraw_rp.image;
-    const img_width = pie_raw_image.libraw_rp.sizes.width;
-    const img_height = pie_raw_image.libraw_rp.sizes.height;
-    const max_value: u32 = pie_raw_image.libraw_rp.rawdata.color.maximum;
+    // pie_raw_image.libraw_rp
+    // const img_width = pie_raw_image.libraw_rp.sizes.width;
+    // const img_height = pie_raw_image.libraw_rp.sizes.height;
+    // const max_value: u32 = pie_raw_image.libraw_rp.rawdata.color.maximum;
 
-    std.debug.print("Raw Image first pixels\n", .{});
-    for (raw_image[0..16]) |p| {
-        std.debug.print("{d} ", .{p});
-    }
-    std.debug.print("\n\n", .{});
+    // std.debug.print("Raw Image first pixels\n", .{});
+    // for (raw_image[0..16]) |p| {
+    //     std.debug.print("{d} ", .{p});
+    // }
+    // std.debug.print("\n\n", .{});
 
-    std.debug.print("Image first pixels\n", .{});
-    for (raw2image_image[0..16]) |p| {
-        std.debug.print("{d} {d} {d} {d}, ", .{ p[0], p[1], p[2], p[3] });
-    }
-    std.debug.print("\n\n", .{});
+    // std.debug.print("raw2image Image first pixels\n", .{});
+    // for (raw2image_image[0..16]) |p| {
+    //     std.debug.print("{d} {d} {d} {d}, \n", .{ p[0], p[1], p[2], p[3] });
+    // }
+    // std.debug.print("\n\n", .{});
 
-    std.log.info("Casting f16 to f32", .{});
-    const init_contents_f32 = try allocator.alloc(f32, @as(u32, img_width * 2) * img_height * 2);
-    defer allocator.free(init_contents_f32);
+    const stride = @as(u32, @intCast(pie_raw_image.width)) * 4;
+    std.log.info("Image stride (pixels): {d}", .{stride});
 
-    for (0..img_height) |y| {
-        for (0..img_width) |x| {
+    std.log.info("Casting u16 to f16 and Normalizing", .{});
+    const init_contents_f16 = try allocator.alloc(f16, @as(u32, @intCast(pie_raw_image.width * 2)) * pie_raw_image.height * 2);
+    defer allocator.free(init_contents_f16);
+
+    for (0..pie_raw_image.height) |y| {
+        for (0..pie_raw_image.width) |x| {
             for (0..4) |ch| {
-                const iindex = y * img_width + x;
-                const oindex = (y * img_width) * 4 + x * 4 + ch;
+                const iindex = y * pie_raw_image.width + x;
+                const oindex = (y * pie_raw_image.width) * 4 + x * 4 + ch;
                 if (ch == 3) {
                     // alpha channel
-                    init_contents_f32[oindex] = 1.0;
-                    continue;
+                    init_contents_f16[oindex] = 1.0;
                 }
-                // if (raw2image_image[iindex][ch] == 0) {
-                //     init_contents_f32[oindex] = 0.0;
-                //     continue;
-                // }
-                {
-                    init_contents_f32[oindex] += @as(f32, @floatFromInt(raw2image_image[iindex][ch])) / @as(f32, @floatFromInt(max_value));
-                    if (oindex < 16) {
-                        std.debug.print("Pixel ({d}, {d}) channel {d}: raw {d}, raw2image {d}, float {d}\n", .{
-                            x,
-                            y,
-                            ch,
-                            raw_image[iindex],
-                            raw2image_image[iindex][ch],
-                            init_contents_f32[oindex],
-                        });
-                    }
+                if (raw2image_image[iindex][ch] == 0) {
+                    init_contents_f16[oindex] = 0.0;
+                } else {
+                    init_contents_f16[oindex] += @as(f16, @floatFromInt(raw2image_image[iindex][ch])) / pie_raw_image.max_value;
+                }
+                if (oindex < 16 or (oindex >= stride * 1 and oindex < stride * 1 + 16)) {
+                    std.debug.print("Pixel ({d}, {d}) channel {d}: raw {d}, raw2image {d}, float {d}\n", .{
+                        x,
+                        y,
+                        ch,
+                        pie_raw_image.raw_image[iindex],
+                        raw2image_image[iindex][ch],
+                        init_contents_f16[oindex],
+                    });
                 }
             }
         }
     }
 
-    if (true) {
-        return error.SkipZigTest;
-    }
+    // const init_contents_f16 = pie_raw_image.raw_image;
+    // const init_contents_f16 = raw2image_image;
+
+    std.log.info("Initial contents length (pixels): {d}", .{init_contents_f16.len});
+
+    // if (true) {
+    //     return error.SkipZigTest;
+    // }
 
     // EXPORT
-    {
-        const byte_array = std.mem.sliceAsBytes(init_contents_f32);
-        std.log.info("Giving to zigimg", .{});
-        var zigimage = try zigimg.Image.fromRawPixels(allocator, img_width, img_height, byte_array[0..], .float32);
-        defer zigimage.deinit(allocator);
-        // std.log.info("zigimg reads as: {any}", .{zigimage.pixels.float32[0..8]});
-        try zigimage.convert(allocator, .rgba64);
+    // {
+    //     const byte_array = std.mem.sliceAsBytes(init_contents_f16);
+    //     std.log.info("Giving to zigimg", .{});
+    //     var zigimage = try zigimg.Image.fromRawPixels(allocator, img_width, img_height, byte_array[0..], .float32);
+    //     defer zigimage.deinit(allocator);
+    //     // std.log.info("zigimg reads as: {any}", .{zigimage.pixels.float32[0..8]});
+    //     try zigimage.convert(allocator, .rgba64);
 
-        var write_buffer: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-        try zigimage.writeToFilePath(allocator, "testing/integration/DSC_6765.png", write_buffer[0..], .{ .png = .{} });
-    }
-
-    if (true) {
-        return error.SkipZigTest;
-    }
+    //     var write_buffer: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
+    //     try zigimage.writeToFilePath(allocator, "testing/integration/DSC_6765.png", write_buffer[0..], .{ .png = .{} });
+    // }
 
     // // EXPORT RAW
     // {
@@ -273,31 +200,28 @@ test "load raw, debayer, save" {
     //     try writer.interface.flush();
     // }
 
-    // convert from RGBG to RGGB
-    var buf_rggb: []u16 = try allocator.alloc(u16, @as(u32, img_width) * img_height * 4);
-    defer allocator.free(buf_rggb);
-    for (0..img_height) |y| {
-        for (0..img_width) |x| {
-            // const index = y * img_width + x * 4;
-            const index = y * img_width + x;
-            buf_rggb[index] = raw_image[index];
-            // buf_rggb[index + 1] = raw_image[index + 1];
-            // buf_rggb[index + 2] = raw_image[index + 3];
-            // buf_rggb[index + 3] = raw_image[index + 2];
-        }
-    }
-    std.debug.print("First 16 pixels of rggb: \n", .{});
-    for (buf_rggb[0..16]) |p| {
-        std.debug.print("{d} ", .{p});
-    }
-    std.debug.print("... \n", .{});
-
     // DEBAYER WITH COMPUTE SHADER
 
-    var engine = try pie.engine.Engine.init();
+    var engine = try pie.gpu.GPU.init();
     defer engine.deinit();
 
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
+    // const shader_code: []const u8 =
+    //     \\enable f16;
+    //     \\@group(0) @binding(0) var input:  texture_2d<f32>;
+    //     \\@group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
+    //     \\@compute @workgroup_size(8, 8, 1)
+    //     \\fn debayer(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    //     \\    var coords = vec2<i32>(global_id.xy);
+    //     \\    let r = textureLoad(input, coords + vec2<i32>(0, 0), 0).r;
+    //     \\    let g1 = textureLoad(input, coords + vec2<i32>(1, 0), 0).g;
+    //     \\    let g2 = textureLoad(input, coords + vec2<i32>(0, 1), 0).b;
+    //     \\    let b = textureLoad(input, coords + vec2<i32>(1, 1), 0).a;
+    //     \\    let g = (g1 + g2) / 2.0;
+    //     \\    let rgba = vec4f(r, g, b, 1.0);
+    //     \\    textureStore(output, coords, rgba);
+    //     \\}
+    // ;
     const shader_code: []const u8 =
         \\enable f16;
         \\@group(0) @binding(0) var input:  texture_2d<f32>;
@@ -305,26 +229,36 @@ test "load raw, debayer, save" {
         \\@compute @workgroup_size(8, 8, 1)
         \\fn debayer(@builtin(global_invocation_id) global_id: vec3<u32>) {
         \\    var coords = vec2<i32>(global_id.xy);
-        \\    let r = textureLoad(input, coords , 0).r;
-        \\    let g1 = textureLoad(input, coords, 0).g;
-        \\    let g2 = textureLoad(input, coords, 0).b;
-        \\    let b = textureLoad(input, coords, 0).a;
+        \\    // the input will not be stored as rgba, instead it will be
+        \\    // [ r 0 0 0 ] [ 0 g 0 0 ] ...
+        \\    // [ 0 g 0 0 ] [ 0 0 b 0 ] ...
+        \\    // [ r 0 0 0 ] [ 0 g 0 0 ] ...
+        \\    // [ 0 g 0 0 ] [ 0 0 b 0 ] ...
+        \\    // so we need to decode our coords
+        \\    var r: f32;
+        \\    var g1: f32;
+        \\    var g2: f32;
+        \\    var b: f32;
+        \\    let base_coords = coords * vec2<i32>(2, 2);
+        \\    r = textureLoad(input, base_coords + vec2<i32>(0, 0), 0).r;
+        \\    g1 = textureLoad(input, base_coords + vec2<i32>(1, 0), 0).g;
+        \\    g2 = textureLoad(input, base_coords + vec2<i32>(0, 1), 0).a;
+        \\    b = textureLoad(input, base_coords + vec2<i32>(1, 1), 0).b;
         \\    let g = (g1 + g2) / 2.0;
         \\    let rgba = vec4f(r, g, b, 1.0);
-        \\    //let rgba = vec4f(1.0, g, b, 1.0);
         \\    textureStore(output, coords, rgba);
         \\}
     ;
     var shader_pipe = try engine.compileShader(shader_code, "debayer");
     defer shader_pipe.deinit();
 
-    const image_region = pie.engine.CopyRegionParams{
-        .w = @as(u32, img_width),
-        .h = @as(u32, img_height),
+    const image_region = pie.gpu.CopyRegionParams{
+        .w = @as(u32, @intCast(pie_raw_image.width)),
+        .h = @as(u32, @intCast(pie_raw_image.height)),
     };
-    const image_region_after = pie.engine.CopyRegionParams{
-        .w = @as(u32, img_width) / 2,
-        .h = @as(u32, img_height) / 2,
+    const image_region_after = pie.gpu.CopyRegionParams{
+        .w = @as(u32, @intCast(pie_raw_image.width)) / 2,
+        .h = @as(u32, @intCast(pie_raw_image.height)) / 2,
     };
     // const image_region_after = pie.engine.CopyRegionParams{
     //     .w = @as(u32, img_width),
@@ -333,25 +267,15 @@ test "load raw, debayer, save" {
     std.log.info("Image region: {any}", .{image_region});
     std.log.info("Image region after: {any}", .{image_region_after});
 
-    var init_contents: []f16 = try allocator.alloc(f16, buf_rggb.len);
-    defer allocator.free(init_contents);
-
-    std.log.info("Normalizing u16 to f16", .{});
-    for (buf_rggb, 0..) |val, i| {
-        init_contents[i] = @as(f16, @floatFromInt(val)) / max_value;
-    }
-
     std.log.info("\nUpload buffer contents: ", .{});
-    std.debug.print("{any}...\n", .{init_contents[0..8]});
-    std.debug.print("{any}...\n", .{init_contents[image_region.w .. image_region.w + 8]});
-    std.debug.print("{any}...\n", .{init_contents[image_region.w * 2 .. image_region.w * 2 + 8]});
-    std.debug.print("{any}...\n", .{init_contents[image_region.w * 3 .. image_region.w * 3 + 8]});
+    std.debug.print("{any}...\n", .{init_contents_f16[0..8]});
+    std.debug.print("{any}...\n", .{init_contents_f16[image_region.w .. image_region.w + 8]});
+    std.debug.print("{any}...\n", .{init_contents_f16[image_region.w * 2 .. image_region.w * 2 + 8]});
+    std.debug.print("{any}...\n", .{init_contents_f16[image_region.w * 3 .. image_region.w * 3 + 8]});
     std.debug.print("...\n", .{});
-    std.debug.print("{any}...\n", .{init_contents[image_region.w * (image_region.h - 1) .. image_region.w * (image_region.h - 1) + 8]});
+    std.debug.print("{any}...\n", .{init_contents_f16[image_region.w * (image_region.h - 1) .. image_region.w * (image_region.h - 1) + 8]});
 
-    std.log.info("Result length (pixels): {d}", .{buf_rggb.len});
-
-    engine.mapUpload(init_contents, image_region);
+    engine.mapUpload(init_contents_f16, image_region);
 
     engine.enqueueUpload(image_region) catch unreachable;
     engine.enqueueShader(shader_pipe, image_region_after);
