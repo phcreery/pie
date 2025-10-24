@@ -9,7 +9,7 @@ pub const BayerFilters = struct {
     /// convert from libraw idata.filters (a 32 bit mask of indices of cdesc (typically 'RGBG'))
     /// see https://www.libraw.org/docs/API-datastruct-eng.html
     /// see also libraw/libraw.h COLOR and FC functions
-    pub fn from_libraw(idata_filters: u32) !BayerFilters {
+    pub fn fromLibraw(idata_filters: u32) !BayerFilters {
         if (idata_filters < 1000) {
             // these are special patterns that libraw reserves for non-standard CFA layouts
             return error.UnsupportedFilterPattern;
@@ -59,7 +59,7 @@ pub const BayerFilters = struct {
     }
 };
 
-test "BayerFilters.from_libraw()" {
+test "BayerFilters.fromLibraw()" {
     // 0b11001100110011001100110011001100
     //        the 4 colors are:  ^^^^^^^^
     // I think libraw reads from right-to-left
@@ -73,12 +73,12 @@ test "BayerFilters.from_libraw()" {
     // [ R G2 ]
     // [ R G2 ]
 
-    var filters = try BayerFilters.from_libraw(0b11001100110011001100110011001100);
+    var filters = try BayerFilters.fromLibraw(0b11001100110011001100110011001100);
     try std.testing.expectEqual([2][2]FilterColor{
         .{ .R, .G2 },
         .{ .R, .G2 },
     }, filters.pattern);
-    filters = try BayerFilters.from_libraw(0xb4b4b4b4);
+    filters = try BayerFilters.fromLibraw(0xb4b4b4b4);
     try std.testing.expectEqual([2][2]FilterColor{
         .{ .R, .G },
         .{ .G2, .B },
@@ -86,7 +86,7 @@ test "BayerFilters.from_libraw()" {
 }
 
 test "BayerFilters.asRGGBVec2Offsets()" {
-    const filters = try BayerFilters.from_libraw(0xb4b4b4b4);
+    const filters = try BayerFilters.fromLibraw(0xb4b4b4b4);
     const rggb_offsets = filters.asRGGBVec2Offsets();
     try std.testing.expectEqual([4][2]usize{
         .{ 0, 0 },

@@ -2,7 +2,7 @@ const std = @import("std");
 const pie = @import("pie");
 
 test "simple compute test" {
-    var engine = try pie.engine.Engine.init();
+    var engine = try pie.gpu.GPU.init();
     defer engine.deinit();
 
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
@@ -19,31 +19,36 @@ test "simple compute test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    var shader_pipe = try engine.compileShader(shader_code, "doubleMe");
+    var shader_pipe = try pie.gpu.ShaderPipe.init(&engine, shader_code, "doubleMe");
     defer shader_pipe.deinit();
 
-    const init_contents = [_]f16{ 1, 2, 3, 4 };
-    engine.mapUpload(&init_contents);
+    const region = pie.gpu.CopyRegionParams{
+        .w = 256 / pie.gpu.BYTES_PER_PIXEL_RGBAf16,
+        .h = 1,
+    };
 
-    engine.enqueueUpload();
-    engine.enqueueShader(shader_pipe);
-    engine.enqueueDownload();
+    var init_contents = std.mem.zeroes([256]f16);
+    _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
+    engine.mapUpload(&init_contents, region);
+
+    engine.enqueueStage(&shader_pipe, region) catch unreachable;
+    engine.enqueueShader(&shader_pipe, region);
+    engine.enqueueDestage(&shader_pipe, region) catch unreachable;
     engine.run();
 
-    const result = try engine.mapDownload();
+    const result = try engine.mapDownload(region);
+    std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
-    const output = [_]f16{ 0, 0, 0, 0 };
-    std.log.info("Compute shader output: {any}", .{output});
-
-    const expected_contents = [_]f16{ 2, 4, 6, 8 };
-    try std.testing.expect(std.mem.eql(f16, expected_contents[0..], result));
+    var expected_contents = std.mem.zeroes([256]f16);
+    _ = std.mem.copyForwards(f16, expected_contents[0..4], &[_]f16{ 2.0, 4.0, 6.0, 8.0 });
+    try std.testing.expectEqualSlices(f16, expected_contents[0..], result);
 }
 
 test "simple compute double buffer test" {
     // if (true) {
     //     return error.SkipZigTest;
     // }
-    var engine = try pie.engine.Engine.init();
+    var engine = try pie.gpu.GPU.init();
     defer engine.deinit();
 
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
@@ -59,22 +64,29 @@ test "simple compute double buffer test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    var shader_pipe = try engine.compileShader(shader_code, "doubleMe");
+    var shader_pipe = try pie.gpu.ShaderPipe.init(&engine, shader_code, "doubleMe");
     defer shader_pipe.deinit();
 
-    const init_contents = [_]f16{ 1, 2, 3, 4 };
-    engine.mapUpload(&init_contents);
+    const region = pie.gpu.CopyRegionParams{
+        .w = 256 / pie.gpu.BYTES_PER_PIXEL_RGBAf16,
+        .h = 1,
+    };
 
-    engine.enqueueUpload();
-    engine.enqueueShader(shader_pipe);
-    engine.swapBuffers();
-    engine.enqueueShader(shader_pipe);
-    engine.enqueueDownload();
+    var init_contents = std.mem.zeroes([256]f16);
+    _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
+    engine.mapUpload(&init_contents, region);
+
+    engine.enqueueStage(&shader_pipe, region) catch unreachable;
+    engine.enqueueShader(&shader_pipe, region);
+    shader_pipe.swapBuffers();
+    engine.enqueueShader(&shader_pipe, region);
+    engine.enqueueDestage(&shader_pipe, region) catch unreachable;
     engine.run();
 
-    const result = try engine.mapDownload();
-    std.log.info("Download buffer contents: {any}", .{result});
+    const result = try engine.mapDownload(region);
+    std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
-    const expected_contents = [_]f16{ 4, 8, 12, 16 };
-    try std.testing.expect(std.mem.eql(f16, expected_contents[0..], result));
+    var expected_contents = std.mem.zeroes([256]f16);
+    _ = std.mem.copyForwards(f16, expected_contents[0..4], &[_]f16{ 4.0, 8.0, 12.0, 16.0 });
+    try std.testing.expectEqualSlices(f16, expected_contents[0..], result);
 }

@@ -41,8 +41,9 @@ pub const RawImage = struct {
         std.log.info("Filters: {x} ({b})", .{ libraw_rp.*.rawdata.iparams.filters, libraw_rp.*.rawdata.iparams.filters });
         std.log.info("Color Desc.: {s}", .{libraw_rp.*.rawdata.iparams.cdesc});
         // std.log.info("Type of raw_image: (c_short = i16, c_ushort = u16) {any}", .{@TypeOf(raw_image[0])});
+        std.log.info("Max Value: {d}", .{max_value});
 
-        std.log.info("Casting u16 to f16 and Normalizing", .{});
+        // std.log.info("Casting u16 to f16 and Normalizing", .{});
         var raw_image_norm: []f16 = try allocator.alloc(f16, raw_pixel_count);
         errdefer allocator.free(raw_image_norm);
         for (raw_image, 0..raw_pixel_count) |value, i| {
@@ -51,12 +52,12 @@ pub const RawImage = struct {
                 continue;
             }
             raw_image_norm[i] = @as(f16, @floatFromInt(value)) / @as(f16, @floatFromInt(max_value));
-            if (i < 16) {
-                std.debug.print("raw {d}, float {d}\n", .{
-                    raw_image[i],
-                    raw_image_norm[i],
-                });
-            }
+            // if (i < 16) {
+            //     std.debug.print("raw {d}, float {d}\n", .{
+            //         raw_image[i],
+            //         raw_image_norm[i],
+            //     });
+            // }
         }
 
         return RawImage{
@@ -65,7 +66,7 @@ pub const RawImage = struct {
             .height = img_height,
             .raw_image = raw_image_norm,
             .max_value = @as(f16, @floatFromInt(max_value)),
-            .filters = try bayer_filters.BayerFilters.from_libraw(libraw_rp.*.rawdata.iparams.filters),
+            .filters = try bayer_filters.BayerFilters.fromLibraw(libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
         };
     }
