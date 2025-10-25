@@ -43,6 +43,11 @@ zig 0.15.1
 
 - Documentation
   - style standards: https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md
-  - ["raw doggin' interfaces"](https://www.youtube.com/watch?v=ZOllg8C3ows): https://www.openmymind.net/Zig-Interfaces/
+  - Interfaces in zig
+    - ["raw doggin' interfaces"](https://www.youtube.com/watch?v=ZOllg8C3ows): https://www.openmymind.net/Zig-Interfaces/
+    - https://github.com/permutationlock/ztrait
+    - https://github.com/permutationlock/zimpl
+    - https://github.com/nilslice/zig-interface
+    - https://williamw520.github.io/2025/07/13/zig-interface-revisited.html
   - https://ziggit.dev/t/convention-for-init-deinit/4865/2
   - [Zig cheatsheet](https://gist.github.com/jdmichaud/b75ee234bfa87283a6337e06a3b70767)

@@ -43,8 +43,8 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const wgpu_native_dep = b.dependency("wgpu_native_zig", .{ .target = target, .optimize = optimize });
-    const zigimg_dependency = b.dependency("zigimg", .{
+    const dep_wgpu_native = b.dependency("wgpu_native_zig", .{ .target = target, .optimize = optimize });
+    const dep_zigimg = b.dependency("zigimg", .{
         .target = target,
         .optimize = optimize,
     });
@@ -76,16 +76,16 @@ pub fn build(b: *Build) !void {
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             // .{ .name = "opencl", .module = dep_opencl.module("opencl") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu", .module = wgpu_native_dep.module("wgpu") },
-            .{ .name = "wgpu-c", .module = wgpu_native_dep.module("wgpu-c") },
-            .{ .name = "zigimg", .module = zigimg_dependency.module("zigimg") },
+            .{ .name = "wgpu", .module = dep_wgpu_native.module("wgpu") },
+            .{ .name = "wgpu-c", .module = dep_wgpu_native.module("wgpu-c") },
+            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
         },
     });
     mod_main.addOptions("build_options", mod_options);
 
     // TESTS
-    const test_step = b.step("test", "Run unit tests");
     // UNIT TESTS
+    const test_step = b.step("test", "Run unit tests");
     const unit_tests = b.addTest(.{
         .name = "unit tests",
         .root_module = mod_main,
@@ -95,6 +95,8 @@ pub fn build(b: *Build) !void {
     test_step.dependOn(&run_unit_tests.step);
 
     // INTEGRATION TESTS
+    const integration_test_step = b.step("integration", "Run integration tests");
+    // first run the zig code as an executable
     const mod_integration_test = b.createModule(.{
         .root_source_file = b.path("testing/integration/integration.zig"),
         .target = target,
@@ -105,27 +107,24 @@ pub fn build(b: *Build) !void {
                 .module = mod_main,
             },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "zigimg", .module = zigimg_dependency.module("zigimg") },
+            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
         },
     });
-    const integration_tests = b.addExecutable(.{
-        .name = "integration tests",
+    const integration_tests_exe = b.addExecutable(.{
+        .name = "integration tests exe",
         .root_module = mod_integration_test,
     });
-    // const test_runner_options = b.addOptions();
-    // integration_tests.root_module.addOptions("build_options", test_runner_options);
-    // test_runner_options.addOption(bool, "test_all_allocation_failures", test_all_allocation_failures);
-    const integration_test_runner = b.addRunArtifact(integration_tests);
-    // integration_test_runner.addArg(b.pathFromRoot("test/cases"));
-    // integration_test_runner.addArg(b.zig_exe);
-    test_step.dependOn(&integration_test_runner.step);
-    const integration_tests_tests = b.addTest(.{
-        .name = "integration tests tests",
+    const integration_test_runner = b.addRunArtifact(integration_tests_exe);
+    integration_test_step.dependOn(&integration_test_runner.step);
+
+    // then run the tests in the integration tests via the test runner
+    const integration_tests = b.addTest(.{
+        .name = "integration tests",
         .root_module = mod_integration_test,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
-    const run_integration_tests = b.addRunArtifact(integration_tests_tests);
-    test_step.dependOn(&run_integration_tests.step);
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+    integration_test_step.dependOn(&run_integration_tests.step);
 
     // from here on different handling for native vs wasm builds
     if (target.result.cpu.arch.isWasm()) {

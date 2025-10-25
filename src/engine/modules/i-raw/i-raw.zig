@@ -1,6 +1,6 @@
 const std = @import("std");
 const libraw = @import("libraw");
-const bayer_filters = @import("../shared/bayer_filters.zig");
+const CFA = @import("../shared/CFA.zig");
 
 pub const RawImage = struct {
     allocator: std.mem.Allocator,
@@ -8,7 +8,7 @@ pub const RawImage = struct {
     height: usize,
     raw_image: []f16,
     max_value: f16,
-    filters: bayer_filters.BayerFilters,
+    filters: CFA,
     libraw_rp: *libraw.libraw_data_t,
 
     pub fn read(allocator: std.mem.Allocator, file: std.fs.File) !RawImage {
@@ -66,7 +66,7 @@ pub const RawImage = struct {
             .height = img_height,
             .raw_image = raw_image_norm,
             .max_value = @as(f16, @floatFromInt(max_value)),
-            .filters = try bayer_filters.BayerFilters.fromLibraw(libraw_rp.*.rawdata.iparams.filters),
+            .filters = try CFA.fromLibraw(&libraw_rp.*.rawdata.iparams.cdesc, libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
         };
     }
@@ -79,6 +79,12 @@ pub const RawImage = struct {
     }
 };
 
+test "libraw version" {
+    // const version = libraw.libraw_version();
+    // try std.testing.expect(version.len > 0);
+    // std.log.info("LibRaw version: {s}", .{version});
+}
+
 test "open raw image" {
     const allocator = std.testing.allocator;
     const file = try std.fs.cwd().openFile("testing/integration/DSC_6765.NEF", .{});
@@ -90,7 +96,7 @@ test "open raw image" {
     try std.testing.expect(raw_image.libraw_rp.sizes.raw_height == 4016);
     try std.testing.expect(raw_image.libraw_rp.sizes.iwidth == 6016);
     try std.testing.expect(raw_image.libraw_rp.sizes.iheight == 4016);
-    try std.testing.expectEqual([2][2]bayer_filters.FilterColor{
+    try std.testing.expectEqual([2][2]CFA.FilterColor{
         .{ .R, .G },
         .{ .G2, .B },
     }, raw_image.filters.pattern);
