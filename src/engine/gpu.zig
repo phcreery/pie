@@ -1,3 +1,4 @@
+/// A lot of this is just a wrapper around wgpu to make it easier to use in the context of image processing.
 const std = @import("std");
 const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
@@ -13,30 +14,43 @@ pub const WORKGROUP_SIZE_Y: u32 = 8;
 pub const WORKGROUP_SIZE_Z: u32 = 1;
 
 fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
-    std.log.info("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
+    // std.log.info("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
+    _ = status;
     const complete: *bool = @ptrCast(@alignCast(userdata1));
     complete.* = true;
 }
+
+pub const TextureFormat = enum {
+    rgba16float,
+
+    pub fn toWGPU(self: TextureFormat) wgpu.TextureFormat {
+        return switch (self) {
+            .rgba16float => wgpu.TextureFormat.rgba16_float,
+        };
+    }
+};
 
 pub const Texture = struct {
     texture: *wgpu.Texture = undefined,
     const Self = @This();
 
-    pub fn init(gpu: *GPU) !Self {
+    pub fn init(gpu: *GPU, format: TextureFormat, roi: ROI) !Self {
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
         const texture = gpu.device.createTexture(&wgpu.TextureDescriptor{
             .label = wgpu.StringView.fromSlice("input_texture"),
             .size = wgpu.Extent3D{
-                .width = limits.max_texture_dimension_2d / 2,
-                .height = limits.max_texture_dimension_2d / 2,
+                // .width = limits.max_texture_dimension_2d / 2,
+                // .height = limits.max_texture_dimension_2d / 2,
+                .width = roi.size.w,
+                .height = roi.size.h,
                 .depth_or_array_layers = 1,
             },
             .mip_level_count = 1,
             .sample_count = 1,
             .dimension = wgpu.TextureDimension.@"2d",
-            .format = wgpu.TextureFormat.rgba16_float,
+            .format = format.toWGPU(),
             .usage = wgpu.TextureUsages.storage_binding | wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst,
         }).?;
         errdefer texture.release();
@@ -95,41 +109,30 @@ pub const Bindings = struct {
     }
 };
 
-// pub const Shader = struct {
-//     shader_module: *wgpu.ShaderModule = undefined,
-//     entry_point: []const u8,
-//     const Self = @This();
-//     pub fn init(gpu: *GPU, shader_source: []const u8, entry_point: []const u8) Self {
-//         const shader_module = gpu.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
-//             .label = "Compute Shader",
-//             .code = shader_source,
-//         })).?;
-//         return Shader{
-//             .shader_module = shader_module,
-//             .entry_point = entry_point,
-//         };
-//     }
-// };
+pub const ShaderPipeConnType = enum {
+    input,
+    output,
+};
+
+pub const ShaderPipeConn = struct {
+    binding: u32,
+    type: ShaderPipeConnType,
+    format: TextureFormat,
+};
+pub const ShaderPipeParams = struct {
+    binding: u32,
+    format: TextureFormat,
+};
 
 pub const ShaderPipe = struct {
-    bind_group_layout: *wgpu.BindGroupLayout = undefined,
-    // shader: *Shader,
-    shader_module: *wgpu.ShaderModule = undefined,
-    // entry_point: []const u8,
-    pipeline_layout: *wgpu.PipelineLayout = undefined,
+    bind_group_layout: *wgpu.BindGroupLayout,
+    shader_module: *wgpu.ShaderModule,
+    pipeline_layout: *wgpu.PipelineLayout,
     pipeline: *wgpu.ComputePipeline,
-    is_swapped: bool = false,
 
     const Self = @This();
 
-    /// Create the shader module from WGSL source code.
-    /// You can also load SPIR-V or use the Naga IR.
-    /// const shader_module = gpu.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
-    ///     .label = "Compute Shader",
-    ///     .code = shader_source,
-    /// })).?;
-    /// errdefer shader_module.release();
-    pub fn init(gpu: *GPU, shader_source: []const u8, entry_point: []const u8) !Self {
+    pub fn init(gpu: *GPU, shader_source: []const u8, entry_point: []const u8, comptime g0_conns: []const ShaderPipeConn) !Self {
         std.log.info("Initializing ShaderPipe", .{});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
@@ -138,49 +141,50 @@ pub const ShaderPipe = struct {
         //
         // Note, we are using a texture in binding 0 and a storage texture in binding 1.
         // this is because readable storage textures are not supported in WebGPU unless you enable
-        // (readonly_and_readwrite_storage_textures).
-        // This is also done in vkdt
+        // (readonly_and_readwrite_storage_textures). This is also done in vkdt.
         //
-        // TODO: create multiple bind groups/layouts for different shader needs and oversized buffers
-        const bind_group_layout_entries = &[_]wgpu.BindGroupLayoutEntry{
-            // Binding 0: input storage buffer
-            wgpu.BindGroupLayoutEntry{
-                .binding = 0,
-                .visibility = wgpu.ShaderStages.compute,
-                .texture = wgpu.TextureBindingLayout{
-                    .view_dimension = wgpu.ViewDimension.@"2d",
+        // First, we are going to create the bind group layout for group 0
+        // this will hold the input/output textures
+        var bind_group_layout_entries_g0 = std.mem.zeroes([g0_conns.len]wgpu.BindGroupLayoutEntry);
+
+        for (g0_conns) |conn| {
+            switch (conn.type) {
+                ShaderPipeConnType.input => {
+                    // Note: we don't need format for input textures
+                    const entry = wgpu.BindGroupLayoutEntry{
+                        .binding = conn.binding,
+                        .visibility = wgpu.ShaderStages.compute,
+                        .texture = wgpu.TextureBindingLayout{
+                            .view_dimension = wgpu.ViewDimension.@"2d",
+                        },
+                    };
+                    bind_group_layout_entries_g0[conn.binding] = entry;
                 },
-            },
-            // Binding 1: output storage buffer
-            wgpu.BindGroupLayoutEntry{
-                .binding = 1,
-                .visibility = wgpu.ShaderStages.compute,
-                // .buffer = wgpu.BufferBindingLayout{
-                //     .type = wgpu.BufferBindingType.storage,
-                //     .has_dynamic_offset = @as(u32, @intFromBool(false)),
-                // },
-                // .texture = wgpu.TextureBindingLayout{
-                //     // .sample_type = wgpu.SampleType.float,
-                //     .view_dimension = wgpu.ViewDimension.@"2d",
-                //     // .multisampled = @as(u32, @intFromBool(false)),
-                // },
-                .storage_texture = wgpu.StorageTextureBindingLayout{
-                    .access = wgpu.StorageTextureAccess.write_only,
-                    .format = wgpu.TextureFormat.rgba16_float,
-                    .view_dimension = wgpu.ViewDimension.@"2d",
+                ShaderPipeConnType.output => {
+                    const entry = wgpu.BindGroupLayoutEntry{
+                        .binding = conn.binding,
+                        .visibility = wgpu.ShaderStages.compute,
+                        .storage_texture = wgpu.StorageTextureBindingLayout{
+                            .access = wgpu.StorageTextureAccess.write_only,
+                            .format = conn.format.toWGPU(),
+                            .view_dimension = wgpu.ViewDimension.@"2d",
+                        },
+                    };
+                    bind_group_layout_entries_g0[conn.binding] = entry;
                 },
-            },
-        };
-        const bind_group_layout = gpu.device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+            }
+        }
+
+        const bind_group_layout_g0 = gpu.device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
             .label = wgpu.StringView.fromSlice("Bind Group Layout"),
             .entry_count = 2,
-            .entries = bind_group_layout_entries,
+            .entries = &bind_group_layout_entries_g0,
         }).?;
-        errdefer bind_group_layout.release();
+        errdefer bind_group_layout_g0.release();
 
         // TODO: Cache the pipeline and layout for each shader module and entry point combination.
         // The pipeline layout describes the bind groups that a pipeline expects
-        const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout};
+        const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout_g0};
         const pipeline_layout = gpu.device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
             .label = wgpu.StringView.fromSlice("Pipeline Layout"),
             .bind_group_layout_count = 1,
@@ -190,6 +194,8 @@ pub const ShaderPipe = struct {
 
         std.log.info("Compiling shader", .{});
 
+        // Create the shader module from WGSL source code.
+        // You can also load SPIR-V or use the Naga IR.
         const shader_module = gpu.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
             .label = "Compute Shader",
             .code = shader_source,
@@ -209,7 +215,7 @@ pub const ShaderPipe = struct {
 
         return ShaderPipe{
             // .textures = [_]*wgpu.Texture{ texture_a, texture_b },
-            .bind_group_layout = bind_group_layout,
+            .bind_group_layout = bind_group_layout_g0,
             // .bind_groups = [2]*wgpu.BindGroup{ bind_group_a_to_b, bind_group_b_to_a },
             // .shader = shader,
             .shader_module = shader_module,
@@ -372,9 +378,7 @@ pub const GPU = struct {
     }
 
     pub fn enqueueShader(self: *Self, shader_pipe: *ShaderPipe, bindings: *Bindings, work_size: ROI) void {
-        std.log.info("Running compute shader", .{});
-
-        std.log.info("Dispatching compute work", .{});
+        std.log.info("Enqueuing compute shader", .{});
         // A compute pass is a single series of compute operations. While we are recording a compute
         // pass, we cannot record to the encoder.
         const compute_pass = self.encoder.beginComputePass(&wgpu.ComputePassDescriptor{
@@ -388,19 +392,23 @@ pub const GPU = struct {
         //
         // If the user passes 32 inputs, we will
         // dispatch 1 workgroups. If the user passes 65 inputs, we will dispatch 2 workgroups, etc.
-        const output_size = work_size.size.w * work_size.size.h;
-        const workgroup_size = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y * WORKGROUP_SIZE_Z;
         const workgroup_count_x = (work_size.size.w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X; // ceil division
         const workgroup_count_y = (work_size.size.h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y; // ceil division
         const workgroup_count_z = 1;
-        std.log.info("output_size: {d}", .{output_size});
-        std.log.info("workgroup_size: {d}", .{workgroup_size});
-        std.log.info("workgroup_count_x: {d}", .{workgroup_count_x});
-        std.log.info("workgroup_count_y: {d}", .{workgroup_count_y});
-        std.log.info("workgroup_count_z: {d}", .{workgroup_count_z});
-        std.log.info("total workgroups: {d}", .{workgroup_count_x * workgroup_count_y * workgroup_count_z});
-        std.log.info("total invocations: {d}", .{@as(u32, workgroup_count_x) * workgroup_count_y * workgroup_count_z * workgroup_size});
 
+        { // Debug info
+            // const output_size = work_size.size.w * work_size.size.h;
+            // const workgroup_size = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y * WORKGROUP_SIZE_Z;
+            // std.log.info("output_size: {d}", .{output_size});
+            // std.log.info("workgroup_size: {d}", .{workgroup_size});
+            // std.log.info("workgroup_count_x: {d}", .{workgroup_count_x});
+            // std.log.info("workgroup_count_y: {d}", .{workgroup_count_y});
+            // std.log.info("workgroup_count_z: {d}", .{workgroup_count_z});
+            // std.log.info("total workgroups: {d}", .{workgroup_count_x * workgroup_count_y * workgroup_count_z});
+            // std.log.info("total invocations: {d}", .{@as(u32, workgroup_count_x) * workgroup_count_y * workgroup_count_z * workgroup_size});
+        }
+
+        std.log.info("Dispatching compute work", .{});
         compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
         // Now we drop the compute pass, giving us access to the encoder again.
         compute_pass.end();
@@ -425,11 +433,7 @@ pub const GPU = struct {
             .height = roi.size.h,
             .depth_or_array_layers = 1,
         };
-        std.log.info("[enqueueMount] copy_size.width: {d}", .{copy_size.width});
-        std.log.info("[enqueueMount] copy_size.height: {d}", .{copy_size.height});
-        std.log.info("[enqueueMount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
         const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * BPP_RGBAf16;
-        std.log.info("[enqueueMount] offset: {d}", .{offset});
         const source = wgpu.TexelCopyBufferInfo{
             .buffer = self.upload_buffer,
             .layout = wgpu.TexelCopyBufferLayout{
@@ -439,9 +443,15 @@ pub const GPU = struct {
                 .rows_per_image = roi.size.h,
             },
         };
-        std.log.info("[enqueueMount] source.buffer size: {d}", .{self.upload_buffer.getSize()});
-        std.log.info("[enqueueMount] source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
-        std.log.info("[enqueueMount] source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
+        { // Debug info
+            // std.log.info("[enqueueMount] copy_size.width: {d}", .{copy_size.width});
+            // std.log.info("[enqueueMount] copy_size.height: {d}", .{copy_size.height});
+            // std.log.info("[enqueueMount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
+            // std.log.info("[enqueueMount] offset: {d}", .{offset});
+            // std.log.info("[enqueueMount] source.buffer size: {d}", .{self.upload_buffer.getSize()});
+            // std.log.info("[enqueueMount] source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
+            // std.log.info("[enqueueMount] source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
+        }
         const destination = wgpu.TexelCopyTextureInfo{
             .texture = texture.texture,
             .mip_level = 0,
@@ -469,9 +479,6 @@ pub const GPU = struct {
             .height = roi.size.h,
             .depth_or_array_layers = 1,
         };
-        std.log.info("[enqueueUnmount] copy_size.width: {d}", .{copy_size.width});
-        std.log.info("[enqueueUnmount] copy_size.height: {d}", .{copy_size.height});
-        std.log.info("[enqueueUnmount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
         const source = wgpu.TexelCopyTextureInfo{
             .texture = texture.texture,
             .mip_level = 0,
@@ -479,7 +486,6 @@ pub const GPU = struct {
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
         const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * BPP_RGBAf16;
-        std.log.info("[enqueueUnmount] offset: {d}", .{offset});
         const destination = wgpu.TexelCopyBufferInfo{
             .buffer = self.download_buffer,
             .layout = wgpu.TexelCopyBufferLayout{
@@ -489,9 +495,15 @@ pub const GPU = struct {
                 .rows_per_image = roi.size.h,
             },
         };
-        std.log.info("[enqueueUnmount] destination.buffer size: {d}", .{self.download_buffer.getSize()});
-        std.log.info("[enqueueUnmount] destination.layout.bytes_per_row: {d}", .{destination.layout.bytes_per_row});
-        std.log.info("[enqueueUnmount] destination.layout.rows_per_image: {d}", .{destination.layout.rows_per_image});
+        { // Debug info
+            // std.log.info("[enqueueUnmount] copy_size.width: {d}", .{copy_size.width});
+            // std.log.info("[enqueueUnmount] copy_size.height: {d}", .{copy_size.height});
+            // std.log.info("[enqueueUnmount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
+            // std.log.info("[enqueueUnmount] offset: {d}", .{offset});
+            // std.log.info("[enqueueUnmount] destination.buffer size: {d}", .{self.download_buffer.getSize()});
+            // std.log.info("[enqueueUnmount] destination.layout.bytes_per_row: {d}", .{destination.layout.bytes_per_row});
+            // std.log.info("[enqueueUnmount] destination.layout.rows_per_image: {d}", .{destination.layout.rows_per_image});
+        }
         self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
     }
 
@@ -552,4 +564,15 @@ pub const GPU = struct {
         const result = download_buffer_ptr[0..size];
         return result;
     }
+
+    // Helper functions to create ShaderPipe, Texture, and Bindings
+    // pub fn createShaderPipe(self: *Self, shader_source: []const u8, entry_point: []const u8, comptime g0_conns: []const ShaderPipeConn) !ShaderPipe {
+    //     return ShaderPipe.init(self, shader_source, entry_point, g0_conns);
+    // }
+    // pub fn createTexture(self: *Self, format: TextureFormat, roi: ROI) !Texture {
+    //     return Texture.init(self, format, roi);
+    // }
+    // pub fn createBindings(self: *Self, shader_pipe: *ShaderPipe, texture_a: *Texture, texture_b: *Texture) !Bindings {
+    //     return Bindings.init(self, shader_pipe, texture_a, texture_b);
+    // }
 };

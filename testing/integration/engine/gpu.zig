@@ -9,8 +9,23 @@ const Bindings = pie.engine.gpu.Bindings;
 const BPP_RGBAf16 = pie.engine.gpu.BPP_RGBAf16;
 
 test "simple compute test" {
-    var engine = try GPU.init();
-    defer engine.deinit();
+    // const allocator = std.testing.allocator;
+
+    var gpu = try GPU.init();
+    defer gpu.deinit();
+
+    var init_contents = std.mem.zeroes([256]f16);
+    _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
+    const roi = ROI{
+        .size = .{
+            .w = 256 / BPP_RGBAf16,
+            .h = 1,
+        },
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    };
 
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
     const shader_code: []const u8 =
@@ -26,40 +41,39 @@ test "simple compute test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    var shader_pipe = try ShaderPipe.init(&engine, shader_code, "doubleMe");
+    const conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
+        .binding = 0,
+        .type = .input,
+        .format = .rgba16float,
+    }, .{
+        .binding = 1,
+        .type = .output,
+        .format = .rgba16float,
+    } };
+    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", &conns);
     defer shader_pipe.deinit();
 
     // MEMORY
-    var texture_in = try Texture.init(&engine);
+    var texture_in = try Texture.init(&gpu, conns[0].format, roi);
     defer texture_in.deinit();
 
-    var texture_out = try Texture.init(&engine);
+    var texture_out = try Texture.init(&gpu, conns[1].format, roi);
     defer texture_out.deinit();
 
-    var bindings = try Bindings.init(&engine, &shader_pipe, &texture_in, &texture_out);
+    var bindings = try Bindings.init(&gpu, &shader_pipe, &texture_in, &texture_out);
     defer bindings.deinit();
 
-    const roi = ROI{
-        .size = .{
-            .w = 256 / BPP_RGBAf16,
-            .h = 1,
-        },
-        .origin = .{
-            .x = 0,
-            .y = 0,
-        },
-    };
+    // UPLOAD
+    gpu.mapUpload(&init_contents, roi);
 
-    var init_contents = std.mem.zeroes([256]f16);
-    _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
-    engine.mapUpload(&init_contents, roi);
+    // RUN
+    gpu.enqueueMount(&texture_in, roi) catch unreachable;
+    gpu.enqueueShader(&shader_pipe, &bindings, roi);
+    gpu.enqueueUnmount(&texture_out, roi) catch unreachable;
+    gpu.run();
 
-    engine.enqueueMount(&texture_in, roi) catch unreachable;
-    engine.enqueueShader(&shader_pipe, &bindings, roi);
-    engine.enqueueUnmount(&texture_out, roi) catch unreachable;
-    engine.run();
-
-    const result = try engine.mapDownload(roi);
+    // DOWNLOAD
+    const result = try gpu.mapDownload(roi);
     std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
     var expected_contents = std.mem.zeroes([256]f16);
@@ -71,8 +85,21 @@ test "simple compute double buffer test" {
     // if (true) {
     //     return error.SkipZigTest;
     // }
-    var engine = try GPU.init();
-    defer engine.deinit();
+    var gpu = try GPU.init();
+    defer gpu.deinit();
+
+    var init_contents = std.mem.zeroes([256]f16);
+    _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
+    const roi = ROI{
+        .size = .{
+            .w = 256 / BPP_RGBAf16,
+            .h = 1,
+        },
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    };
 
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
     const shader_code: []const u8 =
@@ -87,44 +114,42 @@ test "simple compute double buffer test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    var shader_pipe = try ShaderPipe.init(&engine, shader_code, "doubleMe");
+    const conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
+        .binding = 0,
+        .type = .input,
+        .format = .rgba16float,
+    }, .{
+        .binding = 1,
+        .type = .output,
+        .format = .rgba16float,
+    } };
+    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", &conns);
     defer shader_pipe.deinit();
 
     // MEMORY
-    var texture_a = try Texture.init(&engine);
+    var texture_a = try Texture.init(&gpu, conns[0].format, roi);
     defer texture_a.deinit();
 
-    var texture_b = try Texture.init(&engine);
+    var texture_b = try Texture.init(&gpu, conns[1].format, roi);
     defer texture_b.deinit();
 
-    var bindings_a_to_b = try Bindings.init(&engine, &shader_pipe, &texture_a, &texture_b);
+    var bindings_a_to_b = try Bindings.init(&gpu, &shader_pipe, &texture_a, &texture_b);
     defer bindings_a_to_b.deinit();
-    var bindings_b_to_a = try Bindings.init(&engine, &shader_pipe, &texture_b, &texture_a);
+    var bindings_b_to_a = try Bindings.init(&gpu, &shader_pipe, &texture_b, &texture_a);
     defer bindings_b_to_a.deinit();
 
-    const roi = ROI{
-        .size = .{
-            .w = 256 / BPP_RGBAf16,
-            .h = 1,
-        },
-        .origin = .{
-            .x = 0,
-            .y = 0,
-        },
-    };
-
-    var init_contents = std.mem.zeroes([256]f16);
-    _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
-    engine.mapUpload(&init_contents, roi);
+    // UPLOAD
+    gpu.mapUpload(&init_contents, roi);
 
     // a -> b -> a
-    engine.enqueueMount(&texture_a, roi) catch unreachable;
-    engine.enqueueShader(&shader_pipe, &bindings_a_to_b, roi);
-    engine.enqueueShader(&shader_pipe, &bindings_b_to_a, roi);
-    engine.enqueueUnmount(&texture_a, roi) catch unreachable;
-    engine.run();
+    gpu.enqueueMount(&texture_a, roi) catch unreachable;
+    gpu.enqueueShader(&shader_pipe, &bindings_a_to_b, roi);
+    gpu.enqueueShader(&shader_pipe, &bindings_b_to_a, roi);
+    gpu.enqueueUnmount(&texture_a, roi) catch unreachable;
+    gpu.run();
 
-    const result = try engine.mapDownload(roi);
+    // DOWNLOAD
+    const result = try gpu.mapDownload(roi);
     std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
     var expected_contents = std.mem.zeroes([256]f16);
