@@ -106,23 +106,32 @@ test "load raw, demosaic, save" {
     //     try writer.interface.flush();
     // }
 
+    // SIZES
+    const image_size_in_w = @as(u32, @intCast(pie_raw_image.width));
+    const image_size_in_h = @as(u32, @intCast(pie_raw_image.height));
+
+    const roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
+    const roi_out = roi_in.scaled(0.5, 0.5);
+    const roi_in_upper, const roi_in_lower = roi_in.splitH();
+    const roi_out_upper, const roi_out_lower = roi_out.splitH();
+
     var gpu = try pie.engine.gpu.GPU.init();
     defer gpu.deinit();
 
     // FORMAT CONVERSION WITH COMPUTE SHADER
-    const format: []const u8 =
-        \\enable f16;
-        \\@group(0) @binding(0) var input:  texture_2d;
-        \\@group(0) @binding(1) var output: texture_storage_2d<write>;
-        \\@compute @workgroup_size(8, 8, 1)
-        \\fn format(@builtin(global_invocation_id) global_id: vec3<u32>) {
-        \\    var coords = vec2<i32>(global_id.xy);
-        \\    let px = textureLoad(input, coords, 0);
-        \\    textureStore(output, coords, px);
-        \\}
-    ;
-    var format_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, format, "format");
-    defer format_shader_pipe.deinit();
+    // const format: []const u8 =
+    //     \\enable f16;
+    //     \\@group(0) @binding(0) var input:  texture_2d;
+    //     \\@group(0) @binding(1) var output: texture_storage_2d<write>;
+    //     \\@compute @workgroup_size(8, 8, 1)
+    //     \\fn format(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    //     \\    var coords = vec2<i32>(global_id.xy);
+    //     \\    let px = textureLoad(input, coords, 0);
+    //     \\    textureStore(output, coords, px);
+    //     \\}
+    // ;
+    // var format_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, format, "format");
+    // defer format_shader_pipe.deinit();
 
     // DEMOSAIC WITH COMPUTE SHADER
     const demosaic: []const u8 =
@@ -152,42 +161,42 @@ test "load raw, demosaic, save" {
         \\    textureStore(output, coords, rgba);
         \\}
     ;
-    var demosaic_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, demosaic, "demosaic");
+
+    const conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
+        .binding = 0,
+        .type = .input,
+        .format = .rgba16float,
+    }, .{
+        .binding = 1,
+        .type = .output,
+        .format = .rgba16float,
+    } };
+    var demosaic_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, demosaic, "demosaic", &conns);
     defer demosaic_shader_pipe.deinit();
 
     // UPPER MEMORY
-    var texture_upper_in = try pie.engine.gpu.Texture.init(&gpu);
+    var texture_upper_in = try pie.engine.gpu.Texture.init(&gpu, conns[0].format, roi_in_upper);
     defer texture_upper_in.deinit();
 
-    var texture_upper_out = try pie.engine.gpu.Texture.init(&gpu);
+    var texture_upper_out = try pie.engine.gpu.Texture.init(&gpu, conns[1].format, roi_out_upper);
     defer texture_upper_out.deinit();
 
     var bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_shader_pipe, &texture_upper_in, &texture_upper_out);
     defer bindings_upper.deinit();
 
     // LOWER MEMORY
-    var texture_lower_in = try pie.engine.gpu.Texture.init(&gpu);
+    var texture_lower_in = try pie.engine.gpu.Texture.init(&gpu, conns[0].format, roi_in_lower);
     defer texture_lower_in.deinit();
 
-    var texture_lower_out = try pie.engine.gpu.Texture.init(&gpu);
+    var texture_lower_out = try pie.engine.gpu.Texture.init(&gpu, conns[1].format, roi_out_lower);
     defer texture_lower_out.deinit();
 
     var bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_shader_pipe, &texture_lower_in, &texture_lower_out);
     defer bindings_lower.deinit();
 
-    // SIZES
-    const image_size_in_w = @as(u32, @intCast(pie_raw_image.width));
-    const image_size_in_h = @as(u32, @intCast(pie_raw_image.height));
-
-    const roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
-    const roi_out = roi_in.scaled(0.5, 0.5);
-    const roi_in_upper, const roi_in_lower = roi_in.splitH();
-    const roi_out_upper, const roi_out_lower = roi_out.splitH();
-
     std.log.info("Image region: {any} {any}", .{ roi_in.size.w, roi_in.size.h });
-    // std.log.info("Image region after: {any} {any}", .{image_size_out_w, image_size_out_h});
 
-    std.log.info("\nUpload buffer contents: ", .{});
+    std.log.info("Upload buffer contents: ", .{});
     printImgBufContents(init_contents_f16, roi_in.size.w * 4);
 
     gpu.mapUpload(init_contents_f16, roi_in);
