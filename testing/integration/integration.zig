@@ -8,7 +8,7 @@ pub fn main() !void {
 }
 
 test {
-    _ = @import("engine.zig");
+    _ = @import("engine/gpu.zig");
 }
 
 fn printImgBufContents(ibuf: []f16, stride: u32) void {

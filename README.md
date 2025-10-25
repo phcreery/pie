@@ -7,6 +7,7 @@ Requires latest zig from master branch
 ```
 zig build run --watch
 zig build test --watch
+zig build integration --watch
 ```
 
 To build and run the web version:

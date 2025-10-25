@@ -1,8 +1,15 @@
 const std = @import("std");
 const pie = @import("pie");
 
+const ROI = pie.engine.ROI;
+const GPU = pie.engine.gpu.GPU;
+const ShaderPipe = pie.engine.gpu.ShaderPipe;
+const Texture = pie.engine.gpu.Texture;
+const Bindings = pie.engine.gpu.Bindings;
+const BPP_RGBAf16 = pie.engine.gpu.BPP_RGBAf16;
+
 test "simple compute test" {
-    var engine = try pie.engine.gpu.GPU.init();
+    var engine = try GPU.init();
     defer engine.deinit();
 
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
@@ -19,22 +26,22 @@ test "simple compute test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    var shader_pipe = try pie.engine.gpu.ShaderPipe.init(&engine, shader_code, "doubleMe");
+    var shader_pipe = try ShaderPipe.init(&engine, shader_code, "doubleMe");
     defer shader_pipe.deinit();
 
     // MEMORY
-    var texture_in = try pie.engine.gpu.Texture.init(&engine);
+    var texture_in = try Texture.init(&engine);
     defer texture_in.deinit();
 
-    var texture_out = try pie.engine.gpu.Texture.init(&engine);
+    var texture_out = try Texture.init(&engine);
     defer texture_out.deinit();
 
-    var bindings = try pie.engine.gpu.Bindings.init(&engine, &shader_pipe, &texture_in, &texture_out);
+    var bindings = try Bindings.init(&engine, &shader_pipe, &texture_in, &texture_out);
     defer bindings.deinit();
 
-    const roi = pie.engine.ROI{
+    const roi = ROI{
         .size = .{
-            .w = 256 / pie.engine.gpu.BPP_RGBAf16,
+            .w = 256 / BPP_RGBAf16,
             .h = 1,
         },
         .origin = .{
@@ -64,7 +71,7 @@ test "simple compute double buffer test" {
     // if (true) {
     //     return error.SkipZigTest;
     // }
-    var engine = try pie.engine.gpu.GPU.init();
+    var engine = try GPU.init();
     defer engine.deinit();
 
     // https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/shader.wgsl
@@ -80,24 +87,24 @@ test "simple compute double buffer test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    var shader_pipe = try pie.engine.gpu.ShaderPipe.init(&engine, shader_code, "doubleMe");
+    var shader_pipe = try ShaderPipe.init(&engine, shader_code, "doubleMe");
     defer shader_pipe.deinit();
 
     // MEMORY
-    var texture_a = try pie.engine.gpu.Texture.init(&engine);
+    var texture_a = try Texture.init(&engine);
     defer texture_a.deinit();
 
-    var texture_b = try pie.engine.gpu.Texture.init(&engine);
+    var texture_b = try Texture.init(&engine);
     defer texture_b.deinit();
 
-    var bindings_a_to_b = try pie.engine.gpu.Bindings.init(&engine, &shader_pipe, &texture_a, &texture_b);
+    var bindings_a_to_b = try Bindings.init(&engine, &shader_pipe, &texture_a, &texture_b);
     defer bindings_a_to_b.deinit();
-    var bindings_b_to_a = try pie.engine.gpu.Bindings.init(&engine, &shader_pipe, &texture_b, &texture_a);
+    var bindings_b_to_a = try Bindings.init(&engine, &shader_pipe, &texture_b, &texture_a);
     defer bindings_b_to_a.deinit();
 
-    const roi = pie.engine.ROI{
+    const roi = ROI{
         .size = .{
-            .w = 256 / pie.engine.gpu.BPP_RGBAf16,
+            .w = 256 / BPP_RGBAf16,
             .h = 1,
         },
         .origin = .{

@@ -14,6 +14,7 @@ pub fn main() !void {
 }
 
 test {
+    _ = @import("engine/gpu.zig");
     _ = @import("engine/modules/shared/CFA.zig");
     _ = @import("engine/modules/i-raw/i-raw.zig");
 }

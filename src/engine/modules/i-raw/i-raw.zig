@@ -24,12 +24,12 @@ pub const RawImage = struct {
         if (ret != libraw.LIBRAW_SUCCESS) {
             return error.OpenFailed;
         }
-        std.log.info("libraw_open succeeded", .{});
+        // std.log.info("libraw_open succeeded", .{});
         const ret2 = libraw.libraw_unpack(libraw_rp);
         if (ret2 != libraw.LIBRAW_SUCCESS) {
             return error.UnpackFailed;
         }
-        std.log.info("libraw_unpack succeeded", .{});
+        // std.log.info("libraw_unpack succeeded", .{});
         // TODO: some of the stuff libraw.libraw_raw2image(libraw_rp); does
 
         const img_width: u16 = libraw_rp.*.sizes.width;
@@ -38,10 +38,10 @@ pub const RawImage = struct {
         const raw_pixel_count = @as(u32, img_width) * img_height;
         const max_value: u32 = libraw_rp.*.rawdata.color.maximum;
 
-        std.log.info("Filters: {x} ({b})", .{ libraw_rp.*.rawdata.iparams.filters, libraw_rp.*.rawdata.iparams.filters });
-        std.log.info("Color Desc.: {s}", .{libraw_rp.*.rawdata.iparams.cdesc});
+        // std.log.info("Filters: {x} ({b})", .{ libraw_rp.*.rawdata.iparams.filters, libraw_rp.*.rawdata.iparams.filters });
+        // std.log.info("Color Desc.: {s}", .{libraw_rp.*.rawdata.iparams.cdesc});
         // std.log.info("Type of raw_image: (c_short = i16, c_ushort = u16) {any}", .{@TypeOf(raw_image[0])});
-        std.log.info("Max Value: {d}", .{max_value});
+        // std.log.info("Max Value: {d}", .{max_value});
 
         // std.log.info("Casting u16 to f16 and Normalizing", .{});
         var raw_image_norm: []f16 = try allocator.alloc(f16, raw_pixel_count);
