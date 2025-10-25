@@ -198,8 +198,8 @@ test "load raw, debayer, save" {
 
     // DEBAYER WITH COMPUTE SHADER
 
-    var engine = try pie.gpu.GPU.init();
-    defer engine.deinit();
+    var gpu = try pie.gpu.GPU.init();
+    defer gpu.deinit();
 
     const shader_code: []const u8 =
         \\enable f16;
@@ -224,13 +224,34 @@ test "load raw, debayer, save" {
         \\    g2 = textureLoad(input, base_coords + vec2<i32>(0, 1), 0).a;
         \\    b = textureLoad(input, base_coords + vec2<i32>(1, 1), 0).b;
         \\    let g = (g1 + g2) / 2.0;
-        \\    let rgba = vec4f(r, g, b, 1.0);
+        \\    let rgba = vec4f(r, g, b, f32(coords.y)); // just to see some variation in alpha
         \\    textureStore(output, coords, rgba);
         \\}
     ;
-    var shader_pipe = try pie.gpu.ShaderPipe.init(&engine, shader_code, "debayer");
+    var shader_pipe = try pie.gpu.ShaderPipe.init(&gpu, shader_code, "debayer");
     defer shader_pipe.deinit();
 
+    // UPPER MEMORY
+    var texture_upper_in = try pie.gpu.Texture.init(&gpu);
+    defer texture_upper_in.deinit();
+
+    var texture_upper_out = try pie.gpu.Texture.init(&gpu);
+    defer texture_upper_out.deinit();
+
+    var bindings_upper = try pie.gpu.Bindings.init(&gpu, &shader_pipe, &texture_upper_in, &texture_upper_out);
+    defer bindings_upper.deinit();
+
+    // LOWER MEMORY
+    var texture_lower_in = try pie.gpu.Texture.init(&gpu);
+    defer texture_lower_in.deinit();
+
+    var texture_lower_out = try pie.gpu.Texture.init(&gpu);
+    defer texture_lower_out.deinit();
+
+    var bindings_lower = try pie.gpu.Bindings.init(&gpu, &shader_pipe, &texture_lower_in, &texture_lower_out);
+    defer bindings_lower.deinit();
+
+    // SIZES
     const image_size_in = pie.gpu.CopyRegionParams{
         .w = @as(u32, @intCast(pie_raw_image.width)),
         .h = @as(u32, @intCast(pie_raw_image.height)),
@@ -248,11 +269,47 @@ test "load raw, debayer, save" {
         .w = image_size_pass_in.w / 2,
         .h = image_size_pass_in.h / 2,
     };
-    const image_region_ox_p1 = 0;
-    const image_region_oy_p1 = 0;
-    const image_region_ox_p2 = 0;
-    const image_region_oy_p2_in = image_size_pass_in.h;
-    const image_region_oy_p2_out = image_size_pass_out.h;
+
+    const roi_top_in = pie.gpu.StageROI{
+        .size = .{
+            .w = image_size_in.w,
+            .h = image_size_in.h / 2,
+        },
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    };
+    const roi_top_out = pie.gpu.StageROI{
+        .size = .{
+            .w = image_size_out.w,
+            .h = image_size_out.h / 2,
+        },
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    };
+    const roi_bottom_in = pie.gpu.StageROI{
+        .size = .{
+            .w = image_size_in.w,
+            .h = image_size_in.h / 2,
+        },
+        .origin = .{
+            .x = 0,
+            .y = image_size_in.h / 2,
+        },
+    };
+    const roi_bottom_out = pie.gpu.StageROI{
+        .size = .{
+            .w = image_size_out.w,
+            .h = image_size_out.h / 2,
+        },
+        .origin = .{
+            .x = 0,
+            .y = image_size_out.h / 2,
+        },
+    };
 
     std.log.info("Image region: {any}", .{image_size_in});
     std.log.info("Image region after: {any}", .{image_size_out});
@@ -266,23 +323,22 @@ test "load raw, debayer, save" {
     // std.debug.print("{any}...\n", .{init_contents_f16[image_size_init.w * (image_size_init.h - 1) .. image_size_init.w * (image_size_init.h - 1) + 8]});
     std.debug.print("...{any}\n", .{init_contents_f16[init_contents_f16.len - 8 .. init_contents_f16.len]});
 
-    engine.mapUpload(init_contents_f16, image_size_in);
+    gpu.mapUpload(init_contents_f16, image_size_in);
 
     // We are going to do two passes as if the hardware buffer does not allow a full image to be copied to a texture at once
 
     // PASS 1 | TOP HALF
-    engine.enqueueStage(&shader_pipe, image_size_pass_in, image_region_ox_p1, image_region_oy_p1) catch unreachable;
-    engine.enqueueShader(&shader_pipe, image_size_pass_out);
-    engine.enqueueDestage(&shader_pipe, image_size_pass_out, image_region_ox_p1, image_region_oy_p1) catch unreachable;
+    gpu.enqueueStage(&texture_upper_in, roi_top_in) catch unreachable;
+    gpu.enqueueShader(&shader_pipe, &bindings_upper, image_size_pass_out);
+    gpu.enqueueDestage(&texture_upper_out, roi_top_out) catch unreachable;
     // PASS 2 | BOTTOM HALF
-    // NOTE: this currently does not work because the shader's global_invocation_id is not offsetted
-    engine.enqueueStage(&shader_pipe, image_size_pass_in, image_region_ox_p2, image_region_oy_p2_in) catch unreachable;
-    engine.enqueueShader(&shader_pipe, image_size_pass_out);
-    engine.enqueueDestage(&shader_pipe, image_size_pass_out, image_region_ox_p2, image_region_oy_p2_out) catch unreachable;
+    gpu.enqueueStage(&texture_lower_in, roi_bottom_in) catch unreachable;
+    gpu.enqueueShader(&shader_pipe, &bindings_lower, image_size_pass_out);
+    gpu.enqueueDestage(&texture_lower_out, roi_bottom_out) catch unreachable;
 
-    engine.run();
+    gpu.run();
 
-    const result = try engine.mapDownload(image_size_out);
+    const result = try gpu.mapDownload(image_size_out);
     std.log.info("\nDownload buffer contents: ", .{});
     std.debug.print("{any}...\n", .{result[0..8]});
     std.debug.print("{any}...\n", .{result[image_size_out.w .. image_size_out.w + 8]});
@@ -291,6 +347,21 @@ test "load raw, debayer, save" {
     std.debug.print("...\n", .{});
     // std.debug.print("{any}...\n", .{result[image_size_after.w * (image_size_after.h - 1) .. image_size_after.w * (image_size_after.h - 1) + 8]});
     std.debug.print("...{any}\n", .{result[result.len - 8 .. result.len]});
+
+    var lowest_gt1: f16 = 99999.0;
+    var highest_gt1: f16 = 0.0;
+    // find non-zero values of result
+    for (result) |value| {
+        // if (value != 0.0) {
+        //     std.log.info("Result non-zero at index {d}: {d}", .{ i, value });
+        // }
+        if (value > 1.0) {
+            lowest_gt1 = @min(lowest_gt1, value);
+            highest_gt1 = @max(highest_gt1, value);
+        }
+    }
+    std.log.info("Lowest value > 1.0: {d}", .{lowest_gt1});
+    std.log.info("Highest value > 1.0: {d}", .{highest_gt1});
 
     // Calculate the size in bytes
     std.log.info("Result length (pixels): {d}", .{result.len});
