@@ -15,11 +15,6 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
     complete.* = true;
 }
 
-pub const CopyRegionParams = struct {
-    w: u32,
-    h: u32,
-};
-
 pub const StageROI = struct {
     size: struct {
         w: u32,
@@ -385,7 +380,7 @@ pub const GPU = struct {
         self.instance.release();
     }
 
-    pub fn enqueueShader(self: *Self, shader_pipe: *ShaderPipe, bindings: *Bindings, work_size: CopyRegionParams) void {
+    pub fn enqueueShader(self: *Self, shader_pipe: *ShaderPipe, bindings: *Bindings, work_size: StageROI) void {
         std.log.info("Running compute shader", .{});
 
         std.log.info("Dispatching compute work", .{});
@@ -402,10 +397,10 @@ pub const GPU = struct {
         //
         // If the user passes 32 inputs, we will
         // dispatch 1 workgroups. If the user passes 65 inputs, we will dispatch 2 workgroups, etc.
-        const output_size = work_size.w * work_size.h;
+        const output_size = work_size.size.w * work_size.size.h;
         const workgroup_size = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y * WORKGROUP_SIZE_Z;
-        const workgroup_count_x = (work_size.w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X; // ceil division
-        const workgroup_count_y = (work_size.h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y; // ceil division
+        const workgroup_count_x = (work_size.size.w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X; // ceil division
+        const workgroup_count_y = (work_size.size.h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y; // ceil division
         const workgroup_count_z = 1;
         std.log.info("output_size: {d}", .{output_size});
         std.log.info("workgroup_size: {d}", .{workgroup_size});
@@ -526,18 +521,18 @@ pub const GPU = struct {
         self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
     }
 
-    pub fn mapUpload(self: *Self, data: []const f16, region: CopyRegionParams) void {
+    pub fn mapUpload(self: *Self, data: []const f16, roi: StageROI) void {
         std.log.info("Writing data to GPU buffers", .{});
 
-        const size = region.w * region.h * BYTES_PER_PIXEL_RGBAf16;
+        const size = roi.size.w * roi.size.h * BYTES_PER_PIXEL_RGBAf16;
         const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size).?));
         defer self.upload_buffer.unmap();
         @memcpy(upload_buffer_ptr, data);
     }
-    pub fn mapDownload(self: *Self, region: CopyRegionParams) ![]f16 {
+    pub fn mapDownload(self: *Self, roi: StageROI) ![]f16 {
         std.log.info("Reading data from GPU buffers", .{});
 
-        const size = region.w * region.h * BYTES_PER_PIXEL_RGBAf16;
+        const size = roi.size.w * roi.size.h * BYTES_PER_PIXEL_RGBAf16;
 
         // We now map the download buffer so we can read it. Mapping tells wgpu that we want to read/write
         // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
