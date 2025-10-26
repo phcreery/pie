@@ -65,7 +65,7 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const ztracy = b.dependency("ztracy", .{
+    const dep_ztracy = b.dependency("ztracy", .{
         .enable_ztracy = ztracy_options.enable_ztracy,
         .enable_fibers = ztracy_options.enable_fibers,
         .on_demand = ztracy_options.on_demand,
@@ -98,10 +98,10 @@ pub fn build(b: *Build) !void {
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             // .{ .name = "opencl", .module = dep_opencl.module("opencl") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu", .module = wgpu_native_dep.module("wgpu") },
-            .{ .name = "wgpu-c", .module = wgpu_native_dep.module("wgpu-c") },
-            .{ .name = "zigimg", .module = zigimg_dependency.module("zigimg") },
-            // .{ .name = "ztracy", .module = ztracy.module("root") },
+            .{ .name = "wgpu", .module = dep_wgpu_native.module("wgpu") },
+            .{ .name = "wgpu-c", .module = dep_wgpu_native.module("wgpu-c") },
+            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
+            // .{ .name = "ztracy", .module = dep_ztracy.module("root") },
         },
     });
     mod_main.addOptions("build_options", mod_options);
@@ -130,19 +130,19 @@ pub fn build(b: *Build) !void {
                 .module = mod_main,
             },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "zigimg", .module = zigimg_dependency.module("zigimg") },
-            .{ .name = "ztracy", .module = ztracy.module("root") },
+            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
+            .{ .name = "ztracy", .module = dep_ztracy.module("root") },
         },
     });
     const integration_tests_exe = b.addExecutable(.{
         .name = "integration tests exe",
         .root_module = mod_integration_test,
     });
-    integration_tests.linkLibrary(ztracy.artifact("tracy"));
+    integration_tests_exe.linkLibrary(dep_ztracy.artifact("tracy"));
     // const test_runner_options = b.addOptions();
     // integration_tests.root_module.addOptions("build_options", test_runner_options);
     // test_runner_options.addOption(bool, "test_all_allocation_failures", test_all_allocation_failures);
-    const integration_test_runner = b.addRunArtifact(integration_tests);
+    const integration_test_runner = b.addRunArtifact(integration_tests_exe);
     // integration_test_runner.addArg(b.pathFromRoot("test/cases"));
     // integration_test_runner.addArg(b.zig_exe);
     test_step.dependOn(&integration_test_runner.step);
@@ -151,7 +151,7 @@ pub fn build(b: *Build) !void {
         .root_module = mod_integration_test,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
-    const run_integration_tests = b.addRunArtifact(integration_tests);
+    const run_integration_tests = b.addRunArtifact(integration_tests_tests);
     integration_test_step.dependOn(&run_integration_tests.step);
 
     // from here on different handling for native vs wasm builds
