@@ -21,41 +21,239 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
     complete.* = true;
 }
 
-// pub const TextureFormatTag = enum {
-//     rgba16float,
-//     rgba16uint,
-//     r8uint,
-// };
+/// Dead simple GPU allocator using an upload and download buffer
+/// for staging data to/from the GPU.
+/// This is not optimal, but it works for now. Only one allocation at a time.
+/// Future work could include a more complex allocator with multiple buffers
+/// useful for multiple simultaneous operations.
+pub const GPUAllocator = struct {
+    upload_buffer: *wgpu.Buffer = undefined,
+    download_buffer: *wgpu.Buffer = undefined,
+    const Self = @This();
+    pub fn init(gpu: *GPU) !Self {
+        var limits = wgpu.Limits{};
+        _ = gpu.adapter.getLimits(&limits);
 
-// pub const TextureFormat = union(TextureFormatTag) {
-//     rgba16float: TextureFormatType(f16, 4),
-//     rgba16uint: TextureFormatType(u16, 4),
-//     r8uint: TextureFormatType(u8, 1),
+        var max_buffer_size = limits.max_buffer_size;
+        if (max_buffer_size == wgpu.WGPU_LIMIT_U64_UNDEFINED) {
+            // set to something reasonable
+            // max_buffer_size = 256 * 1024 * 1024; // 256 MB
+            max_buffer_size = 256 * 1024 * 1024 * 12; // 3x256 MB for RGBAf16
+        }
 
-//     fn TextureFormatType(comptime T: type, channels: u32) type {
-//         return struct {
-//             baseType: type = T,
-//             channels: u32 = channels,
-//         };
-//     }
+        // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
+        // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
+        // and that usage can only be used with `COPY_DST`.
+        const upload_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("upload_buffer"),
+            .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
+            .size = max_buffer_size / 16,
+            .mapped_at_creation = @as(u32, @intFromBool(true)),
+        }).?;
+        errdefer upload_buffer.release();
+        const download_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("download_buffer"),
+            .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
+            .size = max_buffer_size / 16,
+            .mapped_at_creation = @as(u32, @intFromBool(false)),
+        }).?;
+        errdefer download_buffer.release();
 
-//     pub fn toWGPU(self: TextureFormat) wgpu.TextureFormat {
-//         return switch (self) {
-//             .rgba16float => wgpu.TextureFormat.rgba16_float,
-//             .rgba16uint => wgpu.TextureFormat.rgba16_uint,
-//             .r8uint => wgpu.TextureFormat.r8_uint,
-//         };
-//     }
+        return Self{
+            .upload_buffer = upload_buffer,
+            .download_buffer = download_buffer,
+        };
+    }
 
-//     /// bytes per pixel
-//     pub fn bpp(self: TextureFormat) u32 {
-//         return switch (self) {
-//             .rgba16float => self.rgba16float.channels * @sizeOf(self.rgba16float.baseType),
-//             .rgba16uint => self.rgba16uint.channels * @sizeOf(self.rgba16uint.baseType),
-//             .r8uint => self.r8uint.channels * @sizeOf(self.r8uint.baseType),
-//         };
-//     }
-// };
+    pub fn deinit(self: *Self) void {
+        self.download_buffer.release();
+        self.upload_buffer.release();
+    }
+};
+
+pub const Encoder = struct {
+    encoder: *wgpu.CommandEncoder = undefined,
+    const Self = @This();
+    pub fn init(gpu: *GPU) !Self {
+        // The command encoder allows us to record commands that we will later submit to the GPU.
+        const encoder = gpu.device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
+            .label = wgpu.StringView.fromSlice("Command Encoder"),
+        }).?;
+        errdefer encoder.release();
+
+        return Self{
+            .encoder = encoder,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.encoder.release();
+    }
+
+    /// you need to submit the command buffer to the GPU queue after finishing
+    pub fn finish(self: *Self) ?*wgpu.CommandBuffer {
+        std.log.info("Submitting command buffer to GPU", .{});
+
+        // We finish the encoder, giving us a fully recorded command buffer.
+        const command_buffer = self.encoder.finish(&wgpu.CommandBufferDescriptor{
+            .label = wgpu.StringView.fromSlice("Command Buffer"),
+        }).?;
+
+        // the command buffer need to be released after submitting with command_buffer.release()
+        // GPU.run() will do that for you
+        return command_buffer;
+    }
+
+    pub fn enqueueShader(self: *Self, shader_pipe: *ShaderPipe, bindings: *Bindings, work_size: ROI) void {
+        std.log.info("Enqueuing compute shader", .{});
+        // A compute pass is a single series of compute operations. While we are recording a compute
+        // pass, we cannot record to the encoder.
+        const compute_pass = self.encoder.beginComputePass(&wgpu.ComputePassDescriptor{
+            .label = wgpu.StringView.fromSlice("Compute Pass"),
+        }).?;
+        // Set the pipeline that we want to use
+        compute_pass.setPipeline(shader_pipe.pipeline);
+        compute_pass.setBindGroup(0, bindings.bind_group, 0, null);
+
+        // Now we dispatch a series of workgroups. Each workgroup is a 3D grid of individual programs.
+        //
+        // If the user passes 32 inputs, we will
+        // dispatch 1 workgroups. If the user passes 65 inputs, we will dispatch 2 workgroups, etc.
+        const workgroup_count_x = (work_size.size.w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X; // ceil division
+        const workgroup_count_y = (work_size.size.h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y; // ceil division
+        const workgroup_count_z = 1;
+
+        { // Debug info
+            // const output_size = work_size.size.w * work_size.size.h;
+            // const workgroup_size = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y * WORKGROUP_SIZE_Z;
+            // std.log.info("output_size: {d}", .{output_size});
+            // std.log.info("workgroup_size: {d}", .{workgroup_size});
+            // std.log.info("workgroup_count_x: {d}", .{workgroup_count_x});
+            // std.log.info("workgroup_count_y: {d}", .{workgroup_count_y});
+            // std.log.info("workgroup_count_z: {d}", .{workgroup_count_z});
+            // std.log.info("total workgroups: {d}", .{workgroup_count_x * workgroup_count_y * workgroup_count_z});
+            // std.log.info("total invocations: {d}", .{@as(u32, workgroup_count_x) * workgroup_count_y * workgroup_count_z * workgroup_size});
+        }
+
+        std.log.info("Dispatching compute work", .{});
+        compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
+        // Now we drop the compute pass, giving us access to the encoder again.
+        compute_pass.end();
+    }
+
+    pub fn enqueueMount(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
+        std.log.info("Writing GPU buffer to Shader Buffer", .{});
+
+        // check bytes_per_row is a multiple of 256
+        const bytes_per_row = roi.size.w * texture.format.bpp();
+        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
+
+        // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
+        // CPU to the input buffer on the GPU.
+        const copy_size = wgpu.Extent3D{
+            .width = roi.size.w,
+            .height = roi.size.h,
+            .depth_or_array_layers = 1,
+        };
+        const offset = @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * texture.format.bpp();
+        const source = wgpu.TexelCopyBufferInfo{
+            .buffer = allocator.upload_buffer,
+            .layout = wgpu.TexelCopyBufferLayout{
+                .offset = offset,
+                .bytes_per_row = padded_bytes_per_row,
+                .rows_per_image = roi.size.h,
+            },
+        };
+        { // Debug info
+            // std.log.info("[enqueueMount] copy_size.width: {d}", .{copy_size.width});
+            // std.log.info("[enqueueMount] copy_size.height: {d}", .{copy_size.height});
+            // std.log.info("[enqueueMount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
+            // std.log.info("[enqueueMount] offset: {d}", .{offset});
+            // std.log.info("[enqueueMount] source.buffer size: {d}", .{self.upload_buffer.getSize()});
+            // std.log.info("[enqueueMount] source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
+            // std.log.info("[enqueueMount] source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
+        }
+        const destination = wgpu.TexelCopyTextureInfo{
+            .texture = texture.texture,
+            .mip_level = 0,
+            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+        self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
+    }
+    pub fn enqueueUnmount(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
+        std.log.info("Reading GPU buffer from Shader Buffer", .{});
+
+        // check bytes_per_row is a multiple of 256
+        const bytes_per_row = roi.size.w * texture.format.bpp();
+        // if (bytes_per_row % 256 != 0) {
+        //     std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
+        //     return error.InvalidInput;
+        // }
+        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
+
+        // We add a copy operation to the encoder. This will copy the data from the output buffer on the
+        // GPU to the download buffer on the CPU.
+        // self.encoder.copyBufferToBuffer(self.buffer[self.dst_index], 0, self.download_buffer, 0, self.buffer[self.dst_index].getSize());
+        // const copy_size = self.textures[self.dst_index].getWidth() * self.textures[self.dst_index].getHeight() * 4; // width * height * RGBA
+        const copy_size = wgpu.Extent3D{
+            .width = roi.size.w,
+            .height = roi.size.h,
+            .depth_or_array_layers = 1,
+        };
+        const source = wgpu.TexelCopyTextureInfo{
+            .texture = texture.texture,
+            .mip_level = 0,
+            // .origin = wgpu.Origin3D{ .x = src_origin.x, .y = src_origin.y, .z = 0 },
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+        const offset = @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * texture.format.bpp();
+        const destination = wgpu.TexelCopyBufferInfo{
+            .buffer = allocator.download_buffer,
+            .layout = wgpu.TexelCopyBufferLayout{
+                // .offset = 0,
+                .offset = offset,
+                .bytes_per_row = padded_bytes_per_row,
+                .rows_per_image = roi.size.h,
+            },
+        };
+        { // Debug info
+            // std.log.info("[enqueueUnmount] copy_size.width: {d}", .{copy_size.width});
+            // std.log.info("[enqueueUnmount] copy_size.height: {d}", .{copy_size.height});
+            // std.log.info("[enqueueUnmount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
+            // std.log.info("[enqueueUnmount] offset: {d}", .{offset});
+            // std.log.info("[enqueueUnmount] destination.buffer size: {d}", .{self.download_buffer.getSize()});
+            // std.log.info("[enqueueUnmount] destination.layout.bytes_per_row: {d}", .{destination.layout.bytes_per_row});
+            // std.log.info("[enqueueUnmount] destination.layout.rows_per_image: {d}", .{destination.layout.rows_per_image});
+        }
+        self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
+    }
+
+    pub fn enqueueCopyTextureToTexture(self: *Self, src_texture: *Texture, dst_texture: *Texture, roi: ROI) !void {
+        std.log.info("Copying GPU texture to another GPU texture", .{});
+
+        const copy_size = wgpu.Extent3D{
+            .width = roi.size.w,
+            .height = roi.size.h,
+            .depth_or_array_layers = 1,
+        };
+        const source = wgpu.TexelCopyTextureInfo{
+            .texture = src_texture.texture,
+            .mip_level = 0,
+            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+
+        const destination = wgpu.TexelCopyTextureInfo{
+            .texture = dst_texture.texture,
+            .mip_level = 0,
+            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+
+        self.encoder.copyTextureToTexture(&source, &destination, &copy_size);
+    }
+};
 
 pub const TextureFormat = enum {
     rgba16float,
@@ -114,6 +312,7 @@ pub const TextureFormat = enum {
 
 pub const Texture = struct {
     texture: *wgpu.Texture = undefined,
+    format: TextureFormat = .rgba16float,
     const Self = @This();
 
     pub fn init(gpu: *GPU, format: TextureFormat, roi: ROI) !Self {
@@ -145,6 +344,7 @@ pub const Texture = struct {
         errdefer texture.release();
         return Texture{
             .texture = texture,
+            .format = format,
         };
     }
 
@@ -346,9 +546,9 @@ pub const GPU = struct {
     adapter: *wgpu.Adapter = undefined,
     device: *wgpu.Device = undefined,
     queue: *wgpu.Queue = undefined,
-    upload_buffer: *wgpu.Buffer = undefined,
-    download_buffer: *wgpu.Buffer = undefined,
-    encoder: *wgpu.CommandEncoder = undefined,
+    // upload_buffer: *wgpu.Buffer = undefined,
+    // download_buffer: *wgpu.Buffer = undefined,
+    // encoder: *wgpu.CommandEncoder = undefined,
     adapter_name: []const u8 = "",
 
     const Self = @This();
@@ -411,30 +611,30 @@ pub const GPU = struct {
         std.log.info(" max_uniform_buffer_binding_size: {d}", .{limits.max_uniform_buffer_binding_size});
         std.log.info(" max_storage_buffer_binding_size: {d}", .{limits.max_storage_buffer_binding_size});
 
-        var max_buffer_size = limits.max_buffer_size;
-        if (max_buffer_size == wgpu.WGPU_LIMIT_U64_UNDEFINED) {
-            // set to something reasonable
-            // max_buffer_size = 256 * 1024 * 1024; // 256 MB
-            max_buffer_size = 256 * 1024 * 1024 * 12; // 3x256 MB for RGBAf16
-        }
+        // var max_buffer_size = limits.max_buffer_size;
+        // if (max_buffer_size == wgpu.WGPU_LIMIT_U64_UNDEFINED) {
+        //     // set to something reasonable
+        //     // max_buffer_size = 256 * 1024 * 1024; // 256 MB
+        //     max_buffer_size = 256 * 1024 * 1024 * 12; // 3x256 MB for RGBAf16
+        // }
 
-        // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
-        // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
-        // and that usage can only be used with `COPY_DST`.
-        const upload_buffer = device.createBuffer(&wgpu.BufferDescriptor{
-            .label = wgpu.StringView.fromSlice("upload_buffer"),
-            .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
-            .size = max_buffer_size / 16,
-            .mapped_at_creation = @as(u32, @intFromBool(true)),
-        }).?;
-        errdefer upload_buffer.release();
-        const download_buffer = device.createBuffer(&wgpu.BufferDescriptor{
-            .label = wgpu.StringView.fromSlice("download_buffer"),
-            .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
-            .size = max_buffer_size / 16,
-            .mapped_at_creation = @as(u32, @intFromBool(false)),
-        }).?;
-        errdefer download_buffer.release();
+        // // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
+        // // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
+        // // and that usage can only be used with `COPY_DST`.
+        // const upload_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+        //     .label = wgpu.StringView.fromSlice("upload_buffer"),
+        //     .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
+        //     .size = max_buffer_size / 16,
+        //     .mapped_at_creation = @as(u32, @intFromBool(true)),
+        // }).?;
+        // errdefer upload_buffer.release();
+        // const download_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+        //     .label = wgpu.StringView.fromSlice("download_buffer"),
+        //     .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
+        //     .size = max_buffer_size / 16,
+        //     .mapped_at_creation = @as(u32, @intFromBool(false)),
+        // }).?;
+        // errdefer download_buffer.release();
 
         // const upload_texture = device.createTexture(&wgpu.TextureDescriptor{
         //     .label = wgpu.StringView.fromSlice("upload_texture"),
@@ -450,20 +650,17 @@ pub const GPU = struct {
         //     .usage = wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst,
         // }).?;
 
-        // The command encoder allows us to record commands that we will later submit to the GPU.
-        const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
-            .label = wgpu.StringView.fromSlice("Command Encoder"),
-        }).?;
-        errdefer encoder.release();
+        // // The command encoder allows us to record commands that we will later submit to the GPU.
+        // const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
+        //     .label = wgpu.StringView.fromSlice("Command Encoder"),
+        // }).?;
+        // errdefer encoder.release();
 
         return Self{
             .instance = instance,
             .adapter = adapter,
             .device = device,
             .queue = queue,
-            .upload_buffer = upload_buffer,
-            .download_buffer = download_buffer,
-            .encoder = encoder,
             .adapter_name = info.device.toSlice() orelse "Unknown",
         };
     }
@@ -471,181 +668,14 @@ pub const GPU = struct {
     pub fn deinit(self: *Self) void {
         std.log.info("Deinitializing GPU", .{});
 
-        self.encoder.release();
-        self.download_buffer.release();
-        self.upload_buffer.release();
-
         self.queue.release();
         self.device.release();
         self.adapter.release();
         self.instance.release();
     }
 
-    pub fn enqueueShader(self: *Self, shader_pipe: *ShaderPipe, bindings: *Bindings, work_size: ROI) void {
-        std.log.info("Enqueuing compute shader", .{});
-        // A compute pass is a single series of compute operations. While we are recording a compute
-        // pass, we cannot record to the encoder.
-        const compute_pass = self.encoder.beginComputePass(&wgpu.ComputePassDescriptor{
-            .label = wgpu.StringView.fromSlice("Compute Pass"),
-        }).?;
-        // Set the pipeline that we want to use
-        compute_pass.setPipeline(shader_pipe.pipeline);
-        compute_pass.setBindGroup(0, bindings.bind_group, 0, null);
-
-        // Now we dispatch a series of workgroups. Each workgroup is a 3D grid of individual programs.
-        //
-        // If the user passes 32 inputs, we will
-        // dispatch 1 workgroups. If the user passes 65 inputs, we will dispatch 2 workgroups, etc.
-        const workgroup_count_x = (work_size.size.w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X; // ceil division
-        const workgroup_count_y = (work_size.size.h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y; // ceil division
-        const workgroup_count_z = 1;
-
-        { // Debug info
-            // const output_size = work_size.size.w * work_size.size.h;
-            // const workgroup_size = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y * WORKGROUP_SIZE_Z;
-            // std.log.info("output_size: {d}", .{output_size});
-            // std.log.info("workgroup_size: {d}", .{workgroup_size});
-            // std.log.info("workgroup_count_x: {d}", .{workgroup_count_x});
-            // std.log.info("workgroup_count_y: {d}", .{workgroup_count_y});
-            // std.log.info("workgroup_count_z: {d}", .{workgroup_count_z});
-            // std.log.info("total workgroups: {d}", .{workgroup_count_x * workgroup_count_y * workgroup_count_z});
-            // std.log.info("total invocations: {d}", .{@as(u32, workgroup_count_x) * workgroup_count_y * workgroup_count_z * workgroup_size});
-        }
-
-        std.log.info("Dispatching compute work", .{});
-        compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
-        // Now we drop the compute pass, giving us access to the encoder again.
-        compute_pass.end();
-    }
-
-    pub fn enqueueMount(self: *Self, texture: *Texture, comptime format: TextureFormat, roi: ROI) !void {
-        std.log.info("Writing GPU buffer to Shader Buffer", .{});
-
-        // check bytes_per_row is a multiple of 256
-        const bytes_per_row = roi.size.w * format.bpp();
-        // if (bytes_per_row % 256 != 0) {
-        //     std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
-        //     return error.InvalidInput;
-        // }
-
-        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
-
-        // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
-        // CPU to the input buffer on the GPU.
-        // self.encoder.copyBufferToBuffer(self.upload_buffer, 0, self.buffer[self.src_index], 0, self.buffer[self.src_index].getSize());
-        // const copy_size = self.textures[self.src_index].getWidth() * self.textures[self.src_index].getHeight() * 4; // width * height * RGBA
-        const copy_size = wgpu.Extent3D{
-            .width = roi.size.w,
-            .height = roi.size.h,
-            .depth_or_array_layers = 1,
-        };
-        const offset = @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * format.bpp();
-        const source = wgpu.TexelCopyBufferInfo{
-            .buffer = self.upload_buffer,
-            .layout = wgpu.TexelCopyBufferLayout{
-                .offset = offset,
-                .bytes_per_row = padded_bytes_per_row,
-                .rows_per_image = roi.size.h,
-            },
-        };
-        { // Debug info
-            // std.log.info("[enqueueMount] copy_size.width: {d}", .{copy_size.width});
-            // std.log.info("[enqueueMount] copy_size.height: {d}", .{copy_size.height});
-            // std.log.info("[enqueueMount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
-            // std.log.info("[enqueueMount] offset: {d}", .{offset});
-            // std.log.info("[enqueueMount] source.buffer size: {d}", .{self.upload_buffer.getSize()});
-            // std.log.info("[enqueueMount] source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
-            // std.log.info("[enqueueMount] source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
-        }
-        const destination = wgpu.TexelCopyTextureInfo{
-            .texture = texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
-        };
-        self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
-    }
-    pub fn enqueueUnmount(self: *Self, texture: *Texture, comptime format: TextureFormat, roi: ROI) !void {
-        std.log.info("Reading GPU buffer from Shader Buffer", .{});
-
-        // check bytes_per_row is a multiple of 256
-        const bytes_per_row = roi.size.w * format.bpp();
-        // if (bytes_per_row % 256 != 0) {
-        //     std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
-        //     return error.InvalidInput;
-        // }
-        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
-
-        // We add a copy operation to the encoder. This will copy the data from the output buffer on the
-        // GPU to the download buffer on the CPU.
-        // self.encoder.copyBufferToBuffer(self.buffer[self.dst_index], 0, self.download_buffer, 0, self.buffer[self.dst_index].getSize());
-        // const copy_size = self.textures[self.dst_index].getWidth() * self.textures[self.dst_index].getHeight() * 4; // width * height * RGBA
-        const copy_size = wgpu.Extent3D{
-            .width = roi.size.w,
-            .height = roi.size.h,
-            .depth_or_array_layers = 1,
-        };
-        const source = wgpu.TexelCopyTextureInfo{
-            .texture = texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = src_origin.x, .y = src_origin.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
-        };
-        const offset = @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * format.bpp();
-        const destination = wgpu.TexelCopyBufferInfo{
-            .buffer = self.download_buffer,
-            .layout = wgpu.TexelCopyBufferLayout{
-                // .offset = 0,
-                .offset = offset,
-                .bytes_per_row = padded_bytes_per_row,
-                .rows_per_image = roi.size.h,
-            },
-        };
-        { // Debug info
-            // std.log.info("[enqueueUnmount] copy_size.width: {d}", .{copy_size.width});
-            // std.log.info("[enqueueUnmount] copy_size.height: {d}", .{copy_size.height});
-            // std.log.info("[enqueueUnmount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
-            // std.log.info("[enqueueUnmount] offset: {d}", .{offset});
-            // std.log.info("[enqueueUnmount] destination.buffer size: {d}", .{self.download_buffer.getSize()});
-            // std.log.info("[enqueueUnmount] destination.layout.bytes_per_row: {d}", .{destination.layout.bytes_per_row});
-            // std.log.info("[enqueueUnmount] destination.layout.rows_per_image: {d}", .{destination.layout.rows_per_image});
-        }
-        self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
-    }
-
-    pub fn enqueueCopyTextureToTexture(self: *Self, src_texture: *Texture, dst_texture: *Texture, roi: ROI) !void {
-        std.log.info("Copying GPU texture to another GPU texture", .{});
-
-        const copy_size = wgpu.Extent3D{
-            .width = roi.size.w,
-            .height = roi.size.h,
-            .depth_or_array_layers = 1,
-        };
-        const source = wgpu.TexelCopyTextureInfo{
-            .texture = src_texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
-        };
-
-        const destination = wgpu.TexelCopyTextureInfo{
-            .texture = dst_texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
-        };
-
-        self.encoder.copyTextureToTexture(&source, &destination, &copy_size);
-    }
-
-    pub fn run(self: *Self) void {
+    pub fn run(self: *Self, command_buffer: *wgpu.CommandBuffer) void {
         std.log.info("Submitting command buffer to GPU", .{});
-
-        // We finish the encoder, giving us a fully recorded command buffer.
-        const command_buffer = self.encoder.finish(&wgpu.CommandBufferDescriptor{
-            .label = wgpu.StringView.fromSlice("Command Buffer"),
-        }).?;
-        defer command_buffer.release();
 
         // At this point nothing has actually been executed on the gpu. We have recorded a series of
         // commands that we want to execute, but they haven't been sent to the gpu yet.
@@ -653,6 +683,7 @@ pub const GPU = struct {
         // Submitting to the queue sends the command buffer to the gpu. The gpu will then execute the
         // commands in the command buffer in order.
         self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
+        command_buffer.release();
     }
 
     pub fn mapUpload(self: *Self, comptime T: type, data: []const T, comptime format: TextureFormat, roi: ROI) void {
