@@ -101,6 +101,10 @@
             .url = "git+https://github.com/zigimg/zigimg.git#f5783e87627cbd9e0b45fad112e9f73503914f36",
             .hash = "zigimg-0.1.0-8_eo2vBrFQBhsrLpexdcDQY-zrlzkyFZfKuYX-Nry6KN",
         },
+        .ztracy = .{
+            .url = "git+https://github.com/zig-gamedev/ztracy#3cc6a4a1502fdea2e4d3869099e39d9c5e8b98a5",
+            .hash = "ztracy-0.14.0-dev-zHJSq8SJGADr475eGiGJzmX_-P5sDoU564IQSVfZxmYC",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.
