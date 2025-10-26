@@ -258,13 +258,20 @@ test "load raw, demosaic, save" {
         \\    var g1: f32;
         \\    var g2: f32;
         \\    var b: f32;
-        \\    //let base_coords = coords * vec2<i32>(2, 2);
         \\    let base_coords_x = coords.x / 2;
         \\    let base_coords_y = coords.y * 2;
-        \\    r = textureLoad(input, base_coords + vec2<i32>(0, 0), 0).r;
-        \\    g1 = textureLoad(input, base_coords + vec2<i32>(1, 0), 0).r;
-        \\    g2 = textureLoad(input, base_coords + vec2<i32>(0, 1), 0).r;
-        \\    b = textureLoad(input, base_coords + vec2<i32>(1, 1), 0).r;
+        \\    let is_even_x = (coords.x % 2) == 0;
+        \\    if (is_even_x) {
+        \\        r = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 0), 0).r;
+        \\        g1 = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 0), 0).g;
+        \\        g2 = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 1), 0).r;
+        \\        b = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 1), 0).g;
+        \\    } else {
+        \\        r = textureLoad(input, vec2<i32>(base_coords_x - 1, base_coords_y + 0), 0).b;
+        \\        g1 = textureLoad(input, vec2<i32>(base_coords_x - 1, base_coords_y + 0), 0).a;
+        \\        g2 = textureLoad(input, vec2<i32>(base_coords_x - 1, base_coords_y + 1), 0).b;
+        \\        b = textureLoad(input, vec2<i32>(base_coords_x - 1, base_coords_y + 1), 0).a;
+        \\    }
         \\    let g = (g1 + g2) / 2.0;
         \\    let rgba = vec4<f32>(r, g, b, 1);
         \\    textureStore(output, coords, rgba);
