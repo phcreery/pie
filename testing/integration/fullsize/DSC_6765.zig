@@ -141,8 +141,8 @@ test "load raw, demosaic, save" {
     var bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &convert_shader_pipe, &texture_lower_in, &texture_lower_out);
     defer bindings_lower.deinit();
 
-    encoder.enqueueMount(&gpu_allocator, &texture_upper_in, roi_in_upper) catch unreachable;
-    encoder.enqueueMount(&gpu_allocator, &texture_lower_in, roi_in_lower) catch unreachable;
+    encoder.enqueueBufToTex(&gpu_allocator, &texture_upper_in, roi_in_upper) catch unreachable;
+    encoder.enqueueBufToTex(&gpu_allocator, &texture_lower_in, roi_in_lower) catch unreachable;
 
     // PASS 1 | TOP HALF
     encoder.enqueueShader(&convert_shader_pipe, &bindings_upper, roi_out_upper);
@@ -309,8 +309,8 @@ test "load raw, demosaic, save" {
     // PASS 2 | BOTTOM HALF
     encoder.enqueueShader(&demosaic_shader_pipe, &bindings_lower, roi_out_lower);
 
-    encoder.enqueueUnmount(&gpu_allocator, &texture_upper_out2, roi_out_upper) catch unreachable;
-    encoder.enqueueUnmount(&gpu_allocator, &texture_lower_out2, roi_out_lower) catch unreachable;
+    encoder.enqueueTexToBuf(&gpu_allocator, &texture_upper_out2, roi_out_upper) catch unreachable;
+    encoder.enqueueTexToBuf(&gpu_allocator, &texture_lower_out2, roi_out_lower) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD

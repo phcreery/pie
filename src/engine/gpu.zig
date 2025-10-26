@@ -142,7 +142,7 @@ pub const Encoder = struct {
         compute_pass.end();
     }
 
-    pub fn enqueueMount(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueBufToTex(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
         std.log.info("Writing GPU buffer to Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
@@ -182,7 +182,7 @@ pub const Encoder = struct {
         };
         self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
     }
-    pub fn enqueueUnmount(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueTexToBuf(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
         std.log.info("Reading GPU buffer from Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
@@ -230,7 +230,7 @@ pub const Encoder = struct {
         self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
     }
 
-    pub fn enqueueCopyTextureToTexture(self: *Self, src_texture: *Texture, dst_texture: *Texture, roi: ROI) !void {
+    pub fn enqueueTexToTex(self: *Self, src_texture: *Texture, dst_texture: *Texture, roi: ROI) !void {
         std.log.info("Copying GPU texture to another GPU texture", .{});
 
         const copy_size = wgpu.Extent3D{
