@@ -20,12 +20,88 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
     complete.* = true;
 }
 
+// pub const TextureFormatTag = enum {
+//     rgba16float,
+//     rgba16uint,
+//     r8uint,
+// };
+
+// pub const TextureFormat = union(TextureFormatTag) {
+//     rgba16float: TextureFormatType(f16, 4),
+//     rgba16uint: TextureFormatType(u16, 4),
+//     r8uint: TextureFormatType(u8, 1),
+
+//     fn TextureFormatType(comptime T: type, channels: u32) type {
+//         return struct {
+//             baseType: type = T,
+//             channels: u32 = channels,
+//         };
+//     }
+
+//     pub fn toWGPU(self: TextureFormat) wgpu.TextureFormat {
+//         return switch (self) {
+//             .rgba16float => wgpu.TextureFormat.rgba16_float,
+//             .rgba16uint => wgpu.TextureFormat.rgba16_uint,
+//             .r8uint => wgpu.TextureFormat.r8_uint,
+//         };
+//     }
+
+//     /// bytes per pixel
+//     pub fn bpp(self: TextureFormat) u32 {
+//         return switch (self) {
+//             .rgba16float => self.rgba16float.channels * @sizeOf(self.rgba16float.baseType),
+//             .rgba16uint => self.rgba16uint.channels * @sizeOf(self.rgba16uint.baseType),
+//             .r8uint => self.r8uint.channels * @sizeOf(self.r8uint.baseType),
+//         };
+//     }
+// };
+
 pub const TextureFormat = enum {
     rgba16float,
+    rgba16uint,
+    r8uint,
+    r16uint,
 
-    pub fn toWGPU(self: TextureFormat) wgpu.TextureFormat {
+    pub fn toWGPUFormat(self: TextureFormat) wgpu.TextureFormat {
         return switch (self) {
             .rgba16float => wgpu.TextureFormat.rgba16_float,
+            .rgba16uint => wgpu.TextureFormat.rgba16_uint,
+            .r8uint => wgpu.TextureFormat.r8_uint,
+            .r16uint => wgpu.TextureFormat.r16_uint,
+        };
+    }
+
+    pub fn toWGPUSampleType(self: TextureFormat) wgpu.SampleType {
+        return switch (self) {
+            .rgba16float => wgpu.SampleType.float,
+            .rgba16uint => wgpu.SampleType.u_int,
+            .r8uint => wgpu.SampleType.u_int,
+            .r16uint => wgpu.SampleType.u_int,
+        };
+    }
+
+    /// bytes per pixel
+    pub fn bpp(comptime self: TextureFormat) u32 {
+        return self.nchannels() * @sizeOf(self.BaseType());
+    }
+
+    /// number of channels
+    pub fn nchannels(self: TextureFormat) u32 {
+        return switch (self) {
+            .rgba16float => 4,
+            .rgba16uint => 4,
+            .r8uint => 1,
+            .r16uint => 1,
+        };
+    }
+
+    /// base type
+    pub fn BaseType(self: TextureFormat) type {
+        return switch (self) {
+            .rgba16float => f16,
+            .rgba16uint => u16,
+            .r8uint => u8,
+            .r16uint => u16,
         };
     }
 };
@@ -50,7 +126,7 @@ pub const Texture = struct {
             .mip_level_count = 1,
             .sample_count = 1,
             .dimension = wgpu.TextureDimension.@"2d",
-            .format = format.toWGPU(),
+            .format = format.toWGPUFormat(),
             .usage = wgpu.TextureUsages.storage_binding | wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst,
         }).?;
         errdefer texture.release();
@@ -132,8 +208,8 @@ pub const ShaderPipe = struct {
 
     const Self = @This();
 
-    pub fn init(gpu: *GPU, shader_source: []const u8, entry_point: []const u8, comptime g0_conns: []const ShaderPipeConn) !Self {
-        std.log.info("Initializing ShaderPipe", .{});
+    pub fn init(gpu: *GPU, shader_source: []const u8, comptime entry_point: []const u8, comptime g0_conns: []const ShaderPipeConn) !Self {
+        std.log.info("Initializing ShaderPipe for {s}", .{entry_point});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
         // of this like a C-style header declaration, ensuring both the pipeline and bind group agree
@@ -156,9 +232,11 @@ pub const ShaderPipe = struct {
                         .visibility = wgpu.ShaderStages.compute,
                         .texture = wgpu.TextureBindingLayout{
                             .view_dimension = wgpu.ViewDimension.@"2d",
+                            .sample_type = conn.format.toWGPUSampleType(),
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
+                    std.log.info("Added input binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
                 },
                 ShaderPipeConnType.output => {
                     const entry = wgpu.BindGroupLayoutEntry{
@@ -166,7 +244,7 @@ pub const ShaderPipe = struct {
                         .visibility = wgpu.ShaderStages.compute,
                         .storage_texture = wgpu.StorageTextureBindingLayout{
                             .access = wgpu.StorageTextureAccess.write_only,
-                            .format = conn.format.toWGPU(),
+                            .format = conn.format.toWGPUFormat(),
                             .view_dimension = wgpu.ViewDimension.@"2d",
                         },
                     };
@@ -176,7 +254,7 @@ pub const ShaderPipe = struct {
         }
 
         const bind_group_layout_g0 = gpu.device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
-            .label = wgpu.StringView.fromSlice("Bind Group Layout"),
+            .label = wgpu.StringView.fromSlice("Bind Group Layout for " ++ entry_point),
             .entry_count = 2,
             .entries = &bind_group_layout_entries_g0,
         }).?;
@@ -186,25 +264,25 @@ pub const ShaderPipe = struct {
         // The pipeline layout describes the bind groups that a pipeline expects
         const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout_g0};
         const pipeline_layout = gpu.device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
-            .label = wgpu.StringView.fromSlice("Pipeline Layout"),
+            .label = wgpu.StringView.fromSlice("Pipeline Layout for " ++ entry_point),
             .bind_group_layout_count = 1,
             .bind_group_layouts = &bind_group_layouts,
         }).?;
         errdefer pipeline_layout.release();
 
-        std.log.info("Compiling shader", .{});
+        std.log.info("Compiling shader for {s}", .{entry_point});
 
         // Create the shader module from WGSL source code.
         // You can also load SPIR-V or use the Naga IR.
         const shader_module = gpu.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
-            .label = "Compute Shader",
+            .label = "Compute Shader for " ++ entry_point,
             .code = shader_source,
         })).?;
 
         // The pipeline is the ready-to-go program state for the GPU. It contains the shader modules,
         // the interfaces (bind group layouts) and the shader entry point.
         const pipeline = gpu.device.createComputePipeline(&wgpu.ComputePipelineDescriptor{
-            .label = wgpu.StringView.fromSlice("Compute Pipeline"),
+            .label = wgpu.StringView.fromSlice("Compute Pipeline for " ++ entry_point),
             .layout = pipeline_layout,
             .compute = wgpu.ProgrammableStageDescriptor{
                 .module = shader_module,
@@ -214,10 +292,7 @@ pub const ShaderPipe = struct {
         errdefer pipeline.release();
 
         return ShaderPipe{
-            // .textures = [_]*wgpu.Texture{ texture_a, texture_b },
             .bind_group_layout = bind_group_layout_g0,
-            // .bind_groups = [2]*wgpu.BindGroup{ bind_group_a_to_b, bind_group_b_to_a },
-            // .shader = shader,
             .shader_module = shader_module,
             .pipeline_layout = pipeline_layout,
             .pipeline = pipeline,
@@ -524,18 +599,18 @@ pub const GPU = struct {
         self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
     }
 
-    pub fn mapUpload(self: *Self, data: []const f16, roi: ROI) void {
+    pub fn mapUpload(self: *Self, comptime T: type, data: []const T, comptime format: TextureFormat, roi: ROI) void {
         std.log.info("Writing data to GPU buffers", .{});
 
-        const size = roi.size.w * roi.size.h * BPP_RGBAf16;
-        const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size).?));
+        const size = roi.size.w * roi.size.h * format.bpp();
+        const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size).?));
         defer self.upload_buffer.unmap();
         @memcpy(upload_buffer_ptr, data);
     }
-    pub fn mapDownload(self: *Self, roi: ROI) ![]f16 {
+    pub fn mapDownload(self: *Self, comptime T: type, comptime format: TextureFormat, roi: ROI) ![]T {
         std.log.info("Reading data from GPU buffers", .{});
 
-        const size = roi.size.w * roi.size.h * BPP_RGBAf16;
+        const size = roi.size.w * roi.size.h * format.bpp();
 
         // We now map the download buffer so we can read it. Mapping tells wgpu that we want to read/write
         // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.

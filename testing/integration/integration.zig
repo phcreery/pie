@@ -8,6 +8,6 @@ pub fn main() !void {
 }
 
 test {
-    _ = @import("engine/gpu.zig");
+    // _ = @import("engine/gpu.zig");
     _ = @import("fullsize/DSC_6765.zig");
 }

@@ -64,7 +64,7 @@ test "simple compute test" {
     defer bindings.deinit();
 
     // UPLOAD
-    gpu.mapUpload(&init_contents, roi);
+    gpu.mapUpload(.rgba16float, &init_contents, roi);
 
     // RUN
     gpu.enqueueMount(&texture_in, roi) catch unreachable;
@@ -73,7 +73,7 @@ test "simple compute test" {
     gpu.run();
 
     // DOWNLOAD
-    const result = try gpu.mapDownload(roi);
+    const result = try gpu.mapDownload(.rgba16float, roi);
     std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
     var expected_contents = std.mem.zeroes([256]f16);
@@ -139,7 +139,7 @@ test "simple compute double buffer test" {
     defer bindings_b_to_a.deinit();
 
     // UPLOAD
-    gpu.mapUpload(&init_contents, roi);
+    gpu.mapUpload(f16, &init_contents, .rgba16float, roi);
 
     // a -> b -> a
     gpu.enqueueMount(&texture_a, roi) catch unreachable;
@@ -149,7 +149,7 @@ test "simple compute double buffer test" {
     gpu.run();
 
     // DOWNLOAD
-    const result = try gpu.mapDownload(roi);
+    const result = try gpu.mapDownload(f16, .rgba16float, roi);
     std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
     var expected_contents = std.mem.zeroes([256]f16);
