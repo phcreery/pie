@@ -4,6 +4,7 @@ const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
 
 const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
+const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
 // bytes per pixel
 pub const BPP_RGBAf16: u32 = 8;
@@ -435,6 +436,20 @@ pub const GPU = struct {
         }).?;
         errdefer download_buffer.release();
 
+        // const upload_texture = device.createTexture(&wgpu.TextureDescriptor{
+        //     .label = wgpu.StringView.fromSlice("upload_texture"),
+        //     .size = wgpu.Extent3D{
+        //         .width = limits.max_texture_dimension_2d / 2,
+        //         .height = limits.max_texture_dimension_2d / 2,
+        //         .depth_or_array_layers = 1,
+        //     },
+        //     .mip_level_count = 1,
+        //     .sample_count = 1,
+        //     .dimension = wgpu.TextureDimension.@"2d",
+        //     .format = wgpu.TextureFormat.rgba16_float,
+        //     .usage = wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst,
+        // }).?;
+
         // The command encoder allows us to record commands that we will later submit to the GPU.
         const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
             .label = wgpu.StringView.fromSlice("Command Encoder"),
@@ -508,10 +523,12 @@ pub const GPU = struct {
 
         // check bytes_per_row is a multiple of 256
         const bytes_per_row = roi.size.w * format.bpp();
-        if (bytes_per_row % 256 != 0) {
-            std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
-            return error.InvalidInput;
-        }
+        // if (bytes_per_row % 256 != 0) {
+        //     std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
+        //     return error.InvalidInput;
+        // }
+
+        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
 
         // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
         // CPU to the input buffer on the GPU.
@@ -522,12 +539,12 @@ pub const GPU = struct {
             .height = roi.size.h,
             .depth_or_array_layers = 1,
         };
-        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * format.bpp();
+        const offset = @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * format.bpp();
         const source = wgpu.TexelCopyBufferInfo{
             .buffer = self.upload_buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 .offset = offset,
-                .bytes_per_row = bytes_per_row,
+                .bytes_per_row = padded_bytes_per_row,
                 .rows_per_image = roi.size.h,
             },
         };
@@ -553,10 +570,11 @@ pub const GPU = struct {
 
         // check bytes_per_row is a multiple of 256
         const bytes_per_row = roi.size.w * format.bpp();
-        if (bytes_per_row % 256 != 0) {
-            std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
-            return error.InvalidInput;
-        }
+        // if (bytes_per_row % 256 != 0) {
+        //     std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
+        //     return error.InvalidInput;
+        // }
+        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
 
         // We add a copy operation to the encoder. This will copy the data from the output buffer on the
         // GPU to the download buffer on the CPU.
@@ -573,13 +591,13 @@ pub const GPU = struct {
             // .origin = wgpu.Origin3D{ .x = src_origin.x, .y = src_origin.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
-        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * format.bpp();
+        const offset = @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * format.bpp();
         const destination = wgpu.TexelCopyBufferInfo{
             .buffer = self.download_buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 // .offset = 0,
                 .offset = offset,
-                .bytes_per_row = bytes_per_row, // width * RGBA
+                .bytes_per_row = padded_bytes_per_row,
                 .rows_per_image = roi.size.h,
             },
         };
@@ -644,6 +662,41 @@ pub const GPU = struct {
         const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size).?));
         defer self.upload_buffer.unmap();
         @memcpy(upload_buffer_ptr, data);
+    }
+
+    /// Alternative mapUpload that writes directly to a texture
+    /// we aren't really using this now because there isn't an equivalent readTexture method
+    pub fn mapUpload2(self: *Self, comptime T: type, data: []const T, texture: Texture, comptime format: TextureFormat, roi: ROI) void {
+        std.log.info("Writing data to GPU buffers", .{});
+
+        const bytes_per_row = roi.size.w * format.bpp();
+        const data_size: usize = roi.size.w * roi.size.h * format.bpp();
+        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * format.bpp();
+        const data_layout = wgpu.TexelCopyBufferLayout{
+            .offset = offset,
+            .bytes_per_row = bytes_per_row,
+            .rows_per_image = roi.size.h,
+        };
+
+        const copy_size = wgpu.Extent3D{
+            .width = roi.size.w,
+            .height = roi.size.h,
+            .depth_or_array_layers = 1,
+        };
+        const destination = wgpu.TexelCopyTextureInfo{
+            .texture = texture.texture,
+            .mip_level = 0,
+            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+
+        self.queue.writeTexture(
+            destination,
+            @ptrCast(data.ptr),
+            data_size,
+            data_layout,
+            copy_size,
+        );
     }
     pub fn mapDownload(self: *Self, comptime T: type, comptime format: TextureFormat, roi: ROI) ![]T {
         std.log.info("Reading data from GPU buffers", .{});

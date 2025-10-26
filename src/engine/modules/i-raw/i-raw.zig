@@ -6,8 +6,8 @@ pub const RawImage = struct {
     allocator: std.mem.Allocator,
     width: usize,
     height: usize,
-    raw_image: []f16,
-    max_value: f16,
+    raw_image: []u16,
+    max_value: u32,
     filters: CFA,
     libraw_rp: *libraw.libraw_data_t,
 
@@ -34,8 +34,9 @@ pub const RawImage = struct {
 
         const img_width: u16 = libraw_rp.*.sizes.width;
         const img_height: u16 = libraw_rp.*.sizes.height;
-        const raw_image: [*c]const u16 = libraw_rp.*.rawdata.raw_image;
-        const raw_pixel_count = @as(u32, img_width) * img_height;
+        // const raw_image: [*c]const u16 = libraw_rp.*.rawdata.raw_image;
+        const raw_image: []u16 = std.mem.span(libraw_rp.*.rawdata.raw_image);
+        // const raw_pixel_count = @as(u32, img_width) * img_height;
         const max_value: u32 = libraw_rp.*.rawdata.color.maximum;
 
         // std.log.info("Filters: {x} ({b})", .{ libraw_rp.*.rawdata.iparams.filters, libraw_rp.*.rawdata.iparams.filters });
@@ -43,37 +44,18 @@ pub const RawImage = struct {
         // std.log.info("Type of raw_image: (c_short = i16, c_ushort = u16) {any}", .{@TypeOf(raw_image[0])});
         // std.log.info("Max Value: {d}", .{max_value});
 
-        // std.log.info("Casting u16 to f16 and Normalizing", .{});
-        var raw_image_norm: []f16 = try allocator.alloc(f16, raw_pixel_count);
-        errdefer allocator.free(raw_image_norm);
-        for (raw_image, 0..raw_pixel_count) |value, i| {
-            if (raw_image_norm[i] == 0.0) {
-                raw_image_norm[i] = 0.0;
-                continue;
-            }
-            raw_image_norm[i] = @as(f16, @floatFromInt(value)) / @as(f16, @floatFromInt(max_value));
-            // if (i < 16) {
-            //     std.debug.print("raw {d}, float {d}\n", .{
-            //         raw_image[i],
-            //         raw_image_norm[i],
-            //     });
-            // }
-        }
-
         return RawImage{
             .allocator = allocator,
             .width = img_width,
             .height = img_height,
-            .raw_image = raw_image_norm,
-            .max_value = @as(f16, @floatFromInt(max_value)),
+            .raw_image = raw_image,
+            .max_value = max_value,
             .filters = try CFA.fromLibraw(&libraw_rp.*.rawdata.iparams.cdesc, libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
         };
     }
 
     pub fn deinit(self: *RawImage) void {
-        self.allocator.free(self.raw_image);
-
         libraw.libraw_recycle(self.libraw_rp);
         libraw.libraw_close(self.libraw_rp);
     }
@@ -87,7 +69,7 @@ test "libraw version" {
 
 test "open raw image" {
     const allocator = std.testing.allocator;
-    const file = try std.fs.cwd().openFile("testing/integration/DSC_6765.NEF", .{});
+    const file = try std.fs.cwd().openFile("testing/integration/fullsize/DSC_6765.NEF", .{});
     var raw_image = try RawImage.read(allocator, file);
     defer raw_image.deinit();
     try std.testing.expect(raw_image.width == 6016);

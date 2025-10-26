@@ -1,8 +1,10 @@
 {
     "cSpell.words": [
         "callconv",
+        "comptime",
         "DEBAYER",
         "libraw",
+        "Texel",
         "wgpu",
         "WGSL",
         "workgroups"
