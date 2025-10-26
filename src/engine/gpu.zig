@@ -61,6 +61,7 @@ pub const TextureFormat = enum {
     rgba16uint,
     r8uint,
     r16uint,
+    r16float,
 
     pub fn toWGPUFormat(self: TextureFormat) wgpu.TextureFormat {
         return switch (self) {
@@ -68,6 +69,7 @@ pub const TextureFormat = enum {
             .rgba16uint => wgpu.TextureFormat.rgba16_uint,
             .r8uint => wgpu.TextureFormat.r8_uint,
             .r16uint => wgpu.TextureFormat.r16_uint,
+            .r16float => wgpu.TextureFormat.r16_float,
         };
     }
 
@@ -77,6 +79,7 @@ pub const TextureFormat = enum {
             .rgba16uint => wgpu.SampleType.u_int,
             .r8uint => wgpu.SampleType.u_int,
             .r16uint => wgpu.SampleType.u_int,
+            .r16float => wgpu.SampleType.float,
         };
     }
 
@@ -92,6 +95,7 @@ pub const TextureFormat = enum {
             .rgba16uint => 4,
             .r8uint => 1,
             .r16uint => 1,
+            .r16float => 1,
         };
     }
 
@@ -102,6 +106,7 @@ pub const TextureFormat = enum {
             .rgba16uint => u16,
             .r8uint => u8,
             .r16uint => u16,
+            .r16float => f16,
         };
     }
 };
@@ -111,8 +116,15 @@ pub const Texture = struct {
     const Self = @This();
 
     pub fn init(gpu: *GPU, format: TextureFormat, roi: ROI) !Self {
+        std.log.info("Creating texture {s} of size {d}x{d}", .{ @tagName(format), roi.size.w, roi.size.h });
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
+
+        // r16uint does not support storage binding
+        var usage = wgpu.TextureUsages.storage_binding | wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst;
+        if (format == .r16uint or format == .r16float) {
+            usage = wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst;
+        }
 
         const texture = gpu.device.createTexture(&wgpu.TextureDescriptor{
             .label = wgpu.StringView.fromSlice("input_texture"),
@@ -127,7 +139,7 @@ pub const Texture = struct {
             .sample_count = 1,
             .dimension = wgpu.TextureDimension.@"2d",
             .format = format.toWGPUFormat(),
-            .usage = wgpu.TextureUsages.storage_binding | wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst,
+            .usage = usage,
         }).?;
         errdefer texture.release();
         return Texture{
@@ -145,6 +157,7 @@ pub const Bindings = struct {
     const Self = @This();
 
     pub fn init(gpu: *GPU, shader_pipe: *ShaderPipe, texture_a: *Texture, texture_b: *Texture) !Self {
+        std.log.info("Creating Bindings", .{});
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
@@ -157,15 +170,15 @@ pub const Bindings = struct {
             wgpu.BindGroupEntry{
                 .binding = 0,
                 .texture_view = texture_a.texture.createView(null),
-                .offset = 0,
-                .size = texture_a.texture.getWidth() * texture_a.texture.getHeight() * 4, // width * height * RGBA
+                // .offset = 0,
+                // .size = texture_a.texture.getWidth() * texture_a.texture.getHeight() * 4, // width * height * RGBA
             },
             // Binding 1: output storage buffer
             wgpu.BindGroupEntry{
                 .binding = 1,
                 .texture_view = texture_b.texture.createView(null),
-                .offset = 0,
-                .size = texture_b.texture.getWidth() * texture_b.texture.getHeight() * 4, // width * height * RGBA
+                // .offset = 0,
+                // .size = texture_b.texture.getWidth() * texture_b.texture.getHeight() * 4, // width * height * RGBA
             },
         };
         const bind_group = gpu.device.createBindGroup(&wgpu.BindGroupDescriptor{
@@ -236,7 +249,7 @@ pub const ShaderPipe = struct {
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
-                    std.log.info("Added input binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
+                    std.log.info("Added input binding {d} sample type {s}", .{ conn.binding, @tagName(conn.format.toWGPUSampleType()) });
                 },
                 ShaderPipeConnType.output => {
                     const entry = wgpu.BindGroupLayoutEntry{
@@ -249,6 +262,7 @@ pub const ShaderPipe = struct {
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
+                    std.log.info("Added output binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
                 },
             }
         }
@@ -489,11 +503,11 @@ pub const GPU = struct {
         compute_pass.end();
     }
 
-    pub fn enqueueMount(self: *Self, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueMount(self: *Self, texture: *Texture, comptime format: TextureFormat, roi: ROI) !void {
         std.log.info("Writing GPU buffer to Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
-        const bytes_per_row = roi.size.w * BPP_RGBAf16;
+        const bytes_per_row = roi.size.w * format.bpp();
         if (bytes_per_row % 256 != 0) {
             std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
             return error.InvalidInput;
@@ -508,13 +522,12 @@ pub const GPU = struct {
             .height = roi.size.h,
             .depth_or_array_layers = 1,
         };
-        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * BPP_RGBAf16;
+        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * format.bpp();
         const source = wgpu.TexelCopyBufferInfo{
             .buffer = self.upload_buffer,
             .layout = wgpu.TexelCopyBufferLayout{
-                // .offset = 0,
                 .offset = offset,
-                .bytes_per_row = bytes_per_row, // width * RGBA
+                .bytes_per_row = bytes_per_row,
                 .rows_per_image = roi.size.h,
             },
         };
@@ -535,11 +548,11 @@ pub const GPU = struct {
         };
         self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
     }
-    pub fn enqueueUnmount(self: *Self, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueUnmount(self: *Self, texture: *Texture, comptime format: TextureFormat, roi: ROI) !void {
         std.log.info("Reading GPU buffer from Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
-        const bytes_per_row = roi.size.w * BPP_RGBAf16; // width * RGBA
+        const bytes_per_row = roi.size.w * format.bpp();
         if (bytes_per_row % 256 != 0) {
             std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
             return error.InvalidInput;
@@ -560,7 +573,7 @@ pub const GPU = struct {
             // .origin = wgpu.Origin3D{ .x = src_origin.x, .y = src_origin.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
-        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * BPP_RGBAf16;
+        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * format.bpp();
         const destination = wgpu.TexelCopyBufferInfo{
             .buffer = self.download_buffer,
             .layout = wgpu.TexelCopyBufferLayout{
@@ -580,6 +593,31 @@ pub const GPU = struct {
             // std.log.info("[enqueueUnmount] destination.layout.rows_per_image: {d}", .{destination.layout.rows_per_image});
         }
         self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
+    }
+
+    pub fn enqueueCopyTextureToTexture(self: *Self, src_texture: *Texture, dst_texture: *Texture, roi: ROI) !void {
+        std.log.info("Copying GPU texture to another GPU texture", .{});
+
+        const copy_size = wgpu.Extent3D{
+            .width = roi.size.w,
+            .height = roi.size.h,
+            .depth_or_array_layers = 1,
+        };
+        const source = wgpu.TexelCopyTextureInfo{
+            .texture = src_texture.texture,
+            .mip_level = 0,
+            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+
+        const destination = wgpu.TexelCopyTextureInfo{
+            .texture = dst_texture.texture,
+            .mip_level = 0,
+            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+
+        self.encoder.copyTextureToTexture(&source, &destination, &copy_size);
     }
 
     pub fn run(self: *Self) void {

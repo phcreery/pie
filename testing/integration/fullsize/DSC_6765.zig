@@ -121,8 +121,9 @@ test "load raw, demosaic, save" {
     // const image_size_out_w = @as(u32, @intCast(pie_raw_image.width));
     // const image_size_out_h = @as(u32, @intCast(pie_raw_image.height));
 
-    const roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
-    const roi_out = roi_in.scaled(0.5, 0.5);
+    var roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
+    roi_in = roi_in.scaled(0.5, 0.5);
+    var roi_out = roi_in; //.scaled(0.5, 0.5);
     // const roi_out = pie.engine.ROI.full(image_size_out_w, image_size_out_h);
     const roi_in_upper, const roi_in_lower = roi_in.splitH();
     const roi_out_upper, const roi_out_lower = roi_out.splitH();
@@ -134,7 +135,7 @@ test "load raw, demosaic, save" {
     std.log.info("Image region: {any} {any}", .{ roi_in.size.w, roi_in.size.h });
     std.log.info("Upload buffer contents: ", .{});
     // printImgBufContents(f16, init_contents_f16, roi_in.size.w * 4);
-    printImgBufContents(u16, init_contents_u16, roi_in.size.w * 4);
+    printImgBufContents(u16, init_contents_u16, roi_in.size.w * 2);
 
     gpu.mapUpload(u16, init_contents_u16, .rgba16uint, roi_in);
 
@@ -147,7 +148,9 @@ test "load raw, demosaic, save" {
         \\fn convert(@builtin(global_invocation_id) global_id: vec3<u32>) {
         \\    var coords = vec2<i32>(global_id.xy);
         \\    let px = textureLoad(input, coords, 0);
-        \\    let pxf = bitcast<vec4<f32>>(px);
+        \\    //let pxf = bitcast<vec4<f32>>(px); // does not work
+        \\    //let pxf = vec4<f32>(1.0,2.0,3.0,4.0); // for testing
+        \\    let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a)) / 4096.0; // max_value
         \\    textureStore(output, coords, pxf);
         \\}
     ;
@@ -184,15 +187,60 @@ test "load raw, demosaic, save" {
     defer bindings_lower.deinit();
 
     // PASS 1 | TOP HALF
-    gpu.enqueueMount(&texture_upper_in, roi_in_upper) catch unreachable;
+    gpu.enqueueMount(&texture_upper_in, convert_conns[0].format, roi_in_upper) catch unreachable;
     gpu.enqueueShader(&convert_shader_pipe, &bindings_upper, roi_out_upper);
-    gpu.enqueueUnmount(&texture_upper_out, roi_out_upper) catch unreachable;
+    // gpu.enqueueUnmount(&texture_upper_out, convert_conns[1].format, roi_out_upper) catch unreachable;
     // PASS 2 | BOTTOM HALF
-    gpu.enqueueMount(&texture_lower_in, roi_in_lower) catch unreachable;
+    gpu.enqueueMount(&texture_lower_in, convert_conns[0].format, roi_in_lower) catch unreachable;
     gpu.enqueueShader(&convert_shader_pipe, &bindings_lower, roi_out_lower);
-    gpu.enqueueUnmount(&texture_lower_out, roi_out_lower) catch unreachable;
+    // gpu.enqueueUnmount(&texture_lower_out, convert_conns[1].format, roi_out_lower) catch unreachable;
 
+    // gpu.run();
+    // const result_convert = try gpu.mapDownload(f16, convert_conns[1].format, roi_out_lower);
+    // std.log.info("\nDownload buffer contents: ", .{});
+    // printImgBufContents(f16, result_convert, roi_out_lower.size.w * 2);
+    // if (true) {
+    //     return error.SkipZigTest;
+    // }
+
+    // roi_out = roi_in.scaled(0.5, 0.5);
     // DEMOSAIC WITH COMPUTE SHADER
+    // const demosaic: []const u8 =
+    //     \\enable f16;
+    //     \\@group(0) @binding(0) var input:  texture_2d<f32>;
+    //     \\@group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
+    //     \\@compute @workgroup_size(8, 8, 1)
+    //     \\fn demosaic(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    //     \\    var coords = vec2<i32>(global_id.xy);
+    //     \\    // the input will not be stored as rgba, instead it will be
+    //     \\    // [ r 0 0 0 ] [ 0 g 0 0 ] ...
+    //     \\    // [ 0 g 0 0 ] [ 0 0 b 0 ] ...
+    //     \\    // [ r 0 0 0 ] [ 0 g 0 0 ] ...
+    //     \\    // [ 0 g 0 0 ] [ 0 0 b 0 ] ...
+    //     \\    // so we need to decode our coords
+    //     \\    var r: f32;
+    //     \\    var g1: f32;
+    //     \\    var g2: f32;
+    //     \\    var b: f32;
+    //     \\    let base_coords = coords * vec2<i32>(2, 2);
+    //     \\    r = textureLoad(input, base_coords + vec2<i32>(0, 0), 0).r;
+    //     \\    g1 = textureLoad(input, base_coords + vec2<i32>(1, 0), 0).g;
+    //     \\    g2 = textureLoad(input, base_coords + vec2<i32>(0, 1), 0).a;
+    //     \\    b = textureLoad(input, base_coords + vec2<i32>(1, 1), 0).b;
+    //     \\    let g = (g1 + g2) / 2.0;
+    //     \\    let rgba = vec4<f32>(r, g, b, 1);
+    //     \\    textureStore(output, coords, rgba);
+    //     \\}
+    // ;
+    // const demosaic_conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
+    //     .binding = 0,
+    //     .type = .input,
+    //     .format = .rgba16float,
+    // }, .{
+    //     .binding = 1,
+    //     .type = .output,
+    //     .format = .rgba16float,
+    // } };
     const demosaic: []const u8 =
         \\enable f16;
         \\@group(0) @binding(0) var input:  texture_2d<f32>;
@@ -201,26 +249,27 @@ test "load raw, demosaic, save" {
         \\fn demosaic(@builtin(global_invocation_id) global_id: vec3<u32>) {
         \\    var coords = vec2<i32>(global_id.xy);
         \\    // the input will not be stored as rgba, instead it will be
-        \\    // [ r 0 0 0 ] [ 0 g 0 0 ] ...
-        \\    // [ 0 g 0 0 ] [ 0 0 b 0 ] ...
-        \\    // [ r 0 0 0 ] [ 0 g 0 0 ] ...
-        \\    // [ 0 g 0 0 ] [ 0 0 b 0 ] ...
+        \\    // [ [ r g r g ] [ r g r g ] ... ]
+        \\    // [ [ g b g b ] [ g b g b ] ... ]
+        \\    // [ [ r g r g ] [ r g r g ] ... ]
+        \\    // [ [ g b g b ] [ g b g b ] ... ]
         \\    // so we need to decode our coords
         \\    var r: f32;
         \\    var g1: f32;
         \\    var g2: f32;
         \\    var b: f32;
-        \\    let base_coords = coords * vec2<i32>(2, 2);
+        \\    //let base_coords = coords * vec2<i32>(2, 2);
+        \\    let base_coords_x = coords.x / 2;
+        \\    let base_coords_y = coords.y * 2;
         \\    r = textureLoad(input, base_coords + vec2<i32>(0, 0), 0).r;
-        \\    g1 = textureLoad(input, base_coords + vec2<i32>(1, 0), 0).g;
-        \\    g2 = textureLoad(input, base_coords + vec2<i32>(0, 1), 0).a;
-        \\    b = textureLoad(input, base_coords + vec2<i32>(1, 1), 0).b;
+        \\    g1 = textureLoad(input, base_coords + vec2<i32>(1, 0), 0).r;
+        \\    g2 = textureLoad(input, base_coords + vec2<i32>(0, 1), 0).r;
+        \\    b = textureLoad(input, base_coords + vec2<i32>(1, 1), 0).r;
         \\    let g = (g1 + g2) / 2.0;
         \\    let rgba = vec4<f32>(r, g, b, 1);
         \\    textureStore(output, coords, rgba);
         \\}
     ;
-
     const demosaic_conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
         .binding = 0,
         .type = .input,
@@ -234,33 +283,40 @@ test "load raw, demosaic, save" {
     defer demosaic_shader_pipe.deinit();
 
     // UPPER MEMORY
-    texture_upper_in = texture_lower_out; // reuse the output of the format conversion
+    // texture_upper_in2 = texture_upper_out; // reuse the output of the format conversion
+    var texture_upper_in2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[0].format, roi_in_upper);
+    defer texture_upper_in2.deinit();
+    gpu.enqueueCopyTextureToTexture(&texture_upper_out, &texture_upper_in2, roi_in_upper) catch unreachable;
 
-    texture_upper_out = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[1].format, roi_out_upper);
-    defer texture_upper_out.deinit();
+    var texture_upper_out2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[1].format, roi_out_upper);
+    defer texture_upper_out2.deinit();
 
-    bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_shader_pipe, &texture_upper_in, &texture_upper_out);
+    bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_shader_pipe, &texture_upper_in2, &texture_upper_out2);
     defer bindings_upper.deinit();
 
     // LOWER MEMORY
-    texture_lower_in = texture_upper_out; // reuse the output of the format conversion
+    // texture_lower_in2 = texture_lower_out; // reuse the output of the format conversion
+    var texture_lower_in2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[0].format, roi_in_lower);
+    defer texture_lower_in2.deinit();
+    gpu.enqueueCopyTextureToTexture(&texture_lower_out, &texture_lower_in2, roi_in_lower) catch unreachable;
 
-    texture_lower_out = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[1].format, roi_out_lower);
-    defer texture_lower_out.deinit();
+    var texture_lower_out2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[1].format, roi_out_lower);
+    defer texture_lower_out2.deinit();
 
-    bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_shader_pipe, &texture_lower_in, &texture_lower_out);
+    bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_shader_pipe, &texture_lower_in2, &texture_lower_out2);
     defer bindings_lower.deinit();
 
+    // copy from last step
     // We are going to do two passes as if the hardware buffer does not allow a full image to be copied to a texture at once
 
     // PASS 1 | TOP HALF
-    gpu.enqueueMount(&texture_upper_in, roi_in_upper) catch unreachable;
+    // gpu.enqueueMount(&texture_upper_in2, convert_conns[0].format, roi_in_upper) catch unreachable;
     gpu.enqueueShader(&demosaic_shader_pipe, &bindings_upper, roi_out_upper);
-    gpu.enqueueUnmount(&texture_upper_out, roi_out_upper) catch unreachable;
+    gpu.enqueueUnmount(&texture_upper_out2, convert_conns[1].format, roi_out_upper) catch unreachable;
     // PASS 2 | BOTTOM HALF
-    gpu.enqueueMount(&texture_lower_in, roi_in_lower) catch unreachable;
+    // gpu.enqueueMount(&texture_lower_in2, convert_conns[0].format, roi_in_lower) catch unreachable;
     gpu.enqueueShader(&demosaic_shader_pipe, &bindings_lower, roi_out_lower);
-    gpu.enqueueUnmount(&texture_lower_out, roi_out_lower) catch unreachable;
+    gpu.enqueueUnmount(&texture_lower_out2, convert_conns[1].format, roi_out_lower) catch unreachable;
 
     gpu.run();
 
