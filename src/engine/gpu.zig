@@ -48,7 +48,8 @@ pub const GPUAllocator = struct {
             .label = wgpu.StringView.fromSlice("upload_buffer"),
             .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
             .size = max_buffer_size / 16,
-            .mapped_at_creation = @as(u32, @intFromBool(true)),
+            // .mapped_at_creation = @as(u32, @intFromBool(true)),
+            .mapped_at_creation = @as(u32, @intFromBool(false)),
         }).?;
         errdefer upload_buffer.release();
         const download_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
@@ -74,7 +75,7 @@ pub const GPUAllocator = struct {
 pub const Encoder = struct {
     encoder: *wgpu.CommandEncoder = undefined,
     const Self = @This();
-    pub fn init(gpu: *GPU) !Self {
+    pub fn start(gpu: *GPU) !Self {
         // The command encoder allows us to record commands that we will later submit to the GPU.
         const encoder = gpu.device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
             .label = wgpu.StringView.fromSlice("Command Encoder"),
@@ -283,8 +284,9 @@ pub const TextureFormat = enum {
     }
 
     /// bytes per pixel
-    pub fn bpp(comptime self: TextureFormat) u32 {
-        return self.nchannels() * @sizeOf(self.BaseType());
+    pub fn bpp(self: TextureFormat) u32 {
+        // return self.nchannels() * @sizeOf(self.BaseType()); // requires comtime param
+        return self.nchannels() * self.baseTypeSize();
     }
 
     /// number of channels
@@ -306,6 +308,16 @@ pub const TextureFormat = enum {
             .r8uint => u8,
             .r16uint => u16,
             .r16float => f16,
+        };
+    }
+
+    pub fn baseTypeSize(self: TextureFormat) u32 {
+        return switch (self) {
+            .rgba16float => @sizeOf(f16),
+            .rgba16uint => @sizeOf(u16),
+            .r8uint => @sizeOf(u8),
+            .r16uint => @sizeOf(u16),
+            .r16float => @sizeOf(f16),
         };
     }
 };
@@ -415,6 +427,7 @@ pub const ShaderPipeParams = struct {
 };
 
 pub const ShaderPipe = struct {
+    entry_point: []const u8,
     bind_group_layout: *wgpu.BindGroupLayout,
     shader_module: *wgpu.ShaderModule,
     pipeline_layout: *wgpu.PipelineLayout,
@@ -507,6 +520,7 @@ pub const ShaderPipe = struct {
         errdefer pipeline.release();
 
         return ShaderPipe{
+            .entry_point = entry_point,
             .bind_group_layout = bind_group_layout_g0,
             .shader_module = shader_module,
             .pipeline_layout = pipeline_layout,
@@ -515,7 +529,7 @@ pub const ShaderPipe = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        std.log.info("Deinitializing ShaderPass", .{});
+        std.log.info("Deinitializing ShaderPass {s}", .{self.entry_point});
 
         self.bind_group_layout.release();
 
@@ -674,30 +688,58 @@ pub const GPU = struct {
         self.instance.release();
     }
 
-    pub fn run(self: *Self, command_buffer: *wgpu.CommandBuffer) void {
+    pub fn run(self: *Self, command_buffer: ?*wgpu.CommandBuffer) !void {
         std.log.info("Submitting command buffer to GPU", .{});
+
+        const command_buffer_unwrapped = command_buffer orelse {
+            std.log.err("No command buffer provided to GPU.run", .{});
+            return error.InvalidCommandBuffer;
+        };
 
         // At this point nothing has actually been executed on the gpu. We have recorded a series of
         // commands that we want to execute, but they haven't been sent to the gpu yet.
         //
         // Submitting to the queue sends the command buffer to the gpu. The gpu will then execute the
         // commands in the command buffer in order.
-        self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
-        command_buffer.release();
+        self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer_unwrapped});
+        command_buffer_unwrapped.release();
     }
 
-    pub fn mapUpload(self: *Self, comptime T: type, data: []const T, comptime format: TextureFormat, roi: ROI) void {
+    pub fn mapUpload(self: *Self, allocator: *GPUAllocator, comptime T: type, data: []const T, comptime format: TextureFormat, roi: ROI) void {
         std.log.info("Writing data to GPU buffers", .{});
 
         const size = roi.size.w * roi.size.h * format.bpp();
-        const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size).?));
-        defer self.upload_buffer.unmap();
+
+        // TODO: first check mapped status
+        // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
+
+        // We now map the upload buffer so we can write to it. Mapping tells wgpu that we want to read/write
+        // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
+        //
+        // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
+        // to tell you when the mapping is complete.
+        var buffer_map_complete = false;
+        _ = allocator.upload_buffer.mapAsync(wgpu.MapModes.write, 0, size, wgpu.BufferMapCallbackInfo{
+            .callback = handleBufferMap,
+            .userdata1 = @ptrCast(&buffer_map_complete),
+        });
+
+        // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
+        // to rely on the callback to know when the buffer is mapped.
+        self.instance.processEvents();
+        while (!buffer_map_complete) {
+            self.instance.processEvents();
+        }
+        // _ = device.poll(true, null);
+
+        const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(allocator.upload_buffer.getMappedRange(0, size).?));
+        defer allocator.upload_buffer.unmap();
         @memcpy(upload_buffer_ptr, data);
     }
 
     /// Alternative mapUpload that writes directly to a texture
     /// we aren't really using this now because there isn't an equivalent readTexture method
-    pub fn mapUpload2(self: *Self, comptime T: type, data: []const T, texture: Texture, comptime format: TextureFormat, roi: ROI) void {
+    pub fn mapUploadTexture(self: *Self, comptime T: type, data: []const T, texture: Texture, comptime format: TextureFormat, roi: ROI) void {
         std.log.info("Writing data to GPU buffers", .{});
 
         const bytes_per_row = roi.size.w * format.bpp();
@@ -729,8 +771,11 @@ pub const GPU = struct {
             copy_size,
         );
     }
-    pub fn mapDownload(self: *Self, comptime T: type, comptime format: TextureFormat, roi: ROI) ![]T {
+    pub fn mapDownload(self: *Self, allocator: *GPUAllocator, comptime T: type, comptime format: TextureFormat, roi: ROI) ![]T {
         std.log.info("Reading data from GPU buffers", .{});
+
+        // TODO: first check mapped status
+        // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
 
         const size = roi.size.w * roi.size.h * format.bpp();
 
@@ -740,7 +785,7 @@ pub const GPU = struct {
         // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
         // to tell you when the mapping is complete.
         var buffer_map_complete = false;
-        _ = self.download_buffer.mapAsync(wgpu.MapModes.read, 0, size, wgpu.BufferMapCallbackInfo{
+        _ = allocator.download_buffer.mapAsync(wgpu.MapModes.read, 0, size, wgpu.BufferMapCallbackInfo{
             .callback = handleBufferMap,
             .userdata1 = @ptrCast(&buffer_map_complete),
         });
@@ -755,8 +800,8 @@ pub const GPU = struct {
 
         // We can now read the data from the buffer.
         // Convert the data back to a slice of f16.
-        const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(self.download_buffer.getMappedRange(0, size).?));
-        defer self.download_buffer.unmap();
+        const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(allocator.download_buffer.getMappedRange(0, size).?));
+        defer allocator.download_buffer.unmap();
 
         const result = download_buffer_ptr[0..size];
         return result;

@@ -3,6 +3,8 @@ const pie = @import("pie");
 
 const ROI = pie.engine.ROI;
 const GPU = pie.engine.gpu.GPU;
+const GPUAllocator = pie.engine.gpu.GPUAllocator;
+const Encoder = pie.engine.gpu.Encoder;
 const ShaderPipe = pie.engine.gpu.ShaderPipe;
 const Texture = pie.engine.gpu.Texture;
 const Bindings = pie.engine.gpu.Bindings;
@@ -14,6 +16,9 @@ test "simple compute double buffer test" {
     // }
     var gpu = try GPU.init();
     defer gpu.deinit();
+
+    var gpu_allocator = try GPUAllocator.init(&gpu);
+    defer gpu_allocator.deinit();
 
     var init_contents = std.mem.zeroes([256]f16);
     _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
@@ -66,17 +71,19 @@ test "simple compute double buffer test" {
     defer bindings_b_to_a.deinit();
 
     // UPLOAD
-    gpu.mapUpload(f16, &init_contents, .rgba16float, roi);
+    gpu.mapUpload(&gpu_allocator, f16, &init_contents, .rgba16float, roi);
 
     // a -> b -> a
-    gpu.enqueueMount(&texture_a, conns[0].format, roi) catch unreachable;
-    gpu.enqueueShader(&shader_pipe, &bindings_a_to_b, roi);
-    gpu.enqueueShader(&shader_pipe, &bindings_b_to_a, roi);
-    gpu.enqueueUnmount(&texture_a, conns[1].format, roi) catch unreachable;
-    gpu.run();
+    var encoder = try Encoder.start(&gpu);
+    defer encoder.deinit();
+    encoder.enqueueMount(&gpu_allocator, &texture_a, roi) catch unreachable;
+    encoder.enqueueShader(&shader_pipe, &bindings_a_to_b, roi);
+    encoder.enqueueShader(&shader_pipe, &bindings_b_to_a, roi);
+    encoder.enqueueUnmount(&gpu_allocator, &texture_a, roi) catch unreachable;
+    gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
-    const result = try gpu.mapDownload(f16, .rgba16float, roi);
+    const result = try gpu.mapDownload(&gpu_allocator, f16, .rgba16float, roi);
     std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
     var expected_contents = std.mem.zeroes([256]f16);

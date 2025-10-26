@@ -81,12 +81,18 @@ test "load raw, demosaic, save" {
     var gpu = try pie.engine.gpu.GPU.init();
     defer gpu.deinit();
 
+    var gpu_allocator = try pie.engine.gpu.GPUAllocator.init(&gpu);
+    defer gpu_allocator.deinit();
+
     // UPLOAD
     std.log.info("Image region: {any} {any}", .{ roi_in.size.w, roi_in.size.h });
     std.log.info("Upload buffer contents: ", .{});
     printImgBufContents(u16, init_contents_u16, roi_in.size.w * 2);
 
-    gpu.mapUpload(u16, init_contents_u16, .rgba16uint, roi_in);
+    gpu.mapUpload(&gpu_allocator, u16, init_contents_u16, .rgba16uint, roi_in);
+
+    var encoder = try pie.engine.gpu.Encoder.start(&gpu);
+    defer encoder.deinit();
 
     // FORMAT CONVERSION WITH COMPUTE SHADER
     const convert: []const u8 =
@@ -135,13 +141,13 @@ test "load raw, demosaic, save" {
     var bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &convert_shader_pipe, &texture_lower_in, &texture_lower_out);
     defer bindings_lower.deinit();
 
-    gpu.enqueueMount(&texture_upper_in, convert_conns[0].format, roi_in_upper) catch unreachable;
-    gpu.enqueueMount(&texture_lower_in, convert_conns[0].format, roi_in_lower) catch unreachable;
+    encoder.enqueueMount(&gpu_allocator, &texture_upper_in, roi_in_upper) catch unreachable;
+    encoder.enqueueMount(&gpu_allocator, &texture_lower_in, roi_in_lower) catch unreachable;
 
     // PASS 1 | TOP HALF
-    gpu.enqueueShader(&convert_shader_pipe, &bindings_upper, roi_out_upper);
+    encoder.enqueueShader(&convert_shader_pipe, &bindings_upper, roi_out_upper);
     // PASS 2 | BOTTOM HALF
-    gpu.enqueueShader(&convert_shader_pipe, &bindings_lower, roi_out_lower);
+    encoder.enqueueShader(&convert_shader_pipe, &bindings_lower, roi_out_lower);
 
     // { // early exit after conversion
     //     gpu.enqueueUnmount(&texture_upper_out, convert_conns[1].format, roi_out_upper) catch unreachable;
@@ -217,7 +223,7 @@ test "load raw, demosaic, save" {
         \\    //
         \\    // we want the mosaic
         \\    // [  /r g\ r g  r g  r g ...
-        \\    //    \g b/ g b  g b  g b ... ]
+        \\    //    \g b/ g b  g b  g b ...
         \\    //     r g /r g\ r g  r g ...
         \\    //     g b \g b/ g b  g b ... ]
         \\    //  w,h  =  raw_width/2, raw_height/2
@@ -299,16 +305,16 @@ test "load raw, demosaic, save" {
     // We are going to do two passes as if the hardware buffer does not allow a full image to be copied to a texture at once
 
     // PASS 1 | TOP HALF
-    gpu.enqueueShader(&demosaic_shader_pipe, &bindings_upper, roi_out_upper);
+    encoder.enqueueShader(&demosaic_shader_pipe, &bindings_upper, roi_out_upper);
     // PASS 2 | BOTTOM HALF
-    gpu.enqueueShader(&demosaic_shader_pipe, &bindings_lower, roi_out_lower);
+    encoder.enqueueShader(&demosaic_shader_pipe, &bindings_lower, roi_out_lower);
 
-    gpu.enqueueUnmount(&texture_upper_out2, convert_conns[1].format, roi_out_upper) catch unreachable;
-    gpu.enqueueUnmount(&texture_lower_out2, convert_conns[1].format, roi_out_lower) catch unreachable;
+    encoder.enqueueUnmount(&gpu_allocator, &texture_upper_out2, roi_out_upper) catch unreachable;
+    encoder.enqueueUnmount(&gpu_allocator, &texture_lower_out2, roi_out_lower) catch unreachable;
+    gpu.run(encoder.finish()) catch unreachable;
 
-    gpu.run();
-
-    const result = try gpu.mapDownload(f16, .rgba16float, roi_out);
+    // DOWNLOAD
+    const result = try gpu.mapDownload(&gpu_allocator, f16, .rgba16float, roi_out);
 
     std.log.info("\nDownload buffer contents: ", .{});
     printImgBufContents(f16, result, roi_out.size.w * 4);
