@@ -125,8 +125,8 @@ test "load raw, demosaic, save" {
     roi_in = roi_in.scaled(0.5, 0.5);
     var roi_out = roi_in; //.scaled(0.5, 0.5);
     // const roi_out = pie.engine.ROI.full(image_size_out_w, image_size_out_h);
-    const roi_in_upper, const roi_in_lower = roi_in.splitH();
-    const roi_out_upper, const roi_out_lower = roi_out.splitH();
+    var roi_in_upper, var roi_in_lower = roi_in.splitH();
+    var roi_out_upper, var roi_out_lower = roi_out.splitH();
 
     var gpu = try pie.engine.gpu.GPU.init();
     defer gpu.deinit();
@@ -204,6 +204,17 @@ test "load raw, demosaic, save" {
     // }
 
     // roi_out = roi_in.scaled(0.5, 0.5);
+    // roi_out = roi_in.scaled(0.5, 2);
+    roi_out_upper = roi_in_upper.scaled(2, 0.5); // works
+    roi_out_lower = roi_in_lower.scaled(2, 0.5); // works
+    // roi_in_upper = roi_in_upper.scaled(2, 0.5);
+    // roi_in_lower = roi_in_lower.scaled(2, 0.5);
+
+    // roi_in_upper = roi_in_upper.scaled(0.5, 2);
+    // roi_in_lower = roi_in_lower.scaled(0.5, 2);
+    // roi_out_upper = roi_out_upper; // unchanged
+    // roi_out_lower = roi_out_lower; // unchanged
+
     // DEMOSAIC WITH COMPUTE SHADER
     // const demosaic: []const u8 =
     //     \\enable f16;
@@ -258,8 +269,8 @@ test "load raw, demosaic, save" {
         \\    var g1: f32;
         \\    var g2: f32;
         \\    var b: f32;
-        \\    let base_coords_x = coords.x / 2;
-        \\    let base_coords_y = coords.y * 2;
+        \\    let base_coords_x: i32 = coords.x / 2;
+        \\    let base_coords_y: i32 = coords.y * 2;
         \\    let is_even_x = (coords.x % 2) == 0;
         \\    if (is_even_x) {
         \\        r = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 0), 0).r;
@@ -267,10 +278,10 @@ test "load raw, demosaic, save" {
         \\        g2 = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 1), 0).r;
         \\        b = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 1), 0).g;
         \\    } else {
-        \\        r = textureLoad(input, vec2<i32>(base_coords_x - 1, base_coords_y + 0), 0).b;
-        \\        g1 = textureLoad(input, vec2<i32>(base_coords_x - 1, base_coords_y + 0), 0).a;
-        \\        g2 = textureLoad(input, vec2<i32>(base_coords_x - 1, base_coords_y + 1), 0).b;
-        \\        b = textureLoad(input, vec2<i32>(base_coords_x - 1, base_coords_y + 1), 0).a;
+        \\        r = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 0), 0).b;
+        \\        g1 = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 0), 0).a;
+        \\        g2 = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 1), 0).b;
+        \\        b = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 1), 0).a;
         \\    }
         \\    let g = (g1 + g2) / 2.0;
         \\    let rgba = vec4<f32>(r, g, b, 1);
