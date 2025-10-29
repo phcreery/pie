@@ -6,9 +6,6 @@ const ROI = @import("ROI.zig");
 const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
 const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
-// bytes per pixel
-pub const BPP_RGBAf16: u32 = 8;
-
 // Workgroup size must match the compute shader
 pub const WORKGROUP_SIZE_X: u32 = 8;
 pub const WORKGROUP_SIZE_Y: u32 = 8;
@@ -41,21 +38,26 @@ pub const GPUAllocator = struct {
             max_buffer_size = 256 * 1024 * 1024 * 12; // 3x256 MB for RGBAf16
         }
 
+        const buffer_size = max_buffer_size / 16;
+
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
+        std.log.info("Creating GPUAllocator with upload buffer size {d} bytes", .{buffer_size});
         const upload_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("upload_buffer"),
             .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
-            .size = max_buffer_size / 16,
+            .size = buffer_size,
             // .mapped_at_creation = @as(u32, @intFromBool(true)),
             .mapped_at_creation = @as(u32, @intFromBool(false)),
         }).?;
         errdefer upload_buffer.release();
+
+        std.log.info("Creating GPUAllocator with download buffer size {d} bytes", .{buffer_size});
         const download_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("download_buffer"),
             .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
-            .size = max_buffer_size / 16,
+            .size = buffer_size,
             .mapped_at_creation = @as(u32, @intFromBool(false)),
         }).?;
         errdefer download_buffer.release();
@@ -105,7 +107,7 @@ pub const Encoder = struct {
         return command_buffer;
     }
 
-    pub fn enqueueShader(self: *Self, shader_pipe: *ShaderPipe, bindings: *Bindings, work_size: ROI) void {
+    pub fn enqueueShader(self: *Self, shader_pipe: *const ShaderPipe, bindings: *Bindings, work_size: ROI) void {
         std.log.info("Enqueuing compute shader", .{});
         // A compute pass is a single series of compute operations. While we are recording a compute
         // pass, we cannot record to the encoder.
@@ -283,6 +285,8 @@ pub const TextureFormat = enum {
         };
     }
 
+    // TODO: make to following functions comptime accessible
+
     /// bytes per pixel
     pub fn bpp(self: TextureFormat) u32 {
         // return self.nchannels() * @sizeOf(self.BaseType()); // requires comtime param
@@ -369,7 +373,7 @@ pub const Bindings = struct {
     bind_group: *wgpu.BindGroup = undefined,
     const Self = @This();
 
-    pub fn init(gpu: *GPU, shader_pipe: *ShaderPipe, texture_a: *Texture, texture_b: *Texture) !Self {
+    pub fn init(gpu: *GPU, shader_pipe: *const ShaderPipe, texture_a: *Texture, texture_b: *Texture) !Self {
         std.log.info("Creating Bindings", .{});
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
@@ -435,7 +439,7 @@ pub const ShaderPipe = struct {
 
     const Self = @This();
 
-    pub fn init(gpu: *GPU, shader_source: []const u8, comptime entry_point: []const u8, comptime g0_conns: []const ShaderPipeConn) !Self {
+    pub fn init(gpu: *GPU, shader_source: []const u8, entry_point: []const u8, g0_conns: [2]ShaderPipeConn) !Self {
         std.log.info("Initializing ShaderPipe for {s}", .{entry_point});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
@@ -448,7 +452,9 @@ pub const ShaderPipe = struct {
         //
         // First, we are going to create the bind group layout for group 0
         // this will hold the input/output textures
-        var bind_group_layout_entries_g0 = std.mem.zeroes([g0_conns.len]wgpu.BindGroupLayoutEntry);
+        //
+        // TODO: make this dynamic based on the shader inputs/outputs `[g0_conns.len]wgpu.BindGroupLayoutEntry`
+        var bind_group_layout_entries_g0 = std.mem.zeroes([2]wgpu.BindGroupLayoutEntry);
 
         for (g0_conns) |conn| {
             switch (conn.type) {
@@ -482,7 +488,8 @@ pub const ShaderPipe = struct {
         }
 
         const bind_group_layout_g0 = gpu.device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
-            .label = wgpu.StringView.fromSlice("Bind Group Layout for " ++ entry_point),
+            // .label = wgpu.StringView.fromSlice("Bind Group Layout for " ++ entry_point),
+            .label = wgpu.StringView.fromSlice("Bind Group Layout"),
             .entry_count = 2,
             .entries = &bind_group_layout_entries_g0,
         }).?;
@@ -492,7 +499,8 @@ pub const ShaderPipe = struct {
         // The pipeline layout describes the bind groups that a pipeline expects
         const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout_g0};
         const pipeline_layout = gpu.device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
-            .label = wgpu.StringView.fromSlice("Pipeline Layout for " ++ entry_point),
+            // .label = wgpu.StringView.fromSlice("Pipeline Layout for " ++ entry_point),
+            .label = wgpu.StringView.fromSlice("Pipeline Layout"),
             .bind_group_layout_count = 1,
             .bind_group_layouts = &bind_group_layouts,
         }).?;
@@ -503,14 +511,16 @@ pub const ShaderPipe = struct {
         // Create the shader module from WGSL source code.
         // You can also load SPIR-V or use the Naga IR.
         const shader_module = gpu.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
-            .label = "Compute Shader for " ++ entry_point,
+            // .label = "Compute Shader for " ++ entry_point,
+            .label = "Compute Shader",
             .code = shader_source,
         })).?;
 
         // The pipeline is the ready-to-go program state for the GPU. It contains the shader modules,
         // the interfaces (bind group layouts) and the shader entry point.
         const pipeline = gpu.device.createComputePipeline(&wgpu.ComputePipelineDescriptor{
-            .label = wgpu.StringView.fromSlice("Compute Pipeline for " ++ entry_point),
+            // .label = wgpu.StringView.fromSlice("Compute Pipeline for " ++ entry_point),
+            .label = wgpu.StringView.fromSlice("Compute Pipeline"),
             .layout = pipeline_layout,
             .compute = wgpu.ProgrammableStageDescriptor{
                 .module = shader_module,
@@ -708,7 +718,10 @@ pub const GPU = struct {
     pub fn mapUpload(self: *Self, allocator: *GPUAllocator, comptime T: type, data: []const T, comptime format: TextureFormat, roi: ROI) void {
         std.log.info("Writing data to GPU buffers", .{});
 
-        const size = roi.size.w * roi.size.h * format.bpp();
+        // const size_nvals = roi.size.w * roi.size.h * format.nchannels();
+        const size_bytes = roi.size.w * roi.size.h * format.bpp();
+
+        std.log.info(" mapUpload size_bytes: {d}", .{size_bytes});
 
         // TODO: first check mapped status
         // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
@@ -719,7 +732,7 @@ pub const GPU = struct {
         // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
         // to tell you when the mapping is complete.
         var buffer_map_complete = false;
-        _ = allocator.upload_buffer.mapAsync(wgpu.MapModes.write, 0, size, wgpu.BufferMapCallbackInfo{
+        _ = allocator.upload_buffer.mapAsync(wgpu.MapModes.write, 0, size_bytes, wgpu.BufferMapCallbackInfo{
             .callback = handleBufferMap,
             .userdata1 = @ptrCast(&buffer_map_complete),
         });
@@ -732,7 +745,7 @@ pub const GPU = struct {
         }
         // _ = device.poll(true, null);
 
-        const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(allocator.upload_buffer.getMappedRange(0, size).?));
+        const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(allocator.upload_buffer.getMappedRange(0, size_bytes).?));
         defer allocator.upload_buffer.unmap();
         @memcpy(upload_buffer_ptr, data);
     }
@@ -740,7 +753,7 @@ pub const GPU = struct {
     /// Alternative mapUpload that writes directly to a texture
     /// we aren't really using this now because there isn't an equivalent readTexture method
     pub fn mapUploadTexture(self: *Self, comptime T: type, data: []const T, texture: Texture, comptime format: TextureFormat, roi: ROI) void {
-        std.log.info("Writing data to GPU buffers", .{});
+        std.log.info("Writing data to GPU Texture", .{});
 
         const bytes_per_row = roi.size.w * format.bpp();
         const data_size: usize = roi.size.w * roi.size.h * format.bpp();
@@ -777,7 +790,8 @@ pub const GPU = struct {
         // TODO: first check mapped status
         // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
 
-        const size = roi.size.w * roi.size.h * format.bpp();
+        const size_nvals = roi.size.w * roi.size.h * format.nchannels();
+        const size_bytes = roi.size.w * roi.size.h * format.bpp();
 
         // We now map the download buffer so we can read it. Mapping tells wgpu that we want to read/write
         // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
@@ -785,7 +799,7 @@ pub const GPU = struct {
         // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
         // to tell you when the mapping is complete.
         var buffer_map_complete = false;
-        _ = allocator.download_buffer.mapAsync(wgpu.MapModes.read, 0, size, wgpu.BufferMapCallbackInfo{
+        _ = allocator.download_buffer.mapAsync(wgpu.MapModes.read, 0, size_bytes, wgpu.BufferMapCallbackInfo{
             .callback = handleBufferMap,
             .userdata1 = @ptrCast(&buffer_map_complete),
         });
@@ -800,10 +814,10 @@ pub const GPU = struct {
 
         // We can now read the data from the buffer.
         // Convert the data back to a slice of f16.
-        const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(allocator.download_buffer.getMappedRange(0, size).?));
+        const download_buffer_ptr: [*]T = @ptrCast(@alignCast(allocator.download_buffer.getMappedRange(0, size_bytes).?));
         defer allocator.download_buffer.unmap();
 
-        const result = download_buffer_ptr[0..size];
+        const result = download_buffer_ptr[0..size_nvals];
         return result;
     }
 

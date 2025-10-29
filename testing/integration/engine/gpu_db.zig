@@ -8,7 +8,7 @@ const Encoder = pie.engine.gpu.Encoder;
 const ShaderPipe = pie.engine.gpu.ShaderPipe;
 const Texture = pie.engine.gpu.Texture;
 const Bindings = pie.engine.gpu.Bindings;
-const BPP_RGBAf16 = pie.engine.gpu.BPP_RGBAf16;
+// const BPP_RGBAf16 = pie.engine.gpu.TextureFormat.rgba16float.bpp();
 
 test "simple compute double buffer test" {
     // if (true) {
@@ -20,11 +20,11 @@ test "simple compute double buffer test" {
     var gpu_allocator = try GPUAllocator.init(&gpu);
     defer gpu_allocator.deinit();
 
-    var init_contents = std.mem.zeroes([256]f16);
+    var init_contents = std.mem.zeroes([4]f16);
     _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
     const roi = ROI{
         .size = .{
-            .w = 256 / BPP_RGBAf16,
+            .w = 1,
             .h = 1,
         },
         .origin = .{
@@ -76,17 +76,18 @@ test "simple compute double buffer test" {
     // a -> b -> a
     var encoder = try Encoder.start(&gpu);
     defer encoder.deinit();
-    encoder.enqueueMount(&gpu_allocator, &texture_a, roi) catch unreachable;
+    encoder.enqueueBufToTex(&gpu_allocator, &texture_a, roi) catch unreachable;
     encoder.enqueueShader(&shader_pipe, &bindings_a_to_b, roi);
     encoder.enqueueShader(&shader_pipe, &bindings_b_to_a, roi);
-    encoder.enqueueUnmount(&gpu_allocator, &texture_a, roi) catch unreachable;
+    encoder.enqueueTexToBuf(&gpu_allocator, &texture_a, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
     const result = try gpu.mapDownload(&gpu_allocator, f16, .rgba16float, roi);
-    std.log.info("Download buffer contents: {any}", .{result[0..4]});
+    std.log.info("Download buffer contents: {any}", .{result});
 
-    var expected_contents = std.mem.zeroes([256]f16);
-    _ = std.mem.copyForwards(f16, expected_contents[0..4], &[_]f16{ 4.0, 8.0, 12.0, 16.0 });
-    try std.testing.expectEqualSlices(f16, expected_contents[0..], result);
+    // var expected_contents = std.mem.zeroes([4]f16);
+    // _ = std.mem.copyForwards(f16, expected_contents[0..4], &[_]f16{ 4.0, 8.0, 12.0, 16.0 });
+    const expected_contents = [_]f16{ 4.0, 8.0, 12.0, 16.0 };
+    try std.testing.expectEqualSlices(f16, &expected_contents, result);
 }

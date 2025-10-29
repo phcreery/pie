@@ -8,11 +8,8 @@ const Encoder = pie.engine.gpu.Encoder;
 const ShaderPipe = pie.engine.gpu.ShaderPipe;
 const Texture = pie.engine.gpu.Texture;
 const Bindings = pie.engine.gpu.Bindings;
-const BPP_RGBAf16 = pie.engine.gpu.BPP_RGBAf16;
 
 test "simple compute test" {
-    // const allocator = std.testing.allocator;
-
     var gpu = try GPU.init();
     defer gpu.deinit();
 
@@ -23,7 +20,7 @@ test "simple compute test" {
     _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
     const roi = ROI{
         .size = .{
-            .w = 256 / BPP_RGBAf16,
+            .w = 256 / 4,
             .h = 1,
         },
         .origin = .{
@@ -74,9 +71,9 @@ test "simple compute test" {
     // RUN
     var encoder = try Encoder.start(&gpu);
     defer encoder.deinit();
-    encoder.enqueueMount(&gpu_allocator, &texture_in, roi) catch unreachable;
+    encoder.enqueueBufToTex(&gpu_allocator, &texture_in, roi) catch unreachable;
     encoder.enqueueShader(&shader_pipe, &bindings, roi);
-    encoder.enqueueUnmount(&gpu_allocator, &texture_out, roi) catch unreachable;
+    encoder.enqueueTexToBuf(&gpu_allocator, &texture_out, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
