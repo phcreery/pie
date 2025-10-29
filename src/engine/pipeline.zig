@@ -89,7 +89,7 @@ const MAX_NODES = 32;
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
     gpu: gpu.GPU,
-    gpu_allocator: *gpu.GPUAllocator,
+    gpu_allocator: gpu.GPUAllocator,
     nodes: std.ArrayList(Node),
     modules: std.ArrayList(Module),
 
@@ -109,7 +109,7 @@ pub const Pipeline = struct {
         return Pipeline{
             .allocator = allocator,
             .gpu = gpu_instance,
-            .gpu_allocator = &gpu_allocator,
+            .gpu_allocator = gpu_allocator,
             .nodes = nodes,
             .modules = modules,
         };
@@ -145,18 +145,18 @@ pub const Pipeline = struct {
         defer bindings.deinit();
 
         // UPLOAD
-        self.gpu.mapUpload(self.gpu_allocator, f16, init_contents, .rgba16float, roi);
+        self.gpu.mapUpload(&self.gpu_allocator, f16, init_contents, .rgba16float, roi);
 
         // RUN
         var encoder = try gpu.Encoder.start(&self.gpu);
         defer encoder.deinit();
-        encoder.enqueueBufToTex(self.gpu_allocator, &texture_in, roi) catch unreachable;
+        encoder.enqueueBufToTex(&self.gpu_allocator, &texture_in, roi) catch unreachable;
         encoder.enqueueShader(&node.shader, &bindings, roi);
-        encoder.enqueueTexToBuf(self.gpu_allocator, &texture_out, roi) catch unreachable;
+        encoder.enqueueTexToBuf(&self.gpu_allocator, &texture_out, roi) catch unreachable;
         self.gpu.run(encoder.finish()) catch unreachable;
 
         // DOWNLOAD
-        const result = try self.gpu.mapDownload(self.gpu_allocator, f16, .rgba16float, roi);
+        const result = try self.gpu.mapDownload(&self.gpu_allocator, f16, .rgba16float, roi);
         std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
         return result;

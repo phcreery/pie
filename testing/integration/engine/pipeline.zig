@@ -79,11 +79,7 @@ test "simple module test" {
 
     const result = try pipeline.runWithSource(&init_contents, roi);
 
-    // if (true) {
-    //     return error.SkipZigTest;
-    // }
-
-    var expected_contents = std.mem.zeroes([256]f16);
+    var expected_contents = std.mem.zeroes([4]f16);
     _ = std.mem.copyForwards(f16, expected_contents[0..4], &[_]f16{ 2.0, 4.0, 6.0, 8.0 });
     try std.testing.expectEqualSlices(f16, expected_contents[0..], result);
 }
