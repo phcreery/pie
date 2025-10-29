@@ -52,7 +52,7 @@ test "simple compute test" {
         .type = .output,
         .format = .rgba16float,
     } };
-    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", &conns);
+    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", conns);
     defer shader_pipe.deinit();
 
     // MEMORY
@@ -66,7 +66,7 @@ test "simple compute test" {
     defer bindings.deinit();
 
     // UPLOAD
-    gpu.mapUpload(&gpu_allocator, f16, &init_contents, .rgba16float, roi);
+    gpu_allocator.upload(f16, &init_contents, .rgba16float, roi);
 
     // RUN
     var encoder = try Encoder.start(&gpu);
@@ -77,7 +77,7 @@ test "simple compute test" {
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
-    const result = try gpu.mapDownload(&gpu_allocator, f16, .rgba16float, roi);
+    const result = try gpu_allocator.download(f16, .rgba16float, roi);
     std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
     var expected_contents = std.mem.zeroes([256]f16);

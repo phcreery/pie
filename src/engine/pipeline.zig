@@ -145,7 +145,7 @@ pub const Pipeline = struct {
         defer bindings.deinit();
 
         // UPLOAD
-        self.gpu.mapUpload(&self.gpu_allocator, f16, init_contents, .rgba16float, roi);
+        self.gpu_allocator.upload(f16, init_contents, .rgba16float, roi);
 
         // RUN
         var encoder = try gpu.Encoder.start(&self.gpu);
@@ -156,7 +156,7 @@ pub const Pipeline = struct {
         self.gpu.run(encoder.finish()) catch unreachable;
 
         // DOWNLOAD
-        const result = try self.gpu.mapDownload(&self.gpu_allocator, f16, .rgba16float, roi);
+        const result = try self.gpu_allocator.download(f16, .rgba16float, roi);
         std.log.info("Download buffer contents: {any}", .{result[0..4]});
 
         return result;

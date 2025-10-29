@@ -24,9 +24,12 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
 /// Future work could include a more complex allocator with multiple buffers
 /// useful for multiple simultaneous operations.
 pub const GPUAllocator = struct {
+    gpu: *GPU,
     upload_buffer: *wgpu.Buffer = undefined,
     download_buffer: *wgpu.Buffer = undefined,
+
     const Self = @This();
+
     pub fn init(gpu: *GPU) !Self {
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
@@ -63,6 +66,7 @@ pub const GPUAllocator = struct {
         errdefer download_buffer.release();
 
         return Self{
+            .gpu = gpu,
             .upload_buffer = upload_buffer,
             .download_buffer = download_buffer,
         };
@@ -71,6 +75,112 @@ pub const GPUAllocator = struct {
     pub fn deinit(self: *Self) void {
         self.download_buffer.release();
         self.upload_buffer.release();
+    }
+
+    pub fn upload(self: *Self, comptime T: type, data: []const T, comptime format: TextureFormat, roi: ROI) void {
+        std.log.info("Writing data to GPU buffers", .{});
+
+        // const size_nvals = roi.size.w * roi.size.h * format.nchannels();
+        const size_bytes = roi.size.w * roi.size.h * format.bpp();
+
+        std.log.info(" mapUpload size_bytes: {d}", .{size_bytes});
+
+        // TODO: first check mapped status
+        // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
+
+        // We now map the upload buffer so we can write to it. Mapping tells wgpu that we want to read/write
+        // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
+        //
+        // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
+        // to tell you when the mapping is complete.
+        var buffer_map_complete = false;
+        _ = self.upload_buffer.mapAsync(wgpu.MapModes.write, 0, size_bytes, wgpu.BufferMapCallbackInfo{
+            .callback = handleBufferMap,
+            .userdata1 = @ptrCast(&buffer_map_complete),
+        });
+
+        // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
+        // to rely on the callback to know when the buffer is mapped.
+        self.gpu.instance.processEvents();
+        while (!buffer_map_complete) {
+            self.gpu.instance.processEvents();
+        }
+        // _ = device.poll(true, null);
+
+        const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size_bytes).?));
+        defer self.upload_buffer.unmap();
+        @memcpy(upload_buffer_ptr, data);
+    }
+
+    /// Alternative mapUpload that writes directly to a texture
+    /// we aren't really using this now because there isn't an equivalent readTexture method
+    pub fn mapUploadTexture(self: *Self, comptime T: type, data: []const T, texture: Texture, comptime format: TextureFormat, roi: ROI) void {
+        std.log.info("Writing data to GPU Texture", .{});
+
+        const bytes_per_row = roi.size.w * format.bpp();
+        const data_size: usize = roi.size.w * roi.size.h * format.bpp();
+        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * format.bpp();
+        const data_layout = wgpu.TexelCopyBufferLayout{
+            .offset = offset,
+            .bytes_per_row = bytes_per_row,
+            .rows_per_image = roi.size.h,
+        };
+
+        const copy_size = wgpu.Extent3D{
+            .width = roi.size.w,
+            .height = roi.size.h,
+            .depth_or_array_layers = 1,
+        };
+        const destination = wgpu.TexelCopyTextureInfo{
+            .texture = texture.texture,
+            .mip_level = 0,
+            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        };
+
+        self.gpu.queue.writeTexture(
+            destination,
+            @ptrCast(data.ptr),
+            data_size,
+            data_layout,
+            copy_size,
+        );
+    }
+    pub fn download(self: *Self, comptime T: type, comptime format: TextureFormat, roi: ROI) ![]T {
+        std.log.info("Reading data from GPU buffers", .{});
+
+        // TODO: first check mapped status
+        // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
+
+        const size_nvals = roi.size.w * roi.size.h * format.nchannels();
+        const size_bytes = roi.size.w * roi.size.h * format.bpp();
+
+        // We now map the download buffer so we can read it. Mapping tells wgpu that we want to read/write
+        // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
+        //
+        // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
+        // to tell you when the mapping is complete.
+        var buffer_map_complete = false;
+        _ = self.download_buffer.mapAsync(wgpu.MapModes.read, 0, size_bytes, wgpu.BufferMapCallbackInfo{
+            .callback = handleBufferMap,
+            .userdata1 = @ptrCast(&buffer_map_complete),
+        });
+
+        // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
+        // to rely on the callback to know when the buffer is mapped.
+        self.gpu.instance.processEvents();
+        while (!buffer_map_complete) {
+            self.gpu.instance.processEvents();
+        }
+        // _ = device.poll(true, null);
+
+        // We can now read the data from the buffer.
+        // Convert the data back to a slice of f16.
+        const download_buffer_ptr: [*]T = @ptrCast(@alignCast(self.download_buffer.getMappedRange(0, size_bytes).?));
+        defer self.download_buffer.unmap();
+
+        const result = download_buffer_ptr[0..size_nvals];
+        return result;
     }
 };
 
@@ -713,112 +823,6 @@ pub const GPU = struct {
         // commands in the command buffer in order.
         self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer_unwrapped});
         command_buffer_unwrapped.release();
-    }
-
-    pub fn mapUpload(self: *Self, allocator: *GPUAllocator, comptime T: type, data: []const T, comptime format: TextureFormat, roi: ROI) void {
-        std.log.info("Writing data to GPU buffers", .{});
-
-        // const size_nvals = roi.size.w * roi.size.h * format.nchannels();
-        const size_bytes = roi.size.w * roi.size.h * format.bpp();
-
-        std.log.info(" mapUpload size_bytes: {d}", .{size_bytes});
-
-        // TODO: first check mapped status
-        // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
-
-        // We now map the upload buffer so we can write to it. Mapping tells wgpu that we want to read/write
-        // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
-        //
-        // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
-        // to tell you when the mapping is complete.
-        var buffer_map_complete = false;
-        _ = allocator.upload_buffer.mapAsync(wgpu.MapModes.write, 0, size_bytes, wgpu.BufferMapCallbackInfo{
-            .callback = handleBufferMap,
-            .userdata1 = @ptrCast(&buffer_map_complete),
-        });
-
-        // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
-        // to rely on the callback to know when the buffer is mapped.
-        self.instance.processEvents();
-        while (!buffer_map_complete) {
-            self.instance.processEvents();
-        }
-        // _ = device.poll(true, null);
-
-        const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(allocator.upload_buffer.getMappedRange(0, size_bytes).?));
-        defer allocator.upload_buffer.unmap();
-        @memcpy(upload_buffer_ptr, data);
-    }
-
-    /// Alternative mapUpload that writes directly to a texture
-    /// we aren't really using this now because there isn't an equivalent readTexture method
-    pub fn mapUploadTexture(self: *Self, comptime T: type, data: []const T, texture: Texture, comptime format: TextureFormat, roi: ROI) void {
-        std.log.info("Writing data to GPU Texture", .{});
-
-        const bytes_per_row = roi.size.w * format.bpp();
-        const data_size: usize = roi.size.w * roi.size.h * format.bpp();
-        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * format.bpp();
-        const data_layout = wgpu.TexelCopyBufferLayout{
-            .offset = offset,
-            .bytes_per_row = bytes_per_row,
-            .rows_per_image = roi.size.h,
-        };
-
-        const copy_size = wgpu.Extent3D{
-            .width = roi.size.w,
-            .height = roi.size.h,
-            .depth_or_array_layers = 1,
-        };
-        const destination = wgpu.TexelCopyTextureInfo{
-            .texture = texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
-        };
-
-        self.queue.writeTexture(
-            destination,
-            @ptrCast(data.ptr),
-            data_size,
-            data_layout,
-            copy_size,
-        );
-    }
-    pub fn mapDownload(self: *Self, allocator: *GPUAllocator, comptime T: type, comptime format: TextureFormat, roi: ROI) ![]T {
-        std.log.info("Reading data from GPU buffers", .{});
-
-        // TODO: first check mapped status
-        // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
-
-        const size_nvals = roi.size.w * roi.size.h * format.nchannels();
-        const size_bytes = roi.size.w * roi.size.h * format.bpp();
-
-        // We now map the download buffer so we can read it. Mapping tells wgpu that we want to read/write
-        // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
-        //
-        // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
-        // to tell you when the mapping is complete.
-        var buffer_map_complete = false;
-        _ = allocator.download_buffer.mapAsync(wgpu.MapModes.read, 0, size_bytes, wgpu.BufferMapCallbackInfo{
-            .callback = handleBufferMap,
-            .userdata1 = @ptrCast(&buffer_map_complete),
-        });
-
-        // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
-        // to rely on the callback to know when the buffer is mapped.
-        self.instance.processEvents();
-        while (!buffer_map_complete) {
-            self.instance.processEvents();
-        }
-        // _ = device.poll(true, null);
-
-        // We can now read the data from the buffer.
-        // Convert the data back to a slice of f16.
-        const download_buffer_ptr: [*]T = @ptrCast(@alignCast(allocator.download_buffer.getMappedRange(0, size_bytes).?));
-        defer allocator.download_buffer.unmap();
-
-        const result = download_buffer_ptr[0..size_nvals];
-        return result;
     }
 
     // Helper functions to create ShaderPipe, Texture, and Bindings

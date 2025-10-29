@@ -55,7 +55,7 @@ test "simple compute double buffer test" {
         .type = .output,
         .format = .rgba16float,
     } };
-    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", &conns);
+    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", conns);
     defer shader_pipe.deinit();
 
     // MEMORY
@@ -71,7 +71,7 @@ test "simple compute double buffer test" {
     defer bindings_b_to_a.deinit();
 
     // UPLOAD
-    gpu.mapUpload(&gpu_allocator, f16, &init_contents, .rgba16float, roi);
+    gpu_allocator.upload(f16, &init_contents, .rgba16float, roi);
 
     // a -> b -> a
     var encoder = try Encoder.start(&gpu);
@@ -83,7 +83,7 @@ test "simple compute double buffer test" {
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
-    const result = try gpu.mapDownload(&gpu_allocator, f16, .rgba16float, roi);
+    const result = try gpu_allocator.download(f16, .rgba16float, roi);
     std.log.info("Download buffer contents: {any}", .{result});
 
     // var expected_contents = std.mem.zeroes([4]f16);

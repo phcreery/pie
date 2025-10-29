@@ -89,7 +89,7 @@ test "load raw, demosaic, save" {
     std.log.info("Upload buffer contents: ", .{});
     printImgBufContents(u16, init_contents_u16, roi_in.size.w * 2);
 
-    gpu.mapUpload(&gpu_allocator, u16, init_contents_u16, .rgba16uint, roi_in);
+    gpu_allocator.upload(u16, init_contents_u16, .rgba16uint, roi_in);
 
     var encoder = try pie.engine.gpu.Encoder.start(&gpu);
     defer encoder.deinit();
@@ -118,7 +118,7 @@ test "load raw, demosaic, save" {
         .type = .output,
         .format = .rgba16float,
     } };
-    var convert_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, convert, "convert", &convert_conns);
+    var convert_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, convert, "convert", convert_conns);
     defer convert_shader_pipe.deinit();
 
     // UPPER MEMORY
@@ -274,7 +274,7 @@ test "load raw, demosaic, save" {
         .type = .output,
         .format = .rgba16float,
     } };
-    var demosaic_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, demosaic_packed, "demosaic_packed", &demosaic_conns);
+    var demosaic_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, demosaic_packed, "demosaic_packed", demosaic_conns);
     defer demosaic_shader_pipe.deinit();
 
     // UPPER MEMORY
@@ -314,7 +314,7 @@ test "load raw, demosaic, save" {
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
-    const result = try gpu.mapDownload(&gpu_allocator, f16, .rgba16float, roi_out);
+    const result = try gpu_allocator.download(f16, .rgba16float, roi_out);
 
     std.log.info("\nDownload buffer contents: ", .{});
     printImgBufContents(f16, result, roi_out.size.w * 4);
