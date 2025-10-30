@@ -7,8 +7,8 @@ const GPUAllocator = pie.engine.gpu.GPUAllocator;
 const Encoder = pie.engine.gpu.Encoder;
 const ShaderPipe = pie.engine.gpu.ShaderPipe;
 const Texture = pie.engine.gpu.Texture;
+const TextureFormat = pie.engine.gpu.TextureFormat;
 const Bindings = pie.engine.gpu.Bindings;
-// const BPP_RGBAf16 = pie.engine.gpu.TextureFormat.rgba16float.bpp();
 
 test "simple compute double buffer test" {
     // if (true) {
@@ -17,7 +17,7 @@ test "simple compute double buffer test" {
     var gpu = try GPU.init();
     defer gpu.deinit();
 
-    var gpu_allocator = try GPUAllocator.init(&gpu);
+    var gpu_allocator = try GPUAllocator.init(&gpu, 4 * TextureFormat.rgba16float.bpp());
     defer gpu_allocator.deinit();
 
     var init_contents = std.mem.zeroes([4]f16);
@@ -86,8 +86,6 @@ test "simple compute double buffer test" {
     const result = try gpu_allocator.download(f16, .rgba16float, roi);
     std.log.info("Download buffer contents: {any}", .{result});
 
-    // var expected_contents = std.mem.zeroes([4]f16);
-    // _ = std.mem.copyForwards(f16, expected_contents[0..4], &[_]f16{ 4.0, 8.0, 12.0, 16.0 });
     const expected_contents = [_]f16{ 4.0, 8.0, 12.0, 16.0 };
     try std.testing.expectEqualSlices(f16, &expected_contents, result);
 }

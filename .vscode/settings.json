@@ -1,9 +1,15 @@
 {
     "cSpell.words": [
+        "anyerror",
         "callconv",
         "comptime",
         "DEBAYER",
+        "deinit",
+        "errdefer",
         "libraw",
+        "orelse",
+        "rgba",
+        "rois",
         "Texel",
         "wgpu",
         "WGSL",

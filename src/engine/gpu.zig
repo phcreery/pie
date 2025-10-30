@@ -30,7 +30,8 @@ pub const GPUAllocator = struct {
 
     const Self = @This();
 
-    pub fn init(gpu: *GPU) !Self {
+    /// size in bytes of each of the two buffers
+    pub fn init(gpu: *GPU, size: ?u64) !Self {
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
@@ -41,7 +42,14 @@ pub const GPUAllocator = struct {
             max_buffer_size = 256 * 1024 * 1024 * 12; // 3x256 MB for RGBAf16
         }
 
-        const buffer_size = max_buffer_size / 16;
+        // const buffer_size = max_buffer_size / 16;
+        if (size) |s| {
+            if (s > max_buffer_size) {
+                std.log.err("Requested GPUAllocator size {d} exceeds max buffer size {d}", .{ s, max_buffer_size });
+                return error.InvalidInput;
+            }
+        }
+        const buffer_size = size orelse (max_buffer_size / 16);
 
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,

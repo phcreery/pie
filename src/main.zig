@@ -1,16 +1,21 @@
 const std = @import("std");
 const app = @import("ui/app.zig");
 
+// EXPORTS
 pub const engine = @import("engine/engine.zig");
 pub const iraw = @import("engine/modules/i-raw/i-raw.zig");
 
-// const webgpu_tester = @import("engine/scratch/webgpu_test.zig");
-// const webgpu_compute_tester = @import("engine/scratch/webgpu_compute_test.zig");
+// SHORTCUTS
+pub const gpu = engine.gpu;
+pub const GPU = engine.gpu.GPU;
+pub const Texture = engine.gpu.Texture;
+// pub const GPUAllocator = engine.gpu.GPUAllocator;
+pub const pipeline = engine.pipeline;
+pub const Pipeline = engine.pipeline.Pipeline;
+pub const Module = engine.pipeline.Module;
 
 pub fn main() !void {
     app.run();
-    // try webgpu_tester.main();
-    // try webgpu_compute_tester.main();
 }
 
 test {

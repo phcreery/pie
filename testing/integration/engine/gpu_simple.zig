@@ -8,19 +8,20 @@ const Encoder = pie.engine.gpu.Encoder;
 const ShaderPipe = pie.engine.gpu.ShaderPipe;
 const Texture = pie.engine.gpu.Texture;
 const Bindings = pie.engine.gpu.Bindings;
+const TextureFormat = pie.engine.gpu.TextureFormat;
 
 test "simple compute test" {
     var gpu = try GPU.init();
     defer gpu.deinit();
 
-    var gpu_allocator = try GPUAllocator.init(&gpu);
+    var gpu_allocator = try GPUAllocator.init(&gpu, 256 * TextureFormat.rgba16float.bpp());
     defer gpu_allocator.deinit();
 
     var init_contents = std.mem.zeroes([256]f16);
     _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
     const roi = ROI{
         .size = .{
-            .w = 256 / 4,
+            .w = 256 / TextureFormat.rgba16float.nchannels(),
             .h = 1,
         },
         .origin = .{
