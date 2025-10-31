@@ -6,7 +6,7 @@ const gpu = pie.engine.gpu;
 const ModuleCreateTestData = struct {
     // CONTENTS OF MODULE
 
-    pub fn read_source(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.api.Module, alloc: *gpu.GPUAllocator) !void {
+    pub fn read_source(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.api.Module, allocator: *gpu.GPUAllocator) !void {
         _ = pipe;
         _ = mod;
 
@@ -22,7 +22,7 @@ const ModuleCreateTestData = struct {
                 .y = 0,
             },
         };
-        alloc.upload(f16, &init_contents, .rgba16float, roi);
+        allocator.upload(f16, &init_contents, .rgba16float, roi);
     }
 
     pub const module: pie.engine.api.Module = pie.engine.api.Module{
@@ -81,7 +81,7 @@ const ModuleDoubleMe = struct {
         pipe.addNodeDesc(node_desc) catch unreachable;
     }
 
-    pub const module: pie.engine.api.Module = pie.engine.api.Module{
+    pub var module: pie.engine.api.Module = pie.engine.api.Module{
         .name = "Double Module",
         .enabled = true,
         // .param_ui = "",
@@ -114,7 +114,7 @@ test "simple module test" {
     try pipeline.addModule(ModuleCreateTestData.module);
     try pipeline.addModule(ModuleDoubleMe.module);
 
-    try pipeline.runModules();
+    try pipeline.run();
 
     // var expected_contents = std.mem.zeroes([4]f16);
     // _ = std.mem.copyForwards(f16, expected_contents[0..4], &[_]f16{ 2.0, 4.0, 6.0, 8.0 });

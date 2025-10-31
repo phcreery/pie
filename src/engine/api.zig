@@ -85,7 +85,7 @@ pub const Module = struct {
     init: ?*const fn (mod: *Module) anyerror!void,
     deinit: ?*const fn (mod: *Module) anyerror!void,
     create_nodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void,
-    read_source: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, alloc: *gpu.GPUAllocator) anyerror!void,
+    read_source: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.GPUAllocator) anyerror!void,
     // write_sink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, alloc: gpu.GPUAllocator) anyerror!void,
     modify_roi_out: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void,
 };

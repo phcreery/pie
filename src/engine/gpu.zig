@@ -587,7 +587,7 @@ pub const ShaderPipe = struct {
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
-                    std.log.info("Added input binding {d} sample type {s}", .{ conn.binding, @tagName(conn.format.toWGPUSampleType()) });
+                    // std.log.info("Added input binding {d} sample type {s}", .{ conn.binding, @tagName(conn.format.toWGPUSampleType()) });
                 },
                 ShaderPipeConnType.output => {
                     const entry = wgpu.BindGroupLayoutEntry{
@@ -600,7 +600,7 @@ pub const ShaderPipe = struct {
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
-                    std.log.info("Added output binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
+                    // std.log.info("Added output binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
                 },
             }
         }
