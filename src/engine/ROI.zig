@@ -37,6 +37,10 @@ pub fn scaled(self: Self, scale_w: f32, scale_h: f32) ROI {
     };
 }
 
+pub fn dupe(self: Self) ROI {
+    return self.div(1, 1);
+}
+
 pub fn splitH(self: Self) [2]ROI {
     return [_]ROI{
         ROI{

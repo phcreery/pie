@@ -24,6 +24,7 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
 /// Future work could include a more complex allocator with multiple buffers
 /// useful for multiple simultaneous operations.
 pub const GPUAllocator = struct {
+    // because of this, GPU must outlive GPUAllocator
     gpu: *GPU,
     upload_buffer: *wgpu.Buffer = undefined,
     download_buffer: *wgpu.Buffer = undefined,
@@ -85,8 +86,16 @@ pub const GPUAllocator = struct {
         self.upload_buffer.release();
     }
 
-    pub fn upload(self: *Self, comptime T: type, data: []const T, comptime format: TextureFormat, roi: ROI) void {
+    pub fn upload(
+        self: *Self,
+        comptime T: type,
+        data: []const T,
+        comptime format: TextureFormat,
+        roi: ROI,
+    ) void {
         std.log.info("Writing data to GPU buffers", .{});
+        // print the first 4 values
+        std.log.info("First 4 values to upload: {any}, {any}, {any}, {any}", .{ data[0], data[1], data[2], data[3] });
 
         // const size_nvals = roi.size.w * roi.size.h * format.nchannels();
         const size_bytes = roi.size.w * roi.size.h * format.bpp();
@@ -107,13 +116,22 @@ pub const GPUAllocator = struct {
             .userdata1 = @ptrCast(&buffer_map_complete),
         });
 
+        std.log.info("Waiting for buffer map to complete", .{});
+
         // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
         // to rely on the callback to know when the buffer is mapped.
+        // print instance ptr
+        // std.log.info("self.gpu: {any}", .{self.gpu});
+        std.log.info("upload self.gpu: {any}", .{@intFromPtr(self.gpu)});
+        std.log.info("upload self.gpu.instance: {any}", .{self.gpu.instance});
+        std.log.info("upload self.gpu.instance: {any}", .{@intFromPtr(self.gpu.instance)});
         self.gpu.instance.processEvents();
         while (!buffer_map_complete) {
             self.gpu.instance.processEvents();
         }
         // _ = device.poll(true, null);
+
+        std.log.info("Buffer map complete, writing data", .{});
 
         const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size_bytes).?));
         defer self.upload_buffer.unmap();
@@ -122,7 +140,14 @@ pub const GPUAllocator = struct {
 
     /// Alternative mapUpload that writes directly to a texture
     /// we aren't really using this now because there isn't an equivalent readTexture method
-    pub fn mapUploadTexture(self: *Self, comptime T: type, data: []const T, texture: Texture, comptime format: TextureFormat, roi: ROI) void {
+    pub fn mapUploadTexture(
+        self: *Self,
+        comptime T: type,
+        data: []const T,
+        texture: Texture,
+        comptime format: TextureFormat,
+        roi: ROI,
+    ) void {
         std.log.info("Writing data to GPU Texture", .{});
 
         const bytes_per_row = roi.size.w * format.bpp();
@@ -154,7 +179,12 @@ pub const GPUAllocator = struct {
             copy_size,
         );
     }
-    pub fn download(self: *Self, comptime T: type, comptime format: TextureFormat, roi: ROI) ![]T {
+    pub fn download(
+        self: *Self,
+        comptime T: type,
+        comptime format: TextureFormat,
+        roi: ROI,
+    ) ![]T {
         std.log.info("Reading data from GPU buffers", .{});
 
         // TODO: first check mapped status
@@ -557,7 +587,12 @@ pub const ShaderPipe = struct {
 
     const Self = @This();
 
-    pub fn init(gpu: *GPU, shader_source: []const u8, entry_point: []const u8, g0_conns: [2]ShaderPipeConn) !Self {
+    pub fn init(
+        gpu: *GPU,
+        shader_source: []const u8,
+        entry_point: []const u8,
+        g0_conns: [2]ShaderPipeConn,
+    ) !Self {
         std.log.info("Initializing ShaderPipe for {s}", .{entry_point});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think

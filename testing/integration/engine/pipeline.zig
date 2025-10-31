@@ -6,9 +6,13 @@ const gpu = pie.engine.gpu;
 const ModuleCreateTestData = struct {
     // CONTENTS OF MODULE
 
-    pub fn read_source(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.api.Module, allocator: *gpu.GPUAllocator) !void {
+    pub fn read_source(
+        pipe: *pie.engine.pipeline.Pipeline,
+        mod: *pie.engine.api.Module,
+        allocator: *gpu.GPUAllocator,
+    ) !void {
         _ = pipe;
-        _ = mod;
+        // _ = mod;
 
         var init_contents = std.mem.zeroes([4]f16);
         _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
@@ -22,11 +26,12 @@ const ModuleCreateTestData = struct {
                 .y = 0,
             },
         };
+        mod.output_conn.?.roi = roi;
         allocator.upload(f16, &init_contents, .rgba16float, roi);
     }
 
     pub const module: pie.engine.api.Module = pie.engine.api.Module{
-        .name = "Double Module",
+        .name = "Create Test Data Module",
         .enabled = true,
         // .param_ui = "",
         // .param_uniform = "",

@@ -38,10 +38,13 @@ pub const Node = struct {
     desc: NodeDesc,
     shader: gpu.ShaderPipe,
 
-    pub fn init(pipe: *pipeline.Pipeline, desc: NodeDesc) !Node {
+    pub fn init(
+        pipe: *pipeline.Pipeline,
+        desc: NodeDesc,
+    ) !Node {
         // _ = module;
         const shader = try gpu.ShaderPipe.init(
-            &pipe.gpu,
+            pipe.gpu,
             desc.shader_code,
             desc.entry_point,
             [2]gpu.ShaderPipeConn{
