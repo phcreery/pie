@@ -122,9 +122,9 @@ pub const GPUAllocator = struct {
         // to rely on the callback to know when the buffer is mapped.
         // print instance ptr
         // std.log.info("self.gpu: {any}", .{self.gpu});
-        std.log.info("upload self.gpu: {any}", .{@intFromPtr(self.gpu)});
-        std.log.info("upload self.gpu.instance: {any}", .{self.gpu.instance});
-        std.log.info("upload self.gpu.instance: {any}", .{@intFromPtr(self.gpu.instance)});
+        // std.log.info("upload self.gpu: {any}", .{@intFromPtr(self.gpu)});
+        // std.log.info("upload self.gpu.instance: {any}", .{self.gpu.instance});
+        // std.log.info("upload self.gpu.instance: {any}", .{@intFromPtr(self.gpu.instance)});
         self.gpu.instance.processEvents();
         while (!buffer_map_complete) {
             self.gpu.instance.processEvents();

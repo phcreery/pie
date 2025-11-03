@@ -67,8 +67,16 @@ pub const Node = struct {
     }
 };
 
-// vkdt dt_module_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/module.h#L107
-// vkdt dt_module_so_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/global.h#L62
+/// Module structure
+///
+/// A module can have multiple nodes.
+///
+/// For now, we assume a module has a single input and a single output.
+/// They can have source and sink connectors as well, but the module must have
+/// respective read_source and write_sink functions to handle them.
+///
+/// vkdt dt_module_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/module.h#L107
+/// vkdt dt_module_so_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/global.h#L62
 pub const Module = struct {
     name: []const u8,
     // nodes: anyerror![]Node,

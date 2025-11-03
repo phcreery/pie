@@ -3,31 +3,16 @@ const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 const api = @import("api.zig");
 
-pub const Step = struct {
-    texture_in: gpu.Texture,
-    texture_out: gpu.Texture,
-    bindings: gpu.Bindings,
-    node: *api.Node,
+pub const ConnectorPool = struct {
+    allocator: std.mem.Allocator,
 
-    pub fn init(
-        texture_in: gpu.Texture,
-        texture_out: gpu.Texture,
-        bindings: gpu.Bindings,
-        node: *api.Node,
-    ) Step {
-        return Step{
-            .texture_in = texture_in,
-            .texture_out = texture_out,
-            .bindings = bindings,
-            .node = node,
+    pub fn init(allocator: std.mem.Allocator) !ConnectorPool {
+        return ConnectorPool{
+            .allocator = allocator,
         };
     }
 
-    pub fn deinit(self: *Step) void {
-        self.bindings.deinit();
-        self.texture_out.deinit();
-        self.texture_in.deinit();
-    }
+    pub fn deinit(_: *ConnectorPool) void {}
 };
 
 const MAX_MODULES = 100;
@@ -38,7 +23,7 @@ pub const Pipeline = struct {
     gpu_allocator: gpu.GPUAllocator,
     nodes: std.ArrayList(api.Node),
     modules: std.ArrayList(api.Module),
-    steps: std.ArrayList(Step),
+    connectors: ConnectorPool,
 
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
         // put gpu on the heap with allocator
@@ -58,8 +43,8 @@ pub const Pipeline = struct {
         const nodes = std.ArrayList(api.Node).initCapacity(allocator, MAX_NODES) catch unreachable;
         errdefer nodes.deinit();
 
-        const steps = std.ArrayList(Step).initCapacity(allocator, MAX_NODES) catch unreachable;
-        errdefer steps.deinit();
+        const connectors = ConnectorPool.init(allocator) catch unreachable;
+        errdefer connectors.deinit();
 
         return Pipeline{
             .allocator = allocator,
@@ -67,7 +52,7 @@ pub const Pipeline = struct {
             .gpu_allocator = gpu_allocator,
             .modules = modules,
             .nodes = nodes,
-            .steps = steps,
+            .connectors = connectors,
         };
     }
 
@@ -139,8 +124,8 @@ pub const Pipeline = struct {
         for (self.modules.items) |*module| {
             if (module.enabled == false) continue;
             if (module.read_source) |read_source_fn| {
-                std.log.info("pipe self.gpu_allocator.gpu: {any}", .{@intFromPtr(self.gpu_allocator.gpu)});
-                std.log.info("pipe self.gpu_allocator.gpu.instance: {any}", .{@intFromPtr(self.gpu_allocator.gpu.instance)});
+                // std.log.info("pipe self.gpu_allocator.gpu: {any}", .{@intFromPtr(self.gpu_allocator.gpu)});
+                // std.log.info("pipe self.gpu_allocator.gpu.instance: {any}", .{@intFromPtr(self.gpu_allocator.gpu.instance)});
                 try read_source_fn(self, module, &self.gpu_allocator);
             }
         }
@@ -158,8 +143,6 @@ pub const Pipeline = struct {
             // defer texture_out.deinit();
             const bindings = try gpu.Bindings.init(self.gpu, &node.shader, &texture_in, &texture_out);
             // defer bindings.deinit();
-            const step = Step.init(texture_in, texture_out, bindings, node);
-            try self.steps.append(self.allocator, step);
         }
     }
 
@@ -196,19 +179,6 @@ pub const Pipeline = struct {
 
         var bindings = try gpu.Bindings.init(&self.gpu, &node.shader, &texture_in, &texture_out);
         defer bindings.deinit();
-
-        // STEP(
-        // texture_in (node.desc.input_conn.format, node.in.roi)
-        // texture_out (node.desc.output_conn.format, node.out.roi)
-        // bindings
-        // node
-        //   .shader
-        //   .run_size
-        //   .in
-        //     .roi
-        //   .out
-        //     .roi
-        // )
 
         // UPLOAD
         self.gpu_allocator.upload(f16, init_contents, .rgba16float, roi);
