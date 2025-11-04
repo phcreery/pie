@@ -70,6 +70,7 @@ pub fn build(b: *Build) !void {
         .enable_fibers = ztracy_options.enable_fibers,
         .on_demand = ztracy_options.on_demand,
     });
+    const zpool = b.dependency("zpool", .{});
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -102,6 +103,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "wgpu-c", .module = dep_wgpu_native.module("wgpu-c") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             // .{ .name = "ztracy", .module = dep_ztracy.module("root") },
+            .{ .name = "zpool", .module = zpool.module("root") },
         },
     });
     mod_main.addOptions("build_options", mod_options);
@@ -132,6 +134,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "ztracy", .module = dep_ztracy.module("root") },
+            .{ .name = "zpool", .module = zpool.module("root") },
         },
     });
     const integration_tests_exe = b.addExecutable(.{

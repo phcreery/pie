@@ -2,6 +2,7 @@ const std = @import("std");
 const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 const api = @import("api.zig");
+const Pool = @import("zpool").Pool;
 
 pub const ConnectorPool = struct {
     allocator: std.mem.Allocator,
@@ -26,19 +27,23 @@ pub const Pipeline = struct {
     connectors: ConnectorPool,
 
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
-        // put gpu on the heap with allocator
+        // put gpu instance on the heap
         var gpu_instance = allocator.create(gpu.GPU) catch unreachable;
         errdefer allocator.destroy(gpu_instance);
         gpu_instance.* = try gpu.GPU.init();
-
         errdefer gpu_instance.deinit();
 
         var gpu_allocator = try gpu.GPUAllocator.init(gpu_instance, null);
         errdefer gpu_allocator.deinit();
 
         // TODO: use pool (https://github.com/zig-gamedev/zpool/)
-        const modules = std.ArrayList(api.Module).initCapacity(allocator, MAX_NODES) catch unreachable;
-        errdefer modules.deinit();
+        const modules = std.ArrayList(api.Module).initCapacity(allocator, MAX_MODULES) catch unreachable;
+        // errdefer modules.deinit();
+
+        // var module_pool = std.heap.MemoryPool(api.Module).init(allocator);
+        // errdefer module_pool.deinit();
+        // const user1 = try module_pool.create();
+        // defer module_pool.destroy(user1);
 
         const nodes = std.ArrayList(api.Node).initCapacity(allocator, MAX_NODES) catch unreachable;
         errdefer nodes.deinit();
@@ -58,10 +63,9 @@ pub const Pipeline = struct {
 
     pub fn deinit(self: *Pipeline) void {
         self.gpu_allocator.deinit();
-        self.steps.deinit(self.allocator);
         self.nodes.deinit(self.allocator);
         self.modules.deinit(self.allocator);
-        // self.gpu.deinit();
+        self.gpu.deinit();
         self.allocator.destroy(self.gpu);
     }
 
@@ -132,6 +136,7 @@ pub const Pipeline = struct {
     }
 
     pub fn runNodes(self: *Pipeline) !void {
+        // dt_graph_run_nodes_allocate
         for (self.nodes.items) |*node| {
             std.log.info("Creating step for node with shader entry point: {s}", .{node.desc.entry_point});
             // if (node.desc.input_conn.roi != null and node.desc.output_conn.roi != null) {
@@ -147,6 +152,26 @@ pub const Pipeline = struct {
     }
 
     pub fn run(self: *Pipeline) !void {
+
+        // Order of Operations:
+        // dt_graph_run_modules
+        // - modify_roi_out
+        // - create_nodes
+        //   - module.create_nodes() called here
+        //   - handles bypassing disabled nodes
+        // - init_connector_images
+        //   - // only allocate memory for output connectors ("write" or "source" types)
+        //
+        // dt_graph_run_nodes_allocate     (potentially free/re-allocate memory, create buffers, images, image_views, and descriptor sets)
+        // - 1. alloc_outputs()  allocate output buffers and create compute shaders for each node
+        // - 2. alloc_outputs2() bind_buffers_to_memory (vkBindImageMemory)
+        // - 3. alloc_outputs3() create_descriptor_sets for each node
+        // dt_graph_run_nodes_upload       (upload all source data to staging memory) (read_source called here)
+        // dt_graph_run_modules_upload_uniforms
+        // dt_graph_run_nodes_record_cmd
+        // (submit queue)
+        // dt_graph_run_nodes_download     (download sink data from GPU to CPU)
+
         std.log.info("Running pipeline", .{});
 
         // First run modules so we know whaich nodes to create, what rois, what buffers and textures to allocate
