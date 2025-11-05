@@ -3,6 +3,8 @@ const std = @import("std");
 const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
 
+const slog = std.log.scoped(.gpu);
+
 const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
 const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
@@ -12,7 +14,7 @@ pub const WORKGROUP_SIZE_Y: u32 = 8;
 pub const WORKGROUP_SIZE_Z: u32 = 1;
 
 fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
-    // std.log.info("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
+    // slog.info("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
     _ = status;
     const complete: *bool = @ptrCast(@alignCast(userdata1));
     complete.* = true;
@@ -46,7 +48,7 @@ pub const GPUAllocator = struct {
         // const buffer_size = max_buffer_size / 16;
         if (size) |s| {
             if (s > max_buffer_size) {
-                std.log.err("Requested GPUAllocator size {d} exceeds max buffer size {d}", .{ s, max_buffer_size });
+                slog.err("Requested GPUAllocator size {d} exceeds max buffer size {d}", .{ s, max_buffer_size });
                 return error.InvalidInput;
             }
         }
@@ -55,7 +57,7 @@ pub const GPUAllocator = struct {
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        std.log.info("Creating GPUAllocator with upload buffer size {d} bytes", .{buffer_size});
+        slog.info("Creating GPUAllocator with upload buffer size {d} bytes", .{buffer_size});
         const upload_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("upload_buffer"),
             .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
@@ -65,7 +67,7 @@ pub const GPUAllocator = struct {
         }).?;
         errdefer upload_buffer.release();
 
-        std.log.info("Creating GPUAllocator with download buffer size {d} bytes", .{buffer_size});
+        slog.info("Creating GPUAllocator with download buffer size {d} bytes", .{buffer_size});
         const download_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("download_buffer"),
             .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
@@ -93,14 +95,14 @@ pub const GPUAllocator = struct {
         comptime format: TextureFormat,
         roi: ROI,
     ) void {
-        std.log.info("Writing data to GPU buffers", .{});
+        slog.info("Writing data to GPU buffers", .{});
         // print the first 4 values
-        std.log.info("First 4 values to upload: {any}, {any}, {any}, {any}", .{ data[0], data[1], data[2], data[3] });
+        slog.info("First 4 values to upload: {any}, {any}, {any}, {any}", .{ data[0], data[1], data[2], data[3] });
 
         // const size_nvals = roi.size.w * roi.size.h * format.nchannels();
         const size_bytes = roi.size.w * roi.size.h * format.bpp();
 
-        std.log.info(" mapUpload size_bytes: {d}", .{size_bytes});
+        slog.info(" mapUpload size_bytes: {d}", .{size_bytes});
 
         // TODO: first check mapped status
         // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
@@ -116,22 +118,22 @@ pub const GPUAllocator = struct {
             .userdata1 = @ptrCast(&buffer_map_complete),
         });
 
-        std.log.info("Waiting for buffer map to complete", .{});
+        slog.info("Waiting for buffer map to complete", .{});
 
         // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
         // to rely on the callback to know when the buffer is mapped.
         // print instance ptr
-        // std.log.info("self.gpu: {any}", .{self.gpu});
-        // std.log.info("upload self.gpu: {any}", .{@intFromPtr(self.gpu)});
-        // std.log.info("upload self.gpu.instance: {any}", .{self.gpu.instance});
-        // std.log.info("upload self.gpu.instance: {any}", .{@intFromPtr(self.gpu.instance)});
+        // slog.info("self.gpu: {any}", .{self.gpu});
+        // slog.info("upload self.gpu: {any}", .{@intFromPtr(self.gpu)});
+        // slog.info("upload self.gpu.instance: {any}", .{self.gpu.instance});
+        // slog.info("upload self.gpu.instance: {any}", .{@intFromPtr(self.gpu.instance)});
         self.gpu.instance.processEvents();
         while (!buffer_map_complete) {
             self.gpu.instance.processEvents();
         }
         // _ = device.poll(true, null);
 
-        std.log.info("Buffer map complete, writing data", .{});
+        slog.info("Buffer map complete, writing data", .{});
 
         const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size_bytes).?));
         defer self.upload_buffer.unmap();
@@ -148,7 +150,7 @@ pub const GPUAllocator = struct {
         comptime format: TextureFormat,
         roi: ROI,
     ) void {
-        std.log.info("Writing data to GPU Texture", .{});
+        slog.info("Writing data to GPU Texture", .{});
 
         const bytes_per_row = roi.size.w * format.bpp();
         const data_size: usize = roi.size.w * roi.size.h * format.bpp();
@@ -185,7 +187,7 @@ pub const GPUAllocator = struct {
         comptime format: TextureFormat,
         roi: ROI,
     ) ![]T {
-        std.log.info("Reading data from GPU buffers", .{});
+        slog.info("Reading data from GPU buffers", .{});
 
         // TODO: first check mapped status
         // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
@@ -243,7 +245,7 @@ pub const Encoder = struct {
 
     /// you need to submit the command buffer to the GPU queue after finishing
     pub fn finish(self: *Self) ?*wgpu.CommandBuffer {
-        std.log.info("Submitting command buffer to GPU", .{});
+        slog.info("Submitting command buffer to GPU", .{});
 
         // We finish the encoder, giving us a fully recorded command buffer.
         const command_buffer = self.encoder.finish(&wgpu.CommandBufferDescriptor{
@@ -256,7 +258,7 @@ pub const Encoder = struct {
     }
 
     pub fn enqueueShader(self: *Self, shader_pipe: *const ShaderPipe, bindings: *Bindings, work_size: ROI) void {
-        std.log.info("Enqueuing compute shader", .{});
+        slog.info("Enqueuing compute shader", .{});
         // A compute pass is a single series of compute operations. While we are recording a compute
         // pass, we cannot record to the encoder.
         const compute_pass = self.encoder.beginComputePass(&wgpu.ComputePassDescriptor{
@@ -277,23 +279,23 @@ pub const Encoder = struct {
         { // Debug info
             // const output_size = work_size.size.w * work_size.size.h;
             // const workgroup_size = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y * WORKGROUP_SIZE_Z;
-            // std.log.info("output_size: {d}", .{output_size});
-            // std.log.info("workgroup_size: {d}", .{workgroup_size});
-            // std.log.info("workgroup_count_x: {d}", .{workgroup_count_x});
-            // std.log.info("workgroup_count_y: {d}", .{workgroup_count_y});
-            // std.log.info("workgroup_count_z: {d}", .{workgroup_count_z});
-            // std.log.info("total workgroups: {d}", .{workgroup_count_x * workgroup_count_y * workgroup_count_z});
-            // std.log.info("total invocations: {d}", .{@as(u32, workgroup_count_x) * workgroup_count_y * workgroup_count_z * workgroup_size});
+            // slog.info("output_size: {d}", .{output_size});
+            // slog.info("workgroup_size: {d}", .{workgroup_size});
+            // slog.info("workgroup_count_x: {d}", .{workgroup_count_x});
+            // slog.info("workgroup_count_y: {d}", .{workgroup_count_y});
+            // slog.info("workgroup_count_z: {d}", .{workgroup_count_z});
+            // slog.info("total workgroups: {d}", .{workgroup_count_x * workgroup_count_y * workgroup_count_z});
+            // slog.info("total invocations: {d}", .{@as(u32, workgroup_count_x) * workgroup_count_y * workgroup_count_z * workgroup_size});
         }
 
-        std.log.info("Dispatching compute work", .{});
+        slog.info("Dispatching compute work", .{});
         compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
         // Now we drop the compute pass, giving us access to the encoder again.
         compute_pass.end();
     }
 
     pub fn enqueueBufToTex(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
-        std.log.info("Writing GPU buffer to Shader Buffer", .{});
+        slog.info("Writing GPU buffer to Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
         const bytes_per_row = roi.size.w * texture.format.bpp();
@@ -316,13 +318,13 @@ pub const Encoder = struct {
             },
         };
         { // Debug info
-            // std.log.info("[enqueueMount] copy_size.width: {d}", .{copy_size.width});
-            // std.log.info("[enqueueMount] copy_size.height: {d}", .{copy_size.height});
-            // std.log.info("[enqueueMount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
-            // std.log.info("[enqueueMount] offset: {d}", .{offset});
-            // std.log.info("[enqueueMount] source.buffer size: {d}", .{self.upload_buffer.getSize()});
-            // std.log.info("[enqueueMount] source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
-            // std.log.info("[enqueueMount] source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
+            // slog.info("[enqueueMount] copy_size.width: {d}", .{copy_size.width});
+            // slog.info("[enqueueMount] copy_size.height: {d}", .{copy_size.height});
+            // slog.info("[enqueueMount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
+            // slog.info("[enqueueMount] offset: {d}", .{offset});
+            // slog.info("[enqueueMount] source.buffer size: {d}", .{self.upload_buffer.getSize()});
+            // slog.info("[enqueueMount] source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
+            // slog.info("[enqueueMount] source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
         }
         const destination = wgpu.TexelCopyTextureInfo{
             .texture = texture.texture,
@@ -333,12 +335,12 @@ pub const Encoder = struct {
         self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
     }
     pub fn enqueueTexToBuf(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
-        std.log.info("Reading GPU buffer from Shader Buffer", .{});
+        slog.info("Reading GPU buffer from Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
         const bytes_per_row = roi.size.w * texture.format.bpp();
         // if (bytes_per_row % 256 != 0) {
-        //     std.log.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
+        //     slog.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
         //     return error.InvalidInput;
         // }
         const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
@@ -369,19 +371,19 @@ pub const Encoder = struct {
             },
         };
         { // Debug info
-            // std.log.info("[enqueueUnmount] copy_size.width: {d}", .{copy_size.width});
-            // std.log.info("[enqueueUnmount] copy_size.height: {d}", .{copy_size.height});
-            // std.log.info("[enqueueUnmount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
-            // std.log.info("[enqueueUnmount] offset: {d}", .{offset});
-            // std.log.info("[enqueueUnmount] destination.buffer size: {d}", .{self.download_buffer.getSize()});
-            // std.log.info("[enqueueUnmount] destination.layout.bytes_per_row: {d}", .{destination.layout.bytes_per_row});
-            // std.log.info("[enqueueUnmount] destination.layout.rows_per_image: {d}", .{destination.layout.rows_per_image});
+            // slog.info("[enqueueUnmount] copy_size.width: {d}", .{copy_size.width});
+            // slog.info("[enqueueUnmount] copy_size.height: {d}", .{copy_size.height});
+            // slog.info("[enqueueUnmount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
+            // slog.info("[enqueueUnmount] offset: {d}", .{offset});
+            // slog.info("[enqueueUnmount] destination.buffer size: {d}", .{self.download_buffer.getSize()});
+            // slog.info("[enqueueUnmount] destination.layout.bytes_per_row: {d}", .{destination.layout.bytes_per_row});
+            // slog.info("[enqueueUnmount] destination.layout.rows_per_image: {d}", .{destination.layout.rows_per_image});
         }
         self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
     }
 
     pub fn enqueueTexToTex(self: *Self, src_texture: *Texture, dst_texture: *Texture, roi: ROI) !void {
-        std.log.info("Copying GPU texture to another GPU texture", .{});
+        slog.info("Copying GPU texture to another GPU texture", .{});
 
         const copy_size = wgpu.Extent3D{
             .width = roi.size.w,
@@ -480,7 +482,7 @@ pub const Texture = struct {
     const Self = @This();
 
     pub fn init(gpu: *GPU, format: TextureFormat, roi: ROI) !Self {
-        std.log.info("Creating texture {s} of size {d}x{d}", .{ @tagName(format), roi.size.w, roi.size.h });
+        slog.info("Creating texture {s} of size {d}x{d}", .{ @tagName(format), roi.size.w, roi.size.h });
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
@@ -517,12 +519,14 @@ pub const Texture = struct {
     }
 };
 
+/// Similar to vulkan's descriptor sets, a Bindings struct holds the actual resources
+/// (buffers, textures, etc) that are bound to a shader pipeline.
 pub const Bindings = struct {
     bind_group: *wgpu.BindGroup = undefined,
     const Self = @This();
 
     pub fn init(gpu: *GPU, shader_pipe: *const ShaderPipe, texture_a: *Texture, texture_b: *Texture) !Self {
-        std.log.info("Creating Bindings", .{});
+        slog.info("Creating Bindings", .{});
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
@@ -564,8 +568,8 @@ pub const Bindings = struct {
 };
 
 pub const ShaderPipeConnType = enum {
-    input,
-    output,
+    read,
+    write,
 };
 
 pub const ShaderPipeConn = struct {
@@ -593,7 +597,7 @@ pub const ShaderPipe = struct {
         entry_point: []const u8,
         g0_conns: [2]ShaderPipeConn,
     ) !Self {
-        std.log.info("Initializing ShaderPipe for {s}", .{entry_point});
+        slog.info("Initializing ShaderPipe for {s}", .{entry_point});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
         // of this like a C-style header declaration, ensuring both the pipeline and bind group agree
@@ -611,7 +615,7 @@ pub const ShaderPipe = struct {
 
         for (g0_conns) |conn| {
             switch (conn.type) {
-                ShaderPipeConnType.input => {
+                ShaderPipeConnType.read => {
                     // Note: we don't need format for input textures
                     const entry = wgpu.BindGroupLayoutEntry{
                         .binding = conn.binding,
@@ -622,9 +626,9 @@ pub const ShaderPipe = struct {
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
-                    // std.log.info("Added input binding {d} sample type {s}", .{ conn.binding, @tagName(conn.format.toWGPUSampleType()) });
+                    // slog.info("Added read binding {d} sample type {s}", .{ conn.binding, @tagName(conn.format.toWGPUSampleType()) });
                 },
-                ShaderPipeConnType.output => {
+                ShaderPipeConnType.write => {
                     const entry = wgpu.BindGroupLayoutEntry{
                         .binding = conn.binding,
                         .visibility = wgpu.ShaderStages.compute,
@@ -635,7 +639,7 @@ pub const ShaderPipe = struct {
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
-                    // std.log.info("Added output binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
+                    // slog.info("Added write binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
                 },
             }
         }
@@ -659,7 +663,7 @@ pub const ShaderPipe = struct {
         }).?;
         errdefer pipeline_layout.release();
 
-        std.log.info("Compiling shader for {s}", .{entry_point});
+        slog.info("Compiling shader for {s}", .{entry_point});
 
         // Create the shader module from WGSL source code.
         // You can also load SPIR-V or use the Naga IR.
@@ -692,7 +696,7 @@ pub const ShaderPipe = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        std.log.info("Deinitializing ShaderPass {s}", .{self.entry_point});
+        slog.info("Deinitializing ShaderPass {s}", .{self.entry_point});
 
         self.bind_group_layout.release();
 
@@ -731,7 +735,7 @@ pub const GPU = struct {
     const Self = @This();
 
     pub fn init() !Self {
-        std.log.info("Initializing GPU", .{});
+        slog.info("Initializing GPU", .{});
 
         const instance = wgpu.Instance.create(null).?;
         errdefer instance.release();
@@ -746,14 +750,14 @@ pub const GPU = struct {
         var info: wgpu.AdapterInfo = undefined;
         const status = adapter.getInfo(&info);
         if (status != .success) {
-            std.log.info("Failed to get adapter info", .{});
+            slog.info("Failed to get adapter info", .{});
             return error.AdapterInfo;
         } else {
             const name = info.device.toSlice();
             if (name) |value| {
-                std.log.info("Using adapter: {s} (backend={s}, type={s})", .{ value, @tagName(info.backend_type), @tagName(info.adapter_type) });
+                slog.info("Using adapter: {s} (backend={s}, type={s})", .{ value, @tagName(info.backend_type), @tagName(info.adapter_type) });
             } else {
-                std.log.info("Failed to get adapter name", .{});
+                slog.info("Failed to get adapter name", .{});
             }
         }
 
@@ -772,21 +776,21 @@ pub const GPU = struct {
         var limits = wgpu.Limits{};
         _ = adapter.getLimits(&limits);
 
-        std.log.info("Adapter limits:", .{});
-        std.log.info(" max_bind_groups: {d}", .{limits.max_bind_groups});
-        std.log.info(" max_bindings_per_bind_group: {d}", .{limits.max_bindings_per_bind_group});
-        std.log.info(" max_texture_dimension_1d: {d}", .{limits.max_texture_dimension_1d});
-        std.log.info(" max_texture_dimension_2d: {d}", .{limits.max_texture_dimension_2d});
-        std.log.info(" max_texture_dimension_3d: {d}", .{limits.max_texture_dimension_3d});
-        std.log.info(" max_texture_array_layers: {d}", .{limits.max_texture_array_layers});
-        std.log.info(" max_compute_invocations_per_workgroup: {d}", .{limits.max_compute_invocations_per_workgroup});
-        std.log.info(" max_compute_workgroup_size_x: {d}", .{limits.max_compute_workgroup_size_x});
-        std.log.info(" max_compute_workgroup_size_y: {d}", .{limits.max_compute_workgroup_size_y});
-        std.log.info(" max_compute_workgroup_size_z: {d}", .{limits.max_compute_workgroup_size_z});
-        std.log.info(" max_compute_workgroups_per_dimension: {d}", .{limits.max_compute_workgroups_per_dimension});
-        std.log.info(" max_buffer_size: {d}", .{limits.max_buffer_size});
-        std.log.info(" max_uniform_buffer_binding_size: {d}", .{limits.max_uniform_buffer_binding_size});
-        std.log.info(" max_storage_buffer_binding_size: {d}", .{limits.max_storage_buffer_binding_size});
+        slog.info("Adapter limits:", .{});
+        slog.info(" max_bind_groups: {d}", .{limits.max_bind_groups});
+        slog.info(" max_bindings_per_bind_group: {d}", .{limits.max_bindings_per_bind_group});
+        slog.info(" max_texture_dimension_1d: {d}", .{limits.max_texture_dimension_1d});
+        slog.info(" max_texture_dimension_2d: {d}", .{limits.max_texture_dimension_2d});
+        slog.info(" max_texture_dimension_3d: {d}", .{limits.max_texture_dimension_3d});
+        slog.info(" max_texture_array_layers: {d}", .{limits.max_texture_array_layers});
+        slog.info(" max_compute_invocations_per_workgroup: {d}", .{limits.max_compute_invocations_per_workgroup});
+        slog.info(" max_compute_workgroup_size_x: {d}", .{limits.max_compute_workgroup_size_x});
+        slog.info(" max_compute_workgroup_size_y: {d}", .{limits.max_compute_workgroup_size_y});
+        slog.info(" max_compute_workgroup_size_z: {d}", .{limits.max_compute_workgroup_size_z});
+        slog.info(" max_compute_workgroups_per_dimension: {d}", .{limits.max_compute_workgroups_per_dimension});
+        slog.info(" max_buffer_size: {d}", .{limits.max_buffer_size});
+        slog.info(" max_uniform_buffer_binding_size: {d}", .{limits.max_uniform_buffer_binding_size});
+        slog.info(" max_storage_buffer_binding_size: {d}", .{limits.max_storage_buffer_binding_size});
 
         // var max_buffer_size = limits.max_buffer_size;
         // if (max_buffer_size == wgpu.WGPU_LIMIT_U64_UNDEFINED) {
@@ -843,7 +847,7 @@ pub const GPU = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        std.log.info("Deinitializing GPU", .{});
+        slog.info("Deinitializing GPU", .{});
 
         self.queue.release();
         self.device.release();
@@ -852,10 +856,10 @@ pub const GPU = struct {
     }
 
     pub fn run(self: *Self, command_buffer: ?*wgpu.CommandBuffer) !void {
-        std.log.info("Submitting command buffer to GPU", .{});
+        slog.info("Submitting command buffer to GPU", .{});
 
         const command_buffer_unwrapped = command_buffer orelse {
-            std.log.err("No command buffer provided to GPU.run", .{});
+            slog.err("No command buffer provided to GPU.run", .{});
             return error.InvalidCommandBuffer;
         };
 

@@ -6,39 +6,47 @@ const gpu = pie.engine.gpu;
 const ModuleCreateTestData = struct {
     // CONTENTS OF MODULE
 
+    const roi: pie.engine.ROI = .{
+        .size = .{
+            .w = 1,
+            .h = 1,
+        },
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    };
+
+    pub fn modify_roi_out(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
+        _ = pipe;
+        std.log.info("Modifying ROI for Create Test Data module", .{});
+        mod.output_conn.?.roi = roi;
+    }
+
     pub fn read_source(
         pipe: *pie.engine.pipeline.Pipeline,
-        mod: *pie.engine.api.Module,
+        mod: *pie.engine.pipeline.Module,
         allocator: *gpu.GPUAllocator,
     ) !void {
         _ = pipe;
-        // _ = mod;
+        _ = mod;
 
         var init_contents = std.mem.zeroes([4]f16);
         _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
-        const roi = pie.engine.ROI{
-            .size = .{
-                .w = 1,
-                .h = 1,
-            },
-            .origin = .{
-                .x = 0,
-                .y = 0,
-            },
-        };
-        mod.output_conn.?.roi = roi;
+        // mod.output_conn.?.roi = roi;
         allocator.upload(f16, &init_contents, .rgba16float, roi);
+        // TODO: enqueue write to module connector of type source
     }
 
-    pub const module: pie.engine.api.Module = pie.engine.api.Module{
+    pub const module: pie.engine.api.ModuleDesc = .{
         .name = "Create Test Data Module",
         .enabled = true,
         // .param_ui = "",
         // .param_uniform = "",
         .input_conn = null,
-        .output_conn = pie.engine.api.Connector{
+        .output_conn = .{
             .name = "output",
-            .type = .output,
+            .type = .source,
             .format = .rgba16float,
             .roi = null,
         },
@@ -64,42 +72,44 @@ const ModuleDoubleMe = struct {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    pub fn create_nodes(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.api.Module) !void {
+    pub fn create_nodes(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
         std.log.info("Creating nodes for DoubleMe module", .{});
-        const node_desc = pie.engine.api.NodeDesc{
+        const node_desc: pie.engine.api.NodeDesc = .{
             .shader_code = shader_code,
             .entry_point = "doubleMe",
             .run_size = mod.output_conn.?.roi,
             .input_conn = .{
                 .name = "input",
-                .type = .input,
+                .type = .read,
                 .format = .rgba16float,
                 .roi = mod.input_conn.?.roi,
             },
             .output_conn = .{
                 .name = "output",
-                .type = .output,
+                .type = .write,
                 .format = .rgba16float,
                 .roi = mod.output_conn.?.roi,
             },
         };
-        pipe.addNodeDesc(node_desc) catch unreachable;
+        var node = pipe.addNodeDesc(node_desc) catch unreachable;
+        // TODO: connect module connectors to node connectors
+        node.output_conn_handle = mod.output_conn_handle;
     }
 
-    pub var module: pie.engine.api.Module = pie.engine.api.Module{
+    pub var module: pie.engine.api.ModuleDesc = .{
         .name = "Double Module",
         .enabled = true,
         // .param_ui = "",
         // .param_uniform = "",
-        .input_conn = pie.engine.api.Connector{
+        .input_conn = .{
             .name = "input",
-            .type = .input,
+            .type = .read,
             .format = .rgba16float,
             .roi = null,
         },
-        .output_conn = pie.engine.api.Connector{
+        .output_conn = .{
             .name = "output",
-            .type = .output,
+            .type = .write,
             .format = .rgba16float,
             .roi = null,
         },
@@ -116,8 +126,8 @@ test "simple module test" {
     var pipeline = pie.engine.pipeline.Pipeline.init(allocator) catch unreachable;
     defer pipeline.deinit();
 
-    try pipeline.addModule(ModuleCreateTestData.module);
-    try pipeline.addModule(ModuleDoubleMe.module);
+    _ = try pipeline.addModule(ModuleCreateTestData.module);
+    _ = try pipeline.addModule(ModuleDoubleMe.module);
 
     try pipeline.run();
 

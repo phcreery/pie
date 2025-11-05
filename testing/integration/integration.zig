@@ -80,4 +80,10 @@ test "zpool" {
     // Use the handle...
     const image: Image = try imagePool.getColumn(handle, .ptr);
     std.log.info("Image: {}", .{image});
+
+    var live_handles = imagePool.liveHandles();
+    while (live_handles.next()) |h| {
+        const i: Image = try imagePool.getColumn(h, .ptr);
+        std.log.info("Image: {}", .{i});
+    }
 }
