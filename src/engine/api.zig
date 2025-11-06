@@ -3,13 +3,13 @@ const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 const pipeline = @import("pipeline.zig"); // circular import?
 
-pub const ConnType = enum {
+pub const SocketType = enum {
     read,
     write,
     source,
     // sink
 
-    pub fn toShaderPipeConnType(self: ConnType) gpu.ShaderPipeConnType {
+    pub fn toShaderPipeConnType(self: SocketType) gpu.ShaderPipeConnType {
         return switch (self) {
             .read => gpu.ShaderPipeConnType.read,
             .write => gpu.ShaderPipeConnType.write,
@@ -18,9 +18,9 @@ pub const ConnType = enum {
     }
 };
 
-pub const ConnectorDesc = struct {
+pub const SocketDesc = struct {
     name: []const u8,
-    type: ConnType,
+    type: SocketType,
     format: gpu.TextureFormat,
     roi: ?ROI,
 };
@@ -31,8 +31,8 @@ pub const NodeDesc = struct {
     entry_point: []const u8,
     run_size: ?ROI,
     // connectors: []Connector,
-    input_conn: ConnectorDesc,
-    output_conn: ConnectorDesc,
+    input_sock: SocketDesc,
+    output_sock: SocketDesc,
 };
 
 /// Module structure
@@ -48,12 +48,14 @@ pub const NodeDesc = struct {
 pub const ModuleDesc = struct {
     name: []const u8,
     // nodes: anyerror![]Node,
-    enabled: bool,
+    // enabled: bool,
 
     // Use the first and last nodes connectors as module connectors
     // connectors: []Connector,
-    input_conn: ?ConnectorDesc,
-    output_conn: ?ConnectorDesc,
+    // The sockets describe the module's input and output interface
+    // they can be null if the module has no input or output (sink or source only)
+    input_sock: ?SocketDesc,
+    output_sock: ?SocketDesc,
 
     // param_ui: []u8,
     // param_uniform: []u8,

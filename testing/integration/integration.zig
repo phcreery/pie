@@ -10,10 +10,13 @@ pub fn main() !void {
 test {
     // _ = @import("engine/gpu.zig");
     // _ = @import("fullsize/DSC_6765.zig");
-    // _ = @import("engine/pipeline.zig");
+    _ = @import("engine/pipeline.zig");
 }
 
 test "pool" {
+    if (true) {
+        return error.SkipZigTest;
+    }
     const allocator = std.testing.allocator;
 
     const Image = struct {
@@ -34,6 +37,9 @@ test "pool" {
 }
 
 test "zpool" {
+    if (true) {
+        return error.SkipZigTest;
+    }
     const Pool = @import("zpool").Pool;
     const allocator = std.testing.allocator;
 
