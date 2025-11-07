@@ -25,14 +25,25 @@ pub const SocketDesc = struct {
     roi: ?ROI,
 };
 
+pub const NodeType = enum {
+    compute,
+    source,
+};
+
 // vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
 pub const NodeDesc = struct {
+    type: NodeType,
     shader_code: []const u8,
     entry_point: []const u8,
     run_size: ?ROI,
     // connectors: []Connector,
     input_sock: SocketDesc,
     output_sock: SocketDesc,
+};
+
+pub const ModuleType = enum {
+    compute,
+    source,
 };
 
 /// Module structure
@@ -47,6 +58,7 @@ pub const NodeDesc = struct {
 /// vkdt dt_module_so_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/global.h#L62
 pub const ModuleDesc = struct {
     name: []const u8,
+    type: ModuleType,
     // nodes: anyerror![]Node,
     // enabled: bool,
 

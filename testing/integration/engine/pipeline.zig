@@ -6,6 +6,7 @@ const gpu = pie.engine.gpu;
 const ModuleCreateTestData = struct {
     // CONTENTS OF MODULE
 
+    const source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
     const roi: pie.engine.ROI = .{
         .size = .{
             .w = 1,
@@ -30,15 +31,25 @@ const ModuleCreateTestData = struct {
         _ = pipe;
         _ = mod;
 
-        var init_contents = std.mem.zeroes([4]f16);
-        _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
-        allocator.upload(f16, &init_contents, .rgba16float, roi);
-        // TODO: enqueue write to module connector of type source
+        allocator.upload(f16, &source, .rgba16float, roi);
+    }
+
+    pub fn create_nodes(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
+        const output_sock = mod.getSocket("output") orelse unreachable;
+        const node_desc: pie.engine.api.NodeDesc = .{
+            .type = .source,
+            .shader_code = "",
+            .entry_point = "Test Data Source",
+            .run_size = null,
+            .input_sock = null,
+            .output_sock = output_sock,
+        };
+        var node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
     }
 
     pub const module: pie.engine.api.ModuleDesc = .{
         .name = "Create Test Data Module",
-        // .enabled = true,
+        // .type = .source,
         // .param_ui = "",
         // .param_uniform = "",
         .input_sock = null,
@@ -71,35 +82,24 @@ const ModuleDoubleMe = struct {
         \\}
     ;
     pub fn create_nodes(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
-        std.log.info("Creating nodes for DoubleMe module", .{});
-        const input_conn = try pipe.connector_pool.getColumn(mod.input_conn_handle.?, .info);
-        const output_conn = try pipe.connector_pool.getColumn(mod.output_conn_handle.?, .info);
+        const output_sock = mod.getSocket("output") orelse unreachable;
+        const input_sock = mod.getSocket("input") orelse unreachable;
         const node_desc: pie.engine.api.NodeDesc = .{
+            .type = .compute,
             .shader_code = shader_code,
             .entry_point = "doubleMe",
-            .run_size = output_conn.roi,
-            .input_sock = .{
-                .name = "input",
-                .type = .read,
-                .format = .rgba16float,
-                .roi = input_conn.roi,
-            },
-            .output_sock = .{
-                .name = "output",
-                .type = .write,
-                .format = .rgba16float,
-                .roi = output_conn.roi,
-            },
+            .run_size = output_sock.roi,
+            .input_sock = input_sock,
+            .output_sock = output_sock,
         };
-        var node = pipe.addNodeDesc(node_desc) catch unreachable;
-        // TODO: connect module connectors to node connectors
+        var node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
         node.input_conn_handle = mod.input_conn_handle;
         node.output_conn_handle = mod.output_conn_handle;
     }
 
     pub var module: pie.engine.api.ModuleDesc = .{
         .name = "Double Module",
-        // .enabled = true,
+        // .type = .compute,
         // .param_ui = "",
         // .param_uniform = "",
         .input_sock = .{
@@ -124,7 +124,9 @@ const ModuleDoubleMe = struct {
 
 test "simple module test" {
     const allocator = std.testing.allocator;
-    var pipeline = pie.engine.pipeline.Pipeline.init(allocator) catch unreachable;
+    var gpu_instance = try pie.engine.gpu.GPU.init();
+    defer gpu_instance.deinit();
+    var pipeline = pie.engine.pipeline.Pipeline.init(allocator, &gpu_instance) catch unreachable;
     defer pipeline.deinit();
 
     _ = try pipeline.addModuleDesc(ModuleCreateTestData.module);
