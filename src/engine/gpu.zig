@@ -479,6 +479,7 @@ pub const TextureFormat = enum {
 pub const Texture = struct {
     texture: *wgpu.Texture = undefined,
     format: TextureFormat = .rgba16float,
+    roi: ROI = undefined,
     const Self = @This();
 
     pub fn init(gpu: *GPU, format: TextureFormat, roi: ROI) !Self {
@@ -511,6 +512,7 @@ pub const Texture = struct {
         return Texture{
             .texture = texture,
             .format = format,
+            .roi = roi,
         };
     }
 

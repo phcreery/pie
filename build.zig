@@ -127,10 +127,7 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{
-                .name = "pie",
-                .module = mod_main,
-            },
+            .{ .name = "pie", .module = mod_main },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "ztracy", .module = dep_ztracy.module("root") },

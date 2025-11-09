@@ -1,9 +1,14 @@
 const std = @import("std");
+
+// APP
 const app = @import("ui/app.zig");
 
 // EXPORTS
 pub const engine = @import("engine/engine.zig");
 pub const iraw = @import("engine/modules/i-raw/i-raw.zig");
+
+// pub const musubi = @import("musubi/musubi.zig");
+pub const zig_graph = @import("zig-graph/graph.zig");
 
 // SHORTCUTS
 pub const gpu = engine.gpu;
@@ -19,7 +24,10 @@ pub fn main() !void {
 }
 
 test {
-    _ = @import("engine/gpu.zig");
-    _ = @import("engine/modules/shared/CFA.zig");
-    _ = @import("engine/modules/i-raw/i-raw.zig");
+    // _ = @import("engine/gpu.zig");
+    // _ = @import("engine/modules/shared/CFA.zig");
+    // _ = @import("engine/modules/i-raw/i-raw.zig");
+
+    // _ = @import("musubi/musubi.zig");
+    _ = @import("zig-graph/graph.zig");
 }

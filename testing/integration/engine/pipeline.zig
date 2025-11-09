@@ -18,12 +18,12 @@ const ModuleCreateTestData = struct {
         },
     };
 
-    pub fn modify_roi_out(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
+    pub fn modifyROIOut(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
         _ = pipe;
         mod.desc.output_sock.?.roi = roi;
     }
 
-    pub fn read_source(
+    pub fn readSource(
         pipe: *pie.engine.pipeline.Pipeline,
         mod: *pie.engine.pipeline.Module,
         allocator: *gpu.GPUAllocator,
@@ -34,72 +34,88 @@ const ModuleCreateTestData = struct {
         allocator.upload(f16, &source, .rgba16float, roi);
     }
 
-    pub fn create_nodes(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
+    pub fn createNodes(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
         const output_sock = mod.getSocket("output") orelse unreachable;
         const node_desc: pie.engine.api.NodeDesc = .{
             .type = .source,
             .shader_code = "",
             .entry_point = "Test Data Source",
             .run_size = null,
-            .input_sock = null,
-            .output_sock = output_sock,
+            // .input_sock = null,
+            // .output_sock = output_sock,
+            .sockets = .{
+                output_sock,
+            },
         };
-        var node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
+        _ = pipe.addNodeDesc(mod, node_desc) catch unreachable;
+        // TODO: associate node connections
     }
 
     pub const module: pie.engine.api.ModuleDesc = .{
         .name = "Create Test Data Module",
-        // .type = .source,
+        .type = .source,
         // .param_ui = "",
         // .param_uniform = "",
-        .input_sock = null,
+        // .input_sock = null,
         .output_sock = .{
             .name = "output",
             .type = .source,
             .format = .rgba16float,
             .roi = null,
         },
+        // .sockets = &[_]pie.engine.api.SocketDesc{
+        //     .{
+        //         .name = "output",
+        //         .type = .source,
+        //         .format = .rgba16float,
+        //         .roi = null,
+        //     },
+        // },
         .init = null,
         .deinit = null,
-        .read_source = read_source,
-        .create_nodes = null,
-        .modify_roi_out = modify_roi_out,
+        .readSource = readSource,
+        .createNodes = createNodes,
+        .modifyROIOut = modifyROIOut,
     };
 };
 
-const ModuleDoubleMe = struct {
+const ModuleDoubleIt = struct {
     // CONTENTS OF MODULE
     const shader_code: []const u8 =
         \\enable f16;
         \\@group(0) @binding(0) var input:  texture_2d<f32>;
         \\@group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
         \\@compute @workgroup_size(8, 8, 1)
-        \\fn doubleMe(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        \\fn doubleIt(@builtin(global_invocation_id) global_id: vec3<u32>) {
         \\    let coords = vec2<i32>(global_id.xy);
         \\    var pixel = vec4<f32>(textureLoad(input, coords, 0));
         \\    pixel *= f32(2.0);
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    pub fn create_nodes(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
+    pub fn createNodes(pipe: *pie.engine.pipeline.Pipeline, mod: *pie.engine.pipeline.Module) !void {
         const output_sock = mod.getSocket("output") orelse unreachable;
         const input_sock = mod.getSocket("input") orelse unreachable;
         const node_desc: pie.engine.api.NodeDesc = .{
             .type = .compute,
             .shader_code = shader_code,
-            .entry_point = "doubleMe",
+            .entry_point = "doubleIt",
             .run_size = output_sock.roi,
-            .input_sock = input_sock,
-            .output_sock = output_sock,
+            // .input_sock = input_sock,
+            // .output_sock = output_sock,
+            .sockets = &[_]pie.engine.api.SocketDesc{
+                input_sock,
+                output_sock,
+            },
         };
-        var node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
-        node.input_conn_handle = mod.input_conn_handle;
-        node.output_conn_handle = mod.output_conn_handle;
+        _ = pipe.addNodeDesc(mod, node_desc) catch unreachable;
+        // node.input_conn_handle = mod.input_conn_handle;
+        // node.output_conn_handle = mod.output_conn_handle;
     }
 
     pub var module: pie.engine.api.ModuleDesc = .{
-        .name = "Double Module",
-        // .type = .compute,
+        .name = "Double It",
+        .type = .compute,
         // .param_ui = "",
         // .param_uniform = "",
         .input_sock = .{
@@ -116,9 +132,9 @@ const ModuleDoubleMe = struct {
         },
         .init = null,
         .deinit = null,
-        .read_source = null,
-        .create_nodes = create_nodes,
-        .modify_roi_out = null,
+        .readSource = null,
+        .createNodes = createNodes,
+        .modifyROIOut = null,
     };
 };
 
@@ -130,7 +146,7 @@ test "simple module test" {
     defer pipeline.deinit();
 
     _ = try pipeline.addModuleDesc(ModuleCreateTestData.module);
-    _ = try pipeline.addModuleDesc(ModuleDoubleMe.module);
+    _ = try pipeline.addModuleDesc(ModuleDoubleIt.module);
 
     try pipeline.run();
 

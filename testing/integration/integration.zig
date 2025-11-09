@@ -9,10 +9,11 @@ pub fn main() !void {
 
 test {
     // _ = @import("engine/gpu.zig");
-    // _ = @import("engine/pipeline.zig");
+    _ = @import("engine/pipeline.zig");
 
     // _ = @import("fullsize/DSC_6765.zig");
 
     // _ = @import("misc/zpool.zig");
-    _ = @import("misc/zpool.zig");
+    // _ = @import("misc/musubi.zig");
+    // _ = @import("misc/zig-graph.zig");
 }

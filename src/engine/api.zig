@@ -1,7 +1,14 @@
 const std = @import("std");
 const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
-const pipeline = @import("pipeline.zig"); // circular import?
+const pipeline = @import("pipeline.zig");
+
+const MAX_SOCKETS = 8;
+
+pub const Direction = enum {
+    input,
+    output,
+};
 
 pub const SocketType = enum {
     read,
@@ -16,13 +23,35 @@ pub const SocketType = enum {
             else => unreachable,
         };
     }
+
+    pub fn direction(self: SocketType) Direction {
+        return switch (self) {
+            .read => Direction.input,
+            .write => Direction.output,
+            .source => Direction.output,
+            // .sink => Direction.input,
+        };
+    }
 };
 
 pub const SocketDesc = struct {
     name: []const u8,
     type: SocketType,
     format: gpu.TextureFormat,
-    roi: ?ROI,
+    roi: ?ROI = null,
+
+    private: Private = .{},
+
+    const Private = struct {
+        // FOR OUTPUT SOCKETS
+        conn_handle: ?pipeline.ConnectorHandle = null,
+
+        // FOR INPUT SOCKETS
+        connected_to: ?*pipeline.Node = null, // populated with graph.connect_nodes()
+
+        // FOR INPUT SOCKETS THAT ARE THE FIRST IN A MODULE
+        associated_w: ?*pipeline.Module = null, // populated with socket.associated_with()
+    };
 };
 
 pub const NodeType = enum {
@@ -32,13 +61,11 @@ pub const NodeType = enum {
 
 // vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
 pub const NodeDesc = struct {
-    type: NodeType,
+    type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
     shader_code: []const u8,
     entry_point: []const u8,
     run_size: ?ROI,
-    // connectors: []Connector,
-    input_sock: SocketDesc,
-    output_sock: SocketDesc,
+    sockets: [MAX_SOCKETS]SocketDesc,
 };
 
 pub const ModuleType = enum {
@@ -59,15 +86,14 @@ pub const ModuleType = enum {
 pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
-    // nodes: anyerror![]Node,
     // enabled: bool,
 
     // Use the first and last nodes connectors as module connectors
     // connectors: []Connector,
     // The sockets describe the module's input and output interface
     // they can be null if the module has no input or output (sink or source only)
-    input_sock: ?SocketDesc,
-    output_sock: ?SocketDesc,
+    input_sock: ?SocketDesc = null,
+    output_sock: ?SocketDesc = null,
 
     // param_ui: []u8,
     // param_uniform: []u8,
@@ -75,10 +101,10 @@ pub const ModuleDesc = struct {
     // uniform_offset: usize,
     // uniform_size: usize,
 
-    init: ?*const fn (mod: *pipeline.Module) anyerror!void,
-    deinit: ?*const fn (mod: *pipeline.Module) anyerror!void,
-    create_nodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module) anyerror!void,
-    read_source: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, allocator: *gpu.GPUAllocator) anyerror!void,
-    // write_sink: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, alloc: gpu.GPUAllocator) anyerror!void,
-    modify_roi_out: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module) anyerror!void,
+    init: ?*const fn (mod: *pipeline.Module) anyerror!void = null,
+    deinit: ?*const fn (mod: *pipeline.Module) anyerror!void = null,
+    createNodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module) anyerror!void = null,
+    readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
+    // write_sink: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, alloc: gpu.GPUAllocator) anyerror!void = null,
+    modifyROIOut: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module) anyerror!void = null,
 };
