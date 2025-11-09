@@ -3,7 +3,7 @@ const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 const pipeline = @import("pipeline.zig");
 
-const MAX_SOCKETS = 8;
+pub const MAX_SOCKETS = 8;
 
 pub const Direction = enum {
     input,
@@ -54,6 +54,8 @@ pub const SocketDesc = struct {
     };
 };
 
+pub const Sockets = [MAX_SOCKETS]?SocketDesc;
+
 pub const NodeType = enum {
     compute,
     source,
@@ -65,7 +67,8 @@ pub const NodeDesc = struct {
     shader_code: []const u8,
     entry_point: []const u8,
     run_size: ?ROI,
-    sockets: [MAX_SOCKETS]SocketDesc,
+    sockets: Sockets,
+    // sockets: std.ArrayList(SocketDesc),
 };
 
 pub const ModuleType = enum {
