@@ -102,10 +102,14 @@ pub const Node = struct {
 
 const MAX_MODULES = 100;
 const MAX_NODES = 200;
+
+/// The main pipeline structure that holds modules, nodes, and manages execution.
+/// This is heavily inspired by vkdt. The current difference is that modules are
+/// executed in order, rather than in a DAG structure. This simplifies the execution model.
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
-    gpu: *gpu.GPU,
-    gpu_allocator: gpu.GPUAllocator,
+    gpu: ?*gpu.GPU,
+    gpu_allocator: ?gpu.GPUAllocator,
     // nodes: std.ArrayList(Node),
     node_pool: NodePool,
     modules: std.ArrayList(Module),
@@ -113,9 +117,17 @@ pub const Pipeline = struct {
     // modules_pool: std.heap.MemoryPoolExtra(Module, .{}),
     connector_pool: ConnectorPool,
 
-    pub fn init(allocator: std.mem.Allocator, gpu_instance: *gpu.GPU) !Pipeline {
-        var gpu_allocator = try gpu.GPUAllocator.init(gpu_instance, null);
-        errdefer gpu_allocator.deinit();
+    pub fn init(allocator: std.mem.Allocator, gpu_instance: ?*gpu.GPU) !Pipeline {
+        if (gpu_instance == null) {
+            slog.info("No GPU instance provided, performing a dry run", .{});
+        }
+        var gpu_allocator: ?gpu.GPUAllocator = null;
+        if (gpu_instance) |gpu_inst| {
+            gpu_allocator = try gpu.GPUAllocator.init(gpu_inst, null);
+            errdefer gpu_allocator.deinit();
+        } else {
+            gpu_allocator = null;
+        }
 
         const modules = std.ArrayList(Module).initCapacity(allocator, MAX_MODULES) catch unreachable;
         errdefer modules.deinit();
@@ -154,26 +166,25 @@ pub const Pipeline = struct {
         // self.module_pool.deinit();
         // self.nodes.deinit(self.allocator);
         self.node_pool.deinit();
-
-        // loop through connectors and deinit textures
-        // var live_connector_handles = self.connector_pool.liveHandles();
-        // while (live_connector_handles.next()) |connector| {
-        //     var t: gpu.Texture = self.connector_pool.getColumn(connector, .ptr) catch continue orelse continue;
-        //     t.deinit();
-        // }
+        // the pool deinit will take care of deallocating the textures
         self.connector_pool.deinit();
 
-        self.gpu_allocator.deinit();
+        if (self.gpu_allocator) |*gpu_allocator| {
+            gpu_allocator.deinit();
+        }
+    }
+
+    pub fn addModuleDesc(self: *Pipeline, module_desc: api.ModuleDesc) !*Module {
+        slog.info("Adding module: {s}", .{module_desc.name});
+        const module = try Module.init(module_desc);
+        try self.modules.append(self.allocator, module);
+        return &self.modules.items[self.modules.items.len - 1];
     }
 
     pub fn addNodeDesc(self: *Pipeline, mod: *Module, node_desc: api.NodeDesc) !NodeHandle {
         slog.info("Adding node with shader entry point: {s}", .{node_desc.entry_point});
         // TODO: check input connection to mach previous node output connection
         const node = try Node.init(self, mod, node_desc);
-
-        // node.output_conn_handle = try self.connector_pool.add(.{
-        //     .ptr = null,
-        // });
 
         // try self.nodes.append(self.allocator, node);
         // return &self.nodes.items[self.nodes.items.len - 1];
@@ -191,13 +202,6 @@ pub const Pipeline = struct {
     //     self.connector_pool.remove(node.input_conn_handle orelse return error.PipelineNodeInputConnectorNotSet) catch unreachable;
     //     node.input_conn_handle = module.output_conn_handle;
     // }
-
-    pub fn addModuleDesc(self: *Pipeline, module_desc: api.ModuleDesc) !*Module {
-        slog.info("Adding module: {s}", .{module_desc.name});
-        const module = try Module.init(module_desc);
-        try self.modules.append(self.allocator, module);
-        return &self.modules.items[self.modules.items.len - 1];
-    }
 
     pub fn checkModules(self: *Pipeline) !void {
         // while (self.module_pool.liveHandles().next()) |module_handle| {
@@ -222,22 +226,19 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runModules(self: *Pipeline) !void {
-
-        // configure input sockets and output sockets
-        var prev_roi: ?ROI = null;
+    /// configure ROI for input sockets and output sockets
+    pub fn runModulesModifyROIOut(self: *Pipeline) !void {
+        var prev_out_roi: ?ROI = null;
         // while (self.module_pool.liveHandles().next()) |module_handle| {
         //     var module = self.module_pool.getColumn(module_handle, .val) catch unreachable;
         for (self.modules.items) |*module| {
-            slog.info("Configuring sockets for module: {s}", .{module.desc.name});
             if (module.enabled == false) continue;
 
-            // if the input socket is not set, use the previous module's output socket
+            // if the input socket ROI is not set, use the previous module's output socket ROI
             if (module.desc.type != .source) {
                 // TODO: check connection first
-                if (prev_roi != null) {
-                    slog.info("Module {s} input sock ROI set to previous output sock ROI", .{module.desc.name});
-                    module.desc.input_sock.?.roi = prev_roi;
+                if (prev_out_roi != null) {
+                    module.desc.input_sock.?.roi = prev_out_roi;
                 } else {
                     slog.err("Module {s} has no input sock ROI and no previous module to get it from", .{module.desc.name});
                     return error.ModuleMissingInputSockROI;
@@ -246,25 +247,27 @@ pub const Pipeline = struct {
 
             // if the module has a modifyROIOut function, call it
             // else copy roi from input to output
-            if (module.desc.modifyROIOut) |modifyROIOut_fn| {
-                slog.info("Modifying output sock ROI for module: {s}", .{module.desc.name});
-                try modifyROIOut_fn(self, module);
+            if (module.desc.modifyROIOut) |modifyROIOutFn| {
+                try modifyROIOutFn(self, module);
             } else {
-                slog.info("No modifyROIOut function for module: {s}", .{module.desc.name});
-                // set roi out to roi in
                 if (module.desc.type != .source) {
-                    slog.info("Setting output ROI to input ROI for module: {s} to {any}", .{ module.desc.name, module.desc.input_sock.?.roi });
                     module.desc.output_sock.?.roi = module.desc.input_sock.?.roi;
                 }
             }
-            // update prev_roi
-            if (module.desc.output_sock != null) {
-                prev_roi = module.desc.output_sock.?.roi;
+
+            // update prev_out_roi for use on the next module
+            if (module.desc.output_sock) |output_sock| {
+                prev_out_roi = output_sock.roi;
             } else {
-                slog.info("Module {s} has no output sock, not updating prev_roi", .{module.desc.name});
+                slog.err("Module {s} has no output sock ROI set", .{module.desc.name});
                 return error.ModuleMissingOutputSockROI;
             }
         }
+    }
+
+    pub fn runModules(self: *Pipeline) !void {
+        self.checkModules();
+        self.runModulesModifyROIOut();
 
         // allocate images only for module output connectors
         // var prev_conn_handle: ?ConnectorHandle = null;
@@ -288,11 +291,11 @@ pub const Pipeline = struct {
             // TODO: check output connectors before allocating
 
             // once the output connector is defined, allocate image for it
-            if (module.desc.output_sock != null) {
+            if (module.desc.output_sock) |sock| {
                 slog.info("Allocating output connector image for module: {s}", .{module.desc.name});
-                slog.info("Output: {any}", .{module.desc.output_sock});
-                const texture_out = try gpu.Texture.init(self.gpu, module.desc.output_sock.?.format, module.desc.output_sock.?.roi.?);
-                module.desc.output_sock.?.private.conn_handle = try self.connector_pool.add(.{
+                slog.info("Output: {any}", .{sock});
+                const texture_out = if (self.gpu) |self_gpu| gpu.Texture.init(self_gpu, sock.format, sock.roi) catch unreachable else null;
+                sock.private.conn_handle = try self.connector_pool.add(.{
                     .val = texture_out,
                 });
                 // prev_conn_handle = module.output_conn_handle;
@@ -399,7 +402,6 @@ pub const Pipeline = struct {
         slog.info("Running pipeline", .{});
 
         // First run modules so we know which nodes to create, what rois, what buffers and textures to allocate
-        self.checkModules() catch unreachable;
         self.runModules() catch unreachable;
 
         // then run nodes

@@ -38,17 +38,15 @@ const ModuleCreateTestData = struct {
     }
 
     pub fn createNodes(pipe: *Pipeline, mod: *Module) !void {
-        const output_sock = mod.getSocket("output") orelse unreachable;
+        const same_as_mod_output_sock = mod.getSocket("output") orelse unreachable;
         const node_desc: api.NodeDesc = .{
             .type = .source,
             .shader_code = "",
             .entry_point = "Test Data Source",
             .run_size = null,
-            // .input_sock = null,
-            // .output_sock = output_sock,
             .sockets = init: {
                 var s: api.Sockets = @splat(null);
-                s[0] = output_sock;
+                s[0] = same_as_mod_output_sock;
                 break :init s;
             },
         };
@@ -68,14 +66,6 @@ const ModuleCreateTestData = struct {
             .format = .rgba16float,
             .roi = null,
         },
-        // .sockets = &[_]pie.engine.api.SocketDesc{
-        //     .{
-        //         .name = "output",
-        //         .type = .source,
-        //         .format = .rgba16float,
-        //         .roi = null,
-        //     },
-        // },
         .init = null,
         .deinit = null,
         .readSource = readSource,
@@ -99,20 +89,17 @@ const ModuleDoubleIt = struct {
         \\}
     ;
     pub fn createNodes(pipe: *Pipeline, mod: *Module) !void {
-        const output_sock = mod.getSocket("output") orelse unreachable;
-        const input_sock = mod.getSocket("input") orelse unreachable;
+        const same_as_mod_input_sock = mod.getSocket("input") orelse unreachable;
+        const same_as_mod_output_sock = mod.getSocket("output") orelse unreachable;
         const node_desc: api.NodeDesc = .{
             .type = .compute,
             .shader_code = shader_code,
             .entry_point = "doubleIt",
-            .run_size = output_sock.roi,
-            // .input_sock = input_sock,
-            // .output_sock = output_sock,
-            // .sockets = sockets,
+            .run_size = same_as_mod_output_sock.roi,
             .sockets = init: {
                 var s: api.Sockets = @splat(null);
-                s[0] = input_sock;
-                s[1] = output_sock;
+                s[0] = same_as_mod_input_sock;
+                s[1] = same_as_mod_output_sock;
                 break :init s;
             },
         };
@@ -148,9 +135,9 @@ const ModuleDoubleIt = struct {
 
 test "simple module test" {
     const allocator = std.testing.allocator;
-    var gpu_instance = try gpu.GPU.init();
-    defer gpu_instance.deinit();
-    var pipeline = Pipeline.init(allocator, &gpu_instance) catch unreachable;
+    // var gpu_instance = try gpu.GPU.init();
+    // defer gpu_instance.deinit();
+    var pipeline = Pipeline.init(allocator, null) catch unreachable;
     defer pipeline.deinit();
 
     _ = try pipeline.addModuleDesc(ModuleCreateTestData.module);
