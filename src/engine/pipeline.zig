@@ -266,8 +266,8 @@ pub const Pipeline = struct {
     }
 
     pub fn runModules(self: *Pipeline) !void {
-        self.checkModules();
-        self.runModulesModifyROIOut();
+        try self.checkModules();
+        try self.runModulesModifyROIOut();
 
         // allocate images only for module output connectors
         // var prev_conn_handle: ?ConnectorHandle = null;
@@ -291,10 +291,11 @@ pub const Pipeline = struct {
             // TODO: check output connectors before allocating
 
             // once the output connector is defined, allocate image for it
-            if (module.desc.output_sock) |sock| {
+            if (module.desc.output_sock) |*sock| {
                 slog.info("Allocating output connector image for module: {s}", .{module.desc.name});
                 slog.info("Output: {any}", .{sock});
-                const texture_out = if (self.gpu) |self_gpu| gpu.Texture.init(self_gpu, sock.format, sock.roi) catch unreachable else null;
+                // const texture_out = if (self.gpu) |self_gpu| gpu.Texture.init(self_gpu, sock.format, sock.roi) catch unreachable else null;
+                const texture_out = null;
                 sock.private.conn_handle = try self.connector_pool.add(.{
                     .val = texture_out,
                 });
