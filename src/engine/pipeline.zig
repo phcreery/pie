@@ -2,10 +2,10 @@ const std = @import("std");
 const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 const api = @import("api.zig");
-const Pool = @import("zpool").Pool;
-const slog = std.log.scoped(.pipe);
 const util = @import("util.zig");
 const SingleColPool = @import("pool.zig").SingleColPool;
+const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
+const slog = std.log.scoped(.pipe);
 
 const NodePool = SingleColPool(Node);
 pub const NodeHandle = NodePool.Handle;
@@ -126,6 +126,7 @@ pub const Pipeline = struct {
     gpu: ?*gpu.GPU,
     gpu_allocator: ?gpu.GPUAllocator,
     node_pool: NodePool,
+    node_graph: DirectedGraph(NodeHandle, u64, std.hash_map.AutoContext(NodeHandle)),
     modules: std.ArrayList(Module),
     connector_pool: ConnectorPool,
 
@@ -156,6 +157,10 @@ pub const Pipeline = struct {
         const node_pool = NodePool.init(allocator);
         errdefer node_pool.deinit();
 
+        const NodeGraph = DirectedGraph(NodeHandle, u64, std.hash_map.AutoContext(NodeHandle));
+        var node_graph = NodeGraph.init(allocator);
+        defer node_graph.deinit();
+
         const connector_pool = ConnectorPool.init(allocator);
         errdefer connector_pool.deinit();
 
@@ -165,12 +170,14 @@ pub const Pipeline = struct {
             .gpu_allocator = gpu_allocator,
             .modules = modules,
             .node_pool = node_pool,
+            .node_graph = node_graph,
             .connector_pool = connector_pool,
         };
     }
 
     pub fn deinit(self: *Pipeline) void {
         self.modules.deinit(self.allocator);
+        self.node_graph.deinit();
         // the pool deinit will take care of deallocating the textures
         self.node_pool.deinit();
         self.connector_pool.deinit();
@@ -323,6 +330,53 @@ pub const Pipeline = struct {
         try self.runModulesCreateNodes();
     }
 
+    pub fn runNodesTest(self: *Pipeline) !void {
+        var node_pool_handles = self.node_pool.liveHandles();
+        var first_node_handle: ?NodeHandle = null;
+        while (node_pool_handles.next()) |node_handle_a| {
+            if (first_node_handle == null) {
+                // set first node handle
+                first_node_handle = node_handle_a;
+            }
+            while (node_pool_handles.next()) |node_handle_b| {
+                // skip if edge already exists
+                if (self.node_graph.getEdge(node_handle_a, node_handle_b) != null) continue;
+                // get connector handle
+                const node_a = self.node_pool.get(node_handle_a) catch unreachable;
+                const connector_handles_a = if (node_a.conn_handles) |conn_handles| conn_handles else null;
+                const node_b = self.node_pool.get(node_handle_b) catch unreachable;
+                const connector_handles_b = if (node_b.conn_handles) |conn_handles| conn_handles else null;
+                if (connector_handles_a) |conn_handles_a| {
+                    if (connector_handles_b) |conn_handles_b| {
+                        // check for matching connector handles
+                        var found_match = false;
+                        for (conn_handles_a) |conn_handle_a| {
+                            for (conn_handles_b) |conn_handle_b| {
+                                if (conn_handle_a.id == conn_handle_b.id) {
+                                    found_match = true;
+                                    break;
+                                }
+                            }
+                            if (found_match) break;
+                        }
+                        self.node_graph.addEdge(node_handle_a, node_handle_b, 1) catch unreachable;
+                    }
+                }
+            }
+        }
+
+        var list = std.ArrayList(NodeHandle).initCapacity(self.allocator, 4) catch unreachable;
+        defer list.deinit(self.allocator);
+        if (first_node_handle) |h| {
+            var iter = try self.node_graph.dfsIterator(h);
+            defer iter.deinit();
+            while (try iter.next()) |value| {
+                try list.append(self.node_graph.allocator, self.node_graph.lookup(value).?);
+            }
+            std.debug.print("DFS Order: {any}\n", .{list.items});
+        }
+    }
+
     // similar to vkdt dt_graph_run_nodes_allocate()
     pub fn runNodesAllocate(_: *Pipeline) !void {
         // PASS #1 - allocate output buffers and create compute shaders for each node
@@ -415,6 +469,7 @@ pub const Pipeline = struct {
         self.runModules() catch unreachable;
 
         // then run nodes
+        self.runNodesTest() catch unreachable;
         self.runNodesAllocate() catch unreachable;
         self.runNodesUpload() catch unreachable;
 
