@@ -1,3 +1,4 @@
+/// API definitions for engine pipeline modules and nodes
 const std = @import("std");
 const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
@@ -49,8 +50,8 @@ pub const SocketDesc = struct {
         // FOR INPUT SOCKETS
         connected_to: ?*pipeline.Node = null, // populated with graph.connect_nodes()
 
-        // FOR INPUT SOCKETS THAT ARE THE FIRST IN A MODULE
-        associated_w: ?*pipeline.Module = null, // populated with socket.associated_with()
+        // FOR INPUT SOCKETS THAT ARE THE FIRST IN A MODULE OR OUTPUT SOCKETS THAT ARE THE LAST IN A MODULE
+        associated_with: ?*pipeline.Module = null, // populated with socket.associated_with()
     };
 };
 

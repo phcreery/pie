@@ -5,24 +5,16 @@ const api = @import("api.zig");
 const Pool = @import("zpool").Pool;
 const slog = std.log.scoped(.pipe);
 const util = @import("util.zig");
+const SingleColPool = @import("pool.zig").SingleColPool;
 
-// const ModulePool = Pool(16, 16, Module, struct {
-//     val: Module,
-// });
-// const ModuleHandle = ModulePool.Handle;
-
-const NodePool = Pool(16, 16, Node, struct {
-    val: Node,
-});
+const NodePool = SingleColPool(Node);
 pub const NodeHandle = NodePool.Handle;
+
+const ConnectorPool = SingleColPool(?gpu.Texture);
+pub const ConnectorHandle = ConnectorPool.Handle;
 
 // TODO: history pool
 // TODO: params pool
-
-const ConnectorPool = Pool(16, 16, gpu.Texture, struct {
-    val: ?gpu.Texture,
-});
-pub const ConnectorHandle = ConnectorPool.Handle;
 
 pub const Module = struct {
     desc: api.ModuleDesc,
@@ -98,6 +90,29 @@ pub const Node = struct {
             // .shader = shader,
         };
     }
+
+    pub fn getSocket(node: *Node, name: []const u8) ?api.SocketDesc {
+        for (node.desc.sockets) |sock| {
+            if (sock) |s| {
+                if (std.mem.eql(u8, s.name, name)) {
+                    slog.info("Found socket for node {s}, connector {s}", .{ node.desc.entry_point, name });
+                    return s;
+                }
+            }
+        }
+        return null;
+    }
+    pub fn getSocketIndex(node: *Node, name: []const u8) ?usize {
+        for (node.desc.sockets, 0..) |sock, idx| {
+            if (sock) |s| {
+                if (std.mem.eql(u8, s.name, name)) {
+                    slog.info("Found socket index for node {s}, connector {s}", .{ node.desc.entry_point, name });
+                    return idx;
+                }
+            }
+        }
+        return null;
+    }
 };
 
 const MAX_MODULES = 100;
@@ -110,11 +125,8 @@ pub const Pipeline = struct {
     allocator: std.mem.Allocator,
     gpu: ?*gpu.GPU,
     gpu_allocator: ?gpu.GPUAllocator,
-    // nodes: std.ArrayList(Node),
     node_pool: NodePool,
     modules: std.ArrayList(Module),
-    // module_pool: ModulePool,
-    // modules_pool: std.heap.MemoryPoolExtra(Module, .{}),
     connector_pool: ConnectorPool,
 
     pub fn init(allocator: std.mem.Allocator, gpu_instance: ?*gpu.GPU) !Pipeline {
@@ -141,8 +153,6 @@ pub const Pipeline = struct {
         // errdefer modules_pool.destroy(temp_module);
         // temp_module.* = undefined;
 
-        // const nodes = std.ArrayList(Node).initCapacity(allocator, MAX_NODES) catch unreachable;
-        // errdefer nodes.deinit();
         const node_pool = NodePool.init(allocator);
         errdefer node_pool.deinit();
 
@@ -154,8 +164,6 @@ pub const Pipeline = struct {
             .gpu = gpu_instance,
             .gpu_allocator = gpu_allocator,
             .modules = modules,
-            // .module_pool = module_pool,
-            // .nodes = nodes,
             .node_pool = node_pool,
             .connector_pool = connector_pool,
         };
@@ -163,10 +171,8 @@ pub const Pipeline = struct {
 
     pub fn deinit(self: *Pipeline) void {
         self.modules.deinit(self.allocator);
-        // self.module_pool.deinit();
-        // self.nodes.deinit(self.allocator);
-        self.node_pool.deinit();
         // the pool deinit will take care of deallocating the textures
+        self.node_pool.deinit();
         self.connector_pool.deinit();
 
         if (self.gpu_allocator) |*gpu_allocator| {
@@ -185,27 +191,28 @@ pub const Pipeline = struct {
         slog.info("Adding node with shader entry point: {s}", .{node_desc.entry_point});
         // TODO: check input connection to mach previous node output connection
         const node = try Node.init(self, mod, node_desc);
-
-        // try self.nodes.append(self.allocator, node);
-        // return &self.nodes.items[self.nodes.items.len - 1];
-        return try self.node_pool.add(.{
-            .val = node,
-        });
+        return try self.node_pool.add(node);
     }
 
-    // pub fn connectModuleToNode(
-    //     self: *Pipeline,
-    //     module: *Module,
-    //     node: *Node,
-    // ) !void {
-    //     slog.info("Connecting module {s} to node {s}", .{ module.desc.name, node.desc.entry_point });
-    //     self.connector_pool.remove(node.input_conn_handle orelse return error.PipelineNodeInputConnectorNotSet) catch unreachable;
-    //     node.input_conn_handle = module.output_conn_handle;
-    // }
+    pub fn lowerSocket(
+        self: *Pipeline,
+        mod: *Module,
+        mod_socket_name: []const u8,
+        node_handle: NodeHandle,
+        node_socket_name: []const u8,
+    ) !void {
+        slog.info("Connecting module {s} socket {s} to node {any} socket {s}", .{ mod.desc.name, mod_socket_name, node_handle, node_socket_name });
+        // TODO: some checks for socket compatibility
 
-    pub fn checkModules(self: *Pipeline) !void {
-        // while (self.module_pool.liveHandles().next()) |module_handle| {
-        //     const module = self.module_pool.getColumn(module_handle, .val) catch unreachable;
+        const module_socket = mod.getSocket(mod_socket_name) orelse unreachable;
+
+        var node = self.node_pool.getPtr(node_handle) catch unreachable;
+        const node_socket_idx = node.getSocketIndex(node_socket_name) orelse unreachable;
+
+        node.desc.sockets[node_socket_idx] = module_socket;
+    }
+
+    pub fn runModulesCheck(self: *Pipeline) !void {
         for (self.modules.items) |module| {
             if (module.desc.type == .source) {
                 if (module.desc.input_sock != null) {
@@ -229,8 +236,6 @@ pub const Pipeline = struct {
     /// configure ROI for input sockets and output sockets
     pub fn runModulesModifyROIOut(self: *Pipeline) !void {
         var prev_out_roi: ?ROI = null;
-        // while (self.module_pool.liveHandles().next()) |module_handle| {
-        //     var module = self.module_pool.getColumn(module_handle, .val) catch unreachable;
         for (self.modules.items) |*module| {
             if (module.enabled == false) continue;
 
@@ -265,53 +270,57 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runModules(self: *Pipeline) !void {
-        try self.checkModules();
-        try self.runModulesModifyROIOut();
-
-        // allocate images only for module output connectors
-        // var prev_conn_handle: ?ConnectorHandle = null;
-        // while (self.module_pool.liveHandles().next()) |module_handle| {
-        //     var module = self.module_pool.getColumn(module_handle, .val) catch unreachable;
+    /// configure connectors only for module output connectors
+    pub fn runModulesCreateConnectorHandles(self: *Pipeline) !void {
+        var prev_conn_handle: ?ConnectorHandle = null;
         for (self.modules.items) |*module| {
-            slog.info("Configuring sockets for module: {s}", .{module.desc.name});
+            slog.info("Configuring connectors for module: {s}", .{module.desc.name});
             if (module.enabled == false) continue;
 
             // if the input socket is not set, use the previous module's output socket
-            // if (module.desc.type != .source) {
-            //     if (prev_conn_handle != null) {
-            //         slog.info("Module {s} input connector set to previous output connector", .{module.desc.name});
-            //         module.input_conn_handle = prev_conn_handle;
-            //     } else {
-            //         slog.err("Module {s} has no input connector and no previous module to get it from", .{module.desc.name});
-            //         return error.ModuleMissingInputSock;
-            //     }
-            // }
+            if (module.desc.type != .source) {
+                if (prev_conn_handle != null) {
+                    slog.info("Module {s} input connector set to previous output connector", .{module.desc.name});
+                    if (module.desc.input_sock) |*sock| {
+                        sock.private.conn_handle = prev_conn_handle;
+                    } else {
+                        slog.err("Module {s} has no input socket to set connector on", .{module.desc.name});
+                        return error.ModuleMissingInputSock;
+                    }
+                } else {
+                    slog.err("Module {s} has no input connector and no previous module to get it from", .{module.desc.name});
+                    return error.ModuleMissingInputSock;
+                }
+            }
 
-            // TODO: check output connectors before allocating
+            // TODO: check output connectors before configuring
 
             // once the output connector is defined, allocate image for it
             if (module.desc.output_sock) |*sock| {
-                slog.info("Allocating output connector image for module: {s}", .{module.desc.name});
+                slog.info("Configuring output connector image for module: {s}", .{module.desc.name});
                 slog.info("Output: {any}", .{sock});
                 // const texture_out = if (self.gpu) |self_gpu| gpu.Texture.init(self_gpu, sock.format, sock.roi) catch unreachable else null;
-                const texture_out = null;
-                sock.private.conn_handle = try self.connector_pool.add(.{
-                    .val = texture_out,
-                });
-                // prev_conn_handle = module.output_conn_handle;
+                sock.private.conn_handle = try self.connector_pool.add(null);
+                prev_conn_handle = sock.private.conn_handle;
             }
         }
+    }
 
-        // CREATE NODES
-        // while (self.module_pool.liveHandles().next()) |module_handle| {
-        //     const module = self.module_pool.getColumn(module_handle, .val) catch unreachable;
+    /// create nodes for each module
+    pub fn runModulesCreateNodes(self: *Pipeline) !void {
         for (self.modules.items) |*module| {
             if (module.enabled == false) continue;
             if (module.desc.createNodes) |createNodesFn| {
                 try createNodesFn(self, module);
             }
         }
+    }
+
+    pub fn runModules(self: *Pipeline) !void {
+        try self.runModulesCheck();
+        try self.runModulesModifyROIOut();
+        try self.runModulesCreateConnectorHandles();
+        try self.runModulesCreateNodes();
     }
 
     // similar to vkdt dt_graph_run_nodes_allocate()

@@ -1,17 +1,17 @@
 const std = @import("std");
 
 pub fn SingleColPool(comptime T: type) type {
-    const Pool = @import("zpool").Pool;
     const INDEX_BITS = 16;
     const CYCLE_BITS = 16;
+    const Pool = @import("zpool").Pool;
     const SingleColPoolType = Pool(INDEX_BITS, CYCLE_BITS, T, struct {
         val: T,
     });
     return struct {
+        pool: SingleColPoolType,
+
         const Self = @This();
         pub const Handle = SingleColPoolType.Handle;
-
-        pool: SingleColPoolType,
 
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{
@@ -31,6 +31,11 @@ pub fn SingleColPool(comptime T: type) type {
         pub fn get(self: Self, handle: SingleColPoolType.Handle) !T {
             const item = try self.pool.getColumn(handle, .val);
             return item;
+        }
+
+        pub fn getPtr(self: *Self, handle: SingleColPoolType.Handle) !*T {
+            const item_ptr = try self.pool.getColumnPtr(handle, .val);
+            return item_ptr;
         }
 
         pub fn isLiveHandle(self: *Self, handle: SingleColPoolType.Handle) bool {

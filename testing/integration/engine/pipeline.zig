@@ -50,8 +50,8 @@ const ModuleCreateTestData = struct {
                 break :init s;
             },
         };
-        _ = pipe.addNodeDesc(mod, node_desc) catch unreachable;
-        // TODO: associate node connections
+        const node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
+        pipe.lowerSocket(mod, "output", node, "output") catch unreachable;
     }
 
     pub const module: api.ModuleDesc = .{
@@ -89,23 +89,33 @@ const ModuleDoubleIt = struct {
         \\}
     ;
     pub fn createNodes(pipe: *Pipeline, mod: *Module) !void {
-        const same_as_mod_input_sock = mod.getSocket("input") orelse unreachable;
-        const same_as_mod_output_sock = mod.getSocket("output") orelse unreachable;
+        // const same_as_mod_input_sock = mod.getSocket("input") orelse unreachable;
+        const mod_output_sock = mod.getSocket("output") orelse unreachable;
         const node_desc: api.NodeDesc = .{
             .type = .compute,
             .shader_code = shader_code,
             .entry_point = "doubleIt",
-            .run_size = same_as_mod_output_sock.roi,
+            .run_size = mod_output_sock.roi,
             .sockets = init: {
                 var s: api.Sockets = @splat(null);
-                s[0] = same_as_mod_input_sock;
-                s[1] = same_as_mod_output_sock;
+                s[0] = .{
+                    .name = "input",
+                    .type = .read,
+                    .format = .rgba16float,
+                    .roi = null,
+                };
+                s[1] = .{
+                    .name = "output",
+                    .type = .write,
+                    .format = .rgba16float,
+                    .roi = null,
+                };
                 break :init s;
             },
         };
-        _ = pipe.addNodeDesc(mod, node_desc) catch unreachable;
-        // node.input_conn_handle = mod.input_conn_handle;
-        // node.output_conn_handle = mod.output_conn_handle;
+        const node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
+        pipe.lowerSocket(mod, "input", node, "input") catch unreachable;
+        pipe.lowerSocket(mod, "output", node, "output") catch unreachable;
     }
 
     pub var module: pie.engine.api.ModuleDesc = .{
