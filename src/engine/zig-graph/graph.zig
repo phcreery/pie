@@ -178,11 +178,11 @@ pub fn DirectedGraph(
 
             if (self.adj_out.getPtr(k_from)) |map| {
                 _ = map.remove(k_to);
-            } else unreachable;
+            }
 
             if (self.adj_in.getPtr(k_to)) |map| {
                 _ = map.remove(k_from);
-            } else unreachable;
+            }
         }
 
         /// getEdge gets the edge from one node to another and returns the
@@ -193,7 +193,9 @@ pub fn DirectedGraph(
 
             if (self.adj_out.getPtr(k_from)) |map| {
                 return map.get(k_to);
-            } else unreachable;
+            } else {
+                return null;
+            }
         }
 
         // reverse reverses the graph. This does NOT make any copies, so

@@ -55,7 +55,7 @@ pub const Node = struct {
 
     // input_conn_handle: ?ConnectorHandle,
     // output_conn_handle: ?ConnectorHandle,
-    conn_handles: ?[]ConnectorHandle = null,
+    // conn_handles: ?[]ConnectorHandle = null,
     bindings: ?gpu.Bindings = null,
 
     pub fn init(
@@ -127,6 +127,7 @@ pub const Pipeline = struct {
     gpu_allocator: ?gpu.GPUAllocator,
     node_pool: NodePool,
     node_graph: DirectedGraph(NodeHandle, u64, std.hash_map.AutoContext(NodeHandle)),
+    node_execution_order: std.ArrayList(NodeHandle),
     modules: std.ArrayList(Module),
     connector_pool: ConnectorPool,
 
@@ -161,6 +162,9 @@ pub const Pipeline = struct {
         var node_graph = NodeGraph.init(allocator);
         defer node_graph.deinit();
 
+        const node_execution_order = std.ArrayList(NodeHandle).initCapacity(allocator, 2) catch unreachable;
+        errdefer node_execution_order.deinit();
+
         const connector_pool = ConnectorPool.init(allocator);
         errdefer connector_pool.deinit();
 
@@ -171,12 +175,14 @@ pub const Pipeline = struct {
             .modules = modules,
             .node_pool = node_pool,
             .node_graph = node_graph,
+            .node_execution_order = node_execution_order,
             .connector_pool = connector_pool,
         };
     }
 
     pub fn deinit(self: *Pipeline) void {
         self.modules.deinit(self.allocator);
+        self.node_execution_order.deinit(self.allocator);
         self.node_graph.deinit();
         // the pool deinit will take care of deallocating the textures
         self.node_pool.deinit();
@@ -330,10 +336,12 @@ pub const Pipeline = struct {
         try self.runModulesCreateNodes();
     }
 
-    pub fn runNodesTest(self: *Pipeline) !void {
+    pub fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
+        // first build the graph by connecting nodes based on matching connector handles
         var node_pool_handles = self.node_pool.liveHandles();
         var first_node_handle: ?NodeHandle = null;
         while (node_pool_handles.next()) |node_handle_a| {
+            // std.debug.print("Processing node: {any}\n", .{node_handle_a});
             if (first_node_handle == null) {
                 // set first node handle
                 first_node_handle = node_handle_a;
@@ -341,39 +349,46 @@ pub const Pipeline = struct {
             while (node_pool_handles.next()) |node_handle_b| {
                 // skip if edge already exists
                 if (self.node_graph.getEdge(node_handle_a, node_handle_b) != null) continue;
+                // add nodes to graph
+                self.node_graph.add(node_handle_a) catch unreachable;
+                self.node_graph.add(node_handle_b) catch unreachable;
                 // get connector handle
                 const node_a = self.node_pool.get(node_handle_a) catch unreachable;
-                const connector_handles_a = if (node_a.conn_handles) |conn_handles| conn_handles else null;
                 const node_b = self.node_pool.get(node_handle_b) catch unreachable;
-                const connector_handles_b = if (node_b.conn_handles) |conn_handles| conn_handles else null;
-                if (connector_handles_a) |conn_handles_a| {
-                    if (connector_handles_b) |conn_handles_b| {
-                        // check for matching connector handles
-                        var found_match = false;
-                        for (conn_handles_a) |conn_handle_a| {
-                            for (conn_handles_b) |conn_handle_b| {
-                                if (conn_handle_a.id == conn_handle_b.id) {
-                                    found_match = true;
-                                    break;
+                // check for matching connector handles
+                var found_match = false;
+                for (node_a.desc.sockets) |socket_a| {
+                    if (socket_a) |sock_a| {
+                        for (node_b.desc.sockets) |socket_b| {
+                            if (socket_b) |sock_b| {
+                                if (sock_a.private.conn_handle) |conn_handle_a| {
+                                    if (sock_b.private.conn_handle) |conn_handle_b| {
+                                        if (conn_handle_a.id == conn_handle_b.id) {
+                                            found_match = true;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
-                            if (found_match) break;
                         }
-                        self.node_graph.addEdge(node_handle_a, node_handle_b, 1) catch unreachable;
                     }
+                    if (found_match) break;
+                }
+                if (found_match) {
+                    slog.info("Adding edge from node {any} to node {any}", .{ node_handle_a, node_handle_b });
+                    self.node_graph.addEdge(node_handle_a, node_handle_b, 1) catch unreachable;
                 }
             }
         }
-
-        var list = std.ArrayList(NodeHandle).initCapacity(self.allocator, 4) catch unreachable;
-        defer list.deinit(self.allocator);
+        // perform DFS from first node to get execution order
         if (first_node_handle) |h| {
+            slog.info("Performing DFS from first node: {any}", .{h});
             var iter = try self.node_graph.dfsIterator(h);
             defer iter.deinit();
             while (try iter.next()) |value| {
-                try list.append(self.node_graph.allocator, self.node_graph.lookup(value).?);
+                try self.node_execution_order.append(self.allocator, self.node_graph.lookup(value).?);
             }
-            std.debug.print("DFS Order: {any}\n", .{list.items});
+            slog.info("DFS Order: {any}", .{self.node_execution_order.items});
         }
     }
 
@@ -469,7 +484,7 @@ pub const Pipeline = struct {
         self.runModules() catch unreachable;
 
         // then run nodes
-        self.runNodesTest() catch unreachable;
+        self.runNodesBuildExecutionOrder() catch unreachable;
         self.runNodesAllocate() catch unreachable;
         self.runNodesUpload() catch unreachable;
 
