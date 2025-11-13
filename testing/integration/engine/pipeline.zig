@@ -145,9 +145,9 @@ const ModuleDoubleIt = struct {
 
 test "simple module test" {
     const allocator = std.testing.allocator;
-    // var gpu_instance = try gpu.GPU.init();
-    // defer gpu_instance.deinit();
-    var pipeline = Pipeline.init(allocator, null) catch unreachable;
+    var gpu_instance = try gpu.GPU.init();
+    defer gpu_instance.deinit();
+    var pipeline = Pipeline.init(allocator, &gpu_instance) catch unreachable;
     defer pipeline.deinit();
 
     _ = try pipeline.addModuleDesc(ModuleCreateTestData.module);

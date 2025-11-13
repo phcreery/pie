@@ -439,7 +439,7 @@ pub const TextureFormat = enum {
 
     /// bytes per pixel
     pub fn bpp(self: TextureFormat) u32 {
-        // return self.nchannels() * @sizeOf(self.BaseType()); // requires comtime param
+        // return self.nchannels() * @sizeOf(self.BaseType()); // requires comptime param
         return self.nchannels() * self.baseTypeSize();
     }
 
@@ -477,9 +477,9 @@ pub const TextureFormat = enum {
 };
 
 pub const Texture = struct {
-    texture: *wgpu.Texture = undefined,
-    format: TextureFormat = .rgba16float,
-    roi: ROI = undefined,
+    texture: *wgpu.Texture,
+    format: TextureFormat,
+    roi: ROI,
     const Self = @This();
 
     pub fn init(gpu: *GPU, format: TextureFormat, roi: ROI) !Self {
@@ -487,8 +487,8 @@ pub const Texture = struct {
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
-        // r16uint does not support storage binding
         var usage = wgpu.TextureUsages.storage_binding | wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst;
+        // r16uint does not support storage binding
         if (format == .r16uint or format == .r16float) {
             usage = wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst;
         }
@@ -524,10 +524,15 @@ pub const Texture = struct {
 /// Similar to vulkan's descriptor sets, a Bindings struct holds the actual resources
 /// (buffers, textures, etc) that are bound to a shader pipeline.
 pub const Bindings = struct {
-    bind_group: *wgpu.BindGroup = undefined,
+    bind_group: *wgpu.BindGroup,
     const Self = @This();
 
-    pub fn init(gpu: *GPU, shader_pipe: *const ShaderPipe, texture_a: *Texture, texture_b: *Texture) !Self {
+    pub fn init(
+        gpu: *GPU,
+        shader_pipe: *const ShaderPipe,
+        texture_a: *Texture,
+        texture_b: *Texture,
+    ) !Self {
         slog.info("Creating Bindings", .{});
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
@@ -597,7 +602,8 @@ pub const ShaderPipe = struct {
         gpu: *GPU,
         shader_source: []const u8,
         entry_point: []const u8,
-        g0_conns: [2]ShaderPipeConn,
+        // g0_conns: []const ShaderPipeConn,
+        g0_conns: std.ArrayList(ShaderPipeConn),
     ) !Self {
         slog.info("Initializing ShaderPipe for {s}", .{entry_point});
 
@@ -612,10 +618,11 @@ pub const ShaderPipe = struct {
         // First, we are going to create the bind group layout for group 0
         // this will hold the input/output textures
         //
-        // TODO: make this dynamic based on the shader inputs/outputs `[g0_conns.len]wgpu.BindGroupLayoutEntry`
-        var bind_group_layout_entries_g0 = std.mem.zeroes([2]wgpu.BindGroupLayoutEntry);
+        // var bind_group_layout_entries_g0 = try std.ArrayList(wgpu.BindGroupLayoutEntry).initCapacity(gpu.device.allocator, 0);
+        const MAX_CONN_BINDINGS: usize = 16; // TODO: make global constant
+        var bind_group_layout_entries_g0: [MAX_CONN_BINDINGS]wgpu.BindGroupLayoutEntry = undefined;
 
-        for (g0_conns) |conn| {
+        for (g0_conns.items) |conn| {
             switch (conn.type) {
                 ShaderPipeConnType.read => {
                     // Note: we don't need format for input textures
@@ -628,6 +635,7 @@ pub const ShaderPipe = struct {
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
+                    // try bind_group_layout_entries_g0.append(entry);
                     // slog.info("Added read binding {d} sample type {s}", .{ conn.binding, @tagName(conn.format.toWGPUSampleType()) });
                 },
                 ShaderPipeConnType.write => {
@@ -641,6 +649,7 @@ pub const ShaderPipe = struct {
                         },
                     };
                     bind_group_layout_entries_g0[conn.binding] = entry;
+                    // try bind_group_layout_entries_g0.append(entry);
                     // slog.info("Added write binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
                 },
             }

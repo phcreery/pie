@@ -51,11 +51,7 @@ pub const Module = struct {
 pub const Node = struct {
     desc: api.NodeDesc,
     mod: *Module,
-    // shader: gpu.ShaderPipe,
-
-    // input_conn_handle: ?ConnectorHandle,
-    // output_conn_handle: ?ConnectorHandle,
-    // conn_handles: ?[]ConnectorHandle = null,
+    shader: ?gpu.ShaderPipe = null,
     bindings: ?gpu.Bindings = null,
 
     pub fn init(
@@ -64,30 +60,9 @@ pub const Node = struct {
         desc: api.NodeDesc,
     ) !Node {
         _ = pipe;
-        // _ = module;
-        // TODO: don't use hardcoded 2 sockets
-        // TODO: do this in the pipeline step
-        // const shader = try gpu.ShaderPipe.init(
-        //     pipe.gpu,
-        //     desc.shader_code,
-        //     desc.entry_point,
-        //     [_]gpu.ShaderPipeConn{
-        //         .{
-        //             .binding = 0,
-        //             .type = desc.sockets[0].type.toShaderPipeConnType(),
-        //             .format = desc.sockets[0].format,
-        //         },
-        //         .{
-        //             .binding = 1,
-        //             .type = desc.sockets[1].type.toShaderPipeConnType(),
-        //             .format = desc.sockets[1].format,
-        //         },
-        //     },
-        // );
         return Node{
             .desc = desc,
             .mod = mod,
-            // .shader = shader,
         };
     }
 
@@ -149,7 +124,7 @@ pub const Pipeline = struct {
         // errdefer module_pool.deinit();
 
         // TESTING
-        // var modules_pool = std.heap.MemoryPoolExtra(api.Module, .{}).init(allocator);
+        // var modules_pool = std.heap.MemoryPoolExtra(Module, .{}).init(allocator);
         // errdefer modules_pool.deinit();
         // const temp_module = modules_pool.create();
         // errdefer modules_pool.destroy(temp_module);
@@ -311,7 +286,6 @@ pub const Pipeline = struct {
             // once the output connector is defined, allocate image for it
             if (module.desc.output_sock) |*sock| {
                 slog.info("Configuring output connector image for module: {s}", .{module.desc.name});
-                slog.info("Output: {any}", .{sock});
                 // const texture_out = if (self.gpu) |self_gpu| gpu.Texture.init(self_gpu, sock.format, sock.roi) catch unreachable else null;
                 sock.private.conn_handle = try self.connector_pool.add(null);
                 prev_conn_handle = sock.private.conn_handle;
@@ -336,6 +310,8 @@ pub const Pipeline = struct {
         try self.runModulesCreateNodes();
     }
 
+    /// Builds a DAG graph for the node by connecting nodes based on matching connector handles
+    /// then performs a DFS to determine execution order
     pub fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
         // first build the graph by connecting nodes based on matching connector handles
         var node_pool_handles = self.node_pool.liveHandles();
@@ -392,67 +368,144 @@ pub const Pipeline = struct {
         }
     }
 
-    // similar to vkdt dt_graph_run_nodes_allocate()
-    pub fn runNodesAllocate(_: *Pipeline) !void {
-        // PASS #1 - allocate output buffers and create compute shaders for each node
+    /// Allocates output textures and creates compute shaders for each node
+    /// also creates bindings for each shader
+    ///
+    /// similar to vkdt dt_graph_run_nodes_allocate()
+    pub fn runNodesAllocate(self: *Pipeline) !void {
+        // PASS #1 - allocate output textures and create compute shaders for each node
+        for (self.node_execution_order.items) |node_handle| {
+            const node = self.node_pool.getPtr(node_handle) catch unreachable;
 
-        // THIS ALL HAS TO BE GUTTED TO RUN IN THE ORDER OF THE NODES IN THE GRAPH
-        // var prev_conn_handle: ?ConnectorHandle = null;
-        // var prev_sock: ?api.SocketDesc = null;
-        // var node_pool_handles = self.node_pool.liveHandles();
-        // while (node_pool_handles.next()) |node_handle| {
-        //     var node = self.node_pool.getColumn(node_handle, .val) catch unreachable;
-        //     slog.info("Creating step for node with shader entry point: {s}", .{node.desc.entry_point});
+            var binding_number: u32 = 0;
+            // var shader_conns: [api.MAX_SOCKETS]gpu.ShaderPipeConn = @splat(undefined);
+            var shader_conns = std.ArrayList(gpu.ShaderPipeConn).initCapacity(self.allocator, 0) catch unreachable;
+            defer shader_conns.deinit(self.allocator);
 
-        //     // if the input socket is not set, use the previous module's output socket
-        //     if (node.output_conn_handle == null) {
-        //         if (prev_sock != null) {
-        //             slog.info("Node {s} input sock set to previous output sock", .{node.desc.entry_point});
-        //             node.desc.input_sock = prev_sock orelse return error.NodeMissingInputSock;
-        //             node.input_conn_handle = prev_conn_handle;
-        //         } else {
-        //             slog.err("Node {s} has no input sock and no previous module to get it from", .{node.desc.entry_point});
-        //             return error.NodeMissingInputSock;
-        //         }
-        //     }
+            for (node.desc.sockets) |sock| {
+                if (sock) |s| {
+                    slog.info("Node socket: {s}, type: {s}, format: {s}, roi: {any}", .{ s.name, @tagName(s.type), @tagName(s.format), s.roi });
 
-        //     if (node.output_conn_handle == null) {
-        //         slog.info("Node {s} has no output connector", .{node.desc.entry_point});
-        //         node.output_conn_handle = self.connector_pool.add(.{
-        //             .ptr = null,
-        //             .info = .{
-        //                 .name = node.desc.outputSock.name,
-        //                 .format = node.desc.outputSock.format,
-        //                 .roi = node.desc.outputSock.roi,
-        //             },
-        //         }) catch unreachable;
-        //         prev_sock = node.desc.outputSock;
-        //         prev_conn_handle = node.output_conn_handle;
-        //     }
+                    if (s.type.direction() == .output) {
+                        if (s.private.conn_handle) |conn_handle| {
+                            slog.info("Allocating output texture for node socket {s} with connector handle {any}", .{ s.name, conn_handle });
+                            if (self.gpu) |gpu_inst| {
+                                const texture = try gpu.Texture.init(gpu_inst, s.format, s.roi.?);
+                                // defer texture.deinit();
+                                // store texture in connector pool
+                                const conn = try self.connector_pool.getPtr(conn_handle);
+                                conn.* = texture;
+                            } else {
+                                slog.info("No GPU instance, skipping texture allocation for node socket {s}", .{s.name});
+                            }
+                        } else {
+                            slog.err("Output socket {s} has no connector handle assigned", .{s.name});
+                            return error.NodeOutputSocketMissingConnectorHandle;
+                        }
+                    }
+                    if (node.desc.type == .compute) {
+                        // prepare shader pipe connections
+                        // shader_conns[binding_number] = gpu.ShaderPipeConn{
+                        //     .binding = binding_number,
+                        //     .type = s.type.toShaderPipeConnType(),
+                        //     .format = s.format,
+                        // };
+                        try shader_conns.append(self.allocator, gpu.ShaderPipeConn{
+                            .binding = binding_number,
+                            .type = s.type.toShaderPipeConnType(),
+                            .format = s.format,
+                        });
+                        binding_number += 1;
+                    }
+                }
+            }
 
-        //     var texture_in = try self.connector_pool.getColumn(node.input_conn_handle.?, .val) orelse return error.NodeMissingInputTexture;
-        //     var texture_out = try self.connector_pool.getColumn(node.output_conn_handle.?, .val) orelse return error.NodeMissingOutputTexture;
-
-        //     const bindings = try gpu.Bindings.init(self.gpu, &node.shader, &texture_in, &texture_out);
-        //     // defer bindings.deinit();
-        //     node.bindings = bindings;
-        // }
+            if (node.desc.type == .compute) {
+                if (self.gpu) |gpu_inst| {
+                    slog.info("Creating shader for node with entry point: {s}", .{node.desc.entry_point});
+                    const shader = try gpu.ShaderPipe.init(
+                        gpu_inst,
+                        node.desc.shader_code,
+                        node.desc.entry_point,
+                        // shader_conns[0..binding_number],
+                        shader_conns,
+                    );
+                    node.shader = shader;
+                }
+            }
+        }
     }
 
-    pub fn runNodesUpload(_: *Pipeline) !void {
+    /// Calls module readSource() functions to upload source data to GPU
+    ///
+    /// similar to vkdt dt_graph_run_nodes_upload()
+    pub fn runNodesUpload(self: *Pipeline) !void {
         // we currently only support one upload in the entire pipeline
-        // so we are going check if the first module has a source connector
-        // const first_module = self.modules.items[0];
-        // if (first_module.desc.input_sock) |input_sock| {
-        //     if (input_sock.type == .source) {
-        //         slog.info("Uploading source data for first module", .{});
-        //     } else {
-        //         slog.err("First module input socket is not of type source, skipping upload", .{});
-        //     }
-        // }
+        // so we are going check if the first node has a source connector
+        const first_node_handle = self.node_execution_order.items[0];
+        const first_node = self.node_pool.get(first_node_handle) catch unreachable;
+
+        if (self.gpu_allocator) |*gpu_allocator| {
+            // TODO: support multiple source uploads in the future
+            // TODO: find the correct input socket by type
+            if (first_node.desc.sockets[0]) |input_sock| {
+                if (input_sock.type == .source) {
+                    if (first_node.mod.desc.readSource) |readSourceFn| {
+                        slog.info("Uploading source data for first node", .{});
+                        readSourceFn(self, first_node.mod, gpu_allocator) catch unreachable;
+                    }
+                } else {
+                    slog.err("First node input socket is not of type source, skipping upload", .{});
+                }
+            }
+        }
     }
     // pub fn runModulesUploadUniforms(self: *Pipeline) !void {}
-    // pub fn runNodesEnqueue(self: *Pipeline) !void {}
+    pub fn runNodesEnqueue(self: *Pipeline) !void {
+        if (self.gpu) |gpu_inst| {
+            var encoder = try gpu.Encoder.start(gpu_inst);
+            defer encoder.deinit();
+
+            // enqueue each node in execution order
+            for (self.node_execution_order.items) |node_handle| {
+                const node = self.node_pool.getPtr(node_handle) catch unreachable;
+                switch (node.desc.type) {
+                    .compute => {
+                        if (node.shader) |*shader| {
+                            if (node.bindings) |*bindings| {
+                                encoder.enqueueShader(shader, bindings, node.desc.run_size.?);
+                            } else {
+                                slog.err("Node {any} has no bindings assigned", .{node_handle});
+                                slog.err("{any}", .{node.bindings});
+                                return error.NodeMissingBindings;
+                            }
+                        }
+                    },
+                    .source => {
+                        if (self.gpu_allocator) |*gpu_allocator| {
+                            slog.info("Enqueueing source node buffer to texture copy", .{});
+                            const texture = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
+                            if (texture.*) |*tex| {
+                                encoder.enqueueBufToTex(
+                                    gpu_allocator,
+                                    tex,
+                                    node.desc.sockets[0].?.roi.?,
+                                ) catch unreachable;
+                            } else {
+                                slog.err("Source node texture not found for enqueue", .{});
+                                return error.PipelineMissingSourceNodeTexture;
+                            }
+                        } else {
+                            slog.err("No GPU allocator available for source node enqueue", .{});
+                            return error.PipelineMissingGPUAllocator;
+                        }
+                    },
+                }
+            }
+
+            gpu_inst.run(encoder.finish()) catch unreachable;
+        }
+    }
     // pub fn runNodes(self: *Pipeline) !void {}
     // pub fn runNodesDownload(self: *Pipeline) !void {}
 
@@ -485,8 +538,14 @@ pub const Pipeline = struct {
 
         // then run nodes
         self.runNodesBuildExecutionOrder() catch unreachable;
+        // TODO: put these all in a loop after building execution order
         self.runNodesAllocate() catch unreachable;
         self.runNodesUpload() catch unreachable;
+        // self.runModulesUploadUniforms() catch unreachable;
+        self.runNodesEnqueue() catch unreachable;
+
+        // self.runNodes() catch unreachable;
+        // self.runNodesDownload() catch unreachable;
 
         util.printModules(self);
         util.printNodes(self);
