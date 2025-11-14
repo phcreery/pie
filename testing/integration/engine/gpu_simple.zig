@@ -44,26 +44,47 @@ test "simple compute test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    const conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
+    const input_conn = pie.engine.gpu.BindGroupLayoutEntry{
         .binding = 0,
-        .type = .input,
+        .type = .read,
         .format = .rgba16float,
-    }, .{
+    };
+    const output_conn = pie.engine.gpu.BindGroupLayoutEntry{
         .binding = 1,
-        .type = .output,
+        .type = .write,
         .format = .rgba16float,
-    } };
+    };
+    const conns = init: {
+        var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+        s[0] = input_conn;
+        s[1] = output_conn;
+        break :init s;
+    };
     var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", conns);
     defer shader_pipe.deinit();
 
     // MEMORY
-    var texture_in = try Texture.init(&gpu, conns[0].format, roi);
+    var texture_in = try Texture.init(&gpu, "in", input_conn.format, roi);
     defer texture_in.deinit();
 
-    var texture_out = try Texture.init(&gpu, conns[1].format, roi);
+    var texture_out = try Texture.init(&gpu, "out", output_conn.format, roi);
     defer texture_out.deinit();
 
-    var bindings = try Bindings.init(&gpu, &shader_pipe, &texture_in, &texture_out);
+    const binds = init: {
+        var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+        s[0] = .{
+            .binding = 0,
+            .type = .texture,
+            .texture = texture_in,
+        };
+        s[1] = .{
+            .binding = 1,
+            .type = .texture,
+            .texture = texture_out,
+        };
+        break :init s;
+    };
+    var bindings = try Bindings.init(&gpu, &shader_pipe, binds);
     defer bindings.deinit();
 
     // UPLOAD
