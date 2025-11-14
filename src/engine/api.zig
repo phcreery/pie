@@ -4,7 +4,8 @@ const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 const pipeline = @import("pipeline.zig");
 
-pub const MAX_SOCKETS = 8;
+// pub const MAX_SOCKETS = 8;
+pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 
 pub const Direction = enum {
     input,
@@ -15,12 +16,12 @@ pub const SocketType = enum {
     read,
     write,
     source,
-    // sink
+    sink,
 
-    pub fn toShaderPipeConnType(self: SocketType) gpu.ShaderPipeConnType {
+    pub fn toShaderPipeBindGroupLayoutEntryType(self: SocketType) gpu.BindGroupLayoutEntryType {
         return switch (self) {
-            .read => gpu.ShaderPipeConnType.read,
-            .write => gpu.ShaderPipeConnType.write,
+            .read => gpu.BindGroupLayoutEntryType.read,
+            .write => gpu.BindGroupLayoutEntryType.write,
             else => unreachable,
         };
     }
@@ -30,7 +31,7 @@ pub const SocketType = enum {
             .read => Direction.input,
             .write => Direction.output,
             .source => Direction.output,
-            // .sink => Direction.input,
+            .sink => Direction.input,
         };
     }
 };
@@ -60,6 +61,7 @@ pub const Sockets = [MAX_SOCKETS]?SocketDesc;
 pub const NodeType = enum {
     compute,
     source,
+    sink,
 };
 
 // vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
@@ -75,6 +77,7 @@ pub const NodeDesc = struct {
 pub const ModuleType = enum {
     compute,
     source,
+    sink,
 };
 
 /// Module structure
@@ -109,6 +112,6 @@ pub const ModuleDesc = struct {
     deinit: ?*const fn (mod: *pipeline.Module) anyerror!void = null,
     createNodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module) anyerror!void = null,
     readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
-    // write_sink: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, alloc: gpu.GPUAllocator) anyerror!void = null,
+    writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
     modifyROIOut: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module) anyerror!void = null,
 };

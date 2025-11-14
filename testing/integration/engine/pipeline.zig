@@ -69,6 +69,7 @@ const ModuleCreateTestData = struct {
         .init = null,
         .deinit = null,
         .readSource = readSource,
+        .writeSink = null,
         .createNodes = createNodes,
         .modifyROIOut = modifyROIOut,
     };
@@ -138,8 +139,79 @@ const ModuleDoubleIt = struct {
         .init = null,
         .deinit = null,
         .readSource = null,
+        .writeSink = null,
         .createNodes = createNodes,
         .modifyROIOut = null,
+    };
+};
+
+const ModuleReadTestData = struct {
+    // CONTENTS OF MODULE
+
+    const expected = [_]f16{ 2.0, 4.0, 6.0, 8.0 };
+    const roi: pie.engine.ROI = .{
+        .size = .{
+            .w = 1,
+            .h = 1,
+        },
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    };
+
+    // pub fn modifyROIOut(pipe: *Pipeline, mod: *Module) !void {
+    //     _ = pipe;
+    //     mod.desc.output_sock.?.roi = roi;
+    // }
+
+    pub fn writeSink(
+        pipe: *Pipeline,
+        mod: *Module,
+        allocator: *gpu.GPUAllocator,
+    ) !void {
+        _ = pipe;
+        _ = mod;
+
+        const result = try allocator.download(f16, .rgba16float, roi);
+        try std.testing.expectEqualSlices(f16, expected[0..], result);
+    }
+
+    pub fn createNodes(pipe: *Pipeline, mod: *Module) !void {
+        const same_as_mod_output_sock = mod.getSocket("input") orelse unreachable;
+        const node_desc: api.NodeDesc = .{
+            .type = .sink,
+            .shader_code = "",
+            .entry_point = "Test Data Sink",
+            .run_size = null,
+            .sockets = init: {
+                var s: api.Sockets = @splat(null);
+                s[0] = same_as_mod_output_sock;
+                break :init s;
+            },
+        };
+        const node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
+        pipe.lowerSocket(mod, "input", node, "input") catch unreachable;
+    }
+
+    pub const module: api.ModuleDesc = .{
+        .name = "Read Test Data Module",
+        .type = .sink,
+        // .param_ui = "",
+        // .param_uniform = "",
+        // .input_sock = null,
+        .input_sock = .{
+            .name = "input",
+            .type = .sink,
+            .format = .rgba16float,
+            .roi = null,
+        },
+        .init = null,
+        .deinit = null,
+        .readSource = null,
+        .writeSink = writeSink,
+        .createNodes = createNodes,
+        // .modifyROIOut = modifyROIOut,
     };
 };
 
@@ -152,6 +224,7 @@ test "simple module test" {
 
     _ = try pipeline.addModuleDesc(ModuleCreateTestData.module);
     _ = try pipeline.addModuleDesc(ModuleDoubleIt.module);
+    _ = try pipeline.addModuleDesc(ModuleReadTestData.module);
 
     try pipeline.run();
 

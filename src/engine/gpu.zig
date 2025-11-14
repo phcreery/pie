@@ -8,6 +8,10 @@ const slog = std.log.scoped(.gpu);
 const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
 const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
+// pub const MAX_BIND_GROUP_LAYOUT_ENTRIES: usize = 8; // arbitrary max limit set here for now
+// pub const MAX_BIND_GROUP_ENTRIES: usize = 8;
+pub const MAX_BINDINGS: usize = 8; // the min of MAX_BIND_GROUP_LAYOUT_ENTRIES and MAX_BIND_GROUP_ENTRIES
+
 // Workgroup size must match the compute shader
 pub const WORKGROUP_SIZE_X: u32 = 8;
 pub const WORKGROUP_SIZE_Y: u32 = 8;
@@ -482,7 +486,7 @@ pub const Texture = struct {
     roi: ROI,
     const Self = @This();
 
-    pub fn init(gpu: *GPU, format: TextureFormat, roi: ROI) !Self {
+    pub fn init(gpu: *GPU, name: []const u8, format: TextureFormat, roi: ROI) !Self {
         slog.info("Creating texture {s} of size {d}x{d}", .{ @tagName(format), roi.size.w, roi.size.h });
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
@@ -494,10 +498,8 @@ pub const Texture = struct {
         }
 
         const texture = gpu.device.createTexture(&wgpu.TextureDescriptor{
-            .label = wgpu.StringView.fromSlice("input_texture"),
+            .label = wgpu.StringView.fromSlice(name),
             .size = wgpu.Extent3D{
-                // .width = limits.max_texture_dimension_2d / 2,
-                // .height = limits.max_texture_dimension_2d / 2,
                 .width = roi.size.w,
                 .height = roi.size.h,
                 .depth_or_array_layers = 1,
@@ -521,6 +523,19 @@ pub const Texture = struct {
     }
 };
 
+pub const BindGroupEntryType = enum {
+    // buffer,
+    texture,
+};
+
+pub const BindGroupEntry = struct {
+    binding: u32,
+    type: BindGroupEntryType,
+    texture: ?Texture = null,
+    buffer: ?*wgpu.Buffer = null,
+};
+
+/// The Bindings (bind group) contains the actual resources to bind to the pipeline.
 /// Similar to vulkan's descriptor sets, a Bindings struct holds the actual resources
 /// (buffers, textures, etc) that are bound to a shader pipeline.
 pub const Bindings = struct {
@@ -530,38 +545,36 @@ pub const Bindings = struct {
     pub fn init(
         gpu: *GPU,
         shader_pipe: *const ShaderPipe,
-        texture_a: *Texture,
-        texture_b: *Texture,
+        bind_group_entries: [MAX_BINDINGS]?BindGroupEntry,
     ) !Self {
         slog.info("Creating Bindings", .{});
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
-        // The bind group contains the actual resources to bind to the pipeline.
-
         // Even when the buffers are individually dropped, wgpu will keep the bind group and buffers
         // alive until the bind group itself is dropped.
-        const bind_group_entries_a_to_b = [_]wgpu.BindGroupEntry{
-            // Binding 0: input storage buffer
-            wgpu.BindGroupEntry{
-                .binding = 0,
-                .texture_view = texture_a.texture.createView(null),
-                // .offset = 0,
-                // .size = texture_a.texture.getWidth() * texture_a.texture.getHeight() * 4, // width * height * RGBA
-            },
-            // Binding 1: output storage buffer
-            wgpu.BindGroupEntry{
-                .binding = 1,
-                .texture_view = texture_b.texture.createView(null),
-                // .offset = 0,
-                // .size = texture_b.texture.getWidth() * texture_b.texture.getHeight() * 4, // width * height * RGBA
-            },
-        };
+        var wgpu_bind_group_entries: [MAX_BINDINGS]wgpu.BindGroupEntry = undefined;
+        for (bind_group_entries) |bind_group_entry| {
+            const bge = bind_group_entry orelse continue;
+            switch (bge.type) {
+                .texture => {
+                    const tex = bge.texture orelse {
+                        slog.err("BindGroupEntry of type texture must have a valid texture", .{});
+                        return error.InvalidInput;
+                    };
+                    const entry = wgpu.BindGroupEntry{
+                        .binding = bge.binding,
+                        .texture_view = tex.texture.createView(null),
+                    };
+                    wgpu_bind_group_entries[bge.binding] = entry;
+                },
+            }
+        }
         const bind_group = gpu.device.createBindGroup(&wgpu.BindGroupDescriptor{
             .label = wgpu.StringView.fromSlice("Bind Group 1"),
             .layout = shader_pipe.bind_group_layout,
             .entry_count = 2,
-            .entries = &bind_group_entries_a_to_b,
+            .entries = &wgpu_bind_group_entries,
         }).?;
         errdefer bind_group.release();
         return Bindings{
@@ -574,18 +587,15 @@ pub const Bindings = struct {
     }
 };
 
-pub const ShaderPipeConnType = enum {
+pub const BindGroupLayoutEntryType = enum {
     read,
     write,
 };
 
-pub const ShaderPipeConn = struct {
+/// The BindGroupLayoutEntry describes the type of resource for a shader binding.
+pub const BindGroupLayoutEntry = struct {
     binding: u32,
-    type: ShaderPipeConnType,
-    format: TextureFormat,
-};
-pub const ShaderPipeParams = struct {
-    binding: u32,
+    type: BindGroupLayoutEntryType,
     format: TextureFormat,
 };
 
@@ -602,8 +612,8 @@ pub const ShaderPipe = struct {
         gpu: *GPU,
         shader_source: []const u8,
         entry_point: []const u8,
-        // g0_conns: []const ShaderPipeConn,
-        g0_conns: std.ArrayList(ShaderPipeConn),
+        g0_bind_group_layout_entries: [MAX_BINDINGS]?BindGroupLayoutEntry,
+        // g0_bind_group_layout_entries: std.ArrayList(BindGroupLayoutEntry),
     ) !Self {
         slog.info("Initializing ShaderPipe for {s}", .{entry_point});
 
@@ -619,53 +629,53 @@ pub const ShaderPipe = struct {
         // this will hold the input/output textures
         //
         // var bind_group_layout_entries_g0 = try std.ArrayList(wgpu.BindGroupLayoutEntry).initCapacity(gpu.device.allocator, 0);
-        const MAX_CONN_BINDINGS: usize = 16; // TODO: make global constant
-        var bind_group_layout_entries_g0: [MAX_CONN_BINDINGS]wgpu.BindGroupLayoutEntry = undefined;
+        var wgpu_g0_bind_group_layout_entries: [MAX_BINDINGS]wgpu.BindGroupLayoutEntry = undefined;
 
-        for (g0_conns.items) |conn| {
-            switch (conn.type) {
-                ShaderPipeConnType.read => {
+        for (g0_bind_group_layout_entries) |bind_group_layout_entry| {
+            const bge = bind_group_layout_entry orelse continue;
+            switch (bge.type) {
+                BindGroupLayoutEntryType.read => {
                     // Note: we don't need format for input textures
                     const entry = wgpu.BindGroupLayoutEntry{
-                        .binding = conn.binding,
+                        .binding = bge.binding,
                         .visibility = wgpu.ShaderStages.compute,
                         .texture = wgpu.TextureBindingLayout{
                             .view_dimension = wgpu.ViewDimension.@"2d",
-                            .sample_type = conn.format.toWGPUSampleType(),
+                            .sample_type = bge.format.toWGPUSampleType(),
                         },
                     };
-                    bind_group_layout_entries_g0[conn.binding] = entry;
+                    wgpu_g0_bind_group_layout_entries[bge.binding] = entry;
                     // try bind_group_layout_entries_g0.append(entry);
                     // slog.info("Added read binding {d} sample type {s}", .{ conn.binding, @tagName(conn.format.toWGPUSampleType()) });
                 },
-                ShaderPipeConnType.write => {
+                BindGroupLayoutEntryType.write => {
                     const entry = wgpu.BindGroupLayoutEntry{
-                        .binding = conn.binding,
+                        .binding = bge.binding,
                         .visibility = wgpu.ShaderStages.compute,
                         .storage_texture = wgpu.StorageTextureBindingLayout{
                             .access = wgpu.StorageTextureAccess.write_only,
-                            .format = conn.format.toWGPUFormat(),
+                            .format = bge.format.toWGPUFormat(),
                             .view_dimension = wgpu.ViewDimension.@"2d",
                         },
                     };
-                    bind_group_layout_entries_g0[conn.binding] = entry;
+                    wgpu_g0_bind_group_layout_entries[bge.binding] = entry;
                     // try bind_group_layout_entries_g0.append(entry);
                     // slog.info("Added write binding {d} format {s}", .{ conn.binding, @tagName(conn.format.toWGPUFormat()) });
                 },
             }
         }
 
-        const bind_group_layout_g0 = gpu.device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+        const g0_bind_group_layout = gpu.device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
             // .label = wgpu.StringView.fromSlice("Bind Group Layout for " ++ entry_point),
             .label = wgpu.StringView.fromSlice("Bind Group Layout"),
             .entry_count = 2,
-            .entries = &bind_group_layout_entries_g0,
+            .entries = &wgpu_g0_bind_group_layout_entries,
         }).?;
-        errdefer bind_group_layout_g0.release();
+        errdefer g0_bind_group_layout.release();
 
         // TODO: Cache the pipeline and layout for each shader module and entry point combination.
         // The pipeline layout describes the bind groups that a pipeline expects
-        const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout_g0};
+        const bind_group_layouts = [_]*wgpu.BindGroupLayout{g0_bind_group_layout};
         const pipeline_layout = gpu.device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
             // .label = wgpu.StringView.fromSlice("Pipeline Layout for " ++ entry_point),
             .label = wgpu.StringView.fromSlice("Pipeline Layout"),
@@ -699,7 +709,7 @@ pub const ShaderPipe = struct {
 
         return ShaderPipe{
             .entry_point = entry_point,
-            .bind_group_layout = bind_group_layout_g0,
+            .bind_group_layout = g0_bind_group_layout,
             .shader_module = shader_module,
             .pipeline_layout = pipeline_layout,
             .pipeline = pipeline,
@@ -718,21 +728,6 @@ pub const ShaderPipe = struct {
 };
 
 /// GPU manages the WebGPU instance, adapter, device, and queue.
-///
-/// We are going to do a double buffered setup where we have three buffers:
-/// 1. Buffer A: This is a storage buffer that the compute shader reads/writes.
-/// 2. Buffer B: This is a storage buffer that the compute shader reads/writes.
-/// 3. Download buffer: This is a buffer that we copy the output buffer to so the CPU can read it.
-///
-/// The idea is that we will run the compute shader multiple times. First off, with buffer A as input and buffer B
-/// as output, then with buffer B as input and buffer A as output, and so on. After the final compute pass, we copy
-/// the output buffer to the download buffer.
-///
-/// This is accomplished by creating two bind groups, one for each combination of input/output buffers. We then
-/// alternate between the two bind groups for each compute pass. This becomes completely transparent to the CPU
-/// and shader code.
-///
-/// For now, we will be dealing with f32 data
 pub const GPU = struct {
     instance: *wgpu.Instance = undefined,
     adapter: *wgpu.Adapter = undefined,
@@ -802,51 +797,6 @@ pub const GPU = struct {
         slog.info(" max_buffer_size: {d}", .{limits.max_buffer_size});
         slog.info(" max_uniform_buffer_binding_size: {d}", .{limits.max_uniform_buffer_binding_size});
         slog.info(" max_storage_buffer_binding_size: {d}", .{limits.max_storage_buffer_binding_size});
-
-        // var max_buffer_size = limits.max_buffer_size;
-        // if (max_buffer_size == wgpu.WGPU_LIMIT_U64_UNDEFINED) {
-        //     // set to something reasonable
-        //     // max_buffer_size = 256 * 1024 * 1024; // 256 MB
-        //     max_buffer_size = 256 * 1024 * 1024 * 12; // 3x256 MB for RGBAf16
-        // }
-
-        // // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
-        // // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
-        // // and that usage can only be used with `COPY_DST`.
-        // const upload_buffer = device.createBuffer(&wgpu.BufferDescriptor{
-        //     .label = wgpu.StringView.fromSlice("upload_buffer"),
-        //     .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
-        //     .size = max_buffer_size / 16,
-        //     .mapped_at_creation = @as(u32, @intFromBool(true)),
-        // }).?;
-        // errdefer upload_buffer.release();
-        // const download_buffer = device.createBuffer(&wgpu.BufferDescriptor{
-        //     .label = wgpu.StringView.fromSlice("download_buffer"),
-        //     .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
-        //     .size = max_buffer_size / 16,
-        //     .mapped_at_creation = @as(u32, @intFromBool(false)),
-        // }).?;
-        // errdefer download_buffer.release();
-
-        // const upload_texture = device.createTexture(&wgpu.TextureDescriptor{
-        //     .label = wgpu.StringView.fromSlice("upload_texture"),
-        //     .size = wgpu.Extent3D{
-        //         .width = limits.max_texture_dimension_2d / 2,
-        //         .height = limits.max_texture_dimension_2d / 2,
-        //         .depth_or_array_layers = 1,
-        //     },
-        //     .mip_level_count = 1,
-        //     .sample_count = 1,
-        //     .dimension = wgpu.TextureDimension.@"2d",
-        //     .format = wgpu.TextureFormat.rgba16_float,
-        //     .usage = wgpu.TextureUsages.copy_src | wgpu.TextureUsages.copy_dst,
-        // }).?;
-
-        // // The command encoder allows us to record commands that we will later submit to the GPU.
-        // const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
-        //     .label = wgpu.StringView.fromSlice("Command Encoder"),
-        // }).?;
-        // errdefer encoder.release();
 
         return Self{
             .instance = instance,

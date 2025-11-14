@@ -52,18 +52,19 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
         const node = self.node_pool.get(node_handle) catch unreachable;
 
         std.debug.print("==== NODE ========================================\n", .{});
+        std.debug.print(" ID:                {d}\n", .{node_handle.id});
         std.debug.print(" Entry Point:       \"{s}\" ({s})\n", .{ node.desc.entry_point, @tagName(node.desc.type) });
         for (node.desc.sockets) |sock| {
             if (sock) |s| {
-                // const status_text = switch (s.type.direction()) {
-                //     .input => std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{s.private.connected_to}) catch "<- null",
-                //     .output => std.fmt.allocPrint(std.heap.page_allocator, "-> {any}", .{s.private.conn_handle.?.id}) catch "-> null",
-                // };
-                const status_text = std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{s.private.conn_handle.?.id}) catch "<- null";
+                const connector_text = switch (s.type.direction()) {
+                    .input => std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{s.private.conn_handle.?.id}) catch "<- null",
+                    .output => std.fmt.allocPrint(std.heap.page_allocator, "-> {any}", .{s.private.conn_handle.?.id}) catch "-> null",
+                };
+                // const connector_text = std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{s.private.conn_handle.?.id}) catch "<- null";
                 const texture = if (s.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null;
                 const tex_text = if (texture) |tex| tex.texture else null;
                 std.debug.print(" Socket:            \"{s}\", {s}, {s}, {any}x{any}\n", .{ s.name, @tagName(s.type), @tagName(s.format), s.roi.?.size.w, s.roi.?.size.h });
-                std.debug.print("  - Connector:      {s} ({any})\n", .{ status_text, tex_text });
+                std.debug.print("  - Connector:      {s} ({any})\n", .{ connector_text, tex_text });
             }
         }
         std.debug.print("==================================================\n", .{});
