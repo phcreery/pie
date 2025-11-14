@@ -72,16 +72,8 @@ test "simple compute test" {
 
     const binds = init: {
         var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-        s[0] = .{
-            .binding = 0,
-            .type = .texture,
-            .texture = texture_in,
-        };
-        s[1] = .{
-            .binding = 1,
-            .type = .texture,
-            .texture = texture_out,
-        };
+        s[0] = .{ .binding = 0, .type = .texture, .texture = texture_in };
+        s[1] = .{ .binding = 1, .type = .texture, .texture = texture_out };
         break :init s;
     };
     var bindings = try Bindings.init(&gpu, &shader_pipe, binds);

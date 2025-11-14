@@ -74,16 +74,8 @@ test "simple compute double buffer test" {
 
     const bindings_desc_a_to_b = init: {
         var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-        s[0] = .{
-            .binding = 0,
-            .type = .texture,
-            .texture = texture_a,
-        };
-        s[1] = .{
-            .binding = 1,
-            .type = .texture,
-            .texture = texture_b,
-        };
+        s[0] = .{ .binding = 0, .type = .texture, .texture = texture_a };
+        s[1] = .{ .binding = 1, .type = .texture, .texture = texture_b };
         break :init s;
     };
     var bindings_a_to_b = try Bindings.init(&gpu, &shader_pipe, bindings_desc_a_to_b);
