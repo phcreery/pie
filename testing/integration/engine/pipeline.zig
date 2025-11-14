@@ -23,7 +23,7 @@ const ModuleCreateTestData = struct {
 
     pub fn modifyROIOut(pipe: *Pipeline, mod: *Module) !void {
         _ = pipe;
-        mod.desc.output_sock.?.roi = roi;
+        mod.desc.output_socket.?.roi = roi;
     }
 
     pub fn readSource(
@@ -50,8 +50,8 @@ const ModuleCreateTestData = struct {
                 break :init s;
             },
         };
-        const node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
-        pipe.lowerSocket(mod, "output", node, "output") catch unreachable;
+        const node = try pipe.addNodeDesc(mod, node_desc);
+        try pipe.lowerSocket(mod, "output", node, "output");
     }
 
     pub const module: api.ModuleDesc = .{
@@ -59,8 +59,7 @@ const ModuleCreateTestData = struct {
         .type = .source,
         // .param_ui = "",
         // .param_uniform = "",
-        // .input_sock = null,
-        .output_sock = .{
+        .output_socket = .{
             .name = "output",
             .type = .source,
             .format = .rgba16float,
@@ -90,7 +89,6 @@ const ModuleDoubleIt = struct {
         \\}
     ;
     pub fn createNodes(pipe: *Pipeline, mod: *Module) !void {
-        // const same_as_mod_input_sock = mod.getSocket("input") orelse unreachable;
         const mod_output_sock = mod.getSocket("output") orelse unreachable;
         const node_desc: api.NodeDesc = .{
             .type = .compute,
@@ -114,9 +112,9 @@ const ModuleDoubleIt = struct {
                 break :init s;
             },
         };
-        const node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
-        pipe.lowerSocket(mod, "input", node, "input") catch unreachable;
-        pipe.lowerSocket(mod, "output", node, "output") catch unreachable;
+        const node = try pipe.addNodeDesc(mod, node_desc);
+        try pipe.lowerSocket(mod, "input", node, "input");
+        try pipe.lowerSocket(mod, "output", node, "output");
     }
 
     pub var module: pie.engine.api.ModuleDesc = .{
@@ -124,13 +122,13 @@ const ModuleDoubleIt = struct {
         .type = .compute,
         // .param_ui = "",
         // .param_uniform = "",
-        .input_sock = .{
+        .input_socket = .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
             .roi = null,
         },
-        .output_sock = .{
+        .output_socket = .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
@@ -149,21 +147,6 @@ const ModuleReadTestData = struct {
     // CONTENTS OF MODULE
 
     const expected = [_]f16{ 2.0, 4.0, 6.0, 8.0 };
-    const roi: pie.engine.ROI = .{
-        .size = .{
-            .w = 1,
-            .h = 1,
-        },
-        .origin = .{
-            .x = 0,
-            .y = 0,
-        },
-    };
-
-    // pub fn modifyROIOut(pipe: *Pipeline, mod: *Module) !void {
-    //     _ = pipe;
-    //     mod.desc.output_sock.?.roi = roi;
-    // }
 
     pub fn writeSink(
         pipe: *Pipeline,
@@ -171,8 +154,8 @@ const ModuleReadTestData = struct {
         allocator: *gpu.GPUAllocator,
     ) !void {
         _ = pipe;
-        _ = mod;
 
+        const roi = mod.getSocket("input").?.roi orelse unreachable;
         const result = try allocator.download(f16, .rgba16float, roi);
         try std.testing.expectEqualSlices(f16, expected[0..], result);
     }
@@ -190,8 +173,8 @@ const ModuleReadTestData = struct {
                 break :init s;
             },
         };
-        const node = pipe.addNodeDesc(mod, node_desc) catch unreachable;
-        pipe.lowerSocket(mod, "input", node, "input") catch unreachable;
+        const node = try pipe.addNodeDesc(mod, node_desc);
+        try pipe.lowerSocket(mod, "input", node, "input");
     }
 
     pub const module: api.ModuleDesc = .{
@@ -200,7 +183,7 @@ const ModuleReadTestData = struct {
         // .param_ui = "",
         // .param_uniform = "",
         // .input_sock = null,
-        .input_sock = .{
+        .input_socket = .{
             .name = "input",
             .type = .sink,
             .format = .rgba16float,
@@ -211,7 +194,7 @@ const ModuleReadTestData = struct {
         .readSource = null,
         .writeSink = writeSink,
         .createNodes = createNodes,
-        // .modifyROIOut = modifyROIOut,
+        .modifyROIOut = null,
     };
 };
 
@@ -227,8 +210,4 @@ test "simple module test" {
     _ = try pipeline.addModuleDesc(ModuleReadTestData.module);
 
     try pipeline.run();
-
-    // var expected_contents = std.mem.zeroes([4]f16);
-    // _ = std.mem.copyForwards(f16, expected_contents[0..4], &[_]f16{ 2.0, 4.0, 6.0, 8.0 });
-    // try std.testing.expectEqualSlices(f16, expected_contents[0..], result);
 }

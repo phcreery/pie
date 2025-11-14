@@ -20,26 +20,26 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             \\ ==================================================
             \\
         ;
-        const input_texture = if (module.desc.input_sock) |sock| if (sock.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
-        const output_texture = if (module.desc.output_sock) |sock| if (sock.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
+        const input_texture = if (module.desc.input_socket) |sock| if (sock.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
+        const output_texture = if (module.desc.output_socket) |sock| if (sock.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
         std.debug.print(module_text, .{
-            if (module.desc.input_sock) |sock| if (sock.private.conn_handle) |h| h.id else null else null,
+            if (module.desc.input_socket) |sock| if (sock.private.conn_handle) |h| h.id else null else null,
             if (input_texture) |input_tex| input_tex.texture else null,
-            if (module.desc.input_sock) |sock| sock.name else "null",
-            if (module.desc.input_sock) |sock| sock.type else null,
-            if (module.desc.input_sock) |sock| sock.format else null,
-            // if (module.desc.input_sock) |input_sock| input_sock.roi else null,
-            if (module.desc.input_sock) |sock| sock.roi.?.size.w else null,
-            if (module.desc.input_sock) |sock| sock.roi.?.size.h else null,
+            if (module.desc.input_socket) |sock| sock.name else "null",
+            if (module.desc.input_socket) |sock| sock.type else null,
+            if (module.desc.input_socket) |sock| sock.format else null,
+            // if (module.desc.input_socket) |input_socket| input_socket.roi else null,
+            if (module.desc.input_socket) |sock| sock.roi.?.size.w else null,
+            if (module.desc.input_socket) |sock| sock.roi.?.size.h else null,
             module.desc.name,
             module.enabled,
-            if (module.desc.output_sock) |sock| sock.name else "null",
-            if (module.desc.output_sock) |sock| sock.type else null,
-            if (module.desc.output_sock) |sock| sock.format else null,
-            // if (module.desc.output_sock) |output_sock| output_sock.roi else null,
-            if (module.desc.output_sock) |sock| sock.roi.?.size.w else null,
-            if (module.desc.output_sock) |sock| sock.roi.?.size.h else null,
-            if (module.desc.output_sock) |sock| if (sock.private.conn_handle) |h| h.id else null else null,
+            if (module.desc.output_socket) |sock| sock.name else "null",
+            if (module.desc.output_socket) |sock| sock.type else null,
+            if (module.desc.output_socket) |sock| sock.format else null,
+            // if (module.desc.output_socket) |output_socket| output_socket.roi else null,
+            if (module.desc.output_socket) |sock| sock.roi.?.size.w else null,
+            if (module.desc.output_socket) |sock| sock.roi.?.size.h else null,
+            if (module.desc.output_socket) |sock| if (sock.private.conn_handle) |h| h.id else null else null,
             if (output_texture) |output_tex| output_tex.texture else null,
         });
     }

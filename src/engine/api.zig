@@ -69,7 +69,7 @@ pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
     shader_code: []const u8,
     entry_point: []const u8,
-    run_size: ?ROI,
+    run_size: ?ROI = null,
     sockets: Sockets,
     // sockets: std.ArrayList(SocketDesc),
 };
@@ -99,8 +99,8 @@ pub const ModuleDesc = struct {
     // connectors: []Connector,
     // The sockets describe the module's input and output interface
     // they can be null if the module has no input or output (sink or source only)
-    input_sock: ?SocketDesc = null,
-    output_sock: ?SocketDesc = null,
+    input_socket: ?SocketDesc = null,
+    output_socket: ?SocketDesc = null,
 
     // param_ui: []u8,
     // param_uniform: []u8,

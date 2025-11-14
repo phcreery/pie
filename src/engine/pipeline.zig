@@ -33,8 +33,8 @@ pub const Module = struct {
 
     pub fn getSocket(mod: *Module, name: []const u8) ?api.SocketDesc {
         const sockets = [_]?api.SocketDesc{
-            mod.desc.input_sock,
-            mod.desc.output_sock,
+            mod.desc.input_socket,
+            mod.desc.output_socket,
         };
         for (sockets) |sock| {
             if (sock) |s| {
@@ -212,17 +212,17 @@ pub const Pipeline = struct {
     pub fn runModulesCheck(self: *Pipeline) !void {
         for (self.modules.items) |module| {
             if (module.desc.type == .source) {
-                if (module.desc.input_sock != null) {
+                if (module.desc.input_socket != null) {
                     slog.err("Source module {s} has an input socket defined", .{module.desc.name});
                     return error.ModuleSourceHasInputSocket;
                 }
             }
             if (module.desc.type == .compute) {
-                if (module.desc.input_sock == null) {
+                if (module.desc.input_socket == null) {
                     slog.err("Compute module {s} has no input socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingInputSocket;
                 }
-                if (module.desc.output_sock == null) {
+                if (module.desc.output_socket == null) {
                     slog.err("Compute module {s} has no output socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingOutputSocket;
                 }
@@ -240,7 +240,7 @@ pub const Pipeline = struct {
             if (module.desc.type != .source) {
                 // TODO: check connection first
                 if (prev_out_roi != null) {
-                    module.desc.input_sock.?.roi = prev_out_roi;
+                    module.desc.input_socket.?.roi = prev_out_roi;
                 } else {
                     slog.err("Module {s} has no input sock ROI and no previous module to get it from", .{module.desc.name});
                     return error.ModuleMissingInputSockROI;
@@ -253,14 +253,14 @@ pub const Pipeline = struct {
                 try modifyROIOutFn(self, module);
             } else {
                 if (module.desc.type != .source and module.desc.type != .sink) {
-                    module.desc.output_sock.?.roi = module.desc.input_sock.?.roi;
+                    module.desc.output_socket.?.roi = module.desc.input_socket.?.roi;
                 }
             }
 
             if (module.desc.type != .sink) {
                 // update prev_out_roi for use on the next module
-                if (module.desc.output_sock) |output_sock| {
-                    prev_out_roi = output_sock.roi;
+                if (module.desc.output_socket) |output_socket| {
+                    prev_out_roi = output_socket.roi;
                 } else {
                     slog.err("Module {s} has no output sock ROI set", .{module.desc.name});
                     return error.ModuleMissingOutputSockROI;
@@ -280,7 +280,7 @@ pub const Pipeline = struct {
             if (module.desc.type != .source) {
                 if (prev_conn_handle != null) {
                     slog.info("Module {s} input connector set to previous output connector", .{module.desc.name});
-                    if (module.desc.input_sock) |*sock| {
+                    if (module.desc.input_socket) |*sock| {
                         sock.private.conn_handle = prev_conn_handle;
                     } else {
                         slog.err("Module {s} has no input socket to set connector on", .{module.desc.name});
@@ -294,10 +294,9 @@ pub const Pipeline = struct {
 
             // TODO: check output connectors before configuring
 
-            // once the output connector is defined, allocate image for it
-            if (module.desc.output_sock) |*sock| {
+            // once the output connector is defined, create a new connector in the pool
+            if (module.desc.output_socket) |*sock| {
                 slog.info("Configuring output connector image for module: {s}", .{module.desc.name});
-                // const texture_out = if (self.gpu) |self_gpu| gpu.Texture.init(self_gpu, sock.format, sock.roi) catch unreachable else null;
                 sock.private.conn_handle = try self.connector_pool.add(null);
                 prev_conn_handle = sock.private.conn_handle;
             }
@@ -324,6 +323,7 @@ pub const Pipeline = struct {
     /// Builds a DAG graph for the node by connecting nodes based on matching connector handles
     /// then performs a DFS to determine execution order
     pub fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
+        // TODO: make this better
         // first build the graph by connecting nodes based on matching connector handles
         var node_pool_handles_a = self.node_pool.liveHandles();
         var first_node_handle: ?NodeHandle = null;
@@ -335,7 +335,7 @@ pub const Pipeline = struct {
             }
             var node_pool_handles_b = self.node_pool.liveHandles();
             while (node_pool_handles_b.next()) |node_handle_b| {
-                slog.info("Checking for edge between node {any} and node {any}", .{ node_handle_a, node_handle_b });
+                // slog.info("Checking for edge between node {any} and node {any}", .{ node_handle_a, node_handle_b });
                 // skip if edge already exists
                 if (self.node_graph.getEdge(node_handle_a, node_handle_b) != null) continue;
                 if (node_handle_a.id == node_handle_b.id) continue;
@@ -396,7 +396,7 @@ pub const Pipeline = struct {
 
             for (node.desc.sockets, 0..) |socket, binding_number| {
                 if (socket) |sock| {
-                    slog.info("Node socket: {s}, type: {s}, format: {s}, roi: {any}", .{ sock.name, @tagName(sock.type), @tagName(sock.format), sock.roi });
+                    // slog.info("Node socket: {s}, type: {s}, format: {s}, roi: {any}", .{ sock.name, @tagName(sock.type), @tagName(sock.format), sock.roi });
 
                     if (sock.type.direction() == .output) {
                         const conn_handle = sock.private.conn_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
@@ -443,10 +443,6 @@ pub const Pipeline = struct {
                 const bindings = try gpu.Bindings.init(gpu_inst, &shader, bind_group);
                 // defer bindings.deinit();
                 node.bindings = bindings;
-
-                slog.info("Node shader and bindings created for node {s}", .{node.desc.entry_point});
-                slog.info("bind_group_layout: {any}", .{bind_group_layout});
-                slog.info("bind_group: {any}", .{bind_group});
             }
         }
     }
@@ -494,7 +490,6 @@ pub const Pipeline = struct {
                             encoder.enqueueShader(shader, bindings, node.desc.run_size.?);
                         } else {
                             slog.err("Node {any} has no bindings assigned", .{node_handle});
-                            slog.err("{any}", .{node.bindings});
                             return error.NodeMissingBindings;
                         }
                     }
@@ -586,45 +581,39 @@ pub const Pipeline = struct {
 
         util.printModules(self);
         util.printNodes(self);
-
-        // Loop thought each node
-        //  first pass: find output rois
-        //  If has read_source(), run it allow module to upload data to GPU
-        //  then create texture for that data uploaded and transfer from buffer to texture
-
     }
 
     // Just for testing
-    pub fn runWithSource(self: *Pipeline, init_contents: []f16, roi: ROI) ![]f16 {
-        var module = self.modules.items[0];
-        module.create_nodes(self, &module) catch unreachable;
-        const node = self.nodes.items[0];
+    // pub fn runWithSource(self: *Pipeline, init_contents: []f16, roi: ROI) ![]f16 {
+    //     var module = self.modules.items[0];
+    //     module.create_nodes(self, &module) catch unreachable;
+    //     const node = self.nodes.items[0];
 
-        // ALLOCATE
-        var texture_in = try gpu.Texture.init(&self.gpu, node.desc.input_conn.format, roi);
-        defer texture_in.deinit();
+    //     // ALLOCATE
+    //     var texture_in = try gpu.Texture.init(&self.gpu, node.desc.input_conn.format, roi);
+    //     defer texture_in.deinit();
 
-        var texture_out = try gpu.Texture.init(&self.gpu, node.desc.output_conn.format, roi);
-        defer texture_out.deinit();
+    //     var texture_out = try gpu.Texture.init(&self.gpu, node.desc.output_conn.format, roi);
+    //     defer texture_out.deinit();
 
-        var bindings = try gpu.Bindings.init(&self.gpu, &node.shader, &texture_in, &texture_out);
-        defer bindings.deinit();
+    //     var bindings = try gpu.Bindings.init(&self.gpu, &node.shader, &texture_in, &texture_out);
+    //     defer bindings.deinit();
 
-        // UPLOAD
-        self.gpu_allocator.upload(f16, init_contents, .rgba16float, roi);
+    //     // UPLOAD
+    //     self.gpu_allocator.upload(f16, init_contents, .rgba16float, roi);
 
-        // RUN
-        var encoder = try gpu.Encoder.start(&self.gpu);
-        defer encoder.deinit();
-        encoder.enqueueBufToTex(&self.gpu_allocator, &texture_in, roi) catch unreachable;
-        encoder.enqueueShader(&node.shader, &bindings, roi);
-        encoder.enqueueTexToBuf(&self.gpu_allocator, &texture_out, roi) catch unreachable;
-        self.gpu.run(encoder.finish()) catch unreachable;
+    //     // RUN
+    //     var encoder = try gpu.Encoder.start(&self.gpu);
+    //     defer encoder.deinit();
+    //     encoder.enqueueBufToTex(&self.gpu_allocator, &texture_in, roi) catch unreachable;
+    //     encoder.enqueueShader(&node.shader, &bindings, roi);
+    //     encoder.enqueueTexToBuf(&self.gpu_allocator, &texture_out, roi) catch unreachable;
+    //     self.gpu.run(encoder.finish()) catch unreachable;
 
-        // DOWNLOAD
-        const result = try self.gpu_allocator.download(f16, .rgba16float, roi);
-        slog.info("Download buffer contents: {any}", .{result[0..4]});
+    //     // DOWNLOAD
+    //     const result = try self.gpu_allocator.download(f16, .rgba16float, roi);
+    //     slog.info("Download buffer contents: {any}", .{result[0..4]});
 
-        return result;
-    }
+    //     return result;
+    // }
 };
