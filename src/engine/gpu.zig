@@ -635,8 +635,9 @@ pub const ShaderPipe = struct {
         gpu: *GPU,
         shader_source: []const u8,
         entry_point: []const u8,
-        g0_bind_group_layout_entries: [MAX_BINDINGS]?BindGroupLayoutEntry,
-        // g0_bind_group_layout_entries: std.ArrayList(BindGroupLayoutEntry),
+        // group_0_bind_layout: []BindGroupLayoutEntry,
+        // group_0_bind_layout: std.ArrayList(BindGroupLayoutEntry),
+        group_0_bind_layout: [MAX_BINDINGS]?BindGroupLayoutEntry,
     ) !Self {
         slog.debug("Initializing ShaderPipe for {s}", .{entry_point});
 
@@ -654,8 +655,9 @@ pub const ShaderPipe = struct {
         // var bind_group_layout_entries_g0 = try std.ArrayList(wgpu.BindGroupLayoutEntry).initCapacity(gpu.device.allocator, 0);
         var wgpu_g0_bind_group_layout_entries: [MAX_BINDINGS]wgpu.BindGroupLayoutEntry = undefined;
 
-        for (g0_bind_group_layout_entries) |bind_group_layout_entry| {
+        for (group_0_bind_layout) |bind_group_layout_entry| {
             const bge = bind_group_layout_entry orelse continue;
+            // const bge = bind_group_layout_entry;
             switch (bge.type) {
                 BindGroupLayoutEntryType.read => {
                     // Note: we don't need format for input textures

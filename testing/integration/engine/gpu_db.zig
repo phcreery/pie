@@ -56,12 +56,15 @@ test "simple compute double buffer test" {
         .type = .write,
         .format = .rgba16float,
     };
-    const binding_layout = init: {
-        var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
-        s[0] = input_binding_layout;
-        s[1] = output_binding_layout;
-        break :init s;
-    };
+    // const binding_layout = init: {
+    //     var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    //     s[0] = input_binding_layout;
+    //     s[1] = output_binding_layout;
+    //     break :init s;
+    // };
+    var binding_layout: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    binding_layout[0] = input_binding_layout;
+    binding_layout[1] = output_binding_layout;
     var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", binding_layout);
     defer shader_pipe.deinit();
 
@@ -72,30 +75,16 @@ test "simple compute double buffer test" {
     var texture_b = try Texture.init(&gpu, "b", output_binding_layout.format, roi);
     defer texture_b.deinit();
 
-    const bindings_desc_a_to_b = init: {
-        var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-        s[0] = .{ .binding = 0, .type = .texture, .texture = texture_a };
-        s[1] = .{ .binding = 1, .type = .texture, .texture = texture_b };
-        break :init s;
-    };
-    var bindings_a_to_b = try Bindings.init(&gpu, &shader_pipe, bindings_desc_a_to_b);
+    var binds_a_to_b: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    binds_a_to_b[0] = .{ .binding = 0, .type = .texture, .texture = texture_a };
+    binds_a_to_b[1] = .{ .binding = 1, .type = .texture, .texture = texture_b };
+    var bindings_a_to_b = try Bindings.init(&gpu, &shader_pipe, binds_a_to_b);
     defer bindings_a_to_b.deinit();
 
-    const bindings_desc_b_to_a = init: {
-        var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-        s[0] = .{
-            .binding = 0,
-            .type = .texture,
-            .texture = texture_b,
-        };
-        s[1] = .{
-            .binding = 1,
-            .type = .texture,
-            .texture = texture_a,
-        };
-        break :init s;
-    };
-    var bindings_b_to_a = try Bindings.init(&gpu, &shader_pipe, bindings_desc_b_to_a);
+    var binds_b_to_a: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    binds_b_to_a[0] = .{ .binding = 0, .type = .texture, .texture = texture_b };
+    binds_b_to_a[1] = .{ .binding = 1, .type = .texture, .texture = texture_a };
+    var bindings_b_to_a = try Bindings.init(&gpu, &shader_pipe, binds_b_to_a);
     defer bindings_b_to_a.deinit();
 
     // UPLOAD
