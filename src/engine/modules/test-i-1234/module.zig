@@ -39,23 +39,22 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: *api.Module) !void {
 pub fn readSource(
     pipe: *api.Pipeline,
     mod: *api.Module,
-    // allocator: *gpu.GPUAllocator,
     mapped: *anyopaque,
 ) !void {
     _ = pipe;
     _ = mod;
 
-    // allocator.upload(f16, &source, .rgba16float, roi);
-    @memcpy(mapped, &source);
+    const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
+    // const upload_buffer_slice = upload_buffer_ptr[0..(roi.size.w * roi.size.h * 4)];
+    @memcpy(upload_buffer_ptr, &source);
 }
 
 pub fn createNodes(pipe: *api.Pipeline, mod: *api.Module) !void {
-    _ = pipe;
     const same_as_mod_output_sock = mod.getSocket("output") orelse unreachable;
     const node_desc: api.NodeDesc = .{
         .type = .source,
         .shader_code = "",
-        .entry_point = "Test Data Source",
+        .entry_point = "test-i-1234 Source",
         .run_size = null,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
@@ -63,6 +62,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: *api.Module) !void {
             break :init s;
         },
     };
-    const node = try api.addNodeDesc(mod, node_desc);
-    try api.copyConnector(mod, "output", node, "output");
+    const node = try api.addNodeDesc(pipe, mod, node_desc);
+    try api.copyConnector(pipe, mod, "output", node, "output");
 }

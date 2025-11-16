@@ -70,12 +70,15 @@ test "simple compute test" {
     var texture_out = try Texture.init(&gpu, "out", output_conn.format, roi);
     defer texture_out.deinit();
 
-    const binds = init: {
-        var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-        s[0] = .{ .binding = 0, .type = .texture, .texture = texture_in };
-        s[1] = .{ .binding = 1, .type = .texture, .texture = texture_out };
-        break :init s;
-    };
+    // const binds = init: {
+    //     var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    //     s[0] = .{ .binding = 0, .type = .texture, .texture = texture_in };
+    //     s[1] = .{ .binding = 1, .type = .texture, .texture = texture_out };
+    //     break :init s;
+    // };
+    var binds: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    binds[0] = .{ .binding = 0, .type = .texture, .texture = texture_in };
+    binds[1] = .{ .binding = 1, .type = .texture, .texture = texture_out };
     var bindings = try Bindings.init(&gpu, &shader_pipe, binds);
     defer bindings.deinit();
 

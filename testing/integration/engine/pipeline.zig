@@ -210,9 +210,13 @@ test "simple module test" {
     var pipeline = Pipeline.init(allocator, &gpu_instance) catch unreachable;
     defer pipeline.deinit();
 
-    _ = try pipeline.addModuleDesc(ModuleCreateTestData.module);
-    _ = try pipeline.addModuleDesc(ModuleDoubleIt.module);
-    _ = try pipeline.addModuleDesc(ModuleReadTestData.module);
+    // _ = try pipeline.addModuleDesc(ModuleCreateTestData.module);
+    // _ = try pipeline.addModuleDesc(ModuleDoubleIt.module);
+    // _ = try pipeline.addModuleDesc(ModuleReadTestData.module);
+
+    _ = try pipeline.addModuleDesc(pie.engine.modules.test_i_1234.module);
+    _ = try pipeline.addModuleDesc(pie.engine.modules.test_double.module);
+    _ = try pipeline.addModuleDesc(pie.engine.modules.test_o_2468.module);
 
     try pipeline.run();
 }

@@ -5,10 +5,6 @@ const app = @import("ui/app.zig");
 
 // EXPORTS
 pub const engine = @import("engine/engine.zig");
-pub const iraw = @import("engine/modules/i-raw/i-raw.zig");
-
-// pub const musubi = @import("musubi/musubi.zig");
-// pub const zig_graph = @import("engine/zig-graph/graph.zig");
 
 // SHORTCUTS
 pub const gpu = engine.gpu;

@@ -4,6 +4,7 @@ pub const Node = @import("Node.zig");
 pub const gpu = @import("gpu.zig");
 pub const pipeline = @import("pipeline.zig");
 pub const api = @import("api.zig");
+pub const modules = @import("modules/modules.zig");
 
 pub const GPU = gpu.GPU;
 pub const GPUAllocator = gpu.GPUAllocator;

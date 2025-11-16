@@ -127,8 +127,6 @@ pub const GPUAllocator = struct {
         slog.debug("Buffer map complete, writing data", .{});
 
         return self.upload_buffer.getMappedRange(0, size_bytes).?;
-        // const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(self.upload_buffer.getMappedRange(0, size_bytes).?));
-        // return upload_buffer_ptr[0..(roi.size.w * roi.size.h * format.nchannels())];
     }
 
     pub fn unmapUpload(
@@ -228,11 +226,6 @@ pub const GPUAllocator = struct {
         // We can now read the data from the buffer.
         // Convert the data back to a slice of f16.
         return self.download_buffer.getMappedRange(0, size_bytes).?;
-        // const download_buffer_ptr: [*]T = @ptrCast(@alignCast(self.download_buffer.getMappedRange(0, size_bytes).?));
-        // defer self.download_buffer.unmap();
-
-        // const result = download_buffer_ptr[0..size_nvals];
-        // return result;
     }
 
     pub fn unmapDownload(
