@@ -1,10 +1,12 @@
 /// API definitions for engine pipeline modules and nodes
 const std = @import("std");
 const gpu = @import("gpu.zig");
-const ROI = @import("ROI.zig");
-const pipeline = @import("pipeline.zig");
+pub const ROI = @import("ROI.zig");
+pub const pipeline = @import("pipeline.zig");
+pub const Module = @import("Module.zig");
+pub const Node = @import("Node.zig");
+pub const Pipeline = pipeline.Pipeline;
 
-// pub const MAX_SOCKETS = 8;
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 
 pub const Direction = enum {
@@ -49,10 +51,10 @@ pub const SocketDesc = struct {
         conn_handle: ?pipeline.ConnectorHandle = null,
 
         // FOR INPUT SOCKETS
-        connected_to: ?*pipeline.Node = null, // populated with graph.connect_nodes()
+        connected_to: ?*Node = null, // populated with graph.connect_nodes()
 
         // FOR INPUT SOCKETS THAT ARE THE FIRST IN A MODULE OR OUTPUT SOCKETS THAT ARE THE LAST IN A MODULE
-        associated_with: ?*pipeline.Module = null, // populated with socket.associated_with()
+        associated_with: ?*Module = null, // populated with socket.associated_with()
     };
 };
 
@@ -108,10 +110,29 @@ pub const ModuleDesc = struct {
     // uniform_offset: usize,
     // uniform_size: usize,
 
-    init: ?*const fn (mod: *pipeline.Module) anyerror!void = null,
-    deinit: ?*const fn (mod: *pipeline.Module) anyerror!void = null,
-    createNodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module) anyerror!void = null,
-    readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
-    writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
-    modifyROIOut: ?*const fn (pipe: *pipeline.Pipeline, mod: *pipeline.Module) anyerror!void = null,
+    init: ?*const fn (mod: *Module) anyerror!void = null,
+    deinit: ?*const fn (mod: *Module) anyerror!void = null,
+    createNodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
+    // readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
+    readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, mapped: *anyopaque) anyerror!void = null,
+    // writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
+    writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, mapped: *anyopaque) anyerror!void = null,
+    modifyROIOut: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
 };
+
+pub fn addModuleDesc(pipe: *pipeline.Pipeline, module_desc: ModuleDesc) !*Module {
+    return pipe.addModuleDesc(module_desc);
+}
+
+pub fn addNodeDesc(pipe: *pipeline.Pipeline, mod: *Module, node_desc: NodeDesc) !pipeline.NodeHandle {
+    return pipe.addNodeDesc(mod, node_desc);
+}
+pub fn copyConnector(
+    pipe: *pipeline.Pipeline,
+    mod: *Module,
+    mod_socket_name: []const u8,
+    node: pipeline.NodeHandle,
+    node_socket_name: []const u8,
+) !void {
+    return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
+}

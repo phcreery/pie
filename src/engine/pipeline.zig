@@ -3,6 +3,8 @@ const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 const api = @import("api.zig");
 const util = @import("util.zig");
+const Module = @import("Module.zig");
+const Node = @import("Node.zig");
 const SingleColPool = @import("pool.zig").SingleColPool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const slog = std.log.scoped(.pipe);
@@ -16,92 +18,6 @@ pub const ConnectorHandle = ConnectorPool.Handle;
 // TODO: history pool
 // TODO: params pool
 
-pub const Module = struct {
-    desc: api.ModuleDesc,
-    enabled: bool,
-
-    pub fn init(
-        desc: api.ModuleDesc,
-    ) !Module {
-        return Module{
-            .desc = desc,
-            .enabled = true,
-        };
-    }
-
-    // HELPER FUNCTIONS
-
-    pub fn getSocket(mod: *Module, name: []const u8) ?api.SocketDesc {
-        const sockets = [_]?api.SocketDesc{
-            mod.desc.input_socket,
-            mod.desc.output_socket,
-        };
-        for (sockets) |sock| {
-            if (sock) |s| {
-                if (std.mem.eql(u8, s.name, name)) {
-                    slog.info("Found socket for module {s}, connector {s}", .{ mod.desc.name, name });
-                    return s;
-                }
-            }
-        }
-        return null;
-    }
-};
-
-pub const Node = struct {
-    desc: api.NodeDesc,
-    mod: *Module,
-    shader: ?gpu.ShaderPipe = null,
-    bindings: ?gpu.Bindings = null,
-
-    pub fn init(
-        pipe: *Pipeline,
-        mod: *Module,
-        desc: api.NodeDesc,
-    ) !Node {
-        _ = pipe;
-        return Node{
-            .desc = desc,
-            .mod = mod,
-        };
-    }
-
-    pub fn deinit(self: *Node) void {
-        if (self.bindings) |*bindings| {
-            bindings.deinit();
-        }
-        if (self.shader) |*shader| {
-            shader.deinit();
-        }
-    }
-
-    pub fn getSocket(node: *Node, name: []const u8) ?api.SocketDesc {
-        for (node.desc.sockets) |sock| {
-            if (sock) |s| {
-                if (std.mem.eql(u8, s.name, name)) {
-                    slog.info("Found socket for node {s}, connector {s}", .{ node.desc.entry_point, name });
-                    return s;
-                }
-            }
-        }
-        return null;
-    }
-    pub fn getSocketIndex(node: *Node, name: []const u8) ?usize {
-        for (node.desc.sockets, 0..) |sock, idx| {
-            if (sock) |s| {
-                if (std.mem.eql(u8, s.name, name)) {
-                    slog.info("Found socket index for node {s}, connector {s}", .{ node.desc.entry_point, name });
-                    return idx;
-                }
-            }
-        }
-        return null;
-    }
-};
-
-const MAX_MODULES = 100;
-const MAX_NODES = 200;
-
 /// The main pipeline structure that holds modules, nodes, and manages execution.
 /// This is heavily inspired by vkdt. The current difference is that modules are
 /// executed in order, rather than in a DAG structure. This simplifies the execution model.
@@ -114,6 +30,9 @@ pub const Pipeline = struct {
     node_execution_order: std.ArrayList(NodeHandle),
     modules: std.ArrayList(Module),
     connector_pool: ConnectorPool,
+
+    pub const MAX_MODULES = 100;
+    pub const MAX_NODES = 200;
 
     pub fn init(allocator: std.mem.Allocator, gpu_instance: ?*gpu.GPU) !Pipeline {
         if (gpu_instance == null) {
@@ -191,7 +110,7 @@ pub const Pipeline = struct {
         return try self.node_pool.add(node);
     }
 
-    pub fn lowerSocket(
+    pub fn copyConnector(
         self: *Pipeline,
         mod: *Module,
         mod_socket_name: []const u8,
@@ -464,7 +383,17 @@ pub const Pipeline = struct {
             if (sock.type == .source) {
                 if (first_node.mod.desc.readSource) |readSourceFn| {
                     slog.info("Uploading source data for first node", .{});
-                    readSourceFn(self, first_node.mod, &gpu_allocator) catch unreachable;
+
+                    // we are going to create a staging buffer here and pass the mapped pointer to the readSource function
+                    const size_bytes = sock.roi.?.size.w * sock.roi.?.size.h * sock.format.bpp();
+                    const upload_buffer_ptr: *anyopaque = gpu_allocator.mapUpload(size_bytes);
+                    defer gpu_allocator.unmapUpload();
+
+                    // then the node can do the upload with
+                    // const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
+                    // @memcpy(upload_buffer_ptr, data);
+
+                    readSourceFn(self, first_node.mod, upload_buffer_ptr) catch unreachable;
                 }
             } else {
                 slog.err("First node input socket is not of type source, skipping upload", .{});
@@ -535,7 +464,12 @@ pub const Pipeline = struct {
             if (sock.type == .sink) {
                 if (last_node.mod.desc.writeSink) |writeSinkFn| {
                     slog.info("Downloading sink data for last node", .{});
-                    writeSinkFn(self, last_node.mod, &gpu_allocator) catch unreachable;
+
+                    const size_bytes = sock.roi.?.size.w * sock.roi.?.size.h * sock.format.bpp();
+                    const download_buffer_ptr: *anyopaque = try gpu_allocator.mapDownload(size_bytes);
+                    defer gpu_allocator.unmapDownload();
+
+                    writeSinkFn(self, last_node.mod, download_buffer_ptr) catch unreachable;
                 }
             } else {
                 slog.err("Last node output socket is not of type sink, skipping download", .{});

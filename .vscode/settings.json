@@ -8,6 +8,7 @@
         "errdefer",
         "libraw",
         "musubi",
+        "nchannels",
         "orelse",
         "rgba",
         "rois",

@@ -2,8 +2,8 @@ const std = @import("std");
 const pie = @import("pie");
 
 const gpu = pie.engine.gpu;
-const Pipeline = pie.engine.pipeline.Pipeline;
-const Module = pie.engine.pipeline.Module;
+const Pipeline = pie.engine.Pipeline;
+const Module = pie.engine.Module;
 const api = pie.engine.api;
 
 const ModuleCreateTestData = struct {
@@ -27,14 +27,16 @@ const ModuleCreateTestData = struct {
     }
 
     pub fn readSource(
-        pipe: *Pipeline,
-        mod: *Module,
-        allocator: *gpu.GPUAllocator,
+        pipe: *api.Pipeline,
+        mod: *api.Module,
+        mapped: *anyopaque,
     ) !void {
         _ = pipe;
         _ = mod;
 
-        allocator.upload(f16, &source, .rgba16float, roi);
+        const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
+        // const upload_buffer_slice = upload_buffer_ptr[0..(roi.size.w * roi.size.h * 4)];
+        @memcpy(upload_buffer_ptr, &source);
     }
 
     pub fn createNodes(pipe: *Pipeline, mod: *Module) !void {
@@ -51,7 +53,7 @@ const ModuleCreateTestData = struct {
             },
         };
         const node = try pipe.addNodeDesc(mod, node_desc);
-        try pipe.lowerSocket(mod, "output", node, "output");
+        try pipe.copyConnector(mod, "output", node, "output");
     }
 
     pub const module: api.ModuleDesc = .{
@@ -113,8 +115,8 @@ const ModuleDoubleIt = struct {
             },
         };
         const node = try pipe.addNodeDesc(mod, node_desc);
-        try pipe.lowerSocket(mod, "input", node, "input");
-        try pipe.lowerSocket(mod, "output", node, "output");
+        try pipe.copyConnector(mod, "input", node, "input");
+        try pipe.copyConnector(mod, "output", node, "output");
     }
 
     pub var module: pie.engine.api.ModuleDesc = .{
@@ -151,13 +153,16 @@ const ModuleReadTestData = struct {
     pub fn writeSink(
         pipe: *Pipeline,
         mod: *Module,
-        allocator: *gpu.GPUAllocator,
+        mapped: *anyopaque,
     ) !void {
         _ = pipe;
 
         const roi = mod.getSocket("input").?.roi orelse unreachable;
-        const result = try allocator.download(f16, .rgba16float, roi);
-        try std.testing.expectEqualSlices(f16, expected[0..], result);
+
+        const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
+        const download_buffer_slice = download_buffer_ptr[0..(roi.size.w * roi.size.h * 4)];
+        std.log.info("Sink buffer contents: {any}", .{download_buffer_slice});
+        try std.testing.expectEqualSlices(f16, &expected, download_buffer_slice);
     }
 
     pub fn createNodes(pipe: *Pipeline, mod: *Module) !void {
@@ -174,7 +179,7 @@ const ModuleReadTestData = struct {
             },
         };
         const node = try pipe.addNodeDesc(mod, node_desc);
-        try pipe.lowerSocket(mod, "input", node, "input");
+        try pipe.copyConnector(mod, "input", node, "input");
     }
 
     pub const module: api.ModuleDesc = .{
