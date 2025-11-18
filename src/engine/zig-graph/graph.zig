@@ -255,6 +255,7 @@ pub fn DirectedGraph(
             return count;
         }
 
+        /// getEdges returns all edges connected to the given vertex.
         pub fn getEdges(self: *const Self, vertex: TVertex) std.ArrayList(TEdge) {
             const k = self.ctx.hash(vertex);
             var edges = std.ArrayList(TEdge).initCapacity(self.allocator, 0) catch unreachable;
@@ -270,6 +271,36 @@ pub fn DirectedGraph(
             if (self.adj_in.getPtr(k)) |in_map| {
                 var in_iter = in_map.iterator();
                 while (in_iter.next()) |kv| {
+                    edges.append(self.allocator, kv.value_ptr.*) catch unreachable;
+                }
+            }
+            return edges;
+        }
+
+        /// getOutEdges returns all outbound edges from the given vertex.
+        pub fn getOutEdges(self: *const Self, vertex: TVertex) std.ArrayList(TEdge) {
+            const k = self.ctx.hash(vertex);
+            var edges = std.ArrayList(TEdge).initCapacity(self.allocator, 0) catch unreachable;
+            // defer edges.deinit(self.allocator);
+
+            if (self.adj_out.getPtr(k)) |map| {
+                var iter = map.iterator();
+                while (iter.next()) |kv| {
+                    edges.append(self.allocator, kv.value_ptr.*) catch unreachable;
+                }
+            }
+            return edges;
+        }
+
+        /// getInEdges returns all inbound edges to the given vertex.
+        pub fn getInEdges(self: *const Self, vertex: TVertex) std.ArrayList(TEdge) {
+            const k = self.ctx.hash(vertex);
+            var edges = std.ArrayList(TEdge).initCapacity(self.allocator, 0) catch unreachable;
+            // defer edges.deinit(self.allocator);
+
+            if (self.adj_in.getPtr(k)) |map| {
+                var iter = map.iterator();
+                while (iter.next()) |kv| {
                     edges.append(self.allocator, kv.value_ptr.*) catch unreachable;
                 }
             }

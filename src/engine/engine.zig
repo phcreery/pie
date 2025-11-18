@@ -6,6 +6,8 @@ pub const pipeline = @import("pipeline.zig");
 pub const api = @import("api.zig");
 pub const modules = @import("modules/modules.zig");
 
+pub const graph = @import("zig-graph/graph.zig");
+
 pub const GPU = gpu.GPU;
 pub const GPUAllocator = gpu.GPUAllocator;
 pub const Encoder = gpu.Encoder;

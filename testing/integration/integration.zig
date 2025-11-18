@@ -7,16 +7,15 @@ pub fn main() !void {
 
 test {
     // GPU
-    _ = @import("engine/gpu_simple.zig");
-    _ = @import("engine/gpu_db.zig");
+    // _ = @import("engine/gpu_simple.zig");
+    // _ = @import("engine/gpu_db.zig");
 
     // PIPELINE
     // _ = @import("engine/pipeline.zig");
 
-    // _ = @import("fullsize/DSC_6765.zig");
-
     // MISC
+    // _ = @import("fullsize/DSC_6765.zig");
     // _ = @import("misc/zpool.zig");
     // _ = @import("misc/musubi.zig");
-    // _ = @import("misc/zig-graph.zig");
+    _ = @import("misc/zig-graph.zig");
 }

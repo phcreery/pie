@@ -516,38 +516,4 @@ pub const Pipeline = struct {
         util.printModules(self);
         util.printNodes(self);
     }
-
-    // Just for testing
-    // pub fn runWithSource(self: *Pipeline, init_contents: []f16, roi: ROI) ![]f16 {
-    //     var module = self.modules.items[0];
-    //     module.create_nodes(self, &module) catch unreachable;
-    //     const node = self.nodes.items[0];
-
-    //     // ALLOCATE
-    //     var texture_in = try gpu.Texture.init(&self.gpu, node.desc.input_conn.format, roi);
-    //     defer texture_in.deinit();
-
-    //     var texture_out = try gpu.Texture.init(&self.gpu, node.desc.output_conn.format, roi);
-    //     defer texture_out.deinit();
-
-    //     var bindings = try gpu.Bindings.init(&self.gpu, &node.shader, &texture_in, &texture_out);
-    //     defer bindings.deinit();
-
-    //     // UPLOAD
-    //     self.gpu_allocator.upload(f16, init_contents, .rgba16float, roi);
-
-    //     // RUN
-    //     var encoder = try gpu.Encoder.start(&self.gpu);
-    //     defer encoder.deinit();
-    //     encoder.enqueueBufToTex(&self.gpu_allocator, &texture_in, roi) catch unreachable;
-    //     encoder.enqueueShader(&node.shader, &bindings, roi);
-    //     encoder.enqueueTexToBuf(&self.gpu_allocator, &texture_out, roi) catch unreachable;
-    //     self.gpu.run(encoder.finish()) catch unreachable;
-
-    //     // DOWNLOAD
-    //     const result = try self.gpu_allocator.download(f16, .rgba16float, roi);
-    //     slog.info("Download buffer contents: {any}", .{result[0..4]});
-
-    //     return result;
-    // }
 };

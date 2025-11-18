@@ -56,6 +56,7 @@ test "simple compute double buffer test" {
         .type = .write,
         .format = .rgba16float,
     };
+    // see https://github.com/ziglang/zig/issues/6068
     // const binding_layout = init: {
     //     var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
     //     s[0] = input_binding_layout;
