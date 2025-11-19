@@ -152,7 +152,7 @@ pub fn DirectedGraph(
         /// as a result of algorithms such as strongly connected components
         /// since it is easier to work with. This function can be called to
         /// get the real value.
-        pub fn lookup(self: *Self, hash: VertexKey) ?TVertex {
+        pub fn lookup(self: *const Self, hash: VertexKey) ?TVertex {
             return self.vertices.get(hash);
         }
 
@@ -355,12 +355,14 @@ pub fn DirectedGraph(
             // the full graph or something. Keeping it simple for now.
             const stack = std.ArrayList(VertexKey).initCapacity(self.allocator, 0) catch unreachable;
             const visited = std.AutoHashMap(VertexKey, void).init(self.allocator);
+            const post_order = std.ArrayList(VertexKey).initCapacity(self.allocator, 0) catch unreachable;
 
             return DFSIterator{
                 .g = self,
                 .stack = stack,
                 .visited = visited,
-                .current = h,
+                .current_vert = h,
+                .post_order = post_order,
             };
         }
 
@@ -371,46 +373,126 @@ pub fn DirectedGraph(
             // stack and visited must ensure capacity
             g: *const Self,
             stack: std.ArrayList(VertexKey),
+            post_order: std.ArrayList(VertexKey),
             visited: std.AutoHashMap(VertexKey, void),
-            current: ?VertexKey,
+            current_vert: ?VertexKey,
 
             // DFSIterator must deinit
             pub fn deinit(it: *DFSIterator) void {
                 it.stack.deinit(it.g.allocator);
                 it.visited.deinit();
+                it.post_order.deinit(it.g.allocator);
             }
 
             /// next returns the list of hash IDs for the vertex. This should be
             /// looked up again with the graph to get the actual vertex value.
             pub fn next(it: *DFSIterator) !?VertexKey {
                 // If we're out of values, then we're done.
-                if (it.current == null) return null;
+                if (it.current_vert == null) return null;
 
                 // Our result is our current value
-                const result = it.current orelse unreachable;
-                try it.visited.put(result, {});
+                const result_vert = it.current_vert orelse unreachable;
+                try it.visited.put(result_vert, {});
 
                 // Add all adjacent edges to the stack. We do a
                 // visited check here to avoid revisiting vertices
-                if (it.g.adj_out.getPtr(result)) |map| {
+                if (it.g.adj_out.getPtr(result_vert)) |map| {
                     var iter = map.keyIterator();
-                    while (iter.next()) |target| {
-                        if (!it.visited.contains(target.*)) {
-                            try it.stack.append(it.g.allocator, target.*);
+                    while (iter.next()) |vert| {
+                        if (!it.visited.contains(vert.*)) {
+                            try it.stack.append(it.g.allocator, vert.*);
                         }
                     }
                 }
+                // for (it.stack.items) |v| {
+                //     std.debug.print("stack: {s}\n", .{it.g.lookup(v).?});
+                // }
 
                 // Advance to the next value
-                it.current = null;
-                while (it.stack.pop()) |nextVal| {
-                    if (!it.visited.contains(nextVal)) {
-                        it.current = nextVal;
+                it.current_vert = null;
+                while (it.stack.pop()) |next_vert| {
+                    // std.debug.print("popping: {s}\n", .{it.g.lookup(next_vert).?});
+                    if (!it.visited.contains(next_vert)) {
+                        // try it.post_order.append(it.g.allocator, next_vert);
+                        it.current_vert = next_vert;
                         break;
                     }
                 }
 
-                return result;
+                return result_vert;
+            }
+        };
+
+        pub fn topSortIterator(self: *const Self) !TopSortIterator {
+            // Compute in-degrees
+            var in_degree = std.AutoHashMap(VertexKey, usize).init(self.allocator);
+            var it = self.adj_out.iterator();
+            while (it.next()) |kv| {
+                const from = kv.key_ptr.*;
+                if (!in_degree.contains(from)) {
+                    try in_degree.put(from, 0);
+                }
+
+                var neighbors = kv.value_ptr.iterator();
+                while (neighbors.next()) |n_kv| {
+                    const to = n_kv.key_ptr.*;
+                    const deg_ptr = in_degree.getPtr(to);
+                    if (deg_ptr) |deg| {
+                        deg.* += 1;
+                    } else {
+                        try in_degree.put(to, 1);
+                    }
+                }
+            }
+
+            // Initialize queue with all nodes with in-degree 0
+            var queue = std.ArrayList(VertexKey).initCapacity(self.allocator, 0) catch unreachable;
+            var deg_it = in_degree.iterator();
+            while (deg_it.next()) |kv| {
+                if (kv.value_ptr.* == 0) {
+                    try queue.append(self.allocator, kv.key_ptr.*);
+                }
+            }
+
+            return TopSortIterator{
+                .g = self,
+                .queue = queue,
+                .in_degree = in_degree,
+            };
+        }
+
+        /// non recursive topological sort iterator
+        /// using Kahn's algorithm
+        pub const TopSortIterator = struct {
+            g: *const Self,
+            queue: std.ArrayList(VertexKey),
+            in_degree: std.AutoHashMap(VertexKey, usize),
+
+            pub fn deinit(it: *TopSortIterator) void {
+                it.queue.deinit(it.g.allocator);
+                it.in_degree.deinit();
+            }
+
+            pub fn next(it: *TopSortIterator) !?VertexKey {
+                if (it.queue.items.len == 0) {
+                    return null;
+                }
+
+                const v = it.queue.pop() orelse unreachable;
+
+                // Decrease in-degree of all neighbors
+                if (it.g.adj_out.getPtr(v)) |map| {
+                    var iter = map.keyIterator();
+                    while (iter.next()) |neighbor| {
+                        const deg = it.in_degree.getPtr(neighbor.*) orelse continue;
+                        deg.* -= 1;
+                        if (deg.* == 0) {
+                            try it.queue.append(it.g.allocator, neighbor.*);
+                        }
+                    }
+                }
+
+                return v;
             }
         };
     };
