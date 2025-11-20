@@ -1,26 +1,6 @@
 const std = @import("std");
 const pie = @import("pie");
-const builtin = @import("builtin");
 const graph = pie.engine.graph;
-
-const UTF8ConsoleOutput = struct {
-    original: if (builtin.os.tag == .windows) c_uint else void,
-
-    fn init() UTF8ConsoleOutput {
-        if (builtin.os.tag == .windows) {
-            const original = std.os.windows.kernel32.GetConsoleOutputCP();
-            _ = std.os.windows.kernel32.SetConsoleOutputCP(65001);
-            return .{ .original = original };
-        }
-        return .{ .original = {} };
-    }
-
-    fn deinit(self: UTF8ConsoleOutput) void {
-        if (builtin.os.tag == .windows) {
-            _ = std.os.windows.kernel32.SetConsoleOutputCP(self.original);
-        }
-    }
-};
 
 fn Lanes(TLane: type, n: usize) type {
     return struct {
@@ -53,151 +33,144 @@ fn Lanes(TLane: type, n: usize) type {
     };
 }
 
-test "dfs2" {
-    const allocator = std.testing.allocator;
-    const print = std.debug.print;
-    const cp_out = UTF8ConsoleOutput.init();
-    defer cp_out.deinit();
+pub fn GraphPrinter(comptime TVertex: type, comptime TEdge: type) type {
+    return struct {
+        const Self = @This();
+        allocator: std.mem.Allocator,
+        g: *graph.DirectedGraph(TVertex, TEdge, std.hash_map.StringContext),
 
-    const TVertex = []const u8;
-    const TEdge = u64;
-
-    var g = graph.DirectedGraph(TVertex, TEdge, std.hash_map.StringContext).init(allocator);
-    defer g.deinit();
-
-    // Add some nodes
-    try g.add("A");
-    try g.add("B1");
-    try g.add("B2");
-    try g.add("B3");
-    try g.add("C");
-    try g.addEdge("A", "B1", 1);
-    try g.addEdge("A", "B2", 2);
-    try g.addEdge("A", "B3", 4);
-    try g.addEdge("B1", "C", 3);
-    try g.addEdge("B3", "C", 5);
-
-    // DFS from B
-    var list = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
-    defer list.deinit(allocator);
-    // var iter = try g.dfsIterator("A");
-    // defer iter.deinit();
-    var iter = try g.topSortIterator();
-    defer iter.deinit();
-
-    const MAX_LANES = 6;
-    var conn_lanes = Lanes(TEdge, MAX_LANES){};
-    var node_inputs: [MAX_LANES]?TEdge = @splat(null);
-    var node_outputs: [MAX_LANES]?TEdge = @splat(null);
-    var new_lanes: [MAX_LANES]?TEdge = @splat(null);
-
-    while (try iter.next()) |value| {
-        node_inputs = @splat(null);
-        node_outputs = @splat(null);
-
-        const vert = g.lookup(value).?;
-
-        var node_in_edges = g.getInEdges(vert);
-        defer node_in_edges.deinit(allocator);
-        for (node_in_edges.items) |edge| {
-            const idx = conn_lanes.consume(edge) catch continue;
-            node_outputs[idx] = edge;
+        pub fn init(
+            allocator: std.mem.Allocator,
+            g: *graph.DirectedGraph(TVertex, TEdge, std.hash_map.StringContext),
+        ) Self {
+            return .{
+                .allocator = allocator,
+                .g = g,
+            };
         }
 
-        // print node inputs
-        print("┌─", .{});
-        for (0..MAX_LANES) |i| {
-            if (node_outputs[i]) |_| {
-                print("▼", .{});
-            } else {
-                print("─", .{});
-            }
-            print("──", .{});
-        }
-        print("─┐\n", .{});
+        pub fn print(
+            self: *Self,
+            stdout: anytype,
+            iter: anytype,
+        ) !void {
+            const MAX_LANES = 6;
+            var conn_lanes = Lanes(TEdge, MAX_LANES){};
+            var node_inputs: [MAX_LANES]?TEdge = @splat(null);
+            var node_outputs: [MAX_LANES]?TEdge = @splat(null);
+            var new_lanes: [MAX_LANES]?TEdge = @splat(null);
 
-        // print node name
-        print("│ {s}", .{vert});
-        // get length of vert for formatting
-        var buffer: [50]u8 = undefined;
-        const written_slice = try std.fmt.bufPrint(&buffer, "{s}", .{vert});
-        for (0..3 * MAX_LANES - written_slice.len + 1) |_| {
-            print(" ", .{});
-        }
-        print("│\n", .{});
+            while (try iter.next()) |value| {
+                node_inputs = @splat(null);
+                node_outputs = @splat(null);
 
-        var out_edges = g.getOutEdges(vert);
-        defer out_edges.deinit(allocator);
-        for (out_edges.items) |edge| {
-            const lane_idx = try conn_lanes.add(edge);
-            new_lanes[lane_idx] = edge;
-            node_inputs[lane_idx] = edge;
-        }
+                const vert = self.g.lookup(value).?;
 
-        // print node outputs
-        print("└─", .{});
-        for (0..MAX_LANES) |i| {
-            if (node_inputs[i]) |_| {
-                print("▣", .{}); // ▼ ▣ △ ▲ ▽ ▼ ╤
-            } else {
-                print("─", .{});
-            }
-            print("──", .{});
-        }
-        print("─┘\n", .{});
-
-        // print | for active lanes
-        var r: usize = 0;
-        outer: while (true) {
-            r += 1;
-            print(" ", .{});
-            for (conn_lanes.lanes, 0..) |lane, i| {
-                print(" ", .{});
-                if (lane) |_| {
-                    if (r % 2 == 0 and new_lanes[i] != null) {
-                        new_lanes[i] = null;
-                        print("├", .{});
-                        // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n
-                        for (0..3 * (MAX_LANES - i)) |_| {
-                            print("┄", .{});
-                        }
-                        print("\n", .{});
-                        continue :outer;
-                    }
-                    print("│", .{});
-                } else {
-                    print(" ", .{});
+                var node_in_edges = self.g.getInEdges(vert);
+                defer node_in_edges.deinit(self.allocator);
+                for (node_in_edges.items) |edge| {
+                    const idx = conn_lanes.consume(edge) catch continue;
+                    node_outputs[idx] = edge;
                 }
-                print(" ", .{});
-                // print(" ", .{});
-            }
-            print("\n", .{});
-            // if there are no new lanes, break
-            const all_empty: [MAX_LANES]?TEdge = @splat(null);
-            if (std.mem.eql(?TEdge, &new_lanes, &all_empty)) {
-                break;
+
+                // print node inputs
+                try stdout.print("┌─", .{});
+                for (0..MAX_LANES) |i| {
+                    if (node_outputs[i]) |_| {
+                        try stdout.print("▼", .{});
+                    } else {
+                        try stdout.print("─", .{});
+                    }
+                    try stdout.print("──", .{});
+                }
+                try stdout.print("─┐\n", .{});
+
+                // print node name
+                // get length of vert for formatting
+                var vert_name_print_buffer: [50]u8 = undefined;
+                const vert_name_slice = try std.fmt.bufPrint(&vert_name_print_buffer, "{s}", .{vert});
+                try stdout.print("│ {s}", .{vert_name_slice});
+                for (0..3 * MAX_LANES - vert_name_slice.len + 1) |_| {
+                    try stdout.print(" ", .{});
+                }
+                try stdout.print("│\n", .{});
+
+                var out_edges = self.g.getOutEdges(vert);
+                defer out_edges.deinit(self.allocator);
+                for (out_edges.items) |edge| {
+                    const lane_idx = try conn_lanes.add(edge);
+                    new_lanes[lane_idx] = edge;
+                    node_inputs[lane_idx] = edge;
+                }
+
+                // print node outputs
+                try stdout.print("└─", .{});
+                for (0..MAX_LANES) |i| {
+                    if (node_inputs[i]) |_| {
+                        try stdout.print("▼", .{}); // ▼ ▣ △ ▲ ▽ ▼ ╤
+                    } else {
+                        try stdout.print("─", .{});
+                    }
+                    try stdout.print("──", .{});
+                }
+                try stdout.print("─┘\n", .{});
+
+                // print | for active lanes
+                var r: usize = 0;
+                outer: while (true) {
+                    r += 1;
+                    try stdout.print(" ", .{});
+                    for (conn_lanes.lanes, 0..) |lane, i| {
+                        try stdout.print(" ", .{});
+                        if (lane) |_| {
+                            if (r % 2 == 0 and new_lanes[i] != null) {
+                                new_lanes[i] = null;
+                                try stdout.print("├", .{});
+                                // ├┄┄┄┄┄┄┄┄┄┄┄┄ {name}\n
+                                var edge_name_print_buffer: [50]u8 = undefined;
+                                const edge_name_slice = try std.fmt.bufPrint(&edge_name_print_buffer, "{d}", .{lane.?});
+                                for (0..(3 * (MAX_LANES - i) - edge_name_slice.len - 1)) |_| {
+                                    try stdout.print("┄", .{});
+                                }
+                                try stdout.print(" {s}", .{edge_name_slice});
+                                try stdout.print("\n", .{});
+                                continue :outer;
+                            }
+                            try stdout.print("│", .{});
+                        } else {
+                            try stdout.print(" ", .{});
+                        }
+                        try stdout.print(" ", .{});
+                        // try stdout.print(" ", .{});
+                    }
+                    try stdout.print("\n", .{});
+                    // if there are no new lanes, break
+                    const all_empty: [MAX_LANES]?TEdge = @splat(null);
+                    if (std.mem.eql(?TEdge, &new_lanes, &all_empty)) {
+                        break;
+                    }
+                }
+
+                // try list.append(g.allocator, vert);
             }
         }
-
-        try list.append(g.allocator, vert);
-        // for (iter.stack.items) |v| {
-        //     print("stack: {s}\n", .{g.lookup(v).?});
-        // }
-    }
-    // print("{any}\n", .{iter.post_order.items});
-    // for (iter.post_order.items) |v| {
-    //     print("Post-order: {s}\n", .{g.lookup(v).?});
-    // }
-
-    // const expect = [_][]const u8{ "B", "C2", "C3", "C", "A" };
-    // const expect = [_][]const u8{ "B", "C2", "C1", "A", "C3" }; // incorrect
-    // try std.testing.expectEqualSlices([]const u8, &expect, list.items);
+    };
 }
 
-test "topSortIterator" {
+test "graph printer" {
     const allocator = std.testing.allocator;
-    const print = std.debug.print;
-    const cp_out = UTF8ConsoleOutput.init();
+
+    // to print to stdout
+    // var stdout_buffer: [4096]u8 = undefined;
+    // var writer = std.fs.File.stdout().writer(&stdout_buffer);
+    // const stdout = &writer.interface;
+
+    // to print to allocating buffer
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    var stdout = &aw.writer;
+
+    const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
     const TVertex = []const u8;
@@ -216,16 +189,41 @@ test "topSortIterator" {
     try g.addEdge("A", "B2", 2);
     try g.addEdge("A", "B3", 4);
     try g.addEdge("B1", "C", 3);
-    try g.addEdge("B3", "C", 5);
+    try g.addEdge("B3", "C", 55);
 
-    // DFS from B
-    var list = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
-    defer list.deinit(allocator);
-    var iter = try g.topSortIterator();
-    defer iter.deinit();
-    while (try iter.next()) |value| {
-        const vert = g.lookup(value).?;
-        try list.append(g.allocator, vert);
-        print("TopSort: {s}\n", .{vert});
+    var iter1 = try g.topSortIterator();
+    defer iter1.deinit();
+
+    var printer = GraphPrinter(TVertex, TEdge).init(allocator, &g);
+    try printer.print(stdout, &iter1);
+
+    // test modifying graph and reprinting
+    try g.add("D");
+    try g.addEdge("C", "D", 9);
+
+    var iter2 = try g.topSortIterator();
+    defer iter2.deinit();
+    try printer.print(stdout, &iter2);
+
+    var found = false;
+    var needle: u8 = 'D';
+    for (stdout.buffer) |c| {
+        if (c == needle) {
+            found = true;
+            break;
+        }
     }
+    try std.testing.expect(found);
+
+    found = false;
+    needle = '9';
+    for (stdout.buffer) |c| {
+        if (c == needle) {
+            found = true;
+            break;
+        }
+    }
+    try std.testing.expect(found);
+
+    try stdout.flush(); // Don't forget to flush!
 }

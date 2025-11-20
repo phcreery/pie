@@ -288,7 +288,8 @@ pub const Pipeline = struct {
         // perform DFS from first node to get execution order
         if (first_node_handle) |h| {
             slog.info("Performing DFS from first node: {any}", .{h});
-            var iter = try self.node_graph.dfsIterator(h);
+            // var iter = try self.node_graph.dfsIterator(h);
+            var iter = try self.node_graph.topSortIterator();
             defer iter.deinit();
             while (try iter.next()) |value| {
                 try self.node_execution_order.append(self.allocator, self.node_graph.lookup(value).?);

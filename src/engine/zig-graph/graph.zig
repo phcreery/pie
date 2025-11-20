@@ -340,9 +340,9 @@ pub fn DirectedGraph(
             return tarjan.stronglyConnectedComponents(self.allocator, self);
         }
 
-        /// dfsIterator returns an iterator that iterates all reachable
-        /// vertices from "start". Note that the DFSIterator must have
-        /// deinit called. It is an error if start does not exist.
+        /// dfsIterator returns an depth first search iterator that iterates
+        /// all reachable vertices from "start". Note that the DFSIterator
+        /// must have deinit called. It is an error if start does not exist.
         pub fn dfsIterator(self: *const Self, start: TVertex) !DFSIterator {
             const h = self.ctx.hash(start);
 
@@ -423,6 +423,9 @@ pub fn DirectedGraph(
             }
         };
 
+        /// topSortIterator is a non recursive topological sort iterator
+        /// using Kahn's algorithm
+        /// https://chalmersgu-data-structure-courses.github.io/OpenDSA/Published/ChalmersGU-DSABook/html/GraphTopsort.html
         pub fn topSortIterator(self: *const Self) !TopSortIterator {
             // Compute in-degrees
             var in_degree = std.AutoHashMap(VertexKey, usize).init(self.allocator);
@@ -445,8 +448,9 @@ pub fn DirectedGraph(
                 }
             }
 
-            // Initialize queue with all nodes with in-degree 0
             var queue = std.ArrayList(VertexKey).initCapacity(self.allocator, 0) catch unreachable;
+
+            // Initialize queue with all nodes with in-degree 0
             var deg_it = in_degree.iterator();
             while (deg_it.next()) |kv| {
                 if (kv.value_ptr.* == 0) {
@@ -461,8 +465,6 @@ pub fn DirectedGraph(
             };
         }
 
-        /// non recursive topological sort iterator
-        /// using Kahn's algorithm
         pub const TopSortIterator = struct {
             g: *const Self,
             queue: std.ArrayList(VertexKey),
@@ -755,6 +757,37 @@ test "double edges" {
     // std.debug.print("Edges A: {any}\n", .{edges_a.items});
     const expect_a = [_]u64{ 3, 4 };
     try testing.expectEqualSlices(u64, &expect_a, edges_a.items);
+}
+
+test "topSortIterator" {
+    const allocator = std.testing.allocator;
+
+    const TVertex = []const u8;
+    const TEdge = u64;
+
+    var g = DirectedGraph(TVertex, TEdge, std.hash_map.StringContext).init(allocator);
+    defer g.deinit();
+
+    // Add some nodes
+    try g.add("A");
+    try g.add("B1");
+    try g.add("B2");
+    try g.add("B3");
+    try g.add("C");
+    try g.addEdge("A", "B1", 1);
+    try g.addEdge("A", "B2", 2);
+    try g.addEdge("A", "B3", 4);
+    try g.addEdge("B1", "C", 3);
+    try g.addEdge("B3", "C", 5);
+
+    // DFS from B
+    var list = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
+    defer list.deinit(allocator);
+    var iter = try g.topSortIterator();
+    defer iter.deinit();
+
+    const expect = [_][]const u8{ "A", "B2", "B3", "B1", "C" };
+    try std.testing.expectEqualSlices([]const u8, &expect, list.items);
 }
 
 test {

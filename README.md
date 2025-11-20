@@ -49,6 +49,7 @@ zig 0.15.1
     - https://github.com/permutationlock/ztrait
     - https://github.com/permutationlock/zimpl
     - https://github.com/nilslice/zig-interface
+    - https://github.com/yglcode/zig_interfaces
     - https://williamw520.github.io/2025/07/13/zig-interface-revisited.html
   - https://ziggit.dev/t/convention-for-init-deinit/4865/2
   - [Zig cheatsheet](https://gist.github.com/jdmichaud/b75ee234bfa87283a6337e06a3b70767)

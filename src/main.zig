@@ -1,7 +1,8 @@
 const std = @import("std");
 
 // APP
-const app = @import("ui/app.zig");
+pub const app = @import("ui/app.zig");
+pub const cli = @import("cli/cli.zig");
 
 // EXPORTS
 pub const engine = @import("engine/engine.zig");
