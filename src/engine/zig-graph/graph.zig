@@ -8,6 +8,8 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const tarjan = @import("tarjan.zig");
 
+pub const print = @import("print.zig");
+
 pub const GraphError = error{
     VertexNotFoundError,
 };
@@ -497,6 +499,26 @@ pub fn DirectedGraph(
                 return v;
             }
         };
+
+        pub fn printer(
+            self: *Self,
+            comptime vert_fmt: []const u8,
+            comptime edge_fmt: []const u8,
+        ) print.GraphPrinter(
+            TVertex,
+            TEdge,
+            Context,
+            vert_fmt,
+            edge_fmt,
+        ) {
+            return print.GraphPrinter(
+                TVertex,
+                TEdge,
+                Context,
+                vert_fmt,
+                edge_fmt,
+            ).init(self.allocator, self);
+        }
     };
 }
 

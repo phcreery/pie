@@ -7,6 +7,7 @@ const Module = @import("Module.zig");
 const Node = @import("Node.zig");
 const SingleColPool = @import("pool.zig").SingleColPool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
+const GraphPrinter = @import("zig-graph/graph.zig").print.GraphPrinter;
 const slog = std.log.scoped(.pipe);
 
 const NodePool = SingleColPool(Node);
@@ -26,7 +27,7 @@ pub const Pipeline = struct {
     gpu: ?*gpu.GPU,
     gpu_allocator: ?gpu.GPUAllocator,
     node_pool: NodePool,
-    node_graph: DirectedGraph(NodeHandle, u64, std.hash_map.AutoContext(NodeHandle)),
+    node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
     node_execution_order: std.ArrayList(NodeHandle),
     modules: std.ArrayList(Module),
     connector_pool: ConnectorPool,
@@ -61,7 +62,7 @@ pub const Pipeline = struct {
         const node_pool = NodePool.init(allocator);
         errdefer node_pool.deinit();
 
-        const NodeGraph = DirectedGraph(NodeHandle, u64, std.hash_map.AutoContext(NodeHandle));
+        const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
         var node_graph = NodeGraph.init(allocator);
         defer node_graph.deinit();
 
@@ -245,18 +246,19 @@ pub const Pipeline = struct {
         // TODO: make this better
         // first build the graph by connecting nodes based on matching connector handles
         var node_pool_handles_a = self.node_pool.liveHandles();
-        var first_node_handle: ?NodeHandle = null;
+        // var first_node_handle: ?NodeHandle = null;
         while (node_pool_handles_a.next()) |node_handle_a| {
             // std.debug.print("Processing node: {any}\n", .{node_handle_a});
-            if (first_node_handle == null) {
-                // set first node handle
-                first_node_handle = node_handle_a;
-            }
+            // if (first_node_handle == null) {
+            //     // set first node handle
+            //     first_node_handle = node_handle_a;
+            // }
             var node_pool_handles_b = self.node_pool.liveHandles();
             while (node_pool_handles_b.next()) |node_handle_b| {
                 // slog.info("Checking for edge between node {any} and node {any}", .{ node_handle_a, node_handle_b });
                 // skip if edge already exists
                 if (self.node_graph.getEdge(node_handle_a, node_handle_b) != null) continue;
+                if (self.node_graph.getEdge(node_handle_b, node_handle_a) != null) continue;
                 if (node_handle_a.id == node_handle_b.id) continue;
                 // add nodes to graph
                 self.node_graph.add(node_handle_a) catch unreachable;
@@ -266,6 +268,7 @@ pub const Pipeline = struct {
                 const node_b = self.node_pool.get(node_handle_b) catch unreachable;
                 // check for matching connector handles
                 var found_match = false;
+                var match_handle: ?ConnectorHandle = null;
                 for (node_a.desc.sockets) |socket_a| {
                     const sock_a = socket_a orelse continue;
                     for (node_b.desc.sockets) |socket_b| {
@@ -274,6 +277,7 @@ pub const Pipeline = struct {
                         const conn_handle_b = sock_b.private.conn_handle orelse continue;
                         if (conn_handle_a.id == conn_handle_b.id) {
                             found_match = true;
+                            match_handle = conn_handle_a;
                             break;
                         }
                     }
@@ -281,21 +285,19 @@ pub const Pipeline = struct {
                 }
                 if (found_match) {
                     slog.info("Adding edge from node {any} to node {any}", .{ node_handle_a, node_handle_b });
-                    self.node_graph.addEdge(node_handle_a, node_handle_b, 1) catch unreachable;
+                    self.node_graph.addEdge(node_handle_a, node_handle_b, match_handle.?) catch unreachable;
                 }
             }
         }
-        // perform DFS from first node to get execution order
-        if (first_node_handle) |h| {
-            slog.info("Performing DFS from first node: {any}", .{h});
-            // var iter = try self.node_graph.dfsIterator(h);
-            var iter = try self.node_graph.topSortIterator();
-            defer iter.deinit();
-            while (try iter.next()) |value| {
-                try self.node_execution_order.append(self.allocator, self.node_graph.lookup(value).?);
-            }
-            slog.info("DFS Order: {any}", .{self.node_execution_order.items});
+        // perform topological sort from first node to get execution order
+        // if (first_node_handle) |h| {
+        // }
+        var iter = try self.node_graph.topSortIterator();
+        defer iter.deinit();
+        while (try iter.next()) |value| {
+            try self.node_execution_order.append(self.allocator, self.node_graph.lookup(value).?);
         }
+        slog.info("Topological sorted order: {any}", .{self.node_execution_order.items});
     }
 
     /// Allocates output textures and creates compute shaders for each node
@@ -516,5 +518,17 @@ pub const Pipeline = struct {
 
         util.printModules(self);
         util.printNodes(self);
+
+        var stdout_buffer: [4096]u8 = undefined;
+        var writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &writer.interface;
+
+        var iter1 = try self.node_graph.topSortIterator();
+        defer iter1.deinit();
+
+        var printer = self.node_graph.printer("{any}", "{any}");
+        try printer.print(stdout, &iter1);
+
+        try stdout.flush(); // Don't forget to flush!
     }
 };

@@ -1,6 +1,6 @@
 const std = @import("std");
 const pie = @import("pie");
-const graph = pie.engine.graph;
+const graph = @import("graph.zig");
 
 fn Lanes(TLane: type, n: usize) type {
     return struct {
@@ -12,7 +12,7 @@ fn Lanes(TLane: type, n: usize) type {
         fn consume(self: *Self, value: TLane) !usize {
             for (self.lanes, 0..) |lane, idx| {
                 const l = lane orelse continue;
-                if (l == value) {
+                if (std.meta.eql(l, value)) {
                     self.lanes[idx] = null;
                     return idx;
                 }
@@ -33,15 +33,21 @@ fn Lanes(TLane: type, n: usize) type {
     };
 }
 
-pub fn GraphPrinter(comptime TVertex: type, comptime TEdge: type) type {
+pub fn GraphPrinter(
+    comptime TVertex: type,
+    comptime TEdge: type,
+    Context: type,
+    comptime vert_fmt: []const u8,
+    comptime edge_fmt: []const u8,
+) type {
     return struct {
         const Self = @This();
         allocator: std.mem.Allocator,
-        g: *graph.DirectedGraph(TVertex, TEdge, std.hash_map.StringContext),
+        g: *graph.DirectedGraph(TVertex, TEdge, Context),
 
         pub fn init(
             allocator: std.mem.Allocator,
-            g: *graph.DirectedGraph(TVertex, TEdge, std.hash_map.StringContext),
+            g: *graph.DirectedGraph(TVertex, TEdge, Context),
         ) Self {
             return .{
                 .allocator = allocator,
@@ -51,102 +57,103 @@ pub fn GraphPrinter(comptime TVertex: type, comptime TEdge: type) type {
 
         pub fn print(
             self: *Self,
-            stdout: anytype,
+            writer: *std.Io.Writer,
             iter: anytype,
         ) !void {
-            const MAX_LANES = 6;
-            var conn_lanes = Lanes(TEdge, MAX_LANES){};
-            var node_inputs: [MAX_LANES]?TEdge = @splat(null);
-            var node_outputs: [MAX_LANES]?TEdge = @splat(null);
+            const MAX_LANES = 10;
+            var edge_lanes = Lanes(TEdge, MAX_LANES){};
+            var vert_inputs: [MAX_LANES]?TEdge = @splat(null);
+            var vert_outputs: [MAX_LANES]?TEdge = @splat(null);
             var new_lanes: [MAX_LANES]?TEdge = @splat(null);
 
             while (try iter.next()) |value| {
-                node_inputs = @splat(null);
-                node_outputs = @splat(null);
+                vert_inputs = @splat(null);
+                vert_outputs = @splat(null);
 
                 const vert = self.g.lookup(value).?;
 
-                var node_in_edges = self.g.getInEdges(vert);
-                defer node_in_edges.deinit(self.allocator);
-                for (node_in_edges.items) |edge| {
-                    const idx = conn_lanes.consume(edge) catch continue;
-                    node_outputs[idx] = edge;
+                var vert_in_edges = self.g.getInEdges(vert);
+                defer vert_in_edges.deinit(self.allocator);
+                for (vert_in_edges.items) |edge| {
+                    const idx = edge_lanes.consume(edge) catch continue;
+                    vert_outputs[idx] = edge;
                 }
 
                 // print node inputs
-                try stdout.print("┌─", .{});
+                try writer.print("┌─", .{});
                 for (0..MAX_LANES) |i| {
-                    if (node_outputs[i]) |_| {
-                        try stdout.print("▼", .{});
+                    if (vert_outputs[i]) |_| {
+                        try writer.print("▼", .{});
                     } else {
-                        try stdout.print("─", .{});
+                        try writer.print("─", .{});
                     }
-                    try stdout.print("──", .{});
+                    try writer.print("──", .{});
                 }
-                try stdout.print("─┐\n", .{});
+                try writer.print("─┐\n", .{});
 
                 // print node name
                 // get length of vert for formatting
                 var vert_name_print_buffer: [50]u8 = undefined;
-                const vert_name_slice = try std.fmt.bufPrint(&vert_name_print_buffer, "{s}", .{vert});
-                try stdout.print("│ {s}", .{vert_name_slice});
+                const vert_name_slice = try std.fmt.bufPrint(&vert_name_print_buffer, vert_fmt, .{vert});
+                try writer.print("│ ", .{});
+                try writer.print("{s}", .{vert_name_slice});
                 for (0..3 * MAX_LANES - vert_name_slice.len + 1) |_| {
-                    try stdout.print(" ", .{});
+                    try writer.print(" ", .{});
                 }
-                try stdout.print("│\n", .{});
+                try writer.print("│\n", .{});
 
                 var out_edges = self.g.getOutEdges(vert);
                 defer out_edges.deinit(self.allocator);
                 for (out_edges.items) |edge| {
-                    const lane_idx = try conn_lanes.add(edge);
+                    const lane_idx = try edge_lanes.add(edge);
                     new_lanes[lane_idx] = edge;
-                    node_inputs[lane_idx] = edge;
+                    vert_inputs[lane_idx] = edge;
                 }
 
                 // print node outputs
-                try stdout.print("└─", .{});
+                try writer.print("└─", .{});
                 for (0..MAX_LANES) |i| {
-                    if (node_inputs[i]) |_| {
-                        try stdout.print("▼", .{}); // ▼ ▣ △ ▲ ▽ ▼ ╤
+                    if (vert_inputs[i]) |_| {
+                        try writer.print("▼", .{}); // ▼ ▣ △ ▲ ▽ ▼ ╤
                     } else {
-                        try stdout.print("─", .{});
+                        try writer.print("─", .{});
                     }
-                    try stdout.print("──", .{});
+                    try writer.print("──", .{});
                 }
-                try stdout.print("─┘\n", .{});
+                try writer.print("─┘\n", .{});
 
                 // print | for active lanes
                 var r: usize = 0;
                 outer: while (true) {
                     r += 1;
-                    try stdout.print(" ", .{});
-                    for (conn_lanes.lanes, 0..) |lane, i| {
-                        try stdout.print(" ", .{});
+                    try writer.print(" ", .{});
+                    for (edge_lanes.lanes, 0..) |lane, i| {
+                        try writer.print(" ", .{});
                         if (lane) |_| {
                             if (r % 2 == 0 and new_lanes[i] != null) {
                                 new_lanes[i] = null;
-                                try stdout.print("├", .{});
+                                try writer.print("├", .{});
                                 // ├┄┄┄┄┄┄┄┄┄┄┄┄ {name}\n
                                 var edge_name_print_buffer: [50]u8 = undefined;
-                                const edge_name_slice = try std.fmt.bufPrint(&edge_name_print_buffer, "{d}", .{lane.?});
+                                const edge_name_slice = try std.fmt.bufPrint(&edge_name_print_buffer, edge_fmt, .{lane.?});
                                 for (0..(3 * (MAX_LANES - i) - edge_name_slice.len - 1)) |_| {
-                                    try stdout.print("┄", .{});
+                                    try writer.print("┄", .{});
                                 }
-                                try stdout.print(" {s}", .{edge_name_slice});
-                                try stdout.print("\n", .{});
+                                try writer.print(" {s}", .{edge_name_slice});
+                                try writer.print("\n", .{});
                                 continue :outer;
                             }
-                            try stdout.print("│", .{});
+                            try writer.print("│", .{});
                         } else {
-                            try stdout.print(" ", .{});
+                            try writer.print(" ", .{});
                         }
-                        try stdout.print(" ", .{});
+                        try writer.print(" ", .{});
                         // try stdout.print(" ", .{});
                     }
-                    try stdout.print("\n", .{});
+                    try writer.print("\n", .{});
                     // if there are no new lanes, break
                     const all_empty: [MAX_LANES]?TEdge = @splat(null);
-                    if (std.mem.eql(?TEdge, &new_lanes, &all_empty)) {
+                    if (std.meta.eql(new_lanes, all_empty)) {
                         break;
                     }
                 }
@@ -207,8 +214,9 @@ test "graph printer" {
 
     var found = false;
     var needle: u8 = 'D';
-    for (stdout.buffer) |c| {
-        if (c == needle) {
+    var haystack = stdout.buffer;
+    for (haystack) |straw| {
+        if (straw == needle) {
             found = true;
             break;
         }
@@ -217,8 +225,9 @@ test "graph printer" {
 
     found = false;
     needle = '9';
-    for (stdout.buffer) |c| {
-        if (c == needle) {
+    haystack = stdout.buffer;
+    for (haystack) |straw| {
+        if (straw == needle) {
             found = true;
             break;
         }
