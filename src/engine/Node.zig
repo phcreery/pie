@@ -1,5 +1,5 @@
 const std = @import("std");
-const api = @import("api.zig");
+const api = @import("modules/api.zig");
 const Module = @import("Module.zig");
 const gpu = @import("gpu.zig");
 const pipeline = @import("pipeline.zig");

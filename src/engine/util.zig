@@ -1,6 +1,6 @@
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
-const api = @import("api.zig");
+const api = @import("modules/api.zig");
 const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 
@@ -94,6 +94,6 @@ fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaqu
 fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []u8 {
     var self: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
     const node = self.node_pool.get(vert) catch unreachable;
-    const res = std.fmt.bufPrint(buf, "{s}", .{node.desc.entry_point}) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} > {s}", .{ node.mod.desc.name, node.desc.entry_point }) catch "<error>";
     return @constCast(res);
 }

@@ -1,7 +1,7 @@
 const std = @import("std");
 const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
-const api = @import("api.zig");
+const api = @import("modules/api.zig");
 const util = @import("util.zig");
 const Module = @import("Module.zig");
 const Node = @import("Node.zig");
@@ -13,7 +13,21 @@ const slog = std.log.scoped(.pipe);
 const NodePool = SingleColPool(Node);
 pub const NodeHandle = NodePool.Handle;
 
-const ConnectorPool = SingleColPool(?gpu.Texture);
+pub const Connector = struct {
+    texture: ?gpu.Texture,
+    // staging_offset: ?u64,
+    // staging_size: ?u64,
+
+    pub fn empty() Connector {
+        return Connector{
+            .texture = null,
+            // .staging_offset = null,
+            // .staging_size = null,
+        };
+    }
+};
+
+const ConnectorPool = SingleColPool(Connector);
 pub const ConnectorHandle = ConnectorPool.Handle;
 
 // TODO: history pool
@@ -217,7 +231,7 @@ pub const Pipeline = struct {
             // once the output connector is defined, create a new connector in the pool
             if (module.desc.output_socket) |*sock| {
                 slog.info("Configuring output connector image for module: {s}", .{module.desc.name});
-                sock.private.conn_handle = try self.connector_pool.add(null);
+                sock.private.conn_handle = try self.connector_pool.add(Connector.empty());
                 prev_conn_handle = sock.private.conn_handle;
             }
         }
@@ -329,7 +343,7 @@ pub const Pipeline = struct {
                         // defer texture.deinit();
                         // store texture in connector pool
                         const conn = try self.connector_pool.getPtr(conn_handle);
-                        conn.* = texture;
+                        conn.*.texture = texture;
                     }
                     if (node.desc.type == .compute) {
                         // prepare shader pipe connections
@@ -342,7 +356,7 @@ pub const Pipeline = struct {
 
                         const conn_handle = sock.private.conn_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
                         const conn = try self.connector_pool.getPtr(conn_handle);
-                        const texture = conn.* orelse return error.NodeSocketMissingConnectorTexture;
+                        const texture = conn.*.texture orelse return error.NodeSocketMissingConnectorTexture;
                         bind_group[binding_number] = gpu.BindGroupEntry{
                             .type = gpu.BindGroupEntryType.texture,
                             .binding = @intCast(binding_number),
@@ -428,8 +442,8 @@ pub const Pipeline = struct {
                 },
                 .source => {
                     slog.info("Enqueueing source node {s} buffer to texture copy", .{node.desc.entry_point});
-                    const texture = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
-                    var tex = texture.* orelse return error.PipelineMissingSourceNodeTexture;
+                    const connector = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
+                    var tex = connector.*.texture orelse return error.PipelineMissingSourceNodeTexture;
                     encoder.enqueueBufToTex(
                         &gpu_allocator,
                         &tex,
@@ -438,8 +452,8 @@ pub const Pipeline = struct {
                 },
                 .sink => {
                     slog.info("Enqueueing sink node {s} texture to buffer copy", .{node.desc.entry_point});
-                    const texture = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
-                    var tex = texture.* orelse return error.PipelineMissingSinkNodeTexture;
+                    const connector = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
+                    var tex = connector.*.texture orelse return error.PipelineMissingSinkNodeTexture;
                     encoder.enqueueTexToBuf(
                         &gpu_allocator,
                         &tex,

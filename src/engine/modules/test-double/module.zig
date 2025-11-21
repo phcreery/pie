@@ -1,7 +1,7 @@
-const api = @import("../../api.zig");
+const api = @import("../api.zig");
 
 pub var module: api.ModuleDesc = .{
-    .name = "Double It",
+    .name = "test-double",
     .type = .compute,
     // .param_ui = "",
     // .param_uniform = "",

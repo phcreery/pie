@@ -1,7 +1,7 @@
-const api = @import("../../api.zig");
+const api = @import("../api.zig");
 
 pub const module: api.ModuleDesc = .{
-    .name = "Create Test Data Module",
+    .name = "test-i-1234",
     .type = .source,
     // .param_ui = "",
     // .param_uniform = "",
@@ -54,7 +54,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: *api.Module) !void {
     const node_desc: api.NodeDesc = .{
         .type = .source,
         .shader_code = "",
-        .entry_point = "test-i-1234 Source",
+        .entry_point = "Source",
         .run_size = null,
         .sockets = init: {
             var s: api.Sockets = @splat(null);

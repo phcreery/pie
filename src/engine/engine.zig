@@ -3,7 +3,7 @@ pub const Module = @import("Module.zig");
 pub const Node = @import("Node.zig");
 pub const gpu = @import("gpu.zig");
 pub const pipeline = @import("pipeline.zig");
-pub const api = @import("api.zig");
+pub const api = @import("modules/api.zig");
 pub const modules = @import("modules/modules.zig");
 
 pub const graph = @import("zig-graph/graph.zig");

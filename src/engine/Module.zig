@@ -1,5 +1,5 @@
 const std = @import("std");
-const api = @import("api.zig");
+const api = @import("modules/api.zig");
 const slog = std.log.scoped(.mod);
 
 desc: api.ModuleDesc,
