@@ -37,21 +37,24 @@ pub fn GraphPrinter(
     comptime TVertex: type,
     comptime TEdge: type,
     Context: type,
-    comptime vert_fmt: []const u8,
-    comptime edge_fmt: []const u8,
+    edgePrinterCb: fn (buf: []u8, edge: TEdge, user_data: *anyopaque) []u8,
+    vertPrinterCb: fn (buf: []u8, vertex: TVertex, user_data: *anyopaque) []u8,
 ) type {
     return struct {
         const Self = @This();
         allocator: std.mem.Allocator,
         g: *graph.DirectedGraph(TVertex, TEdge, Context),
+        user_data: *anyopaque,
 
         pub fn init(
             allocator: std.mem.Allocator,
             g: *graph.DirectedGraph(TVertex, TEdge, Context),
+            user_data: *anyopaque,
         ) Self {
             return .{
                 .allocator = allocator,
                 .g = g,
+                .user_data = user_data,
             };
         }
 
@@ -93,12 +96,15 @@ pub fn GraphPrinter(
 
                 // print node name
                 // get length of vert for formatting
-                var vert_name_print_buffer: [50]u8 = undefined;
-                const vert_name_slice = try std.fmt.bufPrint(&vert_name_print_buffer, vert_fmt, .{vert});
+                var vert_name_print_buffer: [MAX_LANES * 3]u8 = undefined;
+                const vert_name_slice = vertPrinterCb(&vert_name_print_buffer, vert, self.user_data);
                 try writer.print("│ ", .{});
                 try writer.print("{s}", .{vert_name_slice});
-                for (0..3 * MAX_LANES - vert_name_slice.len + 1) |_| {
-                    try writer.print(" ", .{});
+                const num_spaces: isize = 3 * @as(isize, @intCast(MAX_LANES)) - @as(isize, @intCast(vert_name_slice.len)) + 1;
+                if (num_spaces > 0) {
+                    for (0..@intCast(num_spaces)) |_| {
+                        try writer.print(" ", .{});
+                    }
                 }
                 try writer.print("│\n", .{});
 
@@ -134,10 +140,13 @@ pub fn GraphPrinter(
                                 new_lanes[i] = null;
                                 try writer.print("├", .{});
                                 // ├┄┄┄┄┄┄┄┄┄┄┄┄ {name}\n
-                                var edge_name_print_buffer: [50]u8 = undefined;
-                                const edge_name_slice = try std.fmt.bufPrint(&edge_name_print_buffer, edge_fmt, .{lane.?});
-                                for (0..(3 * (MAX_LANES - i) - edge_name_slice.len - 1)) |_| {
-                                    try writer.print("┄", .{});
+                                var edge_name_print_buffer: [MAX_LANES * 3]u8 = undefined;
+                                const edge_name_slice = edgePrinterCb(&edge_name_print_buffer, lane.?, self.user_data);
+                                const num_dashes: isize = 3 * @as(isize, @intCast(MAX_LANES - i)) - @as(isize, @intCast(edge_name_slice.len)) - 1;
+                                if (num_dashes > 0) {
+                                    for (0..@intCast(num_dashes)) |_| {
+                                        try writer.print("┄", .{});
+                                    }
                                 }
                                 try writer.print(" {s}", .{edge_name_slice});
                                 try writer.print("\n", .{});

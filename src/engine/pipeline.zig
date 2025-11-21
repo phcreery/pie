@@ -516,19 +516,8 @@ pub const Pipeline = struct {
         self.runNodes() catch unreachable;
         self.runNodesDownload() catch unreachable;
 
-        util.printModules(self);
-        util.printNodes(self);
-
-        var stdout_buffer: [4096]u8 = undefined;
-        var writer = std.fs.File.stdout().writer(&stdout_buffer);
-        const stdout = &writer.interface;
-
-        var iter1 = try self.node_graph.topSortIterator();
-        defer iter1.deinit();
-
-        var printer = self.node_graph.printer("{any}", "{any}");
-        try printer.print(stdout, &iter1);
-
-        try stdout.flush(); // Don't forget to flush!
+        // util.printModules(self);
+        // util.printNodes(self);
+        util.printNodes2(self) catch unreachable;
     }
 };

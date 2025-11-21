@@ -70,3 +70,30 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
         std.debug.print("==================================================\n", .{});
     }
 }
+
+pub fn printNodes2(self: *pipeline.Pipeline) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &writer.interface;
+
+    var iter1 = try self.node_graph.topSortIterator();
+    defer iter1.deinit();
+
+    var printer = self.node_graph.printer(edgePrinterCb, vertPrinterCb, self);
+    try printer.print(stdout, &iter1);
+
+    try stdout.flush(); // Don't forget to flush!
+}
+
+fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaque) []u8 {
+    _ = user_data;
+    const res = std.fmt.bufPrint(buf, "id: {any}", .{edge.id}) catch "<error>";
+    return @constCast(res);
+}
+
+fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []u8 {
+    var self: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
+    const node = self.node_pool.get(vert) catch unreachable;
+    const res = std.fmt.bufPrint(buf, "{s}", .{node.desc.entry_point}) catch "<error>";
+    return @constCast(res);
+}

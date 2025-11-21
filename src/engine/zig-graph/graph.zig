@@ -502,22 +502,23 @@ pub fn DirectedGraph(
 
         pub fn printer(
             self: *Self,
-            comptime vert_fmt: []const u8,
-            comptime edge_fmt: []const u8,
+            edgePrinterCb: fn (buf: []u8, edge: TEdge, user_data: *anyopaque) []u8,
+            vertPrinterCb: fn (buf: []u8, vertex: TVertex, user_data: *anyopaque) []u8,
+            user_data: *anyopaque,
         ) print.GraphPrinter(
             TVertex,
             TEdge,
             Context,
-            vert_fmt,
-            edge_fmt,
+            edgePrinterCb,
+            vertPrinterCb,
         ) {
             return print.GraphPrinter(
                 TVertex,
                 TEdge,
                 Context,
-                vert_fmt,
-                edge_fmt,
-            ).init(self.allocator, self);
+                edgePrinterCb,
+                vertPrinterCb,
+            ).init(self.allocator, self, user_data);
         }
     };
 }
