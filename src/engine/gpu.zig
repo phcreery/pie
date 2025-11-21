@@ -34,6 +34,7 @@ pub const GPUAllocator = struct {
     gpu: *GPU,
     upload_buffer: *wgpu.Buffer = undefined,
     download_buffer: *wgpu.Buffer = undefined,
+    buffer_size: u64,
 
     const Self = @This();
 
@@ -84,6 +85,7 @@ pub const GPUAllocator = struct {
             .gpu = gpu,
             .upload_buffer = upload_buffer,
             .download_buffer = download_buffer,
+            .buffer_size = buffer_size,
         };
     }
 
@@ -92,13 +94,14 @@ pub const GPUAllocator = struct {
         self.upload_buffer.release();
     }
 
+    /// maps the upload buffer and returns a pointer to write to
     pub fn mapUpload(
         self: *Self,
         size_bytes: usize,
     ) *anyopaque {
         slog.debug("Writing data to GPU buffers", .{});
 
-        slog.debug(" mapUpload size_bytes: {d}", .{size_bytes});
+        slog.debug(" - mapUpload size_bytes: {d}", .{size_bytes});
 
         // TODO: first check mapped status
         // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
@@ -124,7 +127,7 @@ pub const GPUAllocator = struct {
         }
         // _ = device.poll(true, null);
 
-        slog.debug("Buffer map complete, writing data", .{});
+        slog.debug("Buffer map complete", .{});
 
         return self.upload_buffer.getMappedRange(0, size_bytes).?;
     }
@@ -135,6 +138,7 @@ pub const GPUAllocator = struct {
         self.upload_buffer.unmap();
     }
 
+    /// a simple wrapper around mapUpload + memcpy + unmapUpload
     pub fn upload(
         self: *Self,
         comptime T: type,
@@ -153,6 +157,31 @@ pub const GPUAllocator = struct {
 
         @memcpy(upload_buffer_slice, data);
     }
+
+    pub fn uploader(self: *Self) !Upload {
+        return Upload.init(self);
+    }
+
+    pub const Upload = struct {
+        fba: std.heap.FixedBufferAllocator,
+        allocator: std.mem.Allocator,
+
+        pub fn init(gpu_allocator: *GPUAllocator) Upload {
+            slog.debug("Creating upload allocator", .{});
+            const upload_mapped_ptr: *anyopaque = gpu_allocator.mapUpload(gpu_allocator.buffer_size);
+            const upload_buffer_ptr: [*]u8 = @ptrCast(@alignCast(upload_mapped_ptr));
+            const upload_buffer_slice = upload_buffer_ptr[0..@as(usize, gpu_allocator.buffer_size)];
+            var fba = std.heap.FixedBufferAllocator.init(upload_buffer_slice);
+            return .{
+                .fba = fba,
+                .allocator = fba.allocator(),
+            };
+        }
+
+        pub fn deinit(_: Upload, gpu_allocator: *GPUAllocator) void {
+            gpu_allocator.unmapUpload();
+        }
+    };
 
     /// Alternative mapUpload that writes directly to a texture
     /// we aren't really using this now because there isn't an equivalent readTexture method
@@ -195,6 +224,8 @@ pub const GPUAllocator = struct {
             copy_size,
         );
     }
+
+    /// maps the download buffer and returns a pointer to read from
     pub fn mapDownload(
         self: *Self,
         size_bytes: usize,
@@ -234,6 +265,7 @@ pub const GPUAllocator = struct {
         self.download_buffer.unmap();
     }
 
+    /// a simple wrapper around mapDownload + memcpy + unmapDownload
     pub fn download(
         self: *Self,
         comptime T: type,
@@ -249,6 +281,33 @@ pub const GPUAllocator = struct {
         const result = download_buffer_ptr[0..size_nvals];
         return result;
     }
+
+    pub fn downloader(self: *Self) !Download {
+        return Download.init(self);
+    }
+
+    pub const Download = struct {
+        fba: std.heap.FixedBufferAllocator,
+        allocator: std.mem.Allocator,
+        buf: []u8,
+
+        pub fn init(gpu_allocator: *GPUAllocator) Download {
+            slog.debug("Creating download allocator", .{});
+            const download_mapped_ptr: *anyopaque = try gpu_allocator.mapDownload(gpu_allocator.buffer_size);
+            const download_buffer_ptr: [*]u8 = @ptrCast(@alignCast(download_mapped_ptr));
+            const download_buffer_slice = download_buffer_ptr[0..@as(usize, gpu_allocator.buffer_size)];
+            var fba = std.heap.FixedBufferAllocator.init(download_buffer_slice);
+            return .{
+                .fba = fba,
+                .allocator = fba.allocator(),
+                .buf = download_buffer_slice,
+            };
+        }
+
+        pub fn deinit(_: Download, gpu_allocator: *GPUAllocator) void {
+            gpu_allocator.unmapDownload();
+        }
+    };
 };
 
 pub const Encoder = struct {
