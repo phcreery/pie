@@ -42,11 +42,9 @@ pub const Pipeline = struct {
 
     upload_buffer: ?gpu.GPUMemory,
     upload_fba: ?std.heap.FixedBufferAllocator,
-    // upload_allocator: ?std.mem.Allocator,
 
     download_buffer: ?gpu.GPUMemory,
     download_fba: ?std.heap.FixedBufferAllocator,
-    // download_allocator: ?std.mem.Allocator,
 
     node_pool: NodePool,
     node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
@@ -63,29 +61,17 @@ pub const Pipeline = struct {
         }
         var upload_buffer: ?gpu.GPUMemory = null;
         var upload_fba: ?std.heap.FixedBufferAllocator = null;
-        // var upload_allocator: ?std.mem.Allocator = null;
         var download_buffer: ?gpu.GPUMemory = null;
         var download_fba: ?std.heap.FixedBufferAllocator = null;
-        // var download_allocator: ?std.mem.Allocator = null;
         if (gpu_instance) |gpu_inst| {
             upload_buffer = try gpu.GPUMemory.init(gpu_inst, null, .upload);
             if (upload_buffer) |*ub| {
                 upload_fba = ub.fixedBufferAllocator();
-                // if (upload_fba) |*fba| {
-                //     upload_allocator = fba.allocator();
-                // } else {
-                //     return error.PipelineFailedToCreateFixedBufferAllocator;
-                // }
                 errdefer ub.deinit();
             }
             download_buffer = try gpu.GPUMemory.init(gpu_inst, null, .download);
             if (download_buffer) |*db| {
                 download_fba = db.fixedBufferAllocator();
-                // if (download_fba) |*fba| {
-                //     download_allocator = fba.allocator();
-                // } else {
-                //     return error.PipelineFailedToCreateFixedBufferAllocator;
-                // }
                 errdefer db.deinit();
             }
         } else {
@@ -122,10 +108,8 @@ pub const Pipeline = struct {
             .gpu = gpu_instance,
             .upload_buffer = upload_buffer,
             .upload_fba = upload_fba,
-            // .upload_allocator = upload_allocator,
             .download_buffer = download_buffer,
             .download_fba = download_fba,
-            // .download_allocator = download_allocator,
             .modules = modules,
             .node_pool = node_pool,
             .node_graph = node_graph,
@@ -286,15 +270,8 @@ pub const Pipeline = struct {
         }
     }
 
-    // pub fn runModules(self: *Pipeline) !void {
-    //     try self.runModulesCheck();
-    //     try self.runModulesModifyROIOut();
-    //     try self.runModulesCreateConnectorHandles();
-    //     try self.runModulesCreateNodes();
-    // }
-
     /// Builds a DAG graph for the node by connecting nodes based on matching connector handles
-    /// then performs a DFS to determine execution order
+    /// then performs a topological sort to determine execution order
     pub fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
         // TODO: make this better, if there are lots of nodes, this is O(n^2)
         // first build the graph by connecting nodes based on matching connector handles
@@ -501,7 +478,9 @@ pub const Pipeline = struct {
 
         upload_buffer.unmap();
     }
+
     // pub fn runModulesUploadUniforms(self: *Pipeline) !void {}
+
     pub fn runNodes(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingGPUMemory;
@@ -622,6 +601,7 @@ pub const Pipeline = struct {
         self.runModulesCreateNodes() catch unreachable;
 
         // then run nodes
+        // self.runNodesCheck() catch unreachable;
         self.runNodesBuildExecutionOrder() catch unreachable;
         // TODO: put these all in a single loop after building execution order
         self.runNodesAllocateTextures() catch unreachable;

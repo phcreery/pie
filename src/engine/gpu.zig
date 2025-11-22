@@ -442,17 +442,6 @@ pub const TextureFormat = enum {
         };
     }
 
-    /// base type
-    // pub fn BaseType(comptime self: TextureFormat) type {
-    //     return switch (self) {
-    //         .rgba16float => f16,
-    //         .rgba16uint => u16,
-    //         .r8uint => u8,
-    //         .r16uint => u16,
-    //         .r16float => f16,
-    //     };
-    // }
-
     pub fn baseTypeSize(self: TextureFormat) u32 {
         return switch (self) {
             .rgba16float => @sizeOf(f16),
