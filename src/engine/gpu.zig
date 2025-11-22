@@ -54,14 +54,14 @@ pub const MemoryType = enum {
 /// GPU must outlive GPUMemory
 pub const GPUMemory = struct {
     gpu: *GPU,
-    buffer: *wgpu.Buffer = undefined,
+    buffer: *wgpu.Buffer,
     buffer_size: u64,
     memory_type: MemoryType,
 
     const Self = @This();
 
-    /// size in bytes of each of the two buffers
-    pub fn init(gpu: *GPU, size: ?u64, memory_type: MemoryType) !Self {
+    /// size in bytes of the buffer
+    pub fn init(gpu: *GPU, size_bytes: ?u64, memory_type: MemoryType) !Self {
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
@@ -71,22 +71,22 @@ pub const GPUMemory = struct {
             max_buffer_size = 256 * 1024 * 1024 * 12; // 256 MB x12 for RGBAf16
         }
 
-        if (size) |s| {
+        if (size_bytes) |s| {
             if (s > max_buffer_size) {
                 slog.err("Requested GPUMemory size {d} exceeds max buffer size {d}", .{ s, max_buffer_size });
                 return error.InvalidInput;
             }
         }
-        const buffer_size = size orelse (max_buffer_size / 16);
+        const buffer_size_bytes = size_bytes orelse (max_buffer_size / 16);
 
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        slog.debug("Creating GPUMemory with upload buffer size {d} bytes", .{buffer_size});
+        slog.debug("Creating GPUMemory with upload buffer size {d} bytes", .{buffer_size_bytes});
         const buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("buffer"),
             .usage = memory_type.toGPUBufferUsage(),
-            .size = buffer_size,
+            .size = buffer_size_bytes,
             .mapped_at_creation = @as(u32, @intFromBool(false)),
         }).?;
         errdefer buffer.release();
@@ -94,7 +94,7 @@ pub const GPUMemory = struct {
         return Self{
             .gpu = gpu,
             .buffer = buffer,
-            .buffer_size = buffer_size,
+            .buffer_size = buffer_size_bytes,
             .memory_type = memory_type,
         };
     }

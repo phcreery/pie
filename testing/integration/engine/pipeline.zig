@@ -7,6 +7,9 @@ const Pipeline = pie.engine.Pipeline;
 test "simple module test" {
     const allocator = std.testing.allocator;
 
+    const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
+    defer cp_out.deinit();
+
     var gpu_instance = try gpu.GPU.init();
     defer gpu_instance.deinit();
 

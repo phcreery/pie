@@ -11,17 +11,16 @@ const TextureFormat = pie.engine.gpu.TextureFormat;
 const Bindings = pie.engine.gpu.Bindings;
 
 test "simple compute double buffer test" {
-    // if (true) {
-    //     return error.SkipZigTest;
-    // }
     var gpu = try GPU.init();
     defer gpu.deinit();
 
-    var gpu_allocator = try GPUMemory.init(&gpu, 4 * TextureFormat.rgba16float.bpp());
-    defer gpu_allocator.deinit();
+    var upload = try GPUMemory.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .upload);
+    defer upload.deinit();
+    var download = try GPUMemory.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .download);
+    defer download.deinit();
 
-    var init_contents = std.mem.zeroes([4]f16);
-    _ = std.mem.copyForwards(f16, init_contents[0..4], &[_]f16{ 1.0, 2.0, 3.0, 4.0 });
+    var source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
+    var destination = std.mem.zeroes([4]f16);
     const roi = ROI{
         .size = .{
             .w = 1,
@@ -88,22 +87,46 @@ test "simple compute double buffer test" {
     var bindings_b_to_a = try Bindings.init(&gpu, &shader_pipe, binds_b_to_a);
     defer bindings_b_to_a.deinit();
 
+    // ALLOCATORS
+    var upload_fba = upload.fixedBufferAllocator();
+    var upload_allocator = upload_fba.allocator();
+    // pre-allocate to induce a change in offset
+    _ = try upload_allocator.alloc(f16, roi.size.w * roi.size.h * input_binding_layout.format.nchannels());
+
+    var download_fba = download.fixedBufferAllocator();
+    var download_allocator = download_fba.allocator();
+
+    // PREP UPLOAD
+    const upload_offset = upload_fba.end_index;
+    const upload_buf = try upload_allocator.alloc(f16, roi.size.w * roi.size.h * input_binding_layout.format.nchannels());
+    // const offset = upload_buf.ptr - upload_fba.buffer.ptr
+    std.log.info("Upload offset: {d}", .{upload_offset});
+
+    // PREP DOWNLOAD
+    const download_offset = download_fba.end_index;
+    const download_buf = try download_allocator.alloc(f16, roi.size.w * roi.size.h * output_binding_layout.format.nchannels());
+
     // UPLOAD
-    gpu_allocator.upload(f16, &init_contents, .rgba16float, roi);
+    upload.map();
+    @memcpy(upload_buf, &source);
+    upload.unmap();
 
     // a -> b -> a
     var encoder = try Encoder.start(&gpu);
     defer encoder.deinit();
-    encoder.enqueueBufToTex(&gpu_allocator, &texture_a, roi) catch unreachable;
+    encoder.enqueueBufToTex(&upload, upload_offset, &texture_a, roi) catch unreachable;
     encoder.enqueueShader(&shader_pipe, &bindings_a_to_b, roi);
     encoder.enqueueShader(&shader_pipe, &bindings_b_to_a, roi);
-    encoder.enqueueTexToBuf(&gpu_allocator, &texture_a, roi) catch unreachable;
+    encoder.enqueueTexToBuf(&download, download_offset, &texture_a, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
-    const result = try gpu_allocator.download(f16, .rgba16float, roi);
-    std.log.info("Download buffer contents: {any}", .{result});
+    download.map();
+    @memcpy(&destination, download_buf);
+    download.unmap();
+
+    std.log.info("Download buffer contents: {any}", .{destination});
 
     const expected_contents = [_]f16{ 4.0, 8.0, 12.0, 16.0 };
-    try std.testing.expectEqualSlices(f16, &expected_contents, result);
+    try std.testing.expectEqualSlices(f16, &expected_contents, &destination);
 }

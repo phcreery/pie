@@ -39,7 +39,9 @@ pub const ConnectorHandle = ConnectorPool.Handle;
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
     gpu: ?*gpu.GPU,
-    gpu_allocator: ?gpu.GPUMemory,
+    // gpu_allocator: ?gpu.GPUMemory,
+    upload_buffer: ?gpu.GPUMemory,
+    download_buffer: ?gpu.GPUMemory,
     node_pool: NodePool,
     node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
     node_execution_order: std.ArrayList(NodeHandle),
@@ -53,12 +55,19 @@ pub const Pipeline = struct {
         if (gpu_instance == null) {
             slog.info("No GPU instance provided, performing a dry run", .{});
         }
-        var gpu_allocator: ?gpu.GPUMemory = null;
+        var upload_buffer: ?gpu.GPUMemory = null;
+        var download_buffer: ?gpu.GPUMemory = null;
         if (gpu_instance) |gpu_inst| {
-            gpu_allocator = try gpu.GPUMemory.init(gpu_inst, null);
-            errdefer gpu_allocator.deinit();
+            upload_buffer = try gpu.GPUMemory.init(gpu_inst, null, .upload);
+            if (upload_buffer) |ub| {
+                errdefer ub.deinit();
+            }
+            download_buffer = try gpu.GPUMemory.init(gpu_inst, null, .download);
+            if (download_buffer) |db| {
+                errdefer db.deinit();
+            }
         } else {
-            gpu_allocator = null;
+            upload_buffer = null;
         }
 
         const modules = std.ArrayList(Module).initCapacity(allocator, MAX_MODULES) catch unreachable;
@@ -89,7 +98,9 @@ pub const Pipeline = struct {
         return Pipeline{
             .allocator = allocator,
             .gpu = gpu_instance,
-            .gpu_allocator = gpu_allocator,
+            // .gpu_allocator = gpu_allocator,
+            .upload_buffer = upload_buffer,
+            .download_buffer = download_buffer,
             .modules = modules,
             .node_pool = node_pool,
             .node_graph = node_graph,
@@ -106,8 +117,11 @@ pub const Pipeline = struct {
         self.node_pool.deinit();
         self.connector_pool.deinit();
 
-        if (self.gpu_allocator) |*gpu_allocator| {
-            gpu_allocator.deinit();
+        if (self.upload_buffer) |*upload_buffer| {
+            upload_buffer.deinit();
+        }
+        if (self.download_buffer) |*download_buffer| {
+            download_buffer.deinit();
         }
     }
 
@@ -387,7 +401,7 @@ pub const Pipeline = struct {
     ///
     /// similar to vkdt dt_graph_run_nodes_upload()
     pub fn runNodesUpload(self: *Pipeline) !void {
-        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUMemory;
+        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingGPUMemory;
 
         // we currently only support one upload in the entire pipeline
         // so we are going check if the first node has a source connector
@@ -403,8 +417,8 @@ pub const Pipeline = struct {
 
                     // we are going to create a staging buffer here and pass the mapped pointer to the readSource function
                     const size_bytes = sock.roi.?.size.w * sock.roi.?.size.h * sock.format.bpp();
-                    const upload_buffer_ptr: *anyopaque = gpu_allocator.mapUpload(size_bytes);
-                    defer gpu_allocator.unmapUpload();
+                    const upload_buffer_ptr: *anyopaque = upload_buffer.mapSize(size_bytes);
+                    defer upload_buffer.unmap();
 
                     // then the node can do the upload with
                     // const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
@@ -420,7 +434,9 @@ pub const Pipeline = struct {
     // pub fn runModulesUploadUniforms(self: *Pipeline) !void {}
     pub fn runNodes(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
-        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUMemory;
+        // var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUMemory;
+        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingGPUMemory;
+        var download_buffer = self.download_buffer orelse return error.PipelineMissingGPUMemory;
 
         var encoder = try gpu.Encoder.start(gpu_inst);
         defer encoder.deinit();
@@ -445,7 +461,8 @@ pub const Pipeline = struct {
                     const connector = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
                     var tex = connector.*.texture orelse return error.PipelineMissingSourceNodeTexture;
                     encoder.enqueueBufToTex(
-                        &gpu_allocator,
+                        &upload_buffer,
+                        0,
                         &tex,
                         node.desc.sockets[0].?.roi.?,
                     ) catch unreachable;
@@ -455,7 +472,8 @@ pub const Pipeline = struct {
                     const connector = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
                     var tex = connector.*.texture orelse return error.PipelineMissingSinkNodeTexture;
                     encoder.enqueueTexToBuf(
-                        &gpu_allocator,
+                        &download_buffer,
+                        0,
                         &tex,
                         node.desc.sockets[0].?.roi.?,
                     ) catch unreachable;
@@ -467,7 +485,8 @@ pub const Pipeline = struct {
     }
 
     pub fn runNodesDownload(self: *Pipeline) !void {
-        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUMemory;
+        // var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUMemory;
+        var download_buffer = self.download_buffer orelse return error.PipelineMissingGPUMemory;
 
         // we currently only support one download in the entire pipeline
         // so we are going check if the last node has a sink connector
@@ -483,8 +502,8 @@ pub const Pipeline = struct {
                     slog.info("Downloading sink data for last node", .{});
 
                     const size_bytes = sock.roi.?.size.w * sock.roi.?.size.h * sock.format.bpp();
-                    const download_buffer_ptr: *anyopaque = try gpu_allocator.mapDownload(size_bytes);
-                    defer gpu_allocator.unmapDownload();
+                    const download_buffer_ptr: *anyopaque = download_buffer.mapSize(size_bytes);
+                    defer download_buffer.unmap();
 
                     writeSinkFn(self, last_node.mod, download_buffer_ptr) catch unreachable;
                 }
