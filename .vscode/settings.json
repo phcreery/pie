@@ -8,6 +8,7 @@
         "errdefer",
         "isize",
         "libraw",
+        "memcpy",
         "musubi",
         "nchannels",
         "orelse",

@@ -3,7 +3,7 @@ const pie = @import("pie");
 
 const ROI = pie.engine.ROI;
 const GPU = pie.engine.gpu.GPU;
-const GPUAllocator = pie.engine.gpu.GPUAllocator;
+const GPUMemory = pie.engine.gpu.GPUMemory;
 const Encoder = pie.engine.gpu.Encoder;
 const ShaderPipe = pie.engine.gpu.ShaderPipe;
 const Texture = pie.engine.gpu.Texture;
@@ -17,7 +17,7 @@ test "simple compute double buffer test" {
     var gpu = try GPU.init();
     defer gpu.deinit();
 
-    var gpu_allocator = try GPUAllocator.init(&gpu, 4 * TextureFormat.rgba16float.bpp());
+    var gpu_allocator = try GPUMemory.init(&gpu, 4 * TextureFormat.rgba16float.bpp());
     defer gpu_allocator.deinit();
 
     var init_contents = std.mem.zeroes([4]f16);

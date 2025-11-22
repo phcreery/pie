@@ -81,7 +81,7 @@ test "load raw, demosaic, save" {
     var gpu = try pie.engine.gpu.GPU.init();
     defer gpu.deinit();
 
-    var gpu_allocator = try pie.engine.gpu.GPUAllocator.init(&gpu, null);
+    var gpu_allocator = try pie.engine.gpu.GPUMemory.init(&gpu, null);
     defer gpu_allocator.deinit();
 
     // UPLOAD

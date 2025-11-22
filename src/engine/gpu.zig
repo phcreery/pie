@@ -24,36 +24,56 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
     complete.* = true;
 }
 
+pub const MemoryType = enum {
+    upload,
+    download,
+
+    pub fn toGPUBufferUsage(self: MemoryType) wgpu.BufferUsage {
+        return switch (self) {
+            // wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write
+            .upload => wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
+            .download => wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
+            // else => unreachable,
+        };
+    }
+
+    pub fn toGPUMapMode(self: MemoryType) wgpu.MapMode {
+        return switch (self) {
+            .upload => wgpu.MapModes.write,
+            .download => wgpu.MapModes.read,
+            // else => unreachable,
+        };
+    }
+};
+
 /// Dead simple GPU allocator using an upload and download buffer
 /// for staging data to/from the GPU.
 /// This is not optimal, but it works for now. Only one allocation at a time.
 /// Future work could include a more complex allocator with multiple buffers
 /// useful for multiple simultaneous operations.
-pub const GPUAllocator = struct {
-    // because of this, GPU must outlive GPUAllocator
+/// GPU must outlive GPUMemory
+pub const GPUMemory = struct {
     gpu: *GPU,
-    upload_buffer: *wgpu.Buffer = undefined,
-    download_buffer: *wgpu.Buffer = undefined,
+    buffer: *wgpu.Buffer = undefined,
     buffer_size: u64,
+    memory_type: MemoryType,
 
     const Self = @This();
 
     /// size in bytes of each of the two buffers
-    pub fn init(gpu: *GPU, size: ?u64) !Self {
+    pub fn init(gpu: *GPU, size: ?u64, memory_type: MemoryType) !Self {
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
         var max_buffer_size = limits.max_buffer_size;
         if (max_buffer_size == wgpu.WGPU_LIMIT_U64_UNDEFINED) {
             // set to something reasonable
-            // max_buffer_size = 256 * 1024 * 1024; // 256 MB
-            max_buffer_size = 256 * 1024 * 1024 * 12; // 3x256 MB for RGBAf16
+            max_buffer_size = 256 * 1024 * 1024 * 12; // 256 MB x12 for RGBAf16
         }
 
-        // const buffer_size = max_buffer_size / 16;
         if (size) |s| {
             if (s > max_buffer_size) {
-                slog.err("Requested GPUAllocator size {d} exceeds max buffer size {d}", .{ s, max_buffer_size });
+                slog.err("Requested GPUMemory size {d} exceeds max buffer size {d}", .{ s, max_buffer_size });
                 return error.InvalidInput;
             }
         }
@@ -62,57 +82,46 @@ pub const GPUAllocator = struct {
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        slog.debug("Creating GPUAllocator with upload buffer size {d} bytes", .{buffer_size});
-        const upload_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
-            .label = wgpu.StringView.fromSlice("upload_buffer"),
-            .usage = wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
-            .size = buffer_size,
-            // .mapped_at_creation = @as(u32, @intFromBool(true)),
-            .mapped_at_creation = @as(u32, @intFromBool(false)),
-        }).?;
-        errdefer upload_buffer.release();
-
-        slog.debug("Creating GPUAllocator with download buffer size {d} bytes", .{buffer_size});
-        const download_buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
-            .label = wgpu.StringView.fromSlice("download_buffer"),
-            .usage = wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
+        slog.debug("Creating GPUMemory with upload buffer size {d} bytes", .{buffer_size});
+        const buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("buffer"),
+            .usage = memory_type.toGPUBufferUsage(),
             .size = buffer_size,
             .mapped_at_creation = @as(u32, @intFromBool(false)),
         }).?;
-        errdefer download_buffer.release();
+        errdefer buffer.release();
 
         return Self{
             .gpu = gpu,
-            .upload_buffer = upload_buffer,
-            .download_buffer = download_buffer,
+            .buffer = buffer,
             .buffer_size = buffer_size,
+            .memory_type = memory_type,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.download_buffer.release();
-        self.upload_buffer.release();
+        self.buffer.release();
     }
 
-    /// maps the upload buffer and returns a pointer to write to
-    pub fn mapUpload(
+    /// maps the buffer and returns a pointer to write to
+    pub fn mapSize(
         self: *Self,
         size_bytes: usize,
     ) *anyopaque {
-        slog.debug("Writing data to GPU buffers", .{});
+        slog.debug("Mapping GPU buffer", .{});
 
-        slog.debug(" - mapUpload size_bytes: {d}", .{size_bytes});
+        slog.debug(" - map size_bytes: {d}", .{size_bytes});
 
         // TODO: first check mapped status
         // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
 
-        // We now map the upload buffer so we can write to it. Mapping tells wgpu that we want to read/write
+        // We now map the buffer so we can write to it. Mapping tells wgpu that we want to read/write
         // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
         //
         // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
         // to tell you when the mapping is complete.
         var buffer_map_complete = false;
-        _ = self.upload_buffer.mapAsync(wgpu.MapModes.write, 0, size_bytes, wgpu.BufferMapCallbackInfo{
+        _ = self.buffer.mapAsync(self.memory_type.toGPUMapMode(), 0, size_bytes, wgpu.BufferMapCallbackInfo{
             .callback = handleBufferMap,
             .userdata1 = @ptrCast(&buffer_map_complete),
         });
@@ -129,16 +138,20 @@ pub const GPUAllocator = struct {
 
         slog.debug("Buffer map complete", .{});
 
-        return self.upload_buffer.getMappedRange(0, size_bytes).?;
+        return self.buffer.getMappedRange(0, size_bytes).?;
     }
 
-    pub fn unmapUpload(
+    pub fn map(self: *Self) void {
+        _ = self.mapSize(self.buffer_size);
+    }
+
+    pub fn unmap(
         self: *Self,
     ) void {
-        self.upload_buffer.unmap();
+        self.buffer.unmap();
     }
 
-    /// a simple wrapper around mapUpload + memcpy + unmapUpload
+    /// a simple wrapper around map + memcpy + unmap
     pub fn upload(
         self: *Self,
         comptime T: type,
@@ -158,30 +171,17 @@ pub const GPUAllocator = struct {
         @memcpy(upload_buffer_slice, data);
     }
 
-    pub fn uploader(self: *Self) !Upload {
-        return Upload.init(self);
+    pub fn fixedBufferAllocator(gpu_memory: *GPUMemory) std.heap.FixedBufferAllocator {
+        // slog.debug("Buffer size: {d}", .{gpu_memory.buffer_size});
+        const mapped_ptr: *anyopaque = gpu_memory.mapSize(gpu_memory.buffer_size);
+        slog.debug("Buffer mapped for FixedBufferAllocator {}", .{mapped_ptr});
+        defer gpu_memory.unmap();
+        const buffer_ptr: [*]u8 = @ptrCast(@alignCast(mapped_ptr));
+        const buffer_slice = buffer_ptr[0..@as(usize, gpu_memory.buffer_size)];
+        const fba = std.heap.FixedBufferAllocator.init(buffer_slice);
+        slog.debug("Allocator created", .{});
+        return fba;
     }
-
-    pub const Upload = struct {
-        fba: std.heap.FixedBufferAllocator,
-        allocator: std.mem.Allocator,
-
-        pub fn init(gpu_allocator: *GPUAllocator) Upload {
-            slog.debug("Creating upload allocator", .{});
-            const upload_mapped_ptr: *anyopaque = gpu_allocator.mapUpload(gpu_allocator.buffer_size);
-            const upload_buffer_ptr: [*]u8 = @ptrCast(@alignCast(upload_mapped_ptr));
-            const upload_buffer_slice = upload_buffer_ptr[0..@as(usize, gpu_allocator.buffer_size)];
-            var fba = std.heap.FixedBufferAllocator.init(upload_buffer_slice);
-            return .{
-                .fba = fba,
-                .allocator = fba.allocator(),
-            };
-        }
-
-        pub fn deinit(_: Upload, gpu_allocator: *GPUAllocator) void {
-            gpu_allocator.unmapUpload();
-        }
-    };
 
     /// Alternative mapUpload that writes directly to a texture
     /// we aren't really using this now because there isn't an equivalent readTexture method
@@ -193,6 +193,10 @@ pub const GPUAllocator = struct {
         comptime format: TextureFormat,
         roi: ROI,
     ) void {
+        if (self.memory_type != .upload) {
+            slog.err("GPUMemory.mapUploadTexture called on non-upload memory");
+            return;
+        }
         slog.debug("Writing data to GPU Texture", .{});
 
         const bytes_per_row = roi.size.w * format.bpp();
@@ -224,90 +228,6 @@ pub const GPUAllocator = struct {
             copy_size,
         );
     }
-
-    /// maps the download buffer and returns a pointer to read from
-    pub fn mapDownload(
-        self: *Self,
-        size_bytes: usize,
-    ) !*anyopaque {
-        slog.debug("Reading data from GPU buffers", .{});
-
-        // TODO: first check mapped status
-        // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
-
-        // We now map the download buffer so we can read it. Mapping tells wgpu that we want to read/write
-        // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
-        //
-        // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
-        // to tell you when the mapping is complete.
-        var buffer_map_complete = false;
-        _ = self.download_buffer.mapAsync(wgpu.MapModes.read, 0, size_bytes, wgpu.BufferMapCallbackInfo{
-            .callback = handleBufferMap,
-            .userdata1 = @ptrCast(&buffer_map_complete),
-        });
-
-        // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
-        // to rely on the callback to know when the buffer is mapped.
-        self.gpu.instance.processEvents();
-        while (!buffer_map_complete) {
-            self.gpu.instance.processEvents();
-        }
-        // _ = device.poll(true, null);
-
-        // We can now read the data from the buffer.
-        // Convert the data back to a slice of f16.
-        return self.download_buffer.getMappedRange(0, size_bytes).?;
-    }
-
-    pub fn unmapDownload(
-        self: *Self,
-    ) void {
-        self.download_buffer.unmap();
-    }
-
-    /// a simple wrapper around mapDownload + memcpy + unmapDownload
-    pub fn download(
-        self: *Self,
-        comptime T: type,
-        comptime format: TextureFormat,
-        roi: ROI,
-    ) ![]T {
-        slog.debug("Reading data from GPU buffers", .{});
-        const size_nvals = roi.size.w * roi.size.h * format.nchannels();
-        const size_bytes = roi.size.w * roi.size.h * format.bpp();
-        const download_mapped_ptr: *anyopaque = try self.mapDownload(size_bytes);
-        defer self.unmapDownload();
-        const download_buffer_ptr: [*]T = @ptrCast(@alignCast(download_mapped_ptr));
-        const result = download_buffer_ptr[0..size_nvals];
-        return result;
-    }
-
-    pub fn downloader(self: *Self) !Download {
-        return Download.init(self);
-    }
-
-    pub const Download = struct {
-        fba: std.heap.FixedBufferAllocator,
-        allocator: std.mem.Allocator,
-        buf: []u8,
-
-        pub fn init(gpu_allocator: *GPUAllocator) Download {
-            slog.debug("Creating download allocator", .{});
-            const download_mapped_ptr: *anyopaque = try gpu_allocator.mapDownload(gpu_allocator.buffer_size);
-            const download_buffer_ptr: [*]u8 = @ptrCast(@alignCast(download_mapped_ptr));
-            const download_buffer_slice = download_buffer_ptr[0..@as(usize, gpu_allocator.buffer_size)];
-            var fba = std.heap.FixedBufferAllocator.init(download_buffer_slice);
-            return .{
-                .fba = fba,
-                .allocator = fba.allocator(),
-                .buf = download_buffer_slice,
-            };
-        }
-
-        pub fn deinit(_: Download, gpu_allocator: *GPUAllocator) void {
-            gpu_allocator.unmapDownload();
-        }
-    };
 };
 
 pub const Encoder = struct {
@@ -380,7 +300,7 @@ pub const Encoder = struct {
         compute_pass.end();
     }
 
-    pub fn enqueueBufToTex(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueBufToTex(self: *Self, memory: *GPUMemory, mem_offset: usize, texture: *Texture, roi: ROI) !void {
         slog.debug("Writing GPU buffer to Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
@@ -394,24 +314,15 @@ pub const Encoder = struct {
             .height = roi.size.h,
             .depth_or_array_layers = 1,
         };
-        const offset = @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * texture.format.bpp();
+        const offset = @as(u64, mem_offset) + @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * texture.format.bpp();
         const source = wgpu.TexelCopyBufferInfo{
-            .buffer = allocator.upload_buffer,
+            .buffer = memory.buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 .offset = offset,
                 .bytes_per_row = padded_bytes_per_row,
                 .rows_per_image = roi.size.h,
             },
         };
-        { // Debug info
-            // slog.debug("[enqueueMount] copy_size.width: {d}", .{copy_size.width});
-            // slog.debug("[enqueueMount] copy_size.height: {d}", .{copy_size.height});
-            // slog.debug("[enqueueMount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
-            // slog.debug("[enqueueMount] offset: {d}", .{offset});
-            // slog.debug("[enqueueMount] source.buffer size: {d}", .{self.upload_buffer.getSize()});
-            // slog.debug("[enqueueMount] source.layout.bytes_per_row: {d}", .{source.layout.bytes_per_row});
-            // slog.debug("[enqueueMount] source.layout.rows_per_image: {d}", .{source.layout.rows_per_image});
-        }
         const destination = wgpu.TexelCopyTextureInfo{
             .texture = texture.texture,
             .mip_level = 0,
@@ -420,7 +331,7 @@ pub const Encoder = struct {
         };
         self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
     }
-    pub fn enqueueTexToBuf(self: *Self, allocator: *GPUAllocator, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueTexToBuf(self: *Self, memory: *GPUMemory, mem_offset: usize, texture: *Texture, roi: ROI) !void {
         slog.debug("Reading GPU buffer from Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
@@ -446,9 +357,9 @@ pub const Encoder = struct {
             // .origin = wgpu.Origin3D{ .x = src_origin.x, .y = src_origin.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
-        const offset = @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * texture.format.bpp();
+        const offset = @as(u64, mem_offset) + @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * texture.format.bpp();
         const destination = wgpu.TexelCopyBufferInfo{
-            .buffer = allocator.download_buffer,
+            .buffer = memory.buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 // .offset = 0,
                 .offset = offset,
@@ -456,15 +367,6 @@ pub const Encoder = struct {
                 .rows_per_image = roi.size.h,
             },
         };
-        { // Debug info
-            // slog.debug("[enqueueUnmount] copy_size.width: {d}", .{copy_size.width});
-            // slog.debug("[enqueueUnmount] copy_size.height: {d}", .{copy_size.height});
-            // slog.debug("[enqueueUnmount] copy_size.depth_or_array_layers: {d}", .{copy_size.depth_or_array_layers});
-            // slog.debug("[enqueueUnmount] offset: {d}", .{offset});
-            // slog.debug("[enqueueUnmount] destination.buffer size: {d}", .{self.download_buffer.getSize()});
-            // slog.debug("[enqueueUnmount] destination.layout.bytes_per_row: {d}", .{destination.layout.bytes_per_row});
-            // slog.debug("[enqueueUnmount] destination.layout.rows_per_image: {d}", .{destination.layout.rows_per_image});
-        }
         self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
     }
 

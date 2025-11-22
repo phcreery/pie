@@ -9,7 +9,7 @@ pub const modules = @import("modules/modules.zig");
 pub const graph = @import("zig-graph/graph.zig");
 
 pub const GPU = gpu.GPU;
-pub const GPUAllocator = gpu.GPUAllocator;
+pub const GPUMemory = gpu.GPUMemory;
 pub const Encoder = gpu.Encoder;
 pub const ShaderPipe = gpu.ShaderPipe;
 pub const Texture = gpu.Texture;

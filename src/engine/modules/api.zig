@@ -113,9 +113,9 @@ pub const ModuleDesc = struct {
     init: ?*const fn (mod: *Module) anyerror!void = null,
     deinit: ?*const fn (mod: *Module) anyerror!void = null,
     createNodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
-    // readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
+    // readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.GPUMemory) anyerror!void = null,
     readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, mapped: *anyopaque) anyerror!void = null,
-    // writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.GPUAllocator) anyerror!void = null,
+    // writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.GPUMemory) anyerror!void = null,
     writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, mapped: *anyopaque) anyerror!void = null,
     modifyROIOut: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
 };

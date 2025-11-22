@@ -39,7 +39,7 @@ pub const ConnectorHandle = ConnectorPool.Handle;
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
     gpu: ?*gpu.GPU,
-    gpu_allocator: ?gpu.GPUAllocator,
+    gpu_allocator: ?gpu.GPUMemory,
     node_pool: NodePool,
     node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
     node_execution_order: std.ArrayList(NodeHandle),
@@ -53,9 +53,9 @@ pub const Pipeline = struct {
         if (gpu_instance == null) {
             slog.info("No GPU instance provided, performing a dry run", .{});
         }
-        var gpu_allocator: ?gpu.GPUAllocator = null;
+        var gpu_allocator: ?gpu.GPUMemory = null;
         if (gpu_instance) |gpu_inst| {
-            gpu_allocator = try gpu.GPUAllocator.init(gpu_inst, null);
+            gpu_allocator = try gpu.GPUMemory.init(gpu_inst, null);
             errdefer gpu_allocator.deinit();
         } else {
             gpu_allocator = null;
@@ -387,7 +387,7 @@ pub const Pipeline = struct {
     ///
     /// similar to vkdt dt_graph_run_nodes_upload()
     pub fn runNodesUpload(self: *Pipeline) !void {
-        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUAllocator;
+        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUMemory;
 
         // we currently only support one upload in the entire pipeline
         // so we are going check if the first node has a source connector
@@ -420,7 +420,7 @@ pub const Pipeline = struct {
     // pub fn runModulesUploadUniforms(self: *Pipeline) !void {}
     pub fn runNodes(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
-        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUAllocator;
+        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUMemory;
 
         var encoder = try gpu.Encoder.start(gpu_inst);
         defer encoder.deinit();
@@ -467,7 +467,7 @@ pub const Pipeline = struct {
     }
 
     pub fn runNodesDownload(self: *Pipeline) !void {
-        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUAllocator;
+        var gpu_allocator = self.gpu_allocator orelse return error.PipelineMissingGPUMemory;
 
         // we currently only support one download in the entire pipeline
         // so we are going check if the last node has a sink connector
