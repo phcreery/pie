@@ -51,10 +51,14 @@ pub const SocketDesc = struct {
         conn_handle: ?pipeline.ConnectorHandle = null,
 
         // FOR INPUT SOCKETS
-        connected_to: ?*Node = null, // populated with graph.connect_nodes()
+        // connected_to: ?*Node = null, // populated with graph.connect_nodes()
 
         // FOR INPUT SOCKETS THAT ARE THE FIRST IN A MODULE OR OUTPUT SOCKETS THAT ARE THE LAST IN A MODULE
-        associated_with: ?*Module = null, // populated with socket.associated_with()
+        // associated_with: ?*Module = null, // populated with socket.associated_with()
+
+        // FOR SOURCE OR SINK SOCKETS
+        staging_offset: ?usize = null,
+        staging: ?*anyopaque = null,
     };
 };
 

@@ -468,6 +468,8 @@ pub const Texture = struct {
     texture: *wgpu.Texture,
     format: TextureFormat,
     roi: ROI,
+    // name: []const u8,
+
     const Self = @This();
 
     pub fn init(gpu: *GPU, name: []const u8, format: TextureFormat, roi: ROI) !Self {
@@ -499,6 +501,7 @@ pub const Texture = struct {
             .texture = texture,
             .format = format,
             .roi = roi,
+            // .name = name,
         };
     }
 

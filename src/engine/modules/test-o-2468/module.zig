@@ -2,7 +2,7 @@ const api = @import("../api.zig");
 const std = @import("std");
 
 pub const module: api.ModuleDesc = .{
-    .name = "test-o-1234",
+    .name = "test-o-2468",
     .type = .sink,
     // .param_ui = "",
     // .param_uniform = "",
@@ -34,6 +34,7 @@ pub fn writeSink(
 
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
     const download_buffer_slice = download_buffer_ptr[0..(roi.size.w * roi.size.h * 4)];
+    std.log.info("ptr: {any}", .{download_buffer_slice.ptr});
     std.log.info("Sink buffer contents: {any}", .{download_buffer_slice});
     try std.testing.expectEqualSlices(f16, &expected, download_buffer_slice);
 }

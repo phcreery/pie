@@ -86,6 +86,9 @@ pub fn printNodes2(self: *pipeline.Pipeline) !void {
 }
 
 fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaque) []u8 {
+    // var self: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
+    // const conn = self.connector_pool.getPtr(edge) catch unreachable;
+    // const res = std.fmt.bufPrint(buf, "{s}", .{conn.*.texture.?.name}) catch "<error>";
     _ = user_data;
     const res = std.fmt.bufPrint(buf, "id: {any}", .{edge.id}) catch "<error>";
     return @constCast(res);
