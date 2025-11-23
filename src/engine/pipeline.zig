@@ -36,6 +36,7 @@ pub const Pipeline = struct {
     node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
     node_execution_order: std.ArrayList(NodeHandle),
     modules: std.ArrayList(Module),
+    // modules_pool: std.heap.MemoryPoolExtra(Module, .{}),
     connector_pool: ConnectorPool,
 
     pub const MAX_MODULES = 100;
@@ -97,6 +98,7 @@ pub const Pipeline = struct {
             .download_buffer = download_buffer,
             .download_fba = download_fba,
             .modules = modules,
+            // .modules_pool = modules_pool,
             .node_pool = node_pool,
             .node_graph = node_graph,
             .node_execution_order = node_execution_order,
@@ -121,11 +123,14 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn addModuleDesc(self: *Pipeline, module_desc: api.ModuleDesc) !*Module {
+    pub fn addModule(self: *Pipeline, module_desc: api.ModuleDesc) !*Module {
         slog.debug("Adding module: {s}", .{module_desc.name});
         const module = try Module.init(module_desc);
         try self.modules.append(self.allocator, module);
         return &self.modules.items[self.modules.items.len - 1];
+        // const module_ptr = try self.modules_pool.create();
+        // module_ptr.* = module;
+        // return module_ptr;
     }
 
     pub fn addNode(self: *Pipeline, mod: *Module, node_desc: api.NodeDesc) !NodeHandle {

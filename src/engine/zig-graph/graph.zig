@@ -1,6 +1,5 @@
-/// https://github.com/mitchellh/zig-graph
 /// A directed graph implementation in Zig.
-/// TODO: ASCII diagram of structure. (https://arxiv.org/pdf/1908.07544)
+/// https://github.com/mitchellh/zig-graph
 const std = @import("std");
 const hash_map = std.hash_map;
 const math = std.math;

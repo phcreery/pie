@@ -1,10 +1,10 @@
 const std = @import("std");
+const ZPool = @import("zpool").Pool;
 
 pub fn SingleColPool(comptime T: type) type {
     const INDEX_BITS = 16;
     const CYCLE_BITS = 16;
-    const Pool = @import("zpool").Pool;
-    const SingleColPoolType = Pool(INDEX_BITS, CYCLE_BITS, T, struct {
+    const SingleColPoolType = ZPool(INDEX_BITS, CYCLE_BITS, T, struct {
         val: T,
     });
     return struct {

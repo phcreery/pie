@@ -125,8 +125,8 @@ pub const ModuleDesc = struct {
     modifyROIOut: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
 };
 
-pub fn addModuleDesc(pipe: *pipeline.Pipeline, module_desc: ModuleDesc) !*Module {
-    return pipe.addModuleDesc(module_desc);
+pub fn addModule(pipe: *pipeline.Pipeline, module_desc: ModuleDesc) !*Module {
+    return pipe.addModule(module_desc);
 }
 
 pub fn addNode(pipe: *pipeline.Pipeline, mod: *Module, node_desc: NodeDesc) !pipeline.NodeHandle {
