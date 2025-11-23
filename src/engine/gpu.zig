@@ -2,6 +2,7 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
+const sizeify = @import("sizeify");
 
 const slog = std.log.scoped(.gpu);
 
@@ -73,7 +74,7 @@ pub const GPUMemory = struct {
 
         if (size_bytes) |s| {
             if (s > max_buffer_size) {
-                slog.err("Requested GPUMemory size {d} exceeds max buffer size {d}", .{ s, max_buffer_size });
+                slog.err("Requested GPUMemory size {f} exceeds max buffer size {f}", .{ sizeify.fmt(s, .decimal_short), sizeify.fmt(max_buffer_size, .decimal_short) });
                 return error.InvalidInput;
             }
         }
@@ -82,7 +83,7 @@ pub const GPUMemory = struct {
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        slog.debug("Creating GPUMemory with upload buffer size {d} bytes", .{buffer_size_bytes});
+        slog.debug("Creating GPUMemory with upload buffer size {f}", .{sizeify.fmt(buffer_size_bytes, .decimal_short)});
         const buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("buffer"),
             .usage = memory_type.toGPUBufferUsage(),
@@ -108,9 +109,7 @@ pub const GPUMemory = struct {
         self: *Self,
         size_bytes: usize,
     ) *anyopaque {
-        slog.debug("Mapping GPU buffer", .{});
-
-        slog.debug(" - map size_bytes: {d}", .{size_bytes});
+        slog.debug("Mapping GPU buffer of size {f}", .{sizeify.fmt(size_bytes, .decimal_short)});
 
         // TODO: first check mapped status
         // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
@@ -162,10 +161,10 @@ pub const GPUMemory = struct {
         // print the first 4 values
         slog.debug("First 4 values to upload: {any}, {any}, {any}, {any}", .{ data[0], data[1], data[2], data[3] });
 
-        const size_bytes = roi.size.w * roi.size.h * format.bpp();
+        const size_bytes = roi.w * roi.h * format.bpp();
         const upload_mapped_ptr: *anyopaque = self.mapUpload(size_bytes);
         const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(upload_mapped_ptr));
-        const upload_buffer_slice = upload_buffer_ptr[0..(roi.size.w * roi.size.h * format.nchannels())];
+        const upload_buffer_slice = upload_buffer_ptr[0..(roi.w * roi.h * format.nchannels())];
         defer self.unmapUpload();
 
         @memcpy(upload_buffer_slice, data);
@@ -199,24 +198,24 @@ pub const GPUMemory = struct {
         }
         slog.debug("Writing data to GPU Texture", .{});
 
-        const bytes_per_row = roi.size.w * format.bpp();
-        const data_size: usize = roi.size.w * roi.size.h * format.bpp();
-        const offset = @as(u64, roi.origin.y) * bytes_per_row + roi.origin.x * format.bpp();
+        const bytes_per_row = roi.w * format.bpp();
+        const data_size: usize = roi.w * roi.h * format.bpp();
+        const offset = @as(u64, roi.y) * bytes_per_row + roi.x * format.bpp();
         const data_layout = wgpu.TexelCopyBufferLayout{
             .offset = offset,
             .bytes_per_row = bytes_per_row,
-            .rows_per_image = roi.size.h,
+            .rows_per_image = roi.h,
         };
 
         const copy_size = wgpu.Extent3D{
-            .width = roi.size.w,
-            .height = roi.size.h,
+            .width = roi.w,
+            .height = roi.h,
             .depth_or_array_layers = 1,
         };
         const destination = wgpu.TexelCopyTextureInfo{
             .texture = texture.texture,
             .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
 
@@ -278,12 +277,12 @@ pub const Encoder = struct {
         //
         // If the user passes 32 inputs, we will
         // dispatch 1 workgroups. If the user passes 65 inputs, we will dispatch 2 workgroups, etc.
-        const workgroup_count_x = (work_size.size.w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X; // ceil division
-        const workgroup_count_y = (work_size.size.h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y; // ceil division
+        const workgroup_count_x = (work_size.w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X; // ceil division
+        const workgroup_count_y = (work_size.h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y; // ceil division
         const workgroup_count_z = 1;
 
         { // Debug info
-            // const output_size = work_size.size.w * work_size.size.h;
+            // const output_size = work_size.w * work_size.h;
             // const workgroup_size = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y * WORKGROUP_SIZE_Z;
             // slog.debug("output_size: {d}", .{output_size});
             // slog.debug("workgroup_size: {d}", .{workgroup_size});
@@ -304,29 +303,29 @@ pub const Encoder = struct {
         slog.debug("Writing GPU buffer to Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
-        const bytes_per_row = roi.size.w * texture.format.bpp();
+        const bytes_per_row = roi.w * texture.format.bpp();
         const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
 
         // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
         // CPU to the input buffer on the GPU.
         const copy_size = wgpu.Extent3D{
-            .width = roi.size.w,
-            .height = roi.size.h,
+            .width = roi.w,
+            .height = roi.h,
             .depth_or_array_layers = 1,
         };
-        const offset = @as(u64, mem_offset) + @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * texture.format.bpp();
+        const offset = @as(u64, mem_offset) + @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
         const source = wgpu.TexelCopyBufferInfo{
             .buffer = memory.buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 .offset = offset,
                 .bytes_per_row = padded_bytes_per_row,
-                .rows_per_image = roi.size.h,
+                .rows_per_image = roi.h,
             },
         };
         const destination = wgpu.TexelCopyTextureInfo{
             .texture = texture.texture,
             .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
         self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
@@ -335,7 +334,7 @@ pub const Encoder = struct {
         slog.debug("Reading GPU buffer from Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
-        const bytes_per_row = roi.size.w * texture.format.bpp();
+        const bytes_per_row = roi.w * texture.format.bpp();
         // if (bytes_per_row % 256 != 0) {
         //     slog.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
         //     return error.InvalidInput;
@@ -347,24 +346,24 @@ pub const Encoder = struct {
         // self.encoder.copyBufferToBuffer(self.buffer[self.dst_index], 0, self.download_buffer, 0, self.buffer[self.dst_index].getSize());
         // const copy_size = self.textures[self.dst_index].getWidth() * self.textures[self.dst_index].getHeight() * 4; // width * height * RGBA
         const copy_size = wgpu.Extent3D{
-            .width = roi.size.w,
-            .height = roi.size.h,
+            .width = roi.w,
+            .height = roi.h,
             .depth_or_array_layers = 1,
         };
         const source = wgpu.TexelCopyTextureInfo{
             .texture = texture.texture,
             .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = src_origin.x, .y = src_origin.y, .z = 0 },
+            // .origin = wgpu.Origin3D{ .x = src_x, .y = src_y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
-        const offset = @as(u64, mem_offset) + @as(u64, roi.origin.y) * padded_bytes_per_row + roi.origin.x * texture.format.bpp();
+        const offset = @as(u64, mem_offset) + @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
         const destination = wgpu.TexelCopyBufferInfo{
             .buffer = memory.buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 // .offset = 0,
                 .offset = offset,
                 .bytes_per_row = padded_bytes_per_row,
-                .rows_per_image = roi.size.h,
+                .rows_per_image = roi.h,
             },
         };
         self.encoder.copyTextureToBuffer(&source, &destination, &copy_size);
@@ -374,21 +373,21 @@ pub const Encoder = struct {
         slog.debug("Copying GPU texture to another GPU texture", .{});
 
         const copy_size = wgpu.Extent3D{
-            .width = roi.size.w,
-            .height = roi.size.h,
+            .width = roi.w,
+            .height = roi.h,
             .depth_or_array_layers = 1,
         };
         const source = wgpu.TexelCopyTextureInfo{
             .texture = src_texture.texture,
             .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
 
         const destination = wgpu.TexelCopyTextureInfo{
             .texture = dst_texture.texture,
             .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.origin.x, .y = roi.origin.y, .z = 0 },
+            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
 
@@ -462,7 +461,7 @@ pub const Texture = struct {
     const Self = @This();
 
     pub fn init(gpu: *GPU, name: []const u8, format: TextureFormat, roi: ROI) !Self {
-        slog.debug("Creating texture {s} of size {d}x{d}", .{ @tagName(format), roi.size.w, roi.size.h });
+        slog.debug("Creating texture {s} of size {d}x{d}", .{ @tagName(format), roi.w, roi.h });
         var limits = wgpu.Limits{};
         _ = gpu.adapter.getLimits(&limits);
 
@@ -475,8 +474,8 @@ pub const Texture = struct {
         const texture = gpu.device.createTexture(&wgpu.TextureDescriptor{
             .label = wgpu.StringView.fromSlice(name),
             .size = wgpu.Extent3D{
-                .width = roi.size.w,
-                .height = roi.size.h,
+                .width = roi.w,
+                .height = roi.h,
                 .depth_or_array_layers = 1,
             },
             .mip_level_count = 1,
@@ -695,7 +694,7 @@ pub const ShaderPipe = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        slog.debug("Deinitializing ShaderPass {s}", .{self.entry_point});
+        slog.debug("De-initializing ShaderPass {s}", .{self.entry_point});
 
         self.bind_group_layout.release();
 
@@ -772,9 +771,9 @@ pub const GPU = struct {
         slog.info(" max_compute_workgroup_size_y: {d}", .{limits.max_compute_workgroup_size_y});
         slog.info(" max_compute_workgroup_size_z: {d}", .{limits.max_compute_workgroup_size_z});
         slog.info(" max_compute_workgroups_per_dimension: {d}", .{limits.max_compute_workgroups_per_dimension});
-        slog.info(" max_buffer_size: {d}", .{limits.max_buffer_size});
-        slog.info(" max_uniform_buffer_binding_size: {d}", .{limits.max_uniform_buffer_binding_size});
-        slog.info(" max_storage_buffer_binding_size: {d}", .{limits.max_storage_buffer_binding_size});
+        slog.info(" max_buffer_size: {f}", .{sizeify.fmt(limits.max_buffer_size, .decimal_short)});
+        slog.info(" max_uniform_buffer_binding_size: {f}", .{sizeify.fmt(limits.max_uniform_buffer_binding_size, .decimal_short)});
+        slog.info(" max_storage_buffer_binding_size: {f}", .{sizeify.fmt(limits.max_storage_buffer_binding_size, .decimal_short)});
 
         return Self{
             .instance = instance,

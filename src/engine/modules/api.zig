@@ -64,6 +64,7 @@ pub const SocketDesc = struct {
 
 pub const Sockets = [MAX_SOCKETS]?SocketDesc;
 
+// Can we make NodeDesc a tagged union instead?
 pub const NodeType = enum {
     compute,
     source,
@@ -128,8 +129,8 @@ pub fn addModuleDesc(pipe: *pipeline.Pipeline, module_desc: ModuleDesc) !*Module
     return pipe.addModuleDesc(module_desc);
 }
 
-pub fn addNodeDesc(pipe: *pipeline.Pipeline, mod: *Module, node_desc: NodeDesc) !pipeline.NodeHandle {
-    return pipe.addNodeDesc(mod, node_desc);
+pub fn addNode(pipe: *pipeline.Pipeline, mod: *Module, node_desc: NodeDesc) !pipeline.NodeHandle {
+    return pipe.addNode(mod, node_desc);
 }
 pub fn copyConnector(
     pipe: *pipeline.Pipeline,

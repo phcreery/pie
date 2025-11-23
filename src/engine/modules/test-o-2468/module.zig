@@ -6,7 +6,6 @@ pub const module: api.ModuleDesc = .{
     .type = .sink,
     // .param_ui = "",
     // .param_uniform = "",
-    // .input_sock = null,
     .input_socket = .{
         .name = "input",
         .type = .sink,
@@ -30,12 +29,9 @@ pub fn writeSink(
 ) !void {
     _ = pipe;
 
-    const roi = mod.getSocket("input").?.roi orelse unreachable;
-
+    const sock = mod.getSocket("input") orelse unreachable;
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
-    const download_buffer_slice = download_buffer_ptr[0..(roi.size.w * roi.size.h * 4)];
-    std.log.info("ptr: {any}", .{download_buffer_slice.ptr});
-    std.log.info("Sink buffer contents: {any}", .{download_buffer_slice});
+    const download_buffer_slice = download_buffer_ptr[0..(sock.roi.?.w * sock.roi.?.h * sock.format.nchannels())];
     try std.testing.expectEqualSlices(f16, &expected, download_buffer_slice);
 }
 
@@ -52,6 +48,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: *api.Module) !void {
             break :init s;
         },
     };
-    const node = try pipe.addNodeDesc(mod, node_desc);
+    const node = try pipe.addNode(mod, node_desc);
     try pipe.copyConnector(mod, "input", node, "input");
 }

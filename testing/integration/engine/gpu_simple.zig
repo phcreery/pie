@@ -27,14 +27,8 @@ test "simple compute test" {
     const source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
     var destination = std.mem.zeroes([4]f16);
     const roi = ROI{
-        .size = .{
-            .w = 1,
-            .h = 1,
-        },
-        .origin = .{
-            .x = 0,
-            .y = 0,
-        },
+        .w = 1,
+        .h = 1,
     };
     const shader_code: []const u8 =
         \\enable f16;
@@ -81,20 +75,20 @@ test "simple compute test" {
     var upload_fba = upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
-    _ = try upload_allocator.alloc(f16, roi.size.w * roi.size.h * input_layout.format.nchannels());
+    _ = try upload_allocator.alloc(f16, roi.w * roi.h * input_layout.format.nchannels());
 
     var download_fba = download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD
     const upload_offset = upload_fba.end_index;
-    const upload_buf = try upload_allocator.alloc(f16, roi.size.w * roi.size.h * input_layout.format.nchannels());
+    const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * input_layout.format.nchannels());
     // const offset = upload_buf.ptr - upload_fba.buffer.ptr
     std.log.info("Upload offset: {d}", .{upload_offset});
 
     // PREP DOWNLOAD
     const download_offset = download_fba.end_index;
-    const download_buf = try download_allocator.alloc(f16, roi.size.w * roi.size.h * output_layout.format.nchannels());
+    const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * output_layout.format.nchannels());
 
     // UPLOAD
     upload.map();

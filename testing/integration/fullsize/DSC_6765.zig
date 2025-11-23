@@ -85,9 +85,9 @@ test "load raw, demosaic, save" {
     defer gpu_allocator.deinit();
 
     // UPLOAD
-    std.log.info("Image region: {any} {any}", .{ roi_in.size.w, roi_in.size.h });
+    std.log.info("Image region: {any} {any}", .{ roi_in.w, roi_in.h });
     std.log.info("Upload buffer contents: ", .{});
-    printImgBufContents(u16, init_contents_u16, roi_in.size.w * 2);
+    printImgBufContents(u16, init_contents_u16, roi_in.w * 2);
 
     gpu_allocator.upload(u16, init_contents_u16, .rgba16uint, roi_in);
 
@@ -155,7 +155,7 @@ test "load raw, demosaic, save" {
     //     gpu.run();
     //     const result_convert = try gpu.mapDownload(f16, convert_conns[1].format, roi_out_lower);
     //     std.log.info("\nDownload buffer contents: ", .{});
-    //     printImgBufContents(f16, result_convert, roi_out_lower.size.w * 2);
+    //     printImgBufContents(f16, result_convert, roi_out_lower.w * 2);
     //     if (true) {
     //         return error.SkipZigTest;
     //     }
@@ -317,7 +317,7 @@ test "load raw, demosaic, save" {
     const result = try gpu_allocator.download(f16, .rgba16float, roi_out);
 
     std.log.info("\nDownload buffer contents: ", .{});
-    printImgBufContents(f16, result, roi_out.size.w * 4);
+    printImgBufContents(f16, result, roi_out.w * 4);
 
     // EXPORT PNG
     {
@@ -333,7 +333,7 @@ test "load raw, demosaic, save" {
         const byte_array2 = std.mem.sliceAsBytes(output_slice);
 
         std.log.info("Giving to zigimg", .{});
-        var zigimage2 = try zigimg.Image.fromRawPixels(allocator, roi_out.size.w, roi_out.size.h, byte_array2[0..], .float32);
+        var zigimage2 = try zigimg.Image.fromRawPixels(allocator, roi_out.w, roi_out.h, byte_array2[0..], .float32);
         defer zigimage2.deinit(allocator);
 
         try zigimage2.convert(allocator, .rgba64);

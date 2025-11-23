@@ -29,16 +29,16 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             if (module.desc.input_socket) |sock| sock.type else null,
             if (module.desc.input_socket) |sock| sock.format else null,
             // if (module.desc.input_socket) |input_socket| input_socket.roi else null,
-            if (module.desc.input_socket) |sock| sock.roi.?.size.w else null,
-            if (module.desc.input_socket) |sock| sock.roi.?.size.h else null,
+            if (module.desc.input_socket) |sock| sock.roi.?.w else null,
+            if (module.desc.input_socket) |sock| sock.roi.?.h else null,
             module.desc.name,
             module.enabled,
             if (module.desc.output_socket) |sock| sock.name else "null",
             if (module.desc.output_socket) |sock| sock.type else null,
             if (module.desc.output_socket) |sock| sock.format else null,
             // if (module.desc.output_socket) |output_socket| output_socket.roi else null,
-            if (module.desc.output_socket) |sock| sock.roi.?.size.w else null,
-            if (module.desc.output_socket) |sock| sock.roi.?.size.h else null,
+            if (module.desc.output_socket) |sock| sock.roi.?.w else null,
+            if (module.desc.output_socket) |sock| sock.roi.?.h else null,
             if (module.desc.output_socket) |sock| if (sock.private.conn_handle) |h| h.id else null else null,
             if (output_texture) |output_tex| output_tex.texture else null,
         });
@@ -63,7 +63,7 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
                 // const connector_text = std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{s.private.conn_handle.?.id}) catch "<- null";
                 const texture = if (s.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null;
                 const tex_text = if (texture) |tex| tex.texture else null;
-                std.debug.print(" Socket:            \"{s}\", {s}, {s}, {any}x{any}\n", .{ s.name, @tagName(s.type), @tagName(s.format), s.roi.?.size.w, s.roi.?.size.h });
+                std.debug.print(" Socket:            \"{s}\", {s}, {s}, {any}x{any}\n", .{ s.name, @tagName(s.type), @tagName(s.format), s.roi.?.w, s.roi.?.h });
                 std.debug.print("  - Connector:      {s} ({any})\n", .{ connector_text, tex_text });
             }
         }

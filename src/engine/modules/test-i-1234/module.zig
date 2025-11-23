@@ -21,14 +21,8 @@ pub const module: api.ModuleDesc = .{
 
 const source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
 const roi: api.ROI = .{
-    .size = .{
-        .w = 1,
-        .h = 1,
-    },
-    .origin = .{
-        .x = 0,
-        .y = 0,
-    },
+    .w = 1,
+    .h = 1,
 };
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: *api.Module) !void {
@@ -45,7 +39,7 @@ pub fn readSource(
     _ = mod;
 
     const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
-    // const upload_buffer_slice = upload_buffer_ptr[0..(roi.size.w * roi.size.h * 4)];
+    // const upload_buffer_slice = upload_buffer_ptr[0..(roi.w * roi.h * 4)];
     @memcpy(upload_buffer_ptr, &source);
 }
 
@@ -62,6 +56,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: *api.Module) !void {
             break :init s;
         },
     };
-    const node = try api.addNodeDesc(pipe, mod, node_desc);
+    const node = try api.addNode(pipe, mod, node_desc);
     try api.copyConnector(pipe, mod, "output", node, "output");
 }

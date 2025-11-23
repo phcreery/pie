@@ -13,25 +13,11 @@ const slog = std.log.scoped(.pipe);
 const NodePool = SingleColPool(Node);
 pub const NodeHandle = NodePool.Handle;
 
-// pub const Connector = struct {
-//     texture: ?gpu.Texture,
-//     // staging_offset: ?u64,
-//     // staging_size: ?u64,
-
-//     pub fn empty() Connector {
-//         return Connector{
-//             .texture = null,
-//             // .staging_offset = null,
-//             // .staging_size = null,
-//         };
-//     }
-// };
-
 const ConnectorPool = SingleColPool(?gpu.Texture);
 pub const ConnectorHandle = ConnectorPool.Handle;
 
-// TODO: history pool
 // TODO: params pool
+// TODO: history pool
 
 /// The main pipeline structure that holds modules, nodes, and manages execution.
 /// This is heavily inspired by vkdt. The current difference is that modules are
@@ -141,7 +127,7 @@ pub const Pipeline = struct {
         return &self.modules.items[self.modules.items.len - 1];
     }
 
-    pub fn addNodeDesc(self: *Pipeline, mod: *Module, node_desc: api.NodeDesc) !NodeHandle {
+    pub fn addNode(self: *Pipeline, mod: *Module, node_desc: api.NodeDesc) !NodeHandle {
         slog.info("Adding node with shader entry point: {s}", .{node_desc.entry_point});
         // TODO: check input connection to mach previous node output connection
         const node = try Node.init(self, mod, node_desc);
@@ -394,7 +380,7 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runNodesAllocBuffer(self: *Pipeline) !void {
+    pub fn runNodesAllocateBuffers(self: *Pipeline) !void {
         var upload_fba = self.upload_fba orelse return error.PipelineMissingGPUMemory;
         var upload_allocator = upload_fba.allocator();
 
@@ -409,7 +395,7 @@ pub const Pipeline = struct {
             if (sock.type == .source) {
                 const upload_offset = upload_fba.end_index;
                 sock.*.private.staging_offset = upload_offset;
-                const size_bytes = sock.roi.?.size.w * sock.roi.?.size.h * sock.format.bpp();
+                const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
                 slog.info("Allocating upload buffer at offset {d}  for size {d} bytes", .{ upload_offset, size_bytes });
                 const mapped_slice = try upload_allocator.alloc(u8, size_bytes);
                 const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
@@ -432,7 +418,7 @@ pub const Pipeline = struct {
             if (sock.type == .sink) {
                 const download_offset = download_fba.end_index;
                 sock.*.private.staging_offset = download_offset;
-                const size_bytes = sock.roi.?.size.w * sock.roi.?.size.h * sock.format.bpp();
+                const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
                 slog.info("Allocating download buffer at offset {d} for size {d} bytes", .{ download_offset, size_bytes });
                 const mapped_slice = try download_allocator.alloc(u8, size_bytes);
                 const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
@@ -587,9 +573,9 @@ pub const Pipeline = struct {
 
         // A couple rules:
         // - Source modules must have a source output socket and no input socket
-        // - source modules must create a single source node
+        // - Source modules must create a single source node
         // - Sink modules must have a sink input socket and no output socket
-        // - sink modules must create a single sink node
+        // - Sink modules must create a single sink node
 
         slog.info("Running pipeline", .{});
 
@@ -606,7 +592,7 @@ pub const Pipeline = struct {
         // TODO: put these all in a single loop after building execution order
         self.runNodesAllocateTextures() catch unreachable;
         self.runNodesCreateBindings() catch unreachable;
-        self.runNodesAllocBuffer() catch unreachable;
+        self.runNodesAllocateBuffers() catch unreachable;
 
         util.printNodes(self);
 

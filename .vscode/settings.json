@@ -2,6 +2,8 @@
     "cSpell.words": [
         "anyerror",
         "callconv",
+        "cimgui",
+        "clib",
         "comptime",
         "DEBAYER",
         "deinit",
@@ -14,10 +16,13 @@
         "orelse",
         "rgba",
         "rois",
+        "sizeify",
+        "sokol",
         "Texel",
         "usize",
         "wgpu",
         "WGSL",
-        "workgroups"
+        "workgroups",
+        "ztracy"
     ]
 }

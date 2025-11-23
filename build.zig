@@ -52,10 +52,6 @@ pub fn build(b: *Build) !void {
     });
     const dep_pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
     const dep_zdt = b.dependency("zdt", .{ .target = target, .optimize = optimize });
-    // const dep_opencl = b.dependency("opencl", .{
-    //     .target = target,
-    //     .optimize = optimize,
-    // });
     const dep_libraw = b.dependency("libraw", .{
         .target = target,
         .optimize = optimize,
@@ -70,7 +66,11 @@ pub fn build(b: *Build) !void {
         .enable_fibers = ztracy_options.enable_fibers,
         .on_demand = ztracy_options.on_demand,
     });
-    const zpool = b.dependency("zpool", .{});
+    const dep_zpool = b.dependency("zpool", .{});
+    const dep_sizeify = b.dependency("sizeify", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -92,21 +92,19 @@ pub fn build(b: *Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            .{ .name = "sokol", .module = dep_sokol.module("sokol") },
-            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
-            .{ .name = "pretty", .module = dep_pretty.module("pretty") },
-            .{ .name = "zdt", .module = dep_zdt.module("zdt") },
-            // .{ .name = "opencl", .module = dep_opencl.module("opencl") },
-            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu", .module = dep_wgpu_native.module("wgpu") },
-            .{ .name = "wgpu-c", .module = dep_wgpu_native.module("wgpu-c") },
-            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
-            // .{ .name = "ztracy", .module = dep_ztracy.module("root") },
-            .{ .name = "zpool", .module = zpool.module("root") },
-        },
     });
     mod_main.addOptions("build_options", mod_options);
+    mod_main.addImport("sokol", dep_sokol.module("sokol"));
+    mod_main.addImport(cimgui_conf.module_name, dep_cimgui.module(cimgui_conf.module_name));
+    mod_main.addImport("pretty", dep_pretty.module("pretty"));
+    mod_main.addImport("zdt", dep_zdt.module("zdt"));
+    mod_main.addImport("libraw", dep_libraw.module("libraw"));
+    mod_main.addImport("wgpu", dep_wgpu_native.module("wgpu"));
+    mod_main.addImport("wgpu-c", dep_wgpu_native.module("wgpu-c"));
+    mod_main.addImport("zigimg", dep_zigimg.module("zigimg"));
+    // mod_main.addImport("ztracy", dep_ztracy.module("root"));
+    mod_main.addImport("zpool", dep_zpool.module("root"));
+    mod_main.addImport("sizeify", dep_sizeify.module("sizeify"));
 
     // TESTS
     // UNIT TESTS
@@ -126,25 +124,18 @@ pub fn build(b: *Build) !void {
         .root_source_file = b.path("testing/integration/integration.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            .{ .name = "pie", .module = mod_main },
-            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
-            .{ .name = "ztracy", .module = dep_ztracy.module("root") },
-            .{ .name = "zpool", .module = zpool.module("root") },
-        },
     });
+    mod_integration_test.addImport("pie", mod_main);
+    mod_integration_test.addImport("libraw", dep_libraw.module("libraw"));
+    mod_integration_test.addImport("zigimg", dep_zigimg.module("zigimg"));
+    mod_integration_test.addImport("ztracy", dep_ztracy.module("root"));
+    mod_integration_test.addImport("zpool", dep_zpool.module("root"));
     const integration_tests_exe = b.addExecutable(.{
         .name = "integration tests exe",
         .root_module = mod_integration_test,
     });
     integration_tests_exe.linkLibrary(dep_ztracy.artifact("tracy"));
-    // const test_runner_options = b.addOptions();
-    // integration_tests.root_module.addOptions("build_options", test_runner_options);
-    // test_runner_options.addOption(bool, "test_all_allocation_failures", test_all_allocation_failures);
     const integration_test_runner = b.addRunArtifact(integration_tests_exe);
-    // integration_test_runner.addArg(b.pathFromRoot("test/cases"));
-    // integration_test_runner.addArg(b.zig_exe);
     test_step.dependOn(&integration_test_runner.step);
     const integration_tests_tests = b.addTest(.{
         .name = "integration tests tests",
