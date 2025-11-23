@@ -43,7 +43,7 @@ pub const Pipeline = struct {
 
     pub fn init(allocator: std.mem.Allocator, gpu_instance: ?*gpu.GPU) !Pipeline {
         if (gpu_instance == null) {
-            slog.info("No GPU instance provided, performing a dry run", .{});
+            slog.debug("No GPU instance provided, performing a dry run", .{});
         }
         var upload_buffer: ?gpu.GPUMemory = null;
         var upload_fba: ?std.heap.FixedBufferAllocator = null;
@@ -105,6 +105,7 @@ pub const Pipeline = struct {
     }
 
     pub fn deinit(self: *Pipeline) void {
+        slog.debug("De-initializing Pipeline", .{});
         self.modules.deinit(self.allocator);
         self.node_execution_order.deinit(self.allocator);
         self.node_graph.deinit();
@@ -121,14 +122,14 @@ pub const Pipeline = struct {
     }
 
     pub fn addModuleDesc(self: *Pipeline, module_desc: api.ModuleDesc) !*Module {
-        slog.info("Adding module: {s}", .{module_desc.name});
+        slog.debug("Adding module: {s}", .{module_desc.name});
         const module = try Module.init(module_desc);
         try self.modules.append(self.allocator, module);
         return &self.modules.items[self.modules.items.len - 1];
     }
 
     pub fn addNode(self: *Pipeline, mod: *Module, node_desc: api.NodeDesc) !NodeHandle {
-        slog.info("Adding node with shader entry point: {s}", .{node_desc.entry_point});
+        slog.debug("Adding node with shader entry point: {s}", .{node_desc.entry_point});
         // TODO: check input connection to mach previous node output connection
         const node = try Node.init(self, mod, node_desc);
         return try self.node_pool.add(node);
@@ -141,7 +142,7 @@ pub const Pipeline = struct {
         node_handle: NodeHandle,
         node_socket_name: []const u8,
     ) !void {
-        slog.info("Connecting module {s} socket {s} to node {any} socket {s}", .{ mod.desc.name, mod_socket_name, node_handle, node_socket_name });
+        slog.debug("Connecting module {s} socket {s} to node {any} socket {s}", .{ mod.desc.name, mod_socket_name, node_handle, node_socket_name });
         // TODO: some checks for socket compatibility
 
         const module_socket = mod.getSocket(mod_socket_name) orelse unreachable;
@@ -216,13 +217,13 @@ pub const Pipeline = struct {
     pub fn runModulesCreateConnectorHandles(self: *Pipeline) !void {
         var prev_conn_handle: ?ConnectorHandle = null;
         for (self.modules.items) |*module| {
-            slog.info("Configuring connectors for module: {s}", .{module.desc.name});
+            // slog.debug("Configuring connectors for module: {s}", .{module.desc.name});
             if (module.enabled == false) continue;
 
             // if the input socket is not set, use the previous module's output socket
             if (module.desc.type != .source) {
                 if (prev_conn_handle != null) {
-                    slog.info("Module {s} input connector set to previous output connector", .{module.desc.name});
+                    slog.debug("Module {s} input connector set to previous output connector", .{module.desc.name});
                     if (module.desc.input_socket) |*sock| {
                         sock.private.conn_handle = prev_conn_handle;
                     } else {
@@ -239,7 +240,7 @@ pub const Pipeline = struct {
 
             // once the output connector is defined, create a new connector in the pool
             if (module.desc.output_socket) |*sock| {
-                slog.info("Configuring output connector image for module: {s}", .{module.desc.name});
+                // slog.debug("Configuring output connector image for module: {s}", .{module.desc.name});
                 sock.private.conn_handle = try self.connector_pool.add(null);
                 prev_conn_handle = sock.private.conn_handle;
             }
@@ -265,7 +266,7 @@ pub const Pipeline = struct {
         while (node_pool_handles_a.next()) |node_handle_a| {
             var node_pool_handles_b = self.node_pool.liveHandles();
             while (node_pool_handles_b.next()) |node_handle_b| {
-                // slog.info("Checking for edge between node {any} and node {any}", .{ node_handle_a, node_handle_b });
+                // slog.debug("Checking for edge between node {any} and node {any}", .{ node_handle_a, node_handle_b });
                 // skip if edge already exists
                 if (self.node_graph.getEdge(node_handle_a, node_handle_b) != null) continue;
                 if (self.node_graph.getEdge(node_handle_b, node_handle_a) != null) continue;
@@ -294,7 +295,7 @@ pub const Pipeline = struct {
                     if (found_match) break;
                 }
                 if (found_match) {
-                    slog.info("Adding edge from node {any} to node {any}", .{ node_handle_a, node_handle_b });
+                    slog.debug("Adding edge from node {any} to node {any}", .{ node_handle_a, node_handle_b });
                     try self.node_graph.addEdge(node_handle_a, node_handle_b, match_handle.?);
                 }
             }
@@ -304,7 +305,7 @@ pub const Pipeline = struct {
         while (try iter.next()) |value| {
             try self.node_execution_order.append(self.allocator, self.node_graph.lookup(value).?);
         }
-        slog.info("Topological sorted order: {any}", .{self.node_execution_order.items});
+        slog.debug("Topological sorted order: {any}", .{self.node_execution_order.items});
     }
 
     /// Allocates output textures and creates compute shaders for each node
@@ -315,12 +316,11 @@ pub const Pipeline = struct {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
-            slog.info("Allocating resources for node with shader entry point: {s}", .{node.desc.entry_point});
             for (node.desc.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
                         const conn_handle = sock.private.conn_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
-                        slog.info("Allocating output texture for node socket {s} with connector handle {any}", .{ sock.name, conn_handle });
+                        // slog.debug("Allocating output texture for node socket {s} with connector handle {any}", .{ sock.name, conn_handle });
                         var buf: [256]u8 = undefined;
                         const str = try std.fmt.bufPrint(&buf, "id: {d}", .{conn_handle.id});
                         const texture = try gpu.Texture.init(gpu_inst, str, sock.format, sock.roi.?);
@@ -338,7 +338,6 @@ pub const Pipeline = struct {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
-            slog.info("Allocating resources for node with shader entry point: {s}", .{node.desc.entry_point});
 
             var bind_group_layout: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
             var bind_group: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
@@ -352,7 +351,7 @@ pub const Pipeline = struct {
                             .type = sock.type.toShaderPipeBindGroupLayoutEntryType(),
                             .format = sock.format,
                         };
-                        slog.info("Added bind group layout entry for binding {d}, type {s}, format {s}", .{ binding_number, @tagName(bind_group_layout[binding_number].?.type), @tagName(bind_group_layout[binding_number].?.format) });
+                        slog.debug("Added bind group layout entry for binding {d}, type {s}, format {s}", .{ binding_number, @tagName(bind_group_layout[binding_number].?.type), @tagName(bind_group_layout[binding_number].?.format) });
 
                         const conn_handle = sock.private.conn_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
                         const conn = try self.connector_pool.getPtr(conn_handle);
@@ -364,7 +363,7 @@ pub const Pipeline = struct {
                         };
                     }
                 }
-                slog.info("Creating shader for node with entry point: {s}", .{node.desc.entry_point});
+                slog.debug("Creating shader for node with entry point: {s}", .{node.desc.entry_point});
                 const shader = try gpu.ShaderPipe.init(
                     gpu_inst,
                     node.desc.shader_code,
@@ -396,7 +395,7 @@ pub const Pipeline = struct {
                 const upload_offset = upload_fba.end_index;
                 sock.*.private.staging_offset = upload_offset;
                 const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
-                slog.info("Allocating upload buffer at offset {d}  for size {d} bytes", .{ upload_offset, size_bytes });
+                slog.debug("Allocating upload buffer at offset {d}  for size {d} bytes", .{ upload_offset, size_bytes });
                 const mapped_slice = try upload_allocator.alloc(u8, size_bytes);
                 const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
                 sock.*.private.staging = mapped_slice_ptr;
@@ -419,7 +418,7 @@ pub const Pipeline = struct {
                 const download_offset = download_fba.end_index;
                 sock.*.private.staging_offset = download_offset;
                 const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
-                slog.info("Allocating download buffer at offset {d} for size {d} bytes", .{ download_offset, size_bytes });
+                slog.debug("Allocating download buffer at offset {d} for size {d} bytes", .{ download_offset, size_bytes });
                 const mapped_slice = try download_allocator.alloc(u8, size_bytes);
                 const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
                 sock.*.private.staging = mapped_slice_ptr;
@@ -448,9 +447,9 @@ pub const Pipeline = struct {
         if (first_node.desc.sockets[0]) |*sock| {
             if (sock.type == .source) {
                 if (first_node.mod.desc.readSource) |readSourceFn| {
-                    slog.info("Uploading source data for first node", .{});
+                    slog.debug("Uploading source data for first node", .{});
                     const mapped = sock.*.private.staging orelse unreachable;
-                    slog.info("Calling readSource function for first node", .{});
+                    slog.debug("Calling readSource function for first node", .{});
                     readSourceFn(self, first_node.mod, mapped) catch unreachable;
                 } else {
                     slog.err("First node source module has no readSource function defined", .{});
@@ -480,7 +479,7 @@ pub const Pipeline = struct {
             const node = self.node_pool.getPtr(node_handle) catch unreachable;
             switch (node.desc.type) {
                 .compute => {
-                    slog.info("Enqueueing compute shader for node {s}", .{node.desc.entry_point});
+                    slog.debug("Enqueueing compute shader for node {s}", .{node.desc.entry_point});
                     var shader = node.shader orelse return error.NodeMissingShader;
                     var bindings = node.bindings orelse return error.NodeMissingBindings;
                     encoder.enqueueShader(
@@ -490,7 +489,7 @@ pub const Pipeline = struct {
                     );
                 },
                 .source => {
-                    slog.info("Enqueueing source node {s} buffer to texture copy", .{node.desc.entry_point});
+                    slog.debug("Enqueueing source node {s} buffer to texture copy", .{node.desc.entry_point});
                     const connector = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
                     var tex = connector.* orelse return error.PipelineMissingSourceNodeTexture;
                     encoder.enqueueBufToTex(
@@ -501,7 +500,7 @@ pub const Pipeline = struct {
                     ) catch unreachable;
                 },
                 .sink => {
-                    slog.info("Enqueueing sink node {s} texture to buffer copy", .{node.desc.entry_point});
+                    slog.debug("Enqueueing sink node {s} texture to buffer copy", .{node.desc.entry_point});
                     const connector = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
                     var tex = connector.* orelse return error.PipelineMissingSinkNodeTexture;
                     encoder.enqueueTexToBuf(
@@ -527,13 +526,13 @@ pub const Pipeline = struct {
         const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
         var last_node = try self.node_pool.get(last_node_handle);
 
-        slog.info("Last node handle: {any}", .{last_node_handle});
-        // slog.info("Last node desc: {any}", .{last_node.desc});
+        slog.debug("Last node handle: {any}", .{last_node_handle});
+        // slog.debug("Last node desc: {any}", .{last_node.desc});
 
         if (last_node.desc.sockets[0]) |*sock| {
             if (sock.type == .sink) {
                 if (last_node.mod.desc.writeSink) |writeSinkFn| {
-                    slog.info("Downloading sink data for last node", .{});
+                    slog.debug("Downloading sink data for last node", .{});
                     const mapped = sock.*.private.staging orelse unreachable;
                     writeSinkFn(self, last_node.mod, mapped) catch unreachable;
                 } else {
@@ -577,7 +576,7 @@ pub const Pipeline = struct {
         // - Sink modules must have a sink input socket and no output socket
         // - Sink modules must create a single sink node
 
-        slog.info("Running pipeline", .{});
+        slog.debug("Running pipeline", .{});
 
         // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
         // self.runModules() catch unreachable;

@@ -26,7 +26,6 @@ pub fn getSocket(mod: *Self, name: []const u8) ?api.SocketDesc {
     for (sockets) |sock| {
         if (sock) |s| {
             if (std.mem.eql(u8, s.name, name)) {
-                slog.info("Found socket for module {s}, connector {s}", .{ mod.desc.name, name });
                 return s;
             }
         }

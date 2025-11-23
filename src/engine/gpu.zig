@@ -173,12 +173,10 @@ pub const GPUMemory = struct {
     pub fn fixedBufferAllocator(gpu_memory: *GPUMemory) std.heap.FixedBufferAllocator {
         // slog.debug("Buffer size: {d}", .{gpu_memory.buffer_size});
         const mapped_ptr: *anyopaque = gpu_memory.mapSize(gpu_memory.buffer_size);
-        slog.debug("Buffer mapped for FixedBufferAllocator {}", .{mapped_ptr});
         defer gpu_memory.unmap();
         const buffer_ptr: [*]u8 = @ptrCast(@alignCast(mapped_ptr));
         const buffer_slice = buffer_ptr[0..@as(usize, gpu_memory.buffer_size)];
         const fba = std.heap.FixedBufferAllocator.init(buffer_slice);
-        slog.debug("Allocator created", .{});
         return fba;
     }
 
@@ -248,9 +246,9 @@ pub const Encoder = struct {
         self.encoder.release();
     }
 
-    /// you need to submit the command buffer to the GPU queue after finishing
+    /// you need to submit the command buffer to the GPU queue after finishing the encoder
     pub fn finish(self: *Self) ?*wgpu.CommandBuffer {
-        slog.debug("Submitting command buffer to GPU", .{});
+        slog.debug("Finishing command encoder", .{});
 
         // We finish the encoder, giving us a fully recorded command buffer.
         const command_buffer = self.encoder.finish(&wgpu.CommandBufferDescriptor{
@@ -785,7 +783,7 @@ pub const GPU = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        slog.debug("Deinitializing GPU", .{});
+        slog.debug("De-initializing GPU", .{});
 
         self.queue.release();
         self.device.release();

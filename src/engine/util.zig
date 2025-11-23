@@ -5,6 +5,7 @@ const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 
 pub fn printModules(self: *pipeline.Pipeline) void {
+    std.debug.print("MODULE LISTING\n", .{});
     // while (self.module_pool.liveHandles().next()) |module_handle| {
     //     const module = self.module_pool.getColumn(module_handle, .val) catch unreachable;
     for (self.modules.items) |module| {
@@ -46,7 +47,7 @@ pub fn printModules(self: *pipeline.Pipeline) void {
 }
 
 pub fn printNodes(self: *pipeline.Pipeline) void {
-    std.debug.print("\n", .{});
+    std.debug.print("NODE LISTING (ORDERED AS APPEARANCE IN NODE POOL)\n", .{});
     var node_pool_handles = self.node_pool.liveHandles();
     while (node_pool_handles.next()) |node_handle| {
         const node = self.node_pool.get(node_handle) catch unreachable;
@@ -76,6 +77,9 @@ pub fn printNodes2(self: *pipeline.Pipeline) !void {
     var writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &writer.interface;
 
+    try stdout.print("\n", .{});
+    try stdout.print("▒▒▒▒▒▒▒▒▒▒▒▒▒ NODES ▒▒▒▒▒▒▒▒▒▒▒▒▒▒\n", .{});
+
     var iter1 = try self.node_graph.topSortIterator();
     defer iter1.deinit();
 
@@ -97,6 +101,10 @@ fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaqu
 fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []u8 {
     var self: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
     const node = self.node_pool.get(vert) catch unreachable;
-    const res = std.fmt.bufPrint(buf, "{s} > {s}", .{ node.mod.desc.name, node.desc.entry_point }) catch "<error>";
+    var enabled_srt = "[ ]";
+    if (node.mod.enabled) {
+        enabled_srt = "[x]";
+    }
+    const res = std.fmt.bufPrint(buf, "{s} {s} > {s}", .{ enabled_srt, node.mod.desc.name, node.desc.entry_point }) catch "<error>";
     return @constCast(res);
 }
