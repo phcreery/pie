@@ -1,5 +1,6 @@
 const std = @import("std");
 const pie = @import("pie");
+const pretty = @import("pretty");
 
 const ROI = pie.engine.ROI;
 const GPU = pie.engine.gpu.GPU;
@@ -24,6 +25,7 @@ test "simple compute test" {
     defer download.deinit();
 
     // DEFINE
+    const param_value = [_]f32{2.0};
     const source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
     const source_format = TextureFormat.rgba16float;
     var destination = std.mem.zeroes([4]f16);
@@ -37,9 +39,10 @@ test "simple compute test" {
         \\struct Params {
         \\    value: f32,
         \\};
-        \\@group(0) @binding(0) var          input:  texture_2d<f32>;
-        \\@group(0) @binding(1) var          output: texture_storage_2d<rgba16float, write>;
-        \\@group(1) @binding(0) var<uniform> params: Params;
+        \\@group(0) @binding(0) var                input:  texture_2d<f32>;
+        \\@group(0) @binding(1) var                output: texture_storage_2d<rgba16float, write>;
+        \\//@group(1) @binding(0) var<uniform>     params: Params;
+        \\@group(1) @binding(0) var<storage> params: Params;
         \\@compute @workgroup_size(8, 8, 1)
         \\fn multiply(@builtin(global_invocation_id) global_id: vec3<u32>) {
         \\    let coords = vec2<i32>(global_id.xy);
@@ -49,15 +52,21 @@ test "simple compute test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    var group_0_layout: [pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
-    group_0_layout[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
-    group_0_layout[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
+    var layout_group_0_binding: [pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
+    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
+    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
 
-    var group_1_layout: [pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
-    group_1_layout[0] = .{ .buffer = .{} };
+    var layout_group_1_binding: [pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
+    layout_group_1_binding[0] = .{ .buffer = .{} };
 
-    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "multiply", group_0_layout);
-    defer shader_pipe.deinit();
+    var layout_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
+    layout_group[0] = layout_group_0_binding;
+    layout_group[1] = layout_group_1_binding;
+
+    // try pretty.print(std.testing.allocator, layout_group, .{ .max_depth = 3 });
+
+    var multiply_shader_pipe = try ShaderPipe.init(&gpu, shader_code, "multiply", layout_group);
+    defer multiply_shader_pipe.deinit();
 
     // MEMORY
     var texture_in = try Texture.init(&gpu, "in", source_format, roi);
@@ -66,11 +75,24 @@ test "simple compute test" {
     var texture_out = try Texture.init(&gpu, "out", destination_format, roi);
     defer texture_out.deinit();
 
+    // PARAMS
+    var param_buffer = try GPUMemory.init(&gpu, @sizeOf(f32), .storage);
+    defer param_buffer.deinit();
+
+    // BINDINGS
     var group_0_binds: [pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
-    group_0_binds[0] = .{ .binding = 0, .type = .texture, .texture = texture_in };
-    group_0_binds[1] = .{ .binding = 1, .type = .texture, .texture = texture_out };
-    var group_0_bindings = try Bindings.init(&gpu, &shader_pipe, group_0_binds);
-    defer group_0_bindings.deinit();
+    group_0_binds[0] = .{ .type = .texture, .texture = texture_in };
+    group_0_binds[1] = .{ .type = .texture, .texture = texture_out };
+
+    var bind_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    bind_group[0] = group_0_binds;
+
+    var group_1_binds: [pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    group_1_binds[0] = .{ .type = .buffer, .buffer = param_buffer };
+    bind_group[1] = group_1_binds;
+
+    var multiply_shader_pipe_bindings = try Bindings.init(&gpu, &multiply_shader_pipe, bind_group);
+    defer multiply_shader_pipe_bindings.deinit();
 
     // ALLOCATORS
     var upload_fba = upload.fixedBufferAllocator();
@@ -81,26 +103,37 @@ test "simple compute test" {
     var download_fba = download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
+    var param_fba = param_buffer.fixedBufferAllocator();
+    var param_allocator = param_fba.allocator();
+
     // PREP UPLOAD
     const upload_offset = upload_fba.end_index;
     const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
-    // const offset = upload_buf.ptr - upload_fba.buffer.ptr
+    // const upload_offset = upload_buf.ptr - upload_fba.buffer.ptr
     std.log.info("Upload offset: {d}", .{upload_offset});
 
     // PREP DOWNLOAD
     const download_offset = download_fba.end_index;
     const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * destination_format.nchannels());
 
+    // PREP PARAMS
+    const param_buf = try param_allocator.alloc(f32, 1);
+
     // UPLOAD
     upload.map();
     @memcpy(upload_buf, &source);
     upload.unmap();
 
+    // PARAMS
+    param_buffer.map();
+    @memcpy(param_buf, &param_value);
+    param_buffer.unmap();
+
     // RUN
     var encoder = try Encoder.start(&gpu);
     defer encoder.deinit();
     encoder.enqueueBufToTex(&upload, upload_offset, &texture_in, roi) catch unreachable;
-    encoder.enqueueShader(&shader_pipe, &group_0_bindings, roi);
+    encoder.enqueueShader(&multiply_shader_pipe, &multiply_shader_pipe_bindings, roi);
     encoder.enqueueTexToBuf(&download, download_offset, &texture_out, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 

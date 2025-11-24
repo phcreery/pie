@@ -126,6 +126,7 @@ pub fn build(b: *Build) !void {
         .optimize = optimize,
     });
     mod_integration_test.addImport("pie", mod_main);
+    mod_integration_test.addImport("pretty", dep_pretty.module("pretty"));
     mod_integration_test.addImport("libraw", dep_libraw.module("libraw"));
     mod_integration_test.addImport("zigimg", dep_zigimg.module("zigimg"));
     mod_integration_test.addImport("ztracy", dep_ztracy.module("root"));
