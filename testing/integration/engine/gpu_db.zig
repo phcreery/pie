@@ -3,7 +3,7 @@ const pie = @import("pie");
 
 const ROI = pie.engine.ROI;
 const GPU = pie.engine.gpu.GPU;
-const GPUMemory = pie.engine.gpu.GPUMemory;
+const Buffer = pie.engine.gpu.Buffer;
 const Encoder = pie.engine.gpu.Encoder;
 const ShaderPipe = pie.engine.gpu.ShaderPipe;
 const Texture = pie.engine.gpu.Texture;
@@ -14,9 +14,9 @@ test "simple compute double buffer test" {
     var gpu = try GPU.init();
     defer gpu.deinit();
 
-    var upload = try GPUMemory.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .upload);
+    var upload = try Buffer.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .upload);
     defer upload.deinit();
-    var download = try GPUMemory.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .download);
+    var download = try Buffer.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .download);
     defer download.deinit();
 
     var source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };

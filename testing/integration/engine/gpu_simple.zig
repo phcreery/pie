@@ -3,7 +3,7 @@ const pie = @import("pie");
 
 const ROI = pie.engine.ROI;
 const GPU = pie.engine.gpu.GPU;
-const GPUMemory = pie.engine.gpu.GPUMemory;
+const Buffer = pie.engine.gpu.Buffer;
 const Encoder = pie.engine.gpu.Encoder;
 const ShaderPipe = pie.engine.gpu.ShaderPipe;
 const Texture = pie.engine.gpu.Texture;
@@ -18,9 +18,9 @@ test "simple compute test" {
     defer gpu.deinit();
 
     // these are intentionally over-provisioned to avoid OOM issues
-    var upload = try GPUMemory.init(&gpu, 256 * TextureFormat.rgba16float.bpp(), .upload);
+    var upload = try Buffer.init(&gpu, 256 * TextureFormat.rgba16float.bpp(), .upload);
     defer upload.deinit();
-    var download = try GPUMemory.init(&gpu, 256 * TextureFormat.rgba16float.bpp(), .download);
+    var download = try Buffer.init(&gpu, 256 * TextureFormat.rgba16float.bpp(), .download);
     defer download.deinit();
 
     // DEFINE

@@ -26,10 +26,10 @@ pub const Pipeline = struct {
     allocator: std.mem.Allocator,
     gpu: ?*gpu.GPU,
 
-    upload_buffer: ?gpu.GPUMemory,
+    upload_buffer: ?gpu.Buffer,
     upload_fba: ?std.heap.FixedBufferAllocator,
 
-    download_buffer: ?gpu.GPUMemory,
+    download_buffer: ?gpu.Buffer,
     download_fba: ?std.heap.FixedBufferAllocator,
 
     node_pool: NodePool,
@@ -46,17 +46,17 @@ pub const Pipeline = struct {
         if (gpu_instance == null) {
             slog.debug("No GPU instance provided, performing a dry run", .{});
         }
-        var upload_buffer: ?gpu.GPUMemory = null;
+        var upload_buffer: ?gpu.Buffer = null;
         var upload_fba: ?std.heap.FixedBufferAllocator = null;
-        var download_buffer: ?gpu.GPUMemory = null;
+        var download_buffer: ?gpu.Buffer = null;
         var download_fba: ?std.heap.FixedBufferAllocator = null;
         if (gpu_instance) |gpu_inst| {
-            upload_buffer = try gpu.GPUMemory.init(gpu_inst, null, .upload);
+            upload_buffer = try gpu.Buffer.init(gpu_inst, null, .upload);
             if (upload_buffer) |*ub| {
                 upload_fba = ub.fixedBufferAllocator();
                 errdefer ub.deinit();
             }
-            download_buffer = try gpu.GPUMemory.init(gpu_inst, null, .download);
+            download_buffer = try gpu.Buffer.init(gpu_inst, null, .download);
             if (download_buffer) |*db| {
                 download_fba = db.fixedBufferAllocator();
                 errdefer db.deinit();
@@ -385,7 +385,7 @@ pub const Pipeline = struct {
     }
 
     pub fn runNodesAllocateBuffers(self: *Pipeline) !void {
-        var upload_fba = self.upload_fba orelse return error.PipelineMissingGPUMemory;
+        var upload_fba = self.upload_fba orelse return error.PipelineMissingBuffer;
         var upload_allocator = upload_fba.allocator();
 
         // we currently only support one upload in the entire pipeline
@@ -410,7 +410,7 @@ pub const Pipeline = struct {
             }
         }
 
-        var download_fba = self.download_fba orelse return error.PipelineMissingGPUMemory;
+        var download_fba = self.download_fba orelse return error.PipelineMissingBuffer;
         var download_allocator = download_fba.allocator();
 
         // we currently only support one download in the entire pipeline
@@ -438,7 +438,7 @@ pub const Pipeline = struct {
     ///
     /// similar to vkdt dt_graph_run_nodes_upload()
     pub fn runNodesUpload(self: *Pipeline) !void {
-        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingGPUMemory;
+        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
 
         upload_buffer.map();
 
@@ -473,8 +473,8 @@ pub const Pipeline = struct {
 
     pub fn runNodes(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
-        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingGPUMemory;
-        var download_buffer = self.download_buffer orelse return error.PipelineMissingGPUMemory;
+        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
+        var download_buffer = self.download_buffer orelse return error.PipelineMissingBuffer;
 
         var encoder = try gpu.Encoder.start(gpu_inst);
         defer encoder.deinit();
@@ -522,7 +522,7 @@ pub const Pipeline = struct {
     }
 
     pub fn runNodesDownload(self: *Pipeline) !void {
-        var download_buffer = self.download_buffer orelse return error.PipelineMissingGPUMemory;
+        var download_buffer = self.download_buffer orelse return error.PipelineMissingBuffer;
 
         download_buffer.map();
 

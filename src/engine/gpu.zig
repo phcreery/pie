@@ -34,11 +34,9 @@ pub const MemoryType = enum {
 
     pub fn toGPUBufferUsage(self: MemoryType) wgpu.BufferUsage {
         return switch (self) {
-            // wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write
             .upload => wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
             .download => wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
-            // .uniform => wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
-            .storage => wgpu.BufferUsages.storage | wgpu.BufferUsages.map_write,
+            .storage => wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.storage,
             // else => unreachable,
         };
     }
@@ -47,7 +45,6 @@ pub const MemoryType = enum {
         return switch (self) {
             .upload => wgpu.MapModes.write,
             .download => wgpu.MapModes.read,
-            // .uniform => wgpu.MapModes.write,
             .storage => wgpu.MapModes.write,
             // else => unreachable,
         };
@@ -59,8 +56,8 @@ pub const MemoryType = enum {
 /// This is not optimal, but it works for now. Only one allocation at a time.
 /// Future work could include a more complex allocator with multiple buffers
 /// useful for multiple simultaneous operations.
-/// GPU must outlive GPUMemory
-pub const GPUMemory = struct {
+/// GPU must outlive Buffer
+pub const Buffer = struct {
     gpu: *GPU,
     buffer: *wgpu.Buffer,
     buffer_size: u64,
@@ -81,7 +78,7 @@ pub const GPUMemory = struct {
 
         if (size_bytes) |s| {
             if (s > max_buffer_size) {
-                slog.err("Requested GPUMemory size {f} exceeds max buffer size {f}", .{ sizeify.fmt(s, .decimal_short), sizeify.fmt(max_buffer_size, .decimal_short) });
+                slog.err("Requested Buffer size {f} exceeds max buffer size {f}", .{ sizeify.fmt(s, .decimal_short), sizeify.fmt(max_buffer_size, .decimal_short) });
                 return error.InvalidInput;
             }
         }
@@ -90,7 +87,7 @@ pub const GPUMemory = struct {
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        slog.debug("Creating GPUMemory with upload buffer size {f}", .{sizeify.fmt(buffer_size_bytes, .decimal_short)});
+        slog.debug("Creating Buffer with upload buffer size {f}", .{sizeify.fmt(buffer_size_bytes, .decimal_short)});
         const buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("buffer"),
             .usage = memory_type.toGPUBufferUsage(),
@@ -177,7 +174,7 @@ pub const GPUMemory = struct {
         @memcpy(upload_buffer_slice, data);
     }
 
-    pub fn fixedBufferAllocator(gpu_memory: *GPUMemory) std.heap.FixedBufferAllocator {
+    pub fn fixedBufferAllocator(gpu_memory: *Buffer) std.heap.FixedBufferAllocator {
         // slog.debug("Buffer size: {d}", .{gpu_memory.buffer_size});
         const mapped_ptr: *anyopaque = gpu_memory.mapSize(gpu_memory.buffer_size);
         defer gpu_memory.unmap();
@@ -198,7 +195,7 @@ pub const GPUMemory = struct {
         roi: ROI,
     ) void {
         if (self.memory_type != .upload) {
-            slog.err("GPUMemory.mapUploadTexture called on non-upload memory");
+            slog.err("Buffer.mapUploadTexture called on non-upload memory");
             return;
         }
         slog.debug("Writing data to GPU Texture", .{});
@@ -276,8 +273,8 @@ pub const Encoder = struct {
         }).?;
         // Set the pipeline that we want to use
         compute_pass.setPipeline(shader_pipe.pipeline);
-        // compute_pass.setBindGroup(0, bindings.bind_group, 0, null);
 
+        // compute_pass.setBindGroup(0, bindings.bind_group, 0, null);
         for (bindings.bind_groups, 0..) |bind_group, index| {
             const bg = bind_group orelse continue;
             slog.info("Setting bind group {d}", .{index});
@@ -310,7 +307,7 @@ pub const Encoder = struct {
         compute_pass.end();
     }
 
-    pub fn enqueueBufToTex(self: *Self, memory: *GPUMemory, mem_offset: usize, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueBufToTex(self: *Self, memory: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
         slog.debug("Writing GPU buffer to Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
@@ -341,7 +338,7 @@ pub const Encoder = struct {
         };
         self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
     }
-    pub fn enqueueTexToBuf(self: *Self, memory: *GPUMemory, mem_offset: usize, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueTexToBuf(self: *Self, memory: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
         slog.debug("Reading GPU buffer from Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
@@ -404,6 +401,21 @@ pub const Encoder = struct {
 
         self.encoder.copyTextureToTexture(&source, &destination, &copy_size);
     }
+    pub fn enqueueBufToBuf(self: *Self, src_memory: *Buffer, src_offset: usize, dst_memory: *Buffer, dst_offset: usize, size_bytes: usize) !void {
+        slog.debug("Copying GPU buffer to another GPU buffer", .{});
+
+        const src_offset_aligned = @as(u64, src_offset);
+        const dst_offset_aligned = @as(u64, dst_offset);
+        const size_bytes_aligned = @as(u64, size_bytes);
+
+        self.encoder.copyBufferToBuffer(
+            src_memory.buffer,
+            src_offset_aligned,
+            dst_memory.buffer,
+            dst_offset_aligned,
+            size_bytes_aligned,
+        );
+    }
 };
 
 pub const TextureFormat = enum {
@@ -437,7 +449,6 @@ pub const TextureFormat = enum {
 
     /// bytes per pixel
     pub fn bpp(self: TextureFormat) u32 {
-        // return self.nchannels() * @sizeOf(self.BaseType()); // requires comptime param
         return self.nchannels() * self.baseTypeSize();
     }
 
@@ -515,25 +526,20 @@ pub const BindGroupEntryType = enum {
 };
 
 pub const BindGroupEntry = struct {
-    // binding: u32,
-    type: BindGroupEntryType,
     texture: ?Texture = null,
-    // buffer: ?*wgpu.Buffer = null,
-    buffer: ?GPUMemory = null,
+    buffer: ?Buffer = null,
 };
 
 /// The Bindings (bind group) contains the actual resources to bind to the pipeline.
 /// Similar to vulkan's descriptor sets, a Bindings struct holds the actual resources
 /// (buffers, textures, etc) that are bound to a shader pipeline.
 pub const Bindings = struct {
-    // bind_group: *wgpu.BindGroup,
     bind_groups: [MAX_BIND_GROUPS]?*wgpu.BindGroup,
     const Self = @This();
 
     pub fn init(
         gpu: *GPU,
         shader_pipe: *const ShaderPipe,
-        // bind_group_entries: [MAX_BINDINGS]?BindGroupEntry,
         bind_group_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupEntry,
     ) !Self {
         slog.debug("Creating Bindings", .{});
@@ -549,31 +555,20 @@ pub const Bindings = struct {
             var bind_count: u32 = 0;
             for (bg, 0..) |bind_group_entry, bind_group_entry_number| {
                 const bge = bind_group_entry orelse continue;
-                switch (bge.type) {
-                    .texture => {
-                        const tex = bge.texture orelse {
-                            slog.err("BindGroupEntry of type texture must have a valid texture", .{});
-                            return error.InvalidInput;
-                        };
-                        const entry = wgpu.BindGroupEntry{
-                            .binding = @intCast(bind_group_entry_number),
-                            .texture_view = tex.texture.createView(null),
-                        };
-                        wgpu_bind_group_entries[bind_group_entry_number] = entry;
-                    },
-                    .buffer => {
-                        const buf = bge.buffer orelse {
-                            slog.err("BindGroupEntry of type buffer must have a valid buffer", .{});
-                            return error.InvalidInput;
-                        };
-                        const entry = wgpu.BindGroupEntry{
-                            .binding = @intCast(bind_group_entry_number),
-                            .buffer = buf.buffer,
-                            .offset = 0,
-                            .size = buf.buffer_size,
-                        };
-                        wgpu_bind_group_entries[bind_group_entry_number] = entry;
-                    },
+                if (bge.texture) |texture| {
+                    const entry = wgpu.BindGroupEntry{
+                        .binding = @intCast(bind_group_entry_number),
+                        .texture_view = texture.texture.createView(null),
+                    };
+                    wgpu_bind_group_entries[bind_group_entry_number] = entry;
+                } else if (bge.buffer) |buffer| {
+                    const entry = wgpu.BindGroupEntry{
+                        .binding = @intCast(bind_group_entry_number),
+                        .buffer = buffer.buffer,
+                        .offset = 0,
+                        .size = buffer.buffer_size,
+                    };
+                    wgpu_bind_group_entries[bind_group_entry_number] = entry;
                 }
                 bind_count += 1;
             }
@@ -604,13 +599,6 @@ pub const BindGroupLayoutEntryAccess = enum {
     write,
 };
 
-/// The BindGroupLayoutEntry describes the type of resource for a shader binding.
-// pub const BindGroupLayoutEntry = struct {
-//     binding: u32,
-//     type: BindGroupLayoutEntryType,
-//     format: TextureFormat,
-// };
-
 pub const BindGroupLayoutTextureEntry = struct {
     format: TextureFormat,
     access: BindGroupLayoutEntryAccess,
@@ -621,15 +609,12 @@ pub const BindGroupLayoutBufferEntry = struct {
 };
 
 pub const BindGroupLayoutEntry = struct {
-    // binding: u32,
     texture: ?BindGroupLayoutTextureEntry = null,
     buffer: ?BindGroupLayoutBufferEntry = null,
 };
 
 pub const ShaderPipe = struct {
     entry_point: []const u8,
-    // bind_group_layout: *wgpu.BindGroupLayout,
-    // bind_group_layouts: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupLayoutEntry,
     wgpu_bind_group_layouts: [MAX_BIND_GROUPS]?*wgpu.BindGroupLayout,
     shader_module: *wgpu.ShaderModule,
     pipeline_layout: *wgpu.PipelineLayout,
@@ -641,7 +626,6 @@ pub const ShaderPipe = struct {
         gpu: *GPU,
         shader_source: []const u8,
         entry_point: []const u8,
-        // group_0_bind_layout: []BindGroupLayoutEntry,
         bind_group_layout_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupLayoutEntry,
     ) !Self {
         slog.debug("Initializing ShaderPipe for {s}", .{entry_point});
@@ -657,9 +641,7 @@ pub const ShaderPipe = struct {
         // First, we are going to create the bind group layout for group 0
         // this will hold the input/output textures
 
-        // var wgpu_g0_bind_group_layout_entries: [MAX_BINDINGS]wgpu.BindGroupLayoutEntry = undefined;
         var wgpu_bind_group_layouts: [MAX_BIND_GROUPS]?*wgpu.BindGroupLayout = @splat(null);
-        // var wgpu_bind_group_layouts: [MAX_BIND_GROUPS]*wgpu.BindGroupLayout = undefined;
 
         var bind_group_layout_count: u32 = 0;
         for (bind_group_layout_entries, 0..) |bind_group_layout, bind_group_layout_number| {
@@ -703,7 +685,6 @@ pub const ShaderPipe = struct {
                         .binding = @intCast(bind_number),
                         .visibility = wgpu.ShaderStages.compute,
                         .buffer = wgpu.BufferBindingLayout{
-                            // .type = wgpu.BufferBindingType.uniform,
                             .type = wgpu.BufferBindingType.storage,
                             // .has_dynamic_offset = @intFromBool(false),
                             // .min_binding_size = bge_buffer.size,
@@ -721,12 +702,10 @@ pub const ShaderPipe = struct {
             }).?;
             errdefer wgpu_bind_group_layout.release();
 
-            // bind_group_layouts[bind_group_layout_number] = wgpu_bind_group_layout;
             wgpu_bind_group_layouts[bind_group_layout_number] = wgpu_bind_group_layout;
             bind_group_layout_count += 1;
         }
 
-        // const bind_group_layouts = [_]*wgpu.BindGroupLayout{g0_bind_group_layout};
         // this basically converts from [MAX_BIND_GROUPS]?*wgpu.BindGroupLayout to [MAX_BIND_GROUPS]*wgpu.BindGroupLayout
         // by skipping null entries
         var bind_group_layouts: [MAX_BIND_GROUPS]*wgpu.BindGroupLayout = undefined;
@@ -767,8 +746,6 @@ pub const ShaderPipe = struct {
 
         return ShaderPipe{
             .entry_point = entry_point,
-            // .bind_group_layout = g0_bind_group_layout,
-            // .bind_group_layouts = bind_group_layouts,
             .wgpu_bind_group_layouts = wgpu_bind_group_layouts,
             .shader_module = shader_module,
             .pipeline_layout = wgpu_pipeline_layout,
@@ -796,9 +773,6 @@ pub const GPU = struct {
     adapter: *wgpu.Adapter = undefined,
     device: *wgpu.Device = undefined,
     queue: *wgpu.Queue = undefined,
-    // upload_buffer: *wgpu.Buffer = undefined,
-    // download_buffer: *wgpu.Buffer = undefined,
-    // encoder: *wgpu.CommandEncoder = undefined,
     adapter_name: []const u8 = "",
 
     const Self = @This();
@@ -831,15 +805,27 @@ pub const GPU = struct {
         }
 
         // We then create a `Device` and a `Queue` from the `Adapter`.
-        const required_features = [_]wgpu.FeatureName{ .shader_f16, .texture_adapter_specific_format_features };
-        const device_request = adapter.requestDeviceSync(instance, &wgpu.DeviceDescriptor{ .required_limits = null, .required_features = &required_features }, 0);
+        const required_features = [_]wgpu.FeatureName{
+            .shader_f16, // enable f16 support
+            .texture_adapter_specific_format_features,
+            // .mappable_primary_buffers, // https://docs.rs/wgpu-types/0.7.0/wgpu_types/struct.Features.html#associatedconstant.MAPPABLE_PRIMARY_BUFFERS
+        };
+        const device_descriptor = wgpu.DeviceDescriptor{
+            .required_limits = null,
+            .required_features = &required_features,
+        };
+        const device_request = adapter.requestDeviceSync(
+            instance,
+            &device_descriptor,
+            0,
+        );
         const device = switch (device_request.status) {
             .success => device_request.device.?,
             else => return error.NoDevice,
         };
         errdefer device.release();
 
-        const queue = device.getQueue().?;
+        const queue = device.getQueue() orelse return error.NoQueue;
         errdefer queue.release();
 
         var limits = wgpu.Limits{};
@@ -895,15 +881,4 @@ pub const GPU = struct {
         self.queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer_unwrapped});
         command_buffer_unwrapped.release();
     }
-
-    // Helper functions to create ShaderPipe, Texture, and Bindings
-    // pub fn createShaderPipe(self: *Self, shader_source: []const u8, entry_point: []const u8, comptime g0_conns: []const ShaderPipeConn) !ShaderPipe {
-    //     return ShaderPipe.init(self, shader_source, entry_point, g0_conns);
-    // }
-    // pub fn createTexture(self: *Self, format: TextureFormat, roi: ROI) !Texture {
-    //     return Texture.init(self, format, roi);
-    // }
-    // pub fn createBindings(self: *Self, shader_pipe: *ShaderPipe, texture_a: *Texture, texture_b: *Texture) !Bindings {
-    //     return Bindings.init(self, shader_pipe, texture_a, texture_b);
-    // }
 };
