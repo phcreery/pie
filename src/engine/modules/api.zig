@@ -20,10 +20,10 @@ pub const SocketType = enum {
     source,
     sink,
 
-    pub fn toShaderPipeBindGroupLayoutEntryType(self: SocketType) gpu.BindGroupLayoutEntryType {
+    pub fn toShaderPipeBindGroupLayoutEntryAccess(self: SocketType) gpu.BindGroupLayoutEntryAccess {
         return switch (self) {
-            .read => gpu.BindGroupLayoutEntryType.read,
-            .write => gpu.BindGroupLayoutEntryType.write,
+            .read => gpu.BindGroupLayoutEntryAccess.read,
+            .write => gpu.BindGroupLayoutEntryAccess.write,
             else => unreachable,
         };
     }

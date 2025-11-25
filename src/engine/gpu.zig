@@ -520,10 +520,10 @@ pub const Texture = struct {
     }
 };
 
-pub const BindGroupEntryType = enum {
-    buffer,
-    texture,
-};
+// pub const BindGroupEntryType = enum {
+//     buffer,
+//     texture,
+// };
 
 pub const BindGroupEntry = struct {
     texture: ?Texture = null,

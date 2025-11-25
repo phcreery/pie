@@ -4,6 +4,7 @@ const slog = std.log.scoped(.mod);
 
 desc: api.ModuleDesc,
 enabled: bool,
+param_offset: usize,
 
 const Self = @This();
 
@@ -13,6 +14,7 @@ pub fn init(
     return Self{
         .desc = desc,
         .enabled = true,
+        .param_offset = 0,
     };
 }
 

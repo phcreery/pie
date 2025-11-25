@@ -35,8 +35,10 @@ pub const Pipeline = struct {
     node_pool: NodePool,
     node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
     node_execution_order: std.ArrayList(NodeHandle),
+
     modules: std.ArrayList(Module),
     // modules_pool: std.heap.MemoryPoolExtra(Module, .{}),
+
     connector_pool: ConnectorPool,
 
     pub const MAX_MODULES = 100;
@@ -93,15 +95,20 @@ pub const Pipeline = struct {
         return Pipeline{
             .allocator = allocator,
             .gpu = gpu_instance,
+
             .upload_buffer = upload_buffer,
             .upload_fba = upload_fba,
+
             .download_buffer = download_buffer,
             .download_fba = download_fba,
+
             .modules = modules,
             // .modules_pool = modules_pool,
+
             .node_pool = node_pool,
             .node_graph = node_graph,
             .node_execution_order = node_execution_order,
+
             .connector_pool = connector_pool,
         };
     }
@@ -344,38 +351,47 @@ pub const Pipeline = struct {
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
 
-            var bind_group_layout: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
-            var bind_group: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
+            var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+            // var bind_group_layout: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+            // var bind_group: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
+            var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
 
+            // all sockets are on group 0
             if (node.desc.type == .compute) {
                 for (node.desc.sockets, 0..) |socket, binding_number| {
                     if (socket) |sock| {
                         // prepare shader pipe connections
-                        bind_group_layout[binding_number] = gpu.BindGroupLayoutEntry{
-                            .binding = @intCast(binding_number),
-                            .type = sock.type.toShaderPipeBindGroupLayoutEntryType(),
-                            .format = sock.format,
+                        layout_group_0_binding[binding_number] = gpu.BindGroupLayoutEntry{
+                            .texture = .{
+                                .access = sock.type.toShaderPipeBindGroupLayoutEntryAccess(),
+                                .format = sock.format,
+                            },
                         };
-                        slog.debug("Added bind group layout entry for binding {d}, type {s}, format {s}", .{ binding_number, @tagName(bind_group_layout[binding_number].?.type), @tagName(bind_group_layout[binding_number].?.format) });
+                        slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
 
                         const conn_handle = sock.private.conn_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
                         const conn = try self.connector_pool.getPtr(conn_handle);
                         const texture = conn.* orelse return error.NodeSocketMissingConnectorTexture;
-                        bind_group[binding_number] = gpu.BindGroupEntry{
-                            .type = gpu.BindGroupEntryType.texture,
-                            .binding = @intCast(binding_number),
+                        bind_group_0_binds[binding_number] = gpu.BindGroupEntry{
                             .texture = texture,
                         };
                     }
                 }
+
+                var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+                layout_group[0] = layout_group_0_binding;
+
                 slog.debug("Creating shader for node with entry point: {s}", .{node.desc.entry_point});
                 const shader = try gpu.ShaderPipe.init(
                     gpu_inst,
                     node.desc.shader_code,
                     node.desc.entry_point,
-                    bind_group_layout,
+                    layout_group,
                 );
                 node.shader = shader;
+
+                var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
+                bind_group[0] = bind_group_0_binds;
 
                 const bindings = try gpu.Bindings.init(gpu_inst, &shader, bind_group);
                 // defer bindings.deinit();
@@ -469,7 +485,17 @@ pub const Pipeline = struct {
         upload_buffer.unmap();
     }
 
-    // pub fn runModulesUploadUniforms(self: *Pipeline) !void {}
+    pub fn runModulesUploadParams(self: *Pipeline) !void {
+        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
+
+        upload_buffer.map();
+
+        for (self.modules.items) |*module| {
+            if (module.enabled == false) continue;
+        }
+
+        upload_buffer.unmap();
+    }
 
     pub fn runNodes(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
@@ -601,7 +627,7 @@ pub const Pipeline = struct {
         util.printNodes(self);
 
         self.runNodesUpload() catch unreachable;
-        // self.runModulesUploadUniforms() catch unreachable;
+        // self.runModulesUploadParams() catch unreachable;
         self.runNodes() catch unreachable;
         self.runNodesDownload() catch unreachable;
         self.print();
