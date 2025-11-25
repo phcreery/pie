@@ -59,12 +59,11 @@ test "simple compute test" {
     defer multiply_shader_pipe.deinit();
 
     // STAGING BUFFERS
-    var upload = try Buffer.init(&gpu, 256 * TextureFormat.rgba16float.bpp(), .upload);
+    // these are intentionally over-provisioned to avoid OOM issues
+    var upload = try Buffer.init(&gpu, 2 * TextureFormat.rgba16float.bpp() + @sizeOf(f32), .upload);
     defer upload.deinit();
-    var download = try Buffer.init(&gpu, 256 * TextureFormat.rgba16float.bpp(), .download);
+    var download = try Buffer.init(&gpu, 1 * TextureFormat.rgba16float.bpp(), .download);
     defer download.deinit();
-    var param_staging = try Buffer.init(&gpu, @sizeOf(f32), .upload);
-    defer param_staging.deinit();
 
     // MEMORY
     var texture_in = try Texture.init(&gpu, "in", source_format, roi);
@@ -98,9 +97,6 @@ test "simple compute test" {
     var download_fba = download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
-    var param_staging_fba = param_staging.fixedBufferAllocator();
-    var param_staging_allocator = param_staging_fba.allocator();
-
     // PREP UPLOAD
     const upload_offset = upload_fba.end_index;
     const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
@@ -112,23 +108,20 @@ test "simple compute test" {
     const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * destination_format.nchannels());
 
     // PREP PARAMS
-    const param_buf = try param_staging_allocator.alloc(f32, 1);
+    const param_offset = upload_fba.end_index;
+    const param_buf = try upload_allocator.alloc(f32, 1);
 
     // UPLOAD
     upload.map();
     @memcpy(upload_buf, &source);
-    upload.unmap();
-
-    // STAGE PARAMS
-    param_staging.map();
     @memcpy(param_buf, &param_value);
-    param_staging.unmap();
+    upload.unmap();
 
     // RUN
     var encoder = try Encoder.start(&gpu);
     defer encoder.deinit();
     encoder.enqueueBufToTex(&upload, upload_offset, &texture_in, roi) catch unreachable;
-    encoder.enqueueBufToBuf(&param_staging, 0, &param_buffer, 0, @sizeOf(f32)) catch unreachable;
+    encoder.enqueueBufToBuf(&upload, param_offset, &param_buffer, 0, @sizeOf(f32)) catch unreachable;
     encoder.enqueueShader(&multiply_shader_pipe, &multiply_shader_pipe_bindings, roi);
     encoder.enqueueTexToBuf(&download, download_offset, &texture_out, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;

@@ -19,7 +19,8 @@ test "simple compute double buffer test" {
     var download = try Buffer.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .download);
     defer download.deinit();
 
-    var source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
+    const format = TextureFormat.rgba16float;
+    const source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
     var destination = std.mem.zeroes([4]f16);
     const roi = ROI{
         .w = 1,
@@ -39,16 +40,9 @@ test "simple compute double buffer test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    const input_binding_layout = pie.engine.gpu.BindGroupLayoutEntry{
-        .binding = 0,
-        .type = .read,
-        .format = .rgba16float,
-    };
-    const output_binding_layout = pie.engine.gpu.BindGroupLayoutEntry{
-        .binding = 1,
-        .type = .write,
-        .format = .rgba16float,
-    };
+    var layout_group_0_binding: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
+    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
     // see https://github.com/ziglang/zig/issues/6068
     // const binding_layout = init: {
     //     var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
@@ -56,49 +50,50 @@ test "simple compute double buffer test" {
     //     s[1] = output_binding_layout;
     //     break :init s;
     // };
-    var binding_layout: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
-    binding_layout[0] = input_binding_layout;
-    binding_layout[1] = output_binding_layout;
-    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", binding_layout);
+    var layout_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    layout_group[0] = layout_group_0_binding;
+    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", layout_group);
     defer shader_pipe.deinit();
 
     // MEMORY
-    var texture_a = try Texture.init(&gpu, "a", input_binding_layout.format, roi);
+    var texture_a = try Texture.init(&gpu, "a", format, roi);
     defer texture_a.deinit();
 
-    var texture_b = try Texture.init(&gpu, "b", output_binding_layout.format, roi);
+    var texture_b = try Texture.init(&gpu, "b", format, roi);
     defer texture_b.deinit();
 
-    var binds_a_to_b: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-    binds_a_to_b[0] = .{ .binding = 0, .type = .texture, .texture = texture_a };
-    binds_a_to_b[1] = .{ .binding = 1, .type = .texture, .texture = texture_b };
-    var bindings_a_to_b = try Bindings.init(&gpu, &shader_pipe, binds_a_to_b);
+    var bind_group_a_to_b: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_a_to_b[0] = @splat(null);
+    bind_group_a_to_b[0].?[0] = .{ .texture = texture_a };
+    bind_group_a_to_b[0].?[1] = .{ .texture = texture_b };
+    var bindings_a_to_b = try Bindings.init(&gpu, &shader_pipe, bind_group_a_to_b);
     defer bindings_a_to_b.deinit();
 
-    var binds_b_to_a: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-    binds_b_to_a[0] = .{ .binding = 0, .type = .texture, .texture = texture_b };
-    binds_b_to_a[1] = .{ .binding = 1, .type = .texture, .texture = texture_a };
-    var bindings_b_to_a = try Bindings.init(&gpu, &shader_pipe, binds_b_to_a);
+    var bind_group_b_to_a: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_b_to_a[0] = @splat(null);
+    bind_group_b_to_a[0].?[0] = .{ .texture = texture_b };
+    bind_group_b_to_a[0].?[1] = .{ .texture = texture_a };
+    var bindings_b_to_a = try Bindings.init(&gpu, &shader_pipe, bind_group_b_to_a);
     defer bindings_b_to_a.deinit();
 
     // ALLOCATORS
     var upload_fba = upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
-    _ = try upload_allocator.alloc(f16, roi.w * roi.h * input_binding_layout.format.nchannels());
+    _ = try upload_allocator.alloc(f16, roi.w * roi.h * format.nchannels());
 
     var download_fba = download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD
     const upload_offset = upload_fba.end_index;
-    const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * input_binding_layout.format.nchannels());
+    const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * format.nchannels());
     // const offset = upload_buf.ptr - upload_fba.buffer.ptr
     std.log.info("Upload offset: {d}", .{upload_offset});
 
     // PREP DOWNLOAD
     const download_offset = download_fba.end_index;
-    const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * output_binding_layout.format.nchannels());
+    const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * format.nchannels());
 
     // UPLOAD
     upload.map();

@@ -8,8 +8,9 @@ pub fn main() !void {
 test {
     // GPU
     // _ = @import("engine/gpu_simple.zig");
-    // _ = @import("engine/gpu_db.zig");
-    _ = @import("engine/gpu_param.zig");
+    _ = @import("engine/gpu_db.zig");
+    // _ = @import("engine/gpu_param.zig");
+    // _ = @import("engine/gpu_param2.zig");
 
     // PIPELINE
     // _ = @import("engine/pipeline.zig");
