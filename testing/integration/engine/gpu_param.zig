@@ -62,7 +62,7 @@ test "simple compute test" {
 
     // STAGING BUFFERS
     // these are intentionally over-provisioned to avoid OOM issues
-    var upload = try Buffer.init(&gpu, 2 * TextureFormat.rgba16float.bpp() + @sizeOf(f32), .upload);
+    var upload = try Buffer.init(&gpu, 16 * TextureFormat.rgba16float.bpp() + 16 * @sizeOf(f32), .upload);
     defer upload.deinit();
     var download = try Buffer.init(&gpu, 1 * TextureFormat.rgba16float.bpp(), .download);
     defer download.deinit();
@@ -94,24 +94,26 @@ test "simple compute test" {
     var upload_fba = upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
-    _ = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
+    const induced_buf = try upload_allocator.alignedAlloc(f16, .@"16", roi.w * roi.h * source_format.nchannels());
+    const induced_offset = @intFromPtr(induced_buf.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+    std.log.info("Upload induced offset: {d}", .{induced_offset});
 
     var download_fba = download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
+    // PREP PARAMS
+    const param_buf = try upload_allocator.alignedAlloc(f32, .@"16", 1);
+    const param_offset = @intFromPtr(param_buf.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+    std.log.info("Upload params offset: {d}", .{param_offset});
+
     // PREP UPLOAD
-    const upload_offset = upload_fba.end_index;
-    const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
-    // const upload_offset = upload_buf.ptr - upload_fba.buffer.ptr
-    std.log.info("Upload offset: {d}", .{upload_offset});
+    const upload_buf = try upload_allocator.alignedAlloc(f16, .@"16", roi.w * roi.h * source_format.nchannels());
+    const upload_offset = @intFromPtr(upload_buf.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+    std.log.info("Upload texture offset: {d}", .{upload_offset});
 
     // PREP DOWNLOAD
     const download_offset = download_fba.end_index;
     const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * destination_format.nchannels());
-
-    // PREP PARAMS
-    const param_offset = upload_fba.end_index;
-    const param_buf = try upload_allocator.alloc(f32, 1);
 
     // UPLOAD
     upload.map();

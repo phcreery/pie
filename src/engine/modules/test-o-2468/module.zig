@@ -32,6 +32,7 @@ pub fn writeSink(
     const sock = mod.getSocket("input") orelse unreachable;
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
     const download_buffer_slice = download_buffer_ptr[0..(sock.roi.?.w * sock.roi.?.h * sock.format.nchannels())];
+    std.debug.print("Downloaded buffer: {any}\n", .{download_buffer_slice});
     try std.testing.expectEqualSlices(f16, &expected, download_buffer_slice);
 }
 

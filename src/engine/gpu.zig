@@ -338,7 +338,7 @@ pub const Encoder = struct {
         };
         self.encoder.copyBufferToTexture(&source, &destination, &copy_size);
     }
-    pub fn enqueueTexToBuf(self: *Self, memory: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
+    pub fn enqueueTexToBuf(self: *Self, buffer: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
         slog.debug("Reading GPU buffer from Shader Buffer", .{});
 
         // check bytes_per_row is a multiple of 256
@@ -366,7 +366,7 @@ pub const Encoder = struct {
         };
         const offset = @as(u64, mem_offset) + @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
         const destination = wgpu.TexelCopyBufferInfo{
-            .buffer = memory.buffer,
+            .buffer = buffer.buffer,
             .layout = wgpu.TexelCopyBufferLayout{
                 // .offset = 0,
                 .offset = offset,
@@ -846,6 +846,8 @@ pub const GPU = struct {
         slog.info(" max_buffer_size: {f}", .{sizeify.fmt(limits.max_buffer_size, .decimal_short)});
         slog.info(" max_uniform_buffer_binding_size: {f}", .{sizeify.fmt(limits.max_uniform_buffer_binding_size, .decimal_short)});
         slog.info(" max_storage_buffer_binding_size: {f}", .{sizeify.fmt(limits.max_storage_buffer_binding_size, .decimal_short)});
+        slog.info(" min_uniform_buffer_offset_alignment: {d}", .{limits.min_uniform_buffer_offset_alignment});
+        slog.info(" min_storage_buffer_offset_alignment: {d}", .{limits.min_storage_buffer_offset_alignment});
 
         return Self{
             .instance = instance,

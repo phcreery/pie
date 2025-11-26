@@ -1,10 +1,18 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
+const pipeline = @import("pipeline.zig");
 const slog = std.log.scoped(.mod);
 
 desc: api.ModuleDesc,
 enabled: bool,
-param_offset: usize,
+
+// for the buffer that will live on the gpu
+param_handle: ?pipeline.ParamBufferHandle = null,
+
+// the offset of this module's params in the staging buffer
+mapped_param_buf_slice: ?[]f32 = null,
+param_offset: ?usize = null,
+param_size: ?usize = null,
 
 const Self = @This();
 
@@ -14,7 +22,6 @@ pub fn init(
     return Self{
         .desc = desc,
         .enabled = true,
-        .param_offset = 0,
     };
 }
 

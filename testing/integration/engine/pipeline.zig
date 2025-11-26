@@ -17,7 +17,8 @@ test "simple module test" {
     defer pipeline.deinit();
 
     _ = try pipeline.addModule(pie.engine.modules.test_i_1234.module);
-    _ = try pipeline.addModule(pie.engine.modules.test_double.module);
+    // _ = try pipeline.addModule(pie.engine.modules.test_double.module);
+    _ = try pipeline.addModule(pie.engine.modules.test_multiply.module);
     _ = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
 
     try pipeline.run();

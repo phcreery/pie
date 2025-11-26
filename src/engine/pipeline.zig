@@ -16,6 +16,9 @@ pub const NodeHandle = NodePool.Handle;
 const ConnectorPool = SingleColPool(?gpu.Texture);
 pub const ConnectorHandle = ConnectorPool.Handle;
 
+const ParamBufferPool = SingleColPool(?gpu.Buffer);
+pub const ParamBufferHandle = ParamBufferPool.Handle;
+
 // TODO: params pool
 // TODO: history pool
 
@@ -40,6 +43,8 @@ pub const Pipeline = struct {
     // modules_pool: std.heap.MemoryPoolExtra(Module, .{}),
 
     connector_pool: ConnectorPool,
+
+    param_buffer_pool: ParamBufferPool,
 
     pub const MAX_MODULES = 100;
     pub const MAX_NODES = 200;
@@ -92,6 +97,9 @@ pub const Pipeline = struct {
         const connector_pool = ConnectorPool.init(allocator);
         errdefer connector_pool.deinit();
 
+        const param_buffer_pool = ParamBufferPool.init(allocator);
+        errdefer param_buffer_pool.deinit();
+
         return Pipeline{
             .allocator = allocator,
             .gpu = gpu_instance,
@@ -110,6 +118,8 @@ pub const Pipeline = struct {
             .node_execution_order = node_execution_order,
 
             .connector_pool = connector_pool,
+
+            .param_buffer_pool = param_buffer_pool,
         };
     }
 
@@ -121,6 +131,7 @@ pub const Pipeline = struct {
         // the pool deinit will take care of deallocating the textures
         self.node_pool.deinit();
         self.connector_pool.deinit();
+        self.param_buffer_pool.deinit();
 
         if (self.upload_buffer) |*upload_buffer| {
             upload_buffer.deinit();
@@ -165,7 +176,7 @@ pub const Pipeline = struct {
         node.desc.sockets[node_socket_idx] = module_socket;
     }
 
-    pub fn runModulesCheck(self: *Pipeline) !void {
+    pub fn runModulesPreCheck(self: *Pipeline) !void {
         for (self.modules.items) |module| {
             if (module.desc.type == .source) {
                 if (module.desc.input_socket != null) {
@@ -256,7 +267,64 @@ pub const Pipeline = struct {
                 sock.private.conn_handle = try self.connector_pool.add(null);
                 prev_conn_handle = sock.private.conn_handle;
             }
+
+            // create params buffer
+            const param_buffer = try self.param_buffer_pool.add(null);
+            module.param_handle = param_buffer;
+            module.param_offset = 0;
+            module.param_size = 0;
         }
+    }
+
+    pub fn runModulesAllocateParamBuffers(self: *Pipeline) !void {
+        const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
+        for (self.modules.items) |*module| {
+            const param_handle = module.param_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
+
+            const size_bytes = @sizeOf(f32); // TODO: use module.desc.param_size
+            const buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
+            // defer texture.deinit();
+            // store texture in connector pool
+            const param = try self.param_buffer_pool.getPtr(param_handle);
+            param.* = buffer;
+        }
+    }
+
+    pub fn runModulesAllocateUploadBufferForParams(self: *Pipeline) !void {
+        if (self.upload_fba) |*upload_fba| {
+            var upload_allocator = upload_fba.allocator();
+
+            for (self.modules.items) |*module| {
+                if (module.desc.type == .compute) {
+                    if (module.enabled == false) continue;
+                    const size_bytes = @sizeOf(f32); // TODO: use module.desc.param_size
+                    slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
+                    const mapped_param_buf_slice = try upload_allocator.alignedAlloc(f32, .@"16", 1);
+
+                    module.param_size = size_bytes;
+                    const param_offset = @intFromPtr(mapped_param_buf_slice.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+                    module.param_offset = param_offset;
+                    module.mapped_param_buf_slice = mapped_param_buf_slice;
+                }
+            }
+        }
+    }
+
+    pub fn runModulesUploadParams(self: *Pipeline) !void {
+        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
+
+        upload_buffer.map();
+
+        for (self.modules.items) |*module| {
+            if (module.desc.type == .compute) {
+                if (module.enabled == false) continue;
+                const param_value = [_]f32{2.0}; // for testing
+                const mapped = module.mapped_param_buf_slice orelse unreachable;
+                @memcpy(mapped, &param_value);
+            }
+        }
+
+        upload_buffer.unmap();
     }
 
     /// create nodes for each module
@@ -351,13 +419,11 @@ pub const Pipeline = struct {
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
 
-            var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
-            // var bind_group_layout: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
-            // var bind_group: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
-            var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
-
-            // all sockets are on group 0
             if (node.desc.type == .compute) {
+                // CREATE DESCRIPTIONS
+                // all sockets are on group 0
+                var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+                var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 for (node.desc.sockets, 0..) |socket, binding_number| {
                     if (socket) |sock| {
                         // prepare shader pipe connections
@@ -378,10 +444,21 @@ pub const Pipeline = struct {
                     }
                 }
 
+                // params are on group 1
+                var layout_group_1_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+                var bind_group_1_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
+                if (node.*.mod.*.param_handle) |param_handle| {
+                    const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
+                    const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
+                    layout_group_1_binding[0] = .{ .buffer = .{} };
+                    bind_group_1_binds[0] = .{ .buffer = param_buf };
+                }
+
+                // CREATE SHADER PIPE AND BINDINGS
+                slog.debug("Creating shader for node with entry point: {s}", .{node.desc.entry_point});
                 var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 layout_group[0] = layout_group_0_binding;
-
-                slog.debug("Creating shader for node with entry point: {s}", .{node.desc.entry_point});
+                layout_group[1] = layout_group_1_binding;
                 const shader = try gpu.ShaderPipe.init(
                     gpu_inst,
                     node.desc.shader_code,
@@ -390,9 +467,10 @@ pub const Pipeline = struct {
                 );
                 node.shader = shader;
 
+                slog.debug("Creating bindings for node with entry point: {s}", .{node.desc.entry_point});
                 var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 bind_group[0] = bind_group_0_binds;
-
+                bind_group[1] = bind_group_1_binds;
                 const bindings = try gpu.Bindings.init(gpu_inst, &shader, bind_group);
                 // defer bindings.deinit();
                 node.bindings = bindings;
@@ -400,52 +478,59 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runNodesAllocateBuffers(self: *Pipeline) !void {
-        var upload_fba = self.upload_fba orelse return error.PipelineMissingBuffer;
-        var upload_allocator = upload_fba.allocator();
+    pub fn runNodesAllocateUploadBufferForTextures(self: *Pipeline) !void {
+        if (self.upload_fba) |*upload_fba| {
+            // std.debug.print("Upload FBA: {any}\n", .{upload_fba});
+            std.debug.print("Upload FBA end index before allocation: {d}\n", .{upload_fba.end_index});
+            var upload_allocator = upload_fba.allocator();
 
-        // we currently only support one upload in the entire pipeline
-        // so we are going check if the first node has a source connector
-        const first_node_handle = self.node_execution_order.items[0];
-        var first_node_ptr = self.node_pool.getPtr(first_node_handle) catch unreachable;
+            // we currently only support one upload in the entire pipeline
+            // so we are going check if the first node has a source connector
+            const first_node_handle = self.node_execution_order.items[0];
+            var first_node_ptr = self.node_pool.getPtr(first_node_handle) catch unreachable;
 
-        // TODO: support multiple source uploads in the future
-        // TODO: find the correct input socket by type
-        if (first_node_ptr.desc.sockets[0]) |*sock| {
-            if (sock.type == .source) {
-                const upload_offset = upload_fba.end_index;
-                sock.*.private.staging_offset = upload_offset;
-                const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
-                slog.debug("Allocating upload buffer at offset {d}  for size {d} bytes", .{ upload_offset, size_bytes });
-                const mapped_slice = try upload_allocator.alloc(u8, size_bytes);
-                const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
-                sock.*.private.staging = mapped_slice_ptr;
-            } else {
-                slog.err("First node input socket is not of type source, skipping upload", .{});
-                return error.FirstNodeInputSocketNotSource;
+            // TODO: support multiple source uploads in the future
+            // TODO: find the correct input socket by type
+            if (first_node_ptr.desc.sockets[0]) |*sock| {
+                if (sock.type == .source) {
+                    const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
+                    slog.debug("Allocating upload buffer for textures for size {d} bytes", .{size_bytes});
+                    const mapped_slice = try upload_allocator.alignedAlloc(u8, .@"16", size_bytes);
+
+                    const upload_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+                    sock.*.private.staging_offset = upload_offset;
+                    const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
+                    sock.*.private.staging = mapped_slice_ptr;
+                } else {
+                    slog.err("First node input socket is not of type source, skipping upload", .{});
+                    return error.FirstNodeInputSocketNotSource;
+                }
             }
         }
 
-        var download_fba = self.download_fba orelse return error.PipelineMissingBuffer;
-        var download_allocator = download_fba.allocator();
+        // var download_fba = self.download_fba orelse return error.PipelineMissingBuffer;
+        if (self.download_fba) |*download_fba| {
+            var download_allocator = download_fba.allocator();
+            // we currently only support one download in the entire pipeline
+            // so we are going check if the last node has a sink connector
 
-        // we currently only support one download in the entire pipeline
-        // so we are going check if the last node has a sink connector
-        const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
-        var last_node_ptr = try self.node_pool.getPtr(last_node_handle);
+            const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
+            var last_node_ptr = try self.node_pool.getPtr(last_node_handle);
 
-        if (last_node_ptr.desc.sockets[0]) |*sock| {
-            if (sock.type == .sink) {
-                const download_offset = download_fba.end_index;
-                sock.*.private.staging_offset = download_offset;
-                const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
-                slog.debug("Allocating download buffer at offset {d} for size {d} bytes", .{ download_offset, size_bytes });
-                const mapped_slice = try download_allocator.alloc(u8, size_bytes);
-                const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
-                sock.*.private.staging = mapped_slice_ptr;
-            } else {
-                slog.err("Sink node socket is not of type sink, skipping download", .{});
-                return error.LastNodeInputSocketNotSource;
+            if (last_node_ptr.desc.sockets[0]) |*sock| {
+                if (sock.type == .sink) {
+                    const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
+                    slog.debug("Allocating download buffer at for size {d} bytes", .{size_bytes});
+                    const mapped_slice = try download_allocator.alignedAlloc(u8, .@"16", size_bytes);
+
+                    const download_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(download_fba.buffer.ptr);
+                    sock.*.private.staging_offset = download_offset;
+                    const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
+                    sock.*.private.staging = mapped_slice_ptr;
+                } else {
+                    slog.err("Sink node socket is not of type sink, skipping download", .{});
+                    return error.LastNodeInputSocketNotSource;
+                }
             }
         }
     }
@@ -485,18 +570,6 @@ pub const Pipeline = struct {
         upload_buffer.unmap();
     }
 
-    pub fn runModulesUploadParams(self: *Pipeline) !void {
-        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
-
-        upload_buffer.map();
-
-        for (self.modules.items) |*module| {
-            if (module.enabled == false) continue;
-        }
-
-        upload_buffer.unmap();
-    }
-
     pub fn runNodes(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
@@ -510,9 +583,19 @@ pub const Pipeline = struct {
             const node = self.node_pool.getPtr(node_handle) catch unreachable;
             switch (node.desc.type) {
                 .compute => {
-                    slog.debug("Enqueueing compute shader for node {s}", .{node.desc.entry_point});
+                    if (node.*.mod.*.param_handle) |param_handle| {
+                        const param_buffer = self.param_buffer_pool.getPtr(param_handle) catch unreachable;
+                        var param_buf = param_buffer.* orelse return error.ModuleMissingParamBuffer;
+                        const param_offset = node.*.mod.*.param_offset orelse return error.ModuleMissingParamBufferOffset;
+                        slog.debug("Enqueueing param buffer at offset {d}", .{param_offset});
+                        encoder.enqueueBufToBuf(&upload_buffer, param_offset, &param_buf, 0, @sizeOf(f32)) catch unreachable;
+                    } else {
+                        slog.err("Compute node's module has no param buffer handle", .{});
+                        return error.ModuleMissingParamBuffer;
+                    }
                     var shader = node.shader orelse return error.NodeMissingShader;
                     var bindings = node.bindings orelse return error.NodeMissingBindings;
+                    slog.debug("Enqueueing compute shader for node {s}", .{node.desc.entry_point});
                     encoder.enqueueShader(
                         &shader,
                         &bindings,
@@ -523,23 +606,19 @@ pub const Pipeline = struct {
                     slog.debug("Enqueueing source node {s} buffer to texture copy", .{node.desc.entry_point});
                     const connector = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
                     var tex = connector.* orelse return error.PipelineMissingSourceNodeTexture;
-                    encoder.enqueueBufToTex(
-                        &upload_buffer,
-                        node.desc.sockets[0].?.private.staging_offset.?,
-                        &tex,
-                        node.desc.sockets[0].?.roi.?,
-                    ) catch unreachable;
+                    const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
+                    const roi = node.desc.sockets[0].?.roi orelse unreachable;
+                    slog.debug("Source node staging offset: {d}", .{staging_offset});
+                    encoder.enqueueBufToTex(&upload_buffer, staging_offset, &tex, roi) catch unreachable;
                 },
                 .sink => {
                     slog.debug("Enqueueing sink node {s} texture to buffer copy", .{node.desc.entry_point});
                     const connector = self.connector_pool.getPtr(node.desc.sockets[0].?.private.conn_handle.?) catch unreachable;
                     var tex = connector.* orelse return error.PipelineMissingSinkNodeTexture;
-                    encoder.enqueueTexToBuf(
-                        &download_buffer,
-                        node.desc.sockets[0].?.private.staging_offset.?,
-                        &tex,
-                        node.desc.sockets[0].?.roi.?,
-                    ) catch unreachable;
+                    const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
+                    slog.debug("Sink node staging offset: {d}", .{staging_offset});
+                    const roi = node.desc.sockets[0].?.roi orelse unreachable;
+                    encoder.enqueueTexToBuf(&download_buffer, staging_offset, &tex, roi) catch unreachable;
                 },
             }
         }
@@ -611,9 +690,12 @@ pub const Pipeline = struct {
 
         // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
         // self.runModules() catch unreachable;
-        self.runModulesCheck() catch unreachable;
+        self.runModulesPreCheck() catch unreachable;
         self.runModulesModifyROIOut() catch unreachable;
         self.runModulesCreateConnectorHandles() catch unreachable;
+        self.runModulesAllocateParamBuffers() catch unreachable;
+        self.runModulesAllocateUploadBufferForParams() catch unreachable;
+        self.runModulesUploadParams() catch unreachable;
         self.runModulesCreateNodes() catch unreachable;
 
         // then run nodes
@@ -622,7 +704,7 @@ pub const Pipeline = struct {
         // TODO: put these all in a single loop after building execution order
         self.runNodesAllocateTextures() catch unreachable;
         self.runNodesCreateBindings() catch unreachable;
-        self.runNodesAllocateBuffers() catch unreachable;
+        self.runNodesAllocateUploadBufferForTextures() catch unreachable;
 
         util.printNodes(self);
 
