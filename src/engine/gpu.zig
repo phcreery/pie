@@ -277,7 +277,7 @@ pub const Encoder = struct {
         // compute_pass.setBindGroup(0, bindings.bind_group, 0, null);
         for (bindings.bind_groups, 0..) |bind_group, index| {
             const bg = bind_group orelse continue;
-            slog.info("Setting bind group {d}", .{index});
+            slog.debug("Setting bind group {d}", .{index});
             compute_pass.setBindGroup(@intCast(index), bg, 0, null);
         }
 

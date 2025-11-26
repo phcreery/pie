@@ -113,6 +113,10 @@
             .url = "git+https://github.com/ciathefed/sizeify#d975b91872badbc08e04231e96e086e7a78938a2",
             .hash = "sizeify-0.0.0-URVFj1EhAAAXtotBNFwEx5W70ygRnAdHjBYcg4F_CahM",
         },
+        .termsize = .{
+            .url = "https://github.com/djmattyg007/zig-termsize/archive/refs/heads/update-for-zig-0.15.tar.gz",
+            .hash = "termsize-0.1.0-0mwB1lwVAADBgWi3-mt2GMuiw3tqmscsoVDh7Rzpxud6",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.

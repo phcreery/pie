@@ -3,6 +3,7 @@ const pipeline = @import("pipeline.zig");
 const api = @import("modules/api.zig");
 const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
+const console = @import("../cli/console.zig");
 
 pub fn printModules(self: *pipeline.Pipeline) void {
     std.debug.print("MODULE LISTING\n", .{});
@@ -77,13 +78,26 @@ pub fn printNodes2(self: *pipeline.Pipeline) !void {
     var writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &writer.interface;
 
+    const term_size = console.termsize.termSize(std.fs.File.stdout()) catch unreachable orelse console.termsize.TermSize{
+        .width = 80,
+        .height = 24,
+    };
+
     try stdout.print("\n", .{});
-    try stdout.print("▒▒▒▒▒▒▒▒▒▒▒▒▒ NODES ▒▒▒▒▒▒▒▒▒▒▒▒▒▒\n", .{});
+    // ▒▒▒▒▒▒▒▒▒▒▒▒▒ NODES ▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+    for (0..@divFloor(term_size.width, 2) - 4) |_| {
+        try stdout.print("▒", .{});
+    }
+    try stdout.print(" NODES ", .{});
+    for (0..@divFloor(term_size.width, 2) - 3) |_| {
+        try stdout.print("▒", .{});
+    }
+    try stdout.print("\n", .{});
 
     var iter1 = try self.node_graph.topSortIterator();
     defer iter1.deinit();
 
-    var printer = self.node_graph.printer(edgePrinterCb, vertPrinterCb, self);
+    var printer = self.node_graph.printer(edgePrinterCb, vertPrinterCb, self, term_size.width);
     try printer.print(stdout, &iter1);
 
     try stdout.flush(); // Don't forget to flush!

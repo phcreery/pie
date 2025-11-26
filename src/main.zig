@@ -24,7 +24,8 @@ test {
     // _ = @import("engine/gpu.zig");
     // _ = @import("engine/modules/shared/CFA.zig");
     // _ = @import("engine/modules/i-raw/i-raw.zig");
-    _ = @import("engine/zig-graph/graph.zig");
+    // _ = @import("engine/zig-graph/graph.zig");
+    _ = @import("engine/zig-graph/print.zig");
     // _ = @import("pool.zig");
 
     // _ = @import("musubi/musubi.zig");

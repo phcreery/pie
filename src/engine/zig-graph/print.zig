@@ -1,5 +1,5 @@
 const std = @import("std");
-const pie = @import("pie");
+const pie = @import("../../main.zig");
 const graph = @import("graph.zig");
 
 fn Lanes(TLane: type, n: usize) type {
@@ -45,16 +45,19 @@ pub fn GraphPrinter(
         allocator: std.mem.Allocator,
         g: *graph.DirectedGraph(TVertex, TEdge, Context),
         user_data: *anyopaque,
+        term_width: usize,
 
         pub fn init(
             allocator: std.mem.Allocator,
             g: *graph.DirectedGraph(TVertex, TEdge, Context),
             user_data: *anyopaque,
+            term_width: usize,
         ) Self {
             return .{
                 .allocator = allocator,
                 .g = g,
                 .user_data = user_data,
+                .term_width = term_width,
             };
         }
 
@@ -63,7 +66,8 @@ pub fn GraphPrinter(
             writer: *std.Io.Writer,
             iter: anytype,
         ) !void {
-            const MAX_LANES = 10;
+            const MAX_LANES = 20;
+            const LANES = @min(MAX_LANES, @divFloor(self.term_width, 3) - 1); // 69 chars wide terminal, each lane takes 3 chars + 2 for borders
             var edge_lanes = Lanes(TEdge, MAX_LANES){};
             var vert_inputs: [MAX_LANES]?TEdge = @splat(null);
             var vert_outputs: [MAX_LANES]?TEdge = @splat(null);
@@ -84,7 +88,7 @@ pub fn GraphPrinter(
 
                 // print node inputs
                 try writer.print("┌─", .{});
-                for (0..MAX_LANES) |i| {
+                for (0..LANES) |i| {
                     if (vert_outputs[i]) |_| {
                         try writer.print("▼", .{});
                     } else {
@@ -100,7 +104,7 @@ pub fn GraphPrinter(
                 const vert_name_slice = vertPrinterCb(&vert_name_print_buffer, vert, self.user_data);
                 try writer.print("│ ", .{});
                 try writer.print("{s}", .{vert_name_slice});
-                const num_spaces: isize = 3 * @as(isize, @intCast(MAX_LANES)) - @as(isize, @intCast(vert_name_slice.len)) + 1;
+                const num_spaces: isize = 3 * @as(isize, @intCast(LANES)) - @as(isize, @intCast(vert_name_slice.len)) + 1;
                 if (num_spaces > 0) {
                     for (0..@intCast(num_spaces)) |_| {
                         try writer.print(" ", .{});
@@ -118,7 +122,7 @@ pub fn GraphPrinter(
 
                 // print node outputs
                 try writer.print("└─", .{});
-                for (0..MAX_LANES) |i| {
+                for (0..LANES) |i| {
                     if (vert_inputs[i]) |_| {
                         try writer.print("▼", .{}); // ▼ ▣ △ ▲ ▽ ▼ ╤
                     } else {
@@ -134,6 +138,7 @@ pub fn GraphPrinter(
                     r += 1;
                     try writer.print(" ", .{});
                     for (edge_lanes.lanes, 0..) |lane, i| {
+                        if (i > LANES) break;
                         try writer.print(" ", .{});
                         if (lane) |_| {
                             if (r % 2 == 0 and new_lanes[i] != null) {
@@ -142,7 +147,7 @@ pub fn GraphPrinter(
                                 // ├┄┄┄┄┄┄┄┄┄┄┄┄ {name}\n
                                 var edge_name_print_buffer: [MAX_LANES * 3]u8 = undefined;
                                 const edge_name_slice = edgePrinterCb(&edge_name_print_buffer, lane.?, self.user_data);
-                                const num_dashes: isize = 3 * @as(isize, @intCast(MAX_LANES - i)) - @as(isize, @intCast(edge_name_slice.len)) - 1;
+                                const num_dashes: isize = 3 * @as(isize, @intCast(LANES - i)) - @as(isize, @intCast(edge_name_slice.len)) - 1;
                                 if (num_dashes > 0) {
                                     for (0..@intCast(num_dashes)) |_| {
                                         try writer.print("┄", .{});
@@ -154,7 +159,7 @@ pub fn GraphPrinter(
                             }
                             try writer.print("│", .{});
                         } else {
-                            try writer.print(" ", .{});
+                            try writer.print(" ", .{}); // "·"
                         }
                         try writer.print(" ", .{});
                         // try stdout.print(" ", .{});
@@ -173,21 +178,42 @@ pub fn GraphPrinter(
     };
 }
 
+fn edgePrinterCb2(buf: []u8, edge: u64, user_data: *anyopaque) []u8 {
+    // _ = buf;
+    // _ = edge;
+    _ = user_data;
+    const res = std.fmt.bufPrint(buf, "{any}", .{edge}) catch "<error>";
+    return @constCast(res);
+}
+
+fn vertPrinterCb2(buf: []u8, vert: []const u8, user_data: *anyopaque) []u8 {
+    _ = buf;
+    // _ = vert;
+    _ = user_data;
+    return @constCast(vert);
+}
+
 test "graph printer" {
     const allocator = std.testing.allocator;
 
     // to print to stdout
-    // var stdout_buffer: [4096]u8 = undefined;
-    // var writer = std.fs.File.stdout().writer(&stdout_buffer);
-    // const stdout = &writer.interface;
+    var stdout_buffer: [4096]u8 = undefined;
+    var writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &writer.interface;
 
     // to print to allocating buffer
-    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
-    defer aw.deinit();
-    var stdout = &aw.writer;
+    // var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    // defer aw.deinit();
+    // var stdout = &aw.writer;
 
     const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
+
+    const term_size = pie.cli.console.termsize.termSize(std.fs.File.stdout()) catch unreachable orelse pie.cli.console.termsize.TermSize{
+        .width = 80,
+        .height = 24,
+    };
+    std.debug.print("{any}\n", .{term_size});
 
     const TVertex = []const u8;
     const TEdge = u64;
@@ -210,7 +236,9 @@ test "graph printer" {
     var iter1 = try g.topSortIterator();
     defer iter1.deinit();
 
-    var printer = GraphPrinter(TVertex, TEdge).init(allocator, &g);
+    // var printer = GraphPrinter(TVertex, TEdge).init(allocator, &g);
+    const user_data: *anyopaque = undefined;
+    var printer = g.printer(edgePrinterCb2, vertPrinterCb2, user_data, term_size.width);
     try printer.print(stdout, &iter1);
 
     // test modifying graph and reprinting

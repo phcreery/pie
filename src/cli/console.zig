@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+pub const termsize = @import("termsize");
 
 /// UTF8ConsoleOutput sets the console output to UTF-8 on Windows
 /// and restores the original code page on deinit.

@@ -504,6 +504,7 @@ pub fn DirectedGraph(
             edgePrinterCb: fn (buf: []u8, edge: TEdge, user_data: *anyopaque) []u8,
             vertPrinterCb: fn (buf: []u8, vertex: TVertex, user_data: *anyopaque) []u8,
             user_data: *anyopaque,
+            term_width: usize,
         ) print.GraphPrinter(
             TVertex,
             TEdge,
@@ -517,7 +518,7 @@ pub fn DirectedGraph(
                 Context,
                 edgePrinterCb,
                 vertPrinterCb,
-            ).init(self.allocator, self, user_data);
+            ).init(self.allocator, self, user_data, term_width);
         }
     };
 }
@@ -807,6 +808,10 @@ test "topSortIterator" {
     defer list.deinit(allocator);
     var iter = try g.topSortIterator();
     defer iter.deinit();
+
+    while (try iter.next()) |value| {
+        try list.append(g.allocator, g.lookup(value).?);
+    }
 
     const expect = [_][]const u8{ "A", "B2", "B3", "B1", "C" };
     try std.testing.expectEqualSlices([]const u8, &expect, list.items);

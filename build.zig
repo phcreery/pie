@@ -66,8 +66,15 @@ pub fn build(b: *Build) !void {
         .enable_fibers = ztracy_options.enable_fibers,
         .on_demand = ztracy_options.on_demand,
     });
-    const dep_zpool = b.dependency("zpool", .{});
+    const dep_zpool = b.dependency("zpool", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const dep_sizeify = b.dependency("sizeify", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const termsize = b.dependency("termsize", .{
         .target = target,
         .optimize = optimize,
     });
@@ -105,6 +112,7 @@ pub fn build(b: *Build) !void {
     // mod_main.addImport("ztracy", dep_ztracy.module("root"));
     mod_main.addImport("zpool", dep_zpool.module("root"));
     mod_main.addImport("sizeify", dep_sizeify.module("sizeify"));
+    mod_main.addImport("termsize", termsize.module("termsize"));
 
     // TESTS
     // UNIT TESTS
@@ -127,6 +135,7 @@ pub fn build(b: *Build) !void {
     });
     mod_integration_test.addImport("pie", mod_main);
     mod_integration_test.addImport("pretty", dep_pretty.module("pretty"));
+    // mod_integration_test.addImport("termsize", termsize.module("termsize"));
     mod_integration_test.addImport("libraw", dep_libraw.module("libraw"));
     mod_integration_test.addImport("zigimg", dep_zigimg.module("zigimg"));
     mod_integration_test.addImport("ztracy", dep_ztracy.module("root"));
