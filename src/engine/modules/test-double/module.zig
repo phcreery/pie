@@ -5,17 +5,22 @@ pub var module: api.ModuleDesc = .{
     .type = .compute,
     // .param_ui = "",
     // .param_uniform = "",
-    .input_socket = .{
-        .name = "input",
-        .type = .read,
-        .format = .rgba16float,
-        .roi = null,
-    },
-    .output_socket = .{
-        .name = "output",
-        .type = .write,
-        .format = .rgba16float,
-        .roi = null,
+
+    .sockets = init: {
+        var s: api.Sockets = @splat(null);
+        s[0] = .{
+            .name = "input",
+            .type = .read,
+            .format = .rgba16float,
+            .roi = null,
+        };
+        s[1] = .{
+            .name = "output",
+            .type = .write,
+            .format = .rgba16float,
+            .roi = null,
+        };
+        break :init s;
     },
     .init = null,
     .deinit = null,

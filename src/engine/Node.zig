@@ -43,7 +43,7 @@ pub fn getSocket(node: *Self, name: []const u8) ?api.SocketDesc {
     }
     return null;
 }
-pub fn getSocketIndex(node: *Self, name: []const u8) ?usize {
+pub fn getSocketIndex(node: *const Self, name: []const u8) ?usize {
     for (node.desc.sockets, 0..) |sock, idx| {
         if (sock) |s| {
             if (std.mem.eql(u8, s.name, name)) {

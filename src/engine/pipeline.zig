@@ -173,13 +173,27 @@ pub const Pipeline = struct {
         slog.debug("Connecting module {s} socket {s} to node {any} socket {s}", .{ mod.desc.name, mod_socket_name, node_handle, node_socket_name });
         // TODO: some checks for socket compatibility
 
-        const module_socket = mod.getSocket(mod_socket_name) orelse unreachable;
+        // var module_socket = mod.getSocket(mod_socket_name) orelse unreachable;
+        const mod_socket_idx = mod.getSocketIndex(mod_socket_name) orelse unreachable;
 
         var node = self.node_pool.getPtr(node_handle) catch unreachable;
         const node_socket_idx = node.getSocketIndex(node_socket_name) orelse unreachable;
 
-        node.desc.sockets[node_socket_idx] = module_socket;
+        // node.desc.sockets[node_socket_idx].?.private.conn_handle = module_socket.private.conn_handle;
+        node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
+        node.desc.sockets[node_socket_idx].?.private.associated_with_module = mod;
+        mod.desc.sockets[mod_socket_idx].?.private.connected_to_node = node;
     }
+
+    // pub fn connectNodes(
+    //     self: *Pipeline,
+    //     src_node_handle: NodeHandle,
+    //     src_node_socket_name: []const u8,
+    //     dst_node_handle: NodeHandle,
+    //     dst_node_socket_name: []const u8,
+    // ) !void {
+    //     slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node_handle, src_node_socket_name, dst_node_handle, dst_node_socket_name });
+    // }
 
     pub fn run(self: *Pipeline) !void {
 
@@ -236,19 +250,22 @@ pub const Pipeline = struct {
     }
 
     fn runModulesPreCheck(self: *Pipeline) !void {
-        for (self.modules.items) |module| {
+        for (self.modules.items) |*module| {
             if (module.desc.type == .source) {
-                if (module.desc.input_socket != null) {
+                const input_socket = module.getSocketPtr("input");
+                if (input_socket != null) {
                     slog.err("Source module {s} has an input socket defined", .{module.desc.name});
                     return error.ModuleSourceHasInputSocket;
                 }
             }
             if (module.desc.type == .compute) {
-                if (module.desc.input_socket == null) {
+                const input_socket = module.getSocketPtr("input");
+                if (input_socket == null) {
                     slog.err("Compute module {s} has no input socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingInputSocket;
                 }
-                if (module.desc.output_socket == null) {
+                const output_socket = module.getSocketPtr("output");
+                if (output_socket == null) {
                     slog.err("Compute module {s} has no output socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingOutputSocket;
                 }
@@ -264,9 +281,10 @@ pub const Pipeline = struct {
 
             // if the input socket ROI is not set, use the previous module's output socket ROI
             if (module.desc.type != .source) {
+                var input_socket = module.getSocketPtr("input") orelse return error.ModuleMissingInputSock;
                 // TODO: check connection first
                 if (prev_out_roi != null) {
-                    module.desc.input_socket.?.roi = prev_out_roi;
+                    input_socket.roi = prev_out_roi;
                 } else {
                     slog.err("Module {s} has no input sock ROI and no previous module to get it from", .{module.desc.name});
                     return error.ModuleMissingInputSockROI;
@@ -279,18 +297,16 @@ pub const Pipeline = struct {
                 try modifyROIOutFn(self, module);
             } else {
                 if (module.desc.type != .source and module.desc.type != .sink) {
-                    module.desc.output_socket.?.roi = module.desc.input_socket.?.roi;
+                    const input_socket = module.getSocketPtr("input") orelse return error.ModuleMissingInputSock;
+                    const output_socket = module.getSocketPtr("output") orelse return error.ModuleMissingOutputSock;
+                    output_socket.roi = input_socket.roi;
                 }
             }
 
             if (module.desc.type != .sink) {
                 // update prev_out_roi for use on the next module
-                if (module.desc.output_socket) |output_socket| {
-                    prev_out_roi = output_socket.roi;
-                } else {
-                    slog.err("Module {s} has no output sock ROI set", .{module.desc.name});
-                    return error.ModuleMissingOutputSockROI;
-                }
+                const output_socket = module.getSocketPtr("output") orelse return error.ModuleMissingOutputSock;
+                prev_out_roi = output_socket.roi;
             }
         }
     }
@@ -306,12 +322,8 @@ pub const Pipeline = struct {
             if (module.desc.type != .source) {
                 if (prev_conn_handle != null) {
                     slog.debug("Module {s} input connector set to previous output connector", .{module.desc.name});
-                    if (module.desc.input_socket) |*sock| {
-                        sock.private.conn_handle = prev_conn_handle;
-                    } else {
-                        slog.err("Module {s} has no input socket to set connector on", .{module.desc.name});
-                        return error.ModuleMissingInputSock;
-                    }
+                    var input_socket = module.getSocketPtr("input") orelse return error.ModuleMissingInputSock;
+                    input_socket.private.conn_handle = prev_conn_handle;
                 } else {
                     slog.err("Module {s} has no input connector and no previous module to get it from", .{module.desc.name});
                     return error.ModuleMissingInputSock;
@@ -321,10 +333,11 @@ pub const Pipeline = struct {
             // TODO: check output connectors before configuring
 
             // once the output connector is defined, create a new connector in the pool
-            if (module.desc.output_socket) |*sock| {
-                // slog.debug("Configuring output connector image for module: {s}", .{module.desc.name});
-                sock.private.conn_handle = try self.connector_pool.add(null);
-                prev_conn_handle = sock.private.conn_handle;
+            // slog.debug("Configuring output connector image for module: {s}", .{module.desc.name});
+            if (module.desc.type != .sink) {
+                var output_socket = module.getSocketPtr("output") orelse return error.ModuleMissingOutputSock;
+                output_socket.private.conn_handle = try self.connector_pool.add(null);
+                prev_conn_handle = output_socket.private.conn_handle;
             }
 
             // create params buffer

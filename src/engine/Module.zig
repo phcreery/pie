@@ -27,17 +27,46 @@ pub fn init(
 
 // HELPER FUNCTIONS
 
+// pub fn getSocket(mod: *Self, name: []const u8) ?*api.SocketDesc {
+//     const sockets = [_]*?api.SocketDesc{
+//         mod.desc.input_socket,
+//         mod.desc.output_socket,
+//     };
+//     for (sockets) |sock| {
+//         if (sock) |s| {
+//             if (std.mem.eql(u8, s.name, name)) {
+//                 return s;
+//             }
+//         }
+//     }
+//     return null;
+// }
 pub fn getSocket(mod: *Self, name: []const u8) ?api.SocketDesc {
-    const sockets = [_]?api.SocketDesc{
-        mod.desc.input_socket,
-        mod.desc.output_socket,
-    };
-    for (sockets) |sock| {
+    for (mod.desc.sockets) |sock| {
         if (sock) |s| {
             if (std.mem.eql(u8, s.name, name)) {
                 return s;
             }
         }
+    }
+    return null;
+}
+
+pub fn getSocketIndex(mod: *const Self, name: []const u8) ?usize {
+    for (mod.desc.sockets, 0..) |sock, idx| {
+        if (sock) |s| {
+            if (std.mem.eql(u8, s.name, name)) {
+                return idx;
+            }
+        }
+    }
+    return null;
+}
+
+pub fn getSocketPtr(mod: *Self, name: []const u8) ?*api.SocketDesc {
+    const idx = mod.getSocketIndex(name) orelse return null;
+    if (mod.desc.sockets[idx]) |*sock| {
+        return sock;
     }
     return null;
 }

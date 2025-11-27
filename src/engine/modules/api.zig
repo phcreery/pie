@@ -47,16 +47,20 @@ pub const SocketDesc = struct {
     private: Private = .{},
 
     const Private = struct {
-        // FOR OUTPUT SOCKETS
         conn_handle: ?pipeline.ConnectorHandle = null,
 
-        // FOR INPUT SOCKETS
-        // connected_to: ?*Node = null, // populated with graph.connect_nodes()
+        // FOR GRAPH TRAVERSAL
+        // for input sockets
+        connected_to_node: ?*Node = null, // populated with pipe.connectNodes()
+        connected_to_module: ?*Module = null, // populated with pipe.connectModules()
+        // for output sockets on modules
+        associated_with_node: ?*Node = null, // populated with pipe.copyConnector()
+        // for input sockets that are the first in a module
+        // or output sockets that are the last in a module
+        associated_with_module: ?*Module = null, // populated with pipe.copyConnector()
 
-        // FOR INPUT SOCKETS THAT ARE THE FIRST IN A MODULE OR OUTPUT SOCKETS THAT ARE THE LAST IN A MODULE
-        // associated_with: ?*Module = null, // populated with socket.associated_with()
-
-        // FOR SOURCE OR SINK SOCKETS
+        // offset in the upload staging buffer
+        // for source or sink offsets
         staging_offset: ?usize = null,
         staging: ?*anyopaque = null,
     };
@@ -78,7 +82,6 @@ pub const NodeDesc = struct {
     entry_point: []const u8,
     run_size: ?ROI = null,
     sockets: Sockets,
-    // sockets: std.ArrayList(SocketDesc),
 };
 
 pub const ModuleType = enum {
@@ -106,8 +109,9 @@ pub const ModuleDesc = struct {
     // connectors: []Connector,
     // The sockets describe the module's input and output interface
     // they can be null if the module has no input or output (sink or source only)
-    input_socket: ?SocketDesc = null,
-    output_socket: ?SocketDesc = null,
+    // input_socket: ?SocketDesc = null,
+    // output_socket: ?SocketDesc = null,
+    sockets: Sockets,
 
     // param_ui: []u8,
     // param_uniform: []u8,
@@ -118,9 +122,7 @@ pub const ModuleDesc = struct {
     init: ?*const fn (mod: *Module) anyerror!void = null,
     deinit: ?*const fn (mod: *Module) anyerror!void = null,
     createNodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
-    // readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.Buffer) anyerror!void = null,
     readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, mapped: *anyopaque) anyerror!void = null,
-    // writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, allocator: *gpu.Buffer) anyerror!void = null,
     writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, mapped: *anyopaque) anyerror!void = null,
     modifyROIOut: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
 };

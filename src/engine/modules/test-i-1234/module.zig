@@ -5,11 +5,15 @@ pub const module: api.ModuleDesc = .{
     .type = .source,
     // .param_ui = "",
     // .param_uniform = "",
-    .output_socket = .{
-        .name = "output",
-        .type = .source,
-        .format = .rgba16float,
-        .roi = null,
+    .sockets = init: {
+        var s: api.Sockets = @splat(null);
+        s[0] = .{
+            .name = "output",
+            .type = .source,
+            .format = .rgba16float,
+            .roi = null,
+        };
+        break :init s;
     },
     .init = null,
     .deinit = null,
@@ -27,7 +31,9 @@ const roi: api.ROI = .{
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: *api.Module) !void {
     _ = pipe;
-    mod.desc.output_socket.?.roi = roi;
+    // mod.desc.output_socket.?.roi = roi;
+    const sock_idx = mod.getSocketIndex("output") orelse unreachable;
+    mod.desc.sockets[sock_idx].?.roi = roi;
 }
 
 pub fn readSource(

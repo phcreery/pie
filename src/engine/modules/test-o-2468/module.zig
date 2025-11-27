@@ -6,11 +6,15 @@ pub const module: api.ModuleDesc = .{
     .type = .sink,
     // .param_ui = "",
     // .param_uniform = "",
-    .input_socket = .{
-        .name = "input",
-        .type = .sink,
-        .format = .rgba16float,
-        .roi = null,
+    .sockets = init: {
+        var s: api.Sockets = @splat(null);
+        s[0] = .{
+            .name = "input",
+            .type = .sink,
+            .format = .rgba16float,
+            .roi = null,
+        };
+        break :init s;
     },
     .init = null,
     .deinit = null,
