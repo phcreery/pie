@@ -23,8 +23,20 @@ pub const ParamBufferHandle = ParamBufferPool.Handle;
 // TODO: history pool
 
 /// The main pipeline structure that holds modules, nodes, and manages execution.
-/// This is heavily inspired by vkdt. The current difference is that modules are
-/// executed in order, rather than in a DAG structure. This simplifies the execution model.
+/// This is heavily inspired by vkdt.
+///
+/// The current difference is that modules are executed in order, rather than
+/// in a DAG structure. This simplifies the execution model but I might change this later.
+///
+/// A couple rules:
+/// - Source modules must have a source output socket and no input socket
+/// - Source modules must create a single source node
+/// - Sink modules must have a sink input socket and no output socket
+/// - Sink modules must create a single sink node
+/// - Nodes added to the pipeline must be run in the order they are added
+///     - this is needed for determining the proper edge direction in the DAG
+///     - vkdt does not need this because it builds the graph based on a field
+///       .connected_to for input sockets in the node struct
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
     gpu: ?*gpu.GPU,
@@ -76,13 +88,6 @@ pub const Pipeline = struct {
         errdefer modules.deinit();
         // const module_pool = ModulePool.init(allocator);
         // errdefer module_pool.deinit();
-
-        // TESTING
-        // var modules_pool = std.heap.MemoryPoolExtra(Module, .{}).init(allocator);
-        // errdefer modules_pool.deinit();
-        // const temp_module = modules_pool.create();
-        // errdefer modules_pool.destroy(temp_module);
-        // temp_module.* = undefined;
 
         const node_pool = NodePool.init(allocator);
         errdefer node_pool.deinit();
@@ -198,12 +203,6 @@ pub const Pipeline = struct {
         // (submit queue)
         // dt_graph_run_nodes_download     (download sink data from GPU to CPU)
 
-        // A couple rules:
-        // - Source modules must have a source output socket and no input socket
-        // - Source modules must create a single source node
-        // - Sink modules must have a sink input socket and no output socket
-        // - Sink modules must create a single sink node
-
         slog.debug("Running pipeline", .{});
 
         // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
@@ -225,9 +224,9 @@ pub const Pipeline = struct {
         self.print();
 
         self.runModulesUploadParams() catch unreachable;
-        self.runNodesUpload() catch unreachable;
+        self.runNodesUploadSource() catch unreachable;
         self.runNodes() catch unreachable;
-        self.runNodesDownload() catch unreachable;
+        self.runNodesDownloadSink() catch unreachable;
     }
 
     pub fn print(self: *Pipeline) void {
@@ -601,7 +600,7 @@ pub const Pipeline = struct {
     /// Calls module readSource() functions to upload source data to GPU
     ///
     /// similar to vkdt dt_graph_run_nodes_upload()
-    fn runNodesUpload(self: *Pipeline) !void {
+    fn runNodesUploadSource(self: *Pipeline) !void {
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
 
         upload_buffer.map();
@@ -689,7 +688,7 @@ pub const Pipeline = struct {
         try gpu_inst.run(encoder.finish());
     }
 
-    fn runNodesDownload(self: *Pipeline) !void {
+    fn runNodesDownloadSink(self: *Pipeline) !void {
         var download_buffer = self.download_buffer orelse return error.PipelineMissingBuffer;
 
         download_buffer.map();

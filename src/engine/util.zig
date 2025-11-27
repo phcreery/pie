@@ -114,7 +114,7 @@ fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaqu
     // const conn = self.connector_pool.getPtr(edge) catch unreachable;
     // const res = std.fmt.bufPrint(buf, "{s}", .{conn.*.texture.?.name}) catch "<error>";
     _ = user_data;
-    const res = std.fmt.bufPrint(buf, "id: {any}", .{edge.id}) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "(id: {any})", .{edge.id}) catch "<error>";
     return @constCast(res);
 }
 
@@ -125,6 +125,6 @@ fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []
     if (node.mod.enabled) {
         enabled_srt = "[x]";
     }
-    const res = std.fmt.bufPrint(buf, "{s} {s} > {s}", .{ enabled_srt, node.mod.desc.name, node.desc.entry_point }) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} (id: {any}) {s} > {s}", .{ enabled_srt, vert.id, node.mod.desc.name, node.desc.entry_point }) catch "<error>";
     return @constCast(res);
 }
