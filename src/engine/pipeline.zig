@@ -5,18 +5,18 @@ const api = @import("modules/api.zig");
 const util = @import("util.zig");
 const Module = @import("Module.zig");
 const Node = @import("Node.zig");
-const SingleColPool = @import("pool.zig").SingleColPool;
+const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const GraphPrinter = @import("zig-graph/graph.zig").print.GraphPrinter;
 const slog = std.log.scoped(.pipe);
 
-const NodePool = SingleColPool(Node);
+const NodePool = HashMapPool(Node);
 pub const NodeHandle = NodePool.Handle;
 
-const ConnectorPool = SingleColPool(?gpu.Texture);
+const ConnectorPool = HashMapPool(?gpu.Texture);
 pub const ConnectorHandle = ConnectorPool.Handle;
 
-const ParamBufferPool = SingleColPool(?gpu.Buffer);
+const ParamBufferPool = HashMapPool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
 // TODO: params pool
@@ -176,7 +176,67 @@ pub const Pipeline = struct {
         node.desc.sockets[node_socket_idx] = module_socket;
     }
 
-    pub fn runModulesPreCheck(self: *Pipeline) !void {
+    pub fn run(self: *Pipeline) !void {
+
+        // Order of Operations:
+        // dt_graph_run_modules
+        // - modifyROIOut
+        // - modify_roi_in
+        // - create_nodes
+        //   - module.create_nodes() called here
+        //   - handles bypassing disabled nodes
+        // - init_connector_images
+        //   - // only allocate memory for output connectors ("write" or "source" types)
+        //
+        // dt_graph_run_nodes_allocate     (potentially free/re-allocate memory, create buffers, images, image_views, and descriptor sets)
+        // - 1. alloc_outputs()  allocate output buffers and create compute shaders for each node
+        // - 2. alloc_outputs2() bind_buffers_to_memory (vkBindImageMemory)
+        // - 3. alloc_outputs3() create_descriptor_sets for each node
+        // dt_graph_run_nodes_upload       (upload all source data to staging memory) (read_source called here)
+        // dt_graph_run_modules_upload_uniforms
+        // dt_graph_run_nodes_record_cmd
+        // (submit queue)
+        // dt_graph_run_nodes_download     (download sink data from GPU to CPU)
+
+        // A couple rules:
+        // - Source modules must have a source output socket and no input socket
+        // - Source modules must create a single source node
+        // - Sink modules must have a sink input socket and no output socket
+        // - Sink modules must create a single sink node
+
+        slog.debug("Running pipeline", .{});
+
+        // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
+        self.runModulesPreCheck() catch unreachable;
+        self.runModulesModifyROIOut() catch unreachable;
+        self.runModulesCreateConnectorHandles() catch unreachable;
+
+        self.runModulesInitParamBuffers() catch unreachable;
+        self.runModulesAllocateUploadBufferForParams() catch unreachable;
+        self.runModulesCreateNodes() catch unreachable;
+
+        // Then run nodes
+        self.runNodesBuildExecutionOrder() catch unreachable;
+        // TODO: put these all in a single loop after building execution order
+        self.runNodesInitConnectorTextures() catch unreachable;
+        self.runNodesAllocateUploadBufferForTextures() catch unreachable;
+        self.runNodesCreateBindings() catch unreachable;
+
+        self.print();
+
+        self.runModulesUploadParams() catch unreachable;
+        self.runNodesUpload() catch unreachable;
+        self.runNodes() catch unreachable;
+        self.runNodesDownload() catch unreachable;
+    }
+
+    pub fn print(self: *Pipeline) void {
+        // util.printModules(self);
+        util.printNodes(self);
+        util.printNodes2(self) catch unreachable;
+    }
+
+    fn runModulesPreCheck(self: *Pipeline) !void {
         for (self.modules.items) |module| {
             if (module.desc.type == .source) {
                 if (module.desc.input_socket != null) {
@@ -198,7 +258,7 @@ pub const Pipeline = struct {
     }
 
     /// configure ROI for input sockets and output sockets
-    pub fn runModulesModifyROIOut(self: *Pipeline) !void {
+    fn runModulesModifyROIOut(self: *Pipeline) !void {
         var prev_out_roi: ?ROI = null;
         for (self.modules.items) |*module| {
             if (module.enabled == false) continue;
@@ -237,7 +297,7 @@ pub const Pipeline = struct {
     }
 
     /// configure connectors only for module output connectors
-    pub fn runModulesCreateConnectorHandles(self: *Pipeline) !void {
+    fn runModulesCreateConnectorHandles(self: *Pipeline) !void {
         var prev_conn_handle: ?ConnectorHandle = null;
         for (self.modules.items) |*module| {
             // slog.debug("Configuring connectors for module: {s}", .{module.desc.name});
@@ -276,7 +336,7 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runModulesAllocateParamBuffers(self: *Pipeline) !void {
+    fn runModulesInitParamBuffers(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.modules.items) |*module| {
             const param_handle = module.param_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
@@ -290,7 +350,7 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runModulesAllocateUploadBufferForParams(self: *Pipeline) !void {
+    fn runModulesAllocateUploadBufferForParams(self: *Pipeline) !void {
         if (self.upload_fba) |*upload_fba| {
             var upload_allocator = upload_fba.allocator();
 
@@ -328,7 +388,7 @@ pub const Pipeline = struct {
     }
 
     /// create nodes for each module
-    pub fn runModulesCreateNodes(self: *Pipeline) !void {
+    fn runModulesCreateNodes(self: *Pipeline) !void {
         for (self.modules.items) |*module| {
             if (module.enabled == false) continue;
             if (module.desc.createNodes) |createNodesFn| {
@@ -339,7 +399,7 @@ pub const Pipeline = struct {
 
     /// Builds a DAG graph for the node by connecting nodes based on matching connector handles
     /// then performs a topological sort to determine execution order
-    pub fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
+    fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
         // TODO: make this better, if there are lots of nodes, this is O(n^2)
         // first build the graph by connecting nodes based on matching connector handles
         var node_pool_handles_a = self.node_pool.liveHandles();
@@ -351,12 +411,15 @@ pub const Pipeline = struct {
                 if (self.node_graph.getEdge(node_handle_a, node_handle_b) != null) continue;
                 if (self.node_graph.getEdge(node_handle_b, node_handle_a) != null) continue;
                 if (node_handle_a.id == node_handle_b.id) continue;
+                // NOTE: what we are about to do here is further constrain the node graph
+                // by only allowing to connect nodes in the order they were created
+                if (node_handle_a.id > node_handle_b.id) continue;
                 // add nodes to graph
                 try self.node_graph.add(node_handle_a);
                 try self.node_graph.add(node_handle_b);
                 // get connector handle
-                const node_a = try self.node_pool.get(node_handle_a);
-                const node_b = try self.node_pool.get(node_handle_b);
+                const node_a = try self.node_pool.getPtr(node_handle_a);
+                const node_b = try self.node_pool.getPtr(node_handle_b);
                 // check for matching connector handles
                 var found_match = false;
                 var match_handle: ?ConnectorHandle = null;
@@ -392,7 +455,7 @@ pub const Pipeline = struct {
     /// also creates bindings for each shader
     ///
     /// similar to vkdt dt_graph_run_nodes_allocate()
-    pub fn runNodesAllocateTextures(self: *Pipeline) !void {
+    fn runNodesInitConnectorTextures(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
@@ -414,7 +477,7 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runNodesCreateBindings(self: *Pipeline) !void {
+    fn runNodesCreateBindings(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
@@ -478,7 +541,7 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runNodesAllocateUploadBufferForTextures(self: *Pipeline) !void {
+    fn runNodesAllocateUploadBufferForTextures(self: *Pipeline) !void {
         if (self.upload_fba) |*upload_fba| {
             // std.debug.print("Upload FBA: {any}\n", .{upload_fba});
             std.debug.print("Upload FBA end index before allocation: {d}\n", .{upload_fba.end_index});
@@ -538,7 +601,7 @@ pub const Pipeline = struct {
     /// Calls module readSource() functions to upload source data to GPU
     ///
     /// similar to vkdt dt_graph_run_nodes_upload()
-    pub fn runNodesUpload(self: *Pipeline) !void {
+    fn runNodesUpload(self: *Pipeline) !void {
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
 
         upload_buffer.map();
@@ -546,7 +609,7 @@ pub const Pipeline = struct {
         // we currently only support one upload in the entire pipeline
         // so we are going check if the first node has a source connector
         const first_node_handle = self.node_execution_order.items[0];
-        var first_node = self.node_pool.get(first_node_handle) catch unreachable;
+        var first_node = self.node_pool.getPtr(first_node_handle) catch unreachable;
 
         // TODO: support multiple source uploads in the future
         // TODO: find the correct input socket by type
@@ -570,7 +633,7 @@ pub const Pipeline = struct {
         upload_buffer.unmap();
     }
 
-    pub fn runNodes(self: *Pipeline) !void {
+    fn runNodes(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
         var download_buffer = self.download_buffer orelse return error.PipelineMissingBuffer;
@@ -626,7 +689,7 @@ pub const Pipeline = struct {
         try gpu_inst.run(encoder.finish());
     }
 
-    pub fn runNodesDownload(self: *Pipeline) !void {
+    fn runNodesDownload(self: *Pipeline) !void {
         var download_buffer = self.download_buffer orelse return error.PipelineMissingBuffer;
 
         download_buffer.map();
@@ -634,7 +697,7 @@ pub const Pipeline = struct {
         // we currently only support one download in the entire pipeline
         // so we are going check if the last node has a sink connector
         const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
-        var last_node = try self.node_pool.get(last_node_handle);
+        var last_node = try self.node_pool.getPtr(last_node_handle);
 
         slog.debug("Last node handle: {any}", .{last_node_handle});
         // slog.debug("Last node desc: {any}", .{last_node.desc});
@@ -656,68 +719,5 @@ pub const Pipeline = struct {
         }
 
         download_buffer.unmap();
-    }
-
-    pub fn run(self: *Pipeline) !void {
-
-        // Order of Operations:
-        // dt_graph_run_modules
-        // - modifyROIOut
-        // - modify_roi_in
-        // - create_nodes
-        //   - module.create_nodes() called here
-        //   - handles bypassing disabled nodes
-        // - init_connector_images
-        //   - // only allocate memory for output connectors ("write" or "source" types)
-        //
-        // dt_graph_run_nodes_allocate     (potentially free/re-allocate memory, create buffers, images, image_views, and descriptor sets)
-        // - 1. alloc_outputs()  allocate output buffers and create compute shaders for each node
-        // - 2. alloc_outputs2() bind_buffers_to_memory (vkBindImageMemory)
-        // - 3. alloc_outputs3() create_descriptor_sets for each node
-        // dt_graph_run_nodes_upload       (upload all source data to staging memory) (read_source called here)
-        // dt_graph_run_modules_upload_uniforms
-        // dt_graph_run_nodes_record_cmd
-        // (submit queue)
-        // dt_graph_run_nodes_download     (download sink data from GPU to CPU)
-
-        // A couple rules:
-        // - Source modules must have a source output socket and no input socket
-        // - Source modules must create a single source node
-        // - Sink modules must have a sink input socket and no output socket
-        // - Sink modules must create a single sink node
-
-        slog.debug("Running pipeline", .{});
-
-        // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
-        // self.runModules() catch unreachable;
-        self.runModulesPreCheck() catch unreachable;
-        self.runModulesModifyROIOut() catch unreachable;
-        self.runModulesCreateConnectorHandles() catch unreachable;
-        self.runModulesAllocateParamBuffers() catch unreachable;
-        self.runModulesAllocateUploadBufferForParams() catch unreachable;
-        self.runModulesUploadParams() catch unreachable;
-        self.runModulesCreateNodes() catch unreachable;
-
-        // then run nodes
-        // self.runNodesCheck() catch unreachable;
-        self.runNodesBuildExecutionOrder() catch unreachable;
-        // TODO: put these all in a single loop after building execution order
-        self.runNodesAllocateTextures() catch unreachable;
-        self.runNodesCreateBindings() catch unreachable;
-        self.runNodesAllocateUploadBufferForTextures() catch unreachable;
-
-        util.printNodes(self);
-
-        self.runNodesUpload() catch unreachable;
-        // self.runModulesUploadParams() catch unreachable;
-        self.runNodes() catch unreachable;
-        self.runNodesDownload() catch unreachable;
-        self.print();
-    }
-
-    pub fn print(self: *Pipeline) void {
-        // util.printModules(self);
-        // util.printNodes(self);
-        util.printNodes2(self) catch unreachable;
     }
 };

@@ -2,6 +2,7 @@ const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const api = @import("modules/api.zig");
 const gpu = @import("gpu.zig");
+const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
 const console = @import("../cli/console.zig");
 
@@ -51,7 +52,7 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
     std.debug.print("NODE LISTING (ORDERED AS APPEARANCE IN NODE POOL)\n", .{});
     var node_pool_handles = self.node_pool.liveHandles();
     while (node_pool_handles.next()) |node_handle| {
-        const node = self.node_pool.get(node_handle) catch unreachable;
+        const node = self.node_pool.getPtr(node_handle) catch unreachable;
 
         std.debug.print("==== NODE ========================================\n", .{});
         std.debug.print(" ID:                {d}\n", .{node_handle.id});
@@ -62,9 +63,14 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
                     .input => std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{s.private.conn_handle.?.id}) catch "<- null",
                     .output => std.fmt.allocPrint(std.heap.page_allocator, "-> {any}", .{s.private.conn_handle.?.id}) catch "-> null",
                 };
-                // const connector_text = std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{s.private.conn_handle.?.id}) catch "<- null";
-                const texture = if (s.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null;
-                const tex_text = if (texture) |tex| tex.texture else null;
+                var tex_text: ?*wgpu.Texture = null;
+                if (s.private.conn_handle) |h| {
+                    const conn = self.connector_pool.getPtr(h) catch unreachable;
+                    if (conn.*) |c| {
+                        tex_text = c.texture;
+                    }
+                }
+
                 std.debug.print(" Socket:            \"{s}\", {s}, {s}, {any}x{any}\n", .{ s.name, @tagName(s.type), @tagName(s.format), s.roi.?.w, s.roi.?.h });
                 std.debug.print("  - Connector:      {s} ({any})\n", .{ connector_text, tex_text });
             }
@@ -114,7 +120,7 @@ fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaqu
 
 fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []u8 {
     var self: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
-    const node = self.node_pool.get(vert) catch unreachable;
+    const node = self.node_pool.getPtr(vert) catch unreachable;
     var enabled_srt = "[ ]";
     if (node.mod.enabled) {
         enabled_srt = "[x]";
