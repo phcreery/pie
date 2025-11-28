@@ -27,20 +27,6 @@ pub fn init(
 
 // HELPER FUNCTIONS
 
-// pub fn getSocket(mod: *Self, name: []const u8) ?*api.SocketDesc {
-//     const sockets = [_]*?api.SocketDesc{
-//         mod.desc.input_socket,
-//         mod.desc.output_socket,
-//     };
-//     for (sockets) |sock| {
-//         if (sock) |s| {
-//             if (std.mem.eql(u8, s.name, name)) {
-//                 return s;
-//             }
-//         }
-//     }
-//     return null;
-// }
 pub fn getSocket(mod: *Self, name: []const u8) ?api.SocketDesc {
     for (mod.desc.sockets) |sock| {
         if (sock) |s| {

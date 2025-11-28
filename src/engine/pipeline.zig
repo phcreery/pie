@@ -54,9 +54,7 @@ pub const Pipeline = struct {
     node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
     node_execution_order: std.ArrayList(NodeHandle),
 
-    // modules: std.ArrayList(Module),
     module_pool: ModulePool,
-    // modules_pool: std.heap.MemoryPoolExtra(Module, .{}),
 
     connector_pool: ConnectorPool,
 
@@ -88,8 +86,6 @@ pub const Pipeline = struct {
             upload_buffer = null;
         }
 
-        // const modules = std.ArrayList(Module).initCapacity(allocator, MAX_MODULES) catch unreachable;
-        // errdefer modules.deinit();
         const module_pool = ModulePool.init(allocator);
         errdefer module_pool.deinit();
 
@@ -119,7 +115,6 @@ pub const Pipeline = struct {
             .download_buffer = download_buffer,
             .download_fba = download_fba,
 
-            // .modules = modules,
             .module_pool = module_pool,
 
             .node_pool = node_pool,
@@ -182,10 +177,17 @@ pub const Pipeline = struct {
         // node.desc.sockets[node_socket_idx].?.private.conn_handle = module_socket.private.conn_handle;
 
         node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
-        node.desc.sockets[node_socket_idx].?.private.associated_with_module = mod;
-        node.desc.sockets[node_socket_idx].?.private.connected_to_module_socket_idx = mod_socket_idx;
-        mod.desc.sockets[mod_socket_idx].?.private.associated_with_node = node_handle;
-        mod.desc.sockets[mod_socket_idx].?.private.associated_with_node_socket_idx = node_socket_idx;
+        // for input sockets on nodes
+        if (node.desc.sockets[node_socket_idx].?.type.direction() == .input) {
+            node.desc.sockets[node_socket_idx].?.private.associated_with_module = mod;
+            node.desc.sockets[node_socket_idx].?.private.associated_with_module_socket_idx = mod_socket_idx;
+        }
+
+        // for output sockets on modules
+        if (mod.desc.sockets[mod_socket_idx].?.type.direction() == .output) {
+            mod.desc.sockets[mod_socket_idx].?.private.associated_with_node = node_handle;
+            mod.desc.sockets[mod_socket_idx].?.private.associated_with_node_socket_idx = node_socket_idx;
+        }
     }
 
     // pub fn connectNodes(
@@ -262,8 +264,8 @@ pub const Pipeline = struct {
         // TODO: put these all in a single loop after building execution order
         self.runNodesInitConnectorTextures() catch unreachable;
 
-        util.printNodes(self);
-        util.printNodes2(self) catch unreachable;
+        // util.printNodes(self);
+        // util.printNodes2(self) catch unreachable;
 
         self.runNodesAllocateUploadBufferForTextures() catch unreachable;
         self.runNodesCreateBindings() catch unreachable;
@@ -284,8 +286,6 @@ pub const Pipeline = struct {
 
     fn runModulesPreCheck(self: *Pipeline) !void {
         var mod_pool_handles = self.module_pool.liveHandles();
-
-        // for (self.modules.items) |*module| {
         while (mod_pool_handles.next()) |module_handle| {
             var module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.desc.type == .source) {
@@ -320,7 +320,7 @@ pub const Pipeline = struct {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
                         var this_sock = module.getSocketPtr(sock.name) orelse unreachable;
-                        slog.debug(">>> Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
+                        slog.debug("Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
                         this_sock.private.conn_handle = try self.connector_pool.add(null);
                     }
                 }
@@ -376,10 +376,10 @@ pub const Pipeline = struct {
             try module_execution_order.append(self.allocator, module_graph.lookup(value).?);
             // try module_execution_order.append(self.allocator, value);
         }
-        slog.debug("Topological sorted order of modules: {any}", .{module_execution_order.items});
-        // for (module_execution_order.items) |module| {
-        //     slog.debug("Module in execution order: {s}", .{module.desc.name});
-        // }
+        // slog.debug("Topological sorted order of modules: {any}", .{module_execution_order.items});
+        for (module_execution_order.items) |module| {
+            slog.debug("Module in execution order: {s}", .{module.desc.name});
+        }
 
         for (module_execution_order.items) |module| {
             // set roi in based on connected module roi out
@@ -431,7 +431,6 @@ pub const Pipeline = struct {
         if (self.upload_fba) |*upload_fba| {
             var upload_allocator = upload_fba.allocator();
 
-            // for (self.modules.items) |*module| {
             var mod_pool_handles = self.module_pool.liveHandles();
             while (mod_pool_handles.next()) |module_handle| {
                 var module = self.module_pool.getPtr(module_handle) catch unreachable;
@@ -484,62 +483,21 @@ pub const Pipeline = struct {
     /// Builds a DAG graph for the node by connecting nodes based on matching connector handles
     /// then performs a topological sort to determine execution order
     fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
-        // TODO: make this better, if there are lots of nodes, this is O(n^2)
-        // first build the graph by connecting nodes based on matching connector handles
-        // var node_pool_handles_a = self.node_pool.liveHandles();
-        // while (node_pool_handles_a.next()) |node_handle_a| {
-        //     var node_pool_handles_b = self.node_pool.liveHandles();
-        //     while (node_pool_handles_b.next()) |node_handle_b| {
-        //         // slog.debug("Checking for edge between node {any} and node {any}", .{ node_handle_a, node_handle_b });
-        //         // skip if edge already exists
-        //         if (self.node_graph.getEdge(node_handle_a, node_handle_b) != null) continue;
-        //         if (self.node_graph.getEdge(node_handle_b, node_handle_a) != null) continue;
-        //         if (node_handle_a.id == node_handle_b.id) continue;
-        //         // NOTE: what we are about to do here is further constrain the node graph
-        //         // by only allowing to connect nodes in the order they were created
-        //         if (node_handle_a.id > node_handle_b.id) continue;
-        //         // add nodes to graph
-        //         try self.node_graph.add(node_handle_a);
-        //         try self.node_graph.add(node_handle_b);
-        //         // get connector handle
-        //         const node_a = try self.node_pool.getPtr(node_handle_a);
-        //         const node_b = try self.node_pool.getPtr(node_handle_b);
-        //         // check for matching connector handles
-        //         var found_match = false;
-        //         var match_handle: ?ConnectorHandle = null;
-        //         for (node_a.desc.sockets) |socket_a| {
-        //             const sock_a = socket_a orelse continue;
-        //             for (node_b.desc.sockets) |socket_b| {
-        //                 const sock_b = socket_b orelse continue;
-        //                 const conn_handle_a = sock_a.private.conn_handle orelse continue;
-        //                 const conn_handle_b = sock_b.private.conn_handle orelse continue;
-        //                 if (conn_handle_a.id == conn_handle_b.id) {
-        //                     found_match = true;
-        //                     match_handle = conn_handle_a;
-        //                     break;
-        //                 }
-        //             }
-        //             if (found_match) break;
-        //         }
-        //         if (found_match) {
-        //             slog.debug("Adding edge from node {any} to node {any}", .{ node_handle_a, node_handle_b });
-        //             try self.node_graph.addEdge(node_handle_a, node_handle_b, match_handle.?);
-        //         }
-        //     }
-        // }
-
+        std.debug.print("\n", .{});
+        slog.debug("Building node execution order", .{});
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |dst_node_handle| {
             var dst_node = self.node_pool.getPtr(dst_node_handle) catch unreachable;
-            // if (dst_node.enabled == false) continue;
+            slog.debug("Processing node {s}", .{dst_node.desc.entry_point});
             try self.node_graph.add(dst_node_handle);
             for (dst_node.desc.sockets) |socket| {
                 if (socket) |sock| {
                     var dst_node_sock = dst_node.getSocketPtr(sock.name) orelse return error.ModuleMissingInputSock;
+                    slog.debug("Processing socket {s} of node {s}", .{ sock.name, dst_node.desc.entry_point });
                     if (sock.private.connected_to_node) |src_node_handle| {
                         try self.node_graph.add(src_node_handle);
                         const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
-                        slog.debug("Adding edge from module {s} to module {s}", .{ src_node.desc.entry_point, dst_node.desc.entry_point });
+                        slog.debug("Adding edge from node {s} to node {s}", .{ src_node.desc.entry_point, dst_node.desc.entry_point });
                         const src_node_sock_idx = sock.private.connected_to_node_socket_idx orelse unreachable;
                         const src_node_sock = src_node.desc.sockets[src_node_sock_idx] orelse unreachable;
 
@@ -549,16 +507,22 @@ pub const Pipeline = struct {
                         dst_node_sock.private.conn_handle = src_node_sock.private.conn_handle;
                         try self.node_graph.addEdge(src_node_handle, dst_node_handle, src_node_sock.private.conn_handle orelse unreachable);
                     } else if (sock.private.associated_with_module) |assoc_mod| {
-                        const assoc_mod_socket_idx = sock.private.connected_to_module_socket_idx orelse unreachable;
+                        // if the node is not direclty connected to another node,
+                        // check if it is linked to a module then check what that
+                        // module is connected to and then traverse to the node that
+                        // is linked to that socket and connect to that node
+                        slog.debug("Socket {s} of node {s} is associated with module {s}", .{ sock.name, dst_node.desc.entry_point, assoc_mod.desc.name });
+                        const assoc_mod_socket_idx = sock.private.associated_with_module_socket_idx orelse unreachable;
                         const assoc_mod_socket = assoc_mod.desc.sockets[assoc_mod_socket_idx] orelse unreachable;
                         if (assoc_mod_socket.private.connected_to_module) |connected_to_mod| {
+                            slog.debug("Associated module socket {s} is connected to module {s}", .{ assoc_mod_socket.name, connected_to_mod.desc.name });
                             const connected_to_mod_socket_idx = assoc_mod_socket.private.connected_to_module_socket_idx orelse unreachable;
                             const connected_to_mod_socket = connected_to_mod.desc.sockets[connected_to_mod_socket_idx] orelse unreachable;
-                            if (connected_to_mod_socket.private.connected_to_node) |src_node_handle| {
+                            if (connected_to_mod_socket.private.associated_with_node) |src_node_handle| {
                                 try self.node_graph.add(src_node_handle);
                                 const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
-                                slog.debug("Adding edge from module {s} to node {s}", .{ connected_to_mod.desc.name, dst_node.desc.entry_point });
-                                const src_node_sock_idx = connected_to_mod_socket.private.connected_to_node_socket_idx orelse unreachable;
+                                slog.debug(">>> Adding edge from node {s} to node {s}", .{ connected_to_mod.desc.name, dst_node.desc.entry_point });
+                                const src_node_sock_idx = connected_to_mod_socket.private.associated_with_node_socket_idx orelse unreachable;
                                 const src_node_sock = src_node.desc.sockets[src_node_sock_idx] orelse unreachable;
 
                                 // connect
@@ -577,6 +541,7 @@ pub const Pipeline = struct {
             try self.node_execution_order.append(self.allocator, self.node_graph.lookup(value).?);
         }
         slog.debug("Topological sorted order of nodes: {any}", .{self.node_execution_order.items});
+        std.debug.print("\n", .{});
     }
 
     /// Allocates output textures and creates compute shaders for each node
@@ -681,14 +646,11 @@ pub const Pipeline = struct {
             const first_node_handle = self.node_execution_order.items[0];
             var first_node_ptr = self.node_pool.getPtr(first_node_handle) catch unreachable;
 
-            slog.debug("First node handle: {any}", .{first_node_handle});
-            // slog.debug("First node ptr: {any}", .{first_node_ptr});
             slog.debug("First node: {s}", .{first_node_ptr.desc.entry_point});
 
             // TODO: support multiple source uploads in the future
             // TODO: find the correct input socket by type
             if (first_node_ptr.desc.sockets[0]) |*sock| {
-                slog.debug("First node socket: {any}", .{sock});
                 if (sock.type == .source) {
                     const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
                     slog.debug("Allocating upload buffer for textures for size {d} bytes", .{size_bytes});
