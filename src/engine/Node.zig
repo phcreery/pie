@@ -53,3 +53,10 @@ pub fn getSocketIndex(node: *const Self, name: []const u8) ?usize {
     }
     return null;
 }
+pub fn getSocketPtr(node: *Self, name: []const u8) ?*api.SocketDesc {
+    const idx = node.getSocketIndex(name) orelse return null;
+    if (node.desc.sockets[idx]) |*sock| {
+        return sock;
+    }
+    return null;
+}

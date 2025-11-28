@@ -16,10 +16,13 @@ test "simple module test" {
     var pipeline = Pipeline.init(allocator, &gpu_instance) catch unreachable;
     defer pipeline.deinit();
 
-    _ = try pipeline.addModule(pie.engine.modules.test_i_1234.module);
+    const mod_test_i_1234 = try pipeline.addModule(pie.engine.modules.test_i_1234.module);
     // _ = try pipeline.addModule(pie.engine.modules.test_double.module);
-    _ = try pipeline.addModule(pie.engine.modules.test_multiply.module);
-    _ = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
+    const mod_test_multiply = try pipeline.addModule(pie.engine.modules.test_multiply.module);
+    const mod_test_o_2468 = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
+
+    pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;
+    pipeline.connectModules(mod_test_multiply, "output", mod_test_o_2468, "input") catch unreachable;
 
     try pipeline.run();
 }

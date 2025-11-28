@@ -94,7 +94,7 @@ pub const Pipeline = struct {
 
         const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
         var node_graph = NodeGraph.init(allocator);
-        defer node_graph.deinit();
+        errdefer node_graph.deinit();
 
         const node_execution_order = std.ArrayList(NodeHandle).initCapacity(allocator, 2) catch unreachable;
         errdefer node_execution_order.deinit();
@@ -147,7 +147,7 @@ pub const Pipeline = struct {
     }
 
     pub fn addModule(self: *Pipeline, module_desc: api.ModuleDesc) !*Module {
-        slog.debug("Adding module: {s}", .{module_desc.name});
+        slog.debug("Adding module to pipeline: {s}", .{module_desc.name});
         const module = try Module.init(module_desc);
         try self.modules.append(self.allocator, module);
         return &self.modules.items[self.modules.items.len - 1];
@@ -157,7 +157,7 @@ pub const Pipeline = struct {
     }
 
     pub fn addNode(self: *Pipeline, mod: *Module, node_desc: api.NodeDesc) !NodeHandle {
-        slog.debug("Adding node with shader entry point: {s}", .{node_desc.entry_point});
+        slog.debug("Adding node to pipeline: {s}", .{node_desc.entry_point});
         // TODO: check input connection to mach previous node output connection
         const node = try Node.init(self, mod, node_desc);
         return try self.node_pool.add(node);
@@ -180,6 +180,7 @@ pub const Pipeline = struct {
         const node_socket_idx = node.getSocketIndex(node_socket_name) orelse unreachable;
 
         // node.desc.sockets[node_socket_idx].?.private.conn_handle = module_socket.private.conn_handle;
+
         node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
         node.desc.sockets[node_socket_idx].?.private.associated_with_module = mod;
         mod.desc.sockets[mod_socket_idx].?.private.connected_to_node = node;
@@ -195,11 +196,31 @@ pub const Pipeline = struct {
     //     slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node_handle, src_node_socket_name, dst_node_handle, dst_node_socket_name });
     // }
 
+    pub fn connectModules(
+        self: *Pipeline,
+        src_mod: *Module,
+        src_mod_socket_name: []const u8,
+        dst_mod: *Module,
+        dst_mod_socket_name: []const u8,
+    ) !void {
+        _ = self;
+        slog.debug("Connecting module {s} socket {s} to module {s} socket {s}", .{ src_mod.desc.name, src_mod_socket_name, dst_mod.desc.name, dst_mod_socket_name });
+
+        // const src_socket_idx = src_mod.getSocketIndex(src_mod_socket_name) orelse unreachable;
+        const dst_socket_idx = dst_mod.getSocketIndex(dst_mod_socket_name) orelse unreachable;
+        const src_socket_idx = src_mod.getSocketIndex(src_mod_socket_name) orelse unreachable;
+
+        // dst_mod.desc.sockets[dst_socket_idx] = src_mod.desc.sockets[src_socket_idx];
+        // dst_mod.desc.sockets[dst_socket_idx].?.format = src_mod.desc.sockets[src_socket_idx].?.format;
+        dst_mod.desc.sockets[dst_socket_idx].?.private.connected_to_module = src_mod;
+        dst_mod.desc.sockets[dst_socket_idx].?.private.connected_to_module_socket_idx = src_socket_idx;
+    }
+
     pub fn run(self: *Pipeline) !void {
 
         // Order of Operations:
         // dt_graph_run_modules
-        // - modifyROIOut
+        // - modify_roi_out
         // - modify_roi_in
         // - create_nodes
         //   - module.create_nodes() called here
@@ -221,7 +242,8 @@ pub const Pipeline = struct {
 
         // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
         self.runModulesPreCheck() catch unreachable;
-        self.runModulesModifyROIOut() catch unreachable;
+        // self.runModulesModifyROIOut() catch unreachable;
+        self.runModulesBuildExecutionOrder() catch unreachable;
         self.runModulesCreateConnectorHandles() catch unreachable;
 
         self.runModulesInitParamBuffers() catch unreachable;
@@ -230,6 +252,8 @@ pub const Pipeline = struct {
 
         // Then run nodes
         self.runNodesBuildExecutionOrder() catch unreachable;
+        util.printModules(self);
+        util.printNodes(self);
         // TODO: put these all in a single loop after building execution order
         self.runNodesInitConnectorTextures() catch unreachable;
         self.runNodesAllocateUploadBufferForTextures() catch unreachable;
@@ -273,40 +297,94 @@ pub const Pipeline = struct {
         }
     }
 
-    /// configure ROI for input sockets and output sockets
-    fn runModulesModifyROIOut(self: *Pipeline) !void {
-        var prev_out_roi: ?ROI = null;
+    // fn runModulesModifyROIOutCall(self: *Pipeline, module: *Module) !void {
+    //     // if the module has a modifyROIOut function, call it
+    //     // else copy roi from input to output
+    //     if (module.desc.modifyROIOut) |modifyROIOutFn| {
+    //         try modifyROIOutFn(self, module);
+    //     } else {
+    //         if (module.desc.type != .source and module.desc.type != .sink) {
+    //             const input_socket = module.getSocketPtr("input") orelse return error.ModuleNoROIFnMissingInputSock;
+    //             const output_socket = module.getSocketPtr("output") orelse return error.ModuleNoROIFnMissingOutputSock;
+    //             output_socket.roi = input_socket.roi;
+    //         }
+    //     }
+    // }
+
+    fn runModulesBuildExecutionOrder(self: *Pipeline) !void {
+
+        // create connector handles for output sockets
+        for (self.modules.items) |*module| {
+            for (module.desc.sockets) |socket| {
+                if (socket) |sock| {
+                    if (sock.type.direction() == .output) {
+                        var this_sock = module.getSocketPtr(sock.name) orelse unreachable;
+                        slog.debug(">>> Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
+                        this_sock.private.conn_handle = try self.connector_pool.add(null);
+                    }
+                }
+            }
+        }
+
+        // build execution order
+        const ModuleGraph = DirectedGraph(*Module, ConnectorHandle, std.hash_map.AutoContext(*Module));
+        var module_graph = ModuleGraph.init(self.allocator);
+        defer module_graph.deinit();
         for (self.modules.items) |*module| {
             if (module.enabled == false) continue;
+            try module_graph.add(module);
+            for (module.desc.sockets) |socket| {
+                if (socket) |sock| {
+                    if (sock.private.connected_to_module) |src_mod| {
+                        try module_graph.add(src_mod);
+                        slog.debug("Adding edge from module {s} to module {s}", .{ src_mod.desc.name, module.desc.name });
+                        const src_mod_sock_idx = sock.private.connected_to_module_socket_idx orelse unreachable;
+                        const src_mod_sock = src_mod.desc.sockets[src_mod_sock_idx] orelse unreachable;
+                        try module_graph.addEdge(src_mod, module, src_mod_sock.private.conn_handle orelse unreachable);
+                    }
+                }
+            }
+        }
+        var module_execution_order = std.ArrayList(*Module).initCapacity(self.allocator, 2) catch unreachable;
+        defer module_execution_order.deinit(self.allocator);
 
-            // if the input socket ROI is not set, use the previous module's output socket ROI
-            if (module.desc.type != .source) {
-                var input_socket = module.getSocketPtr("input") orelse return error.ModuleMissingInputSock;
-                // TODO: check connection first
-                if (prev_out_roi != null) {
-                    input_socket.roi = prev_out_roi;
-                } else {
-                    slog.err("Module {s} has no input sock ROI and no previous module to get it from", .{module.desc.name});
-                    return error.ModuleMissingInputSockROI;
+        var iter = try module_graph.topSortIterator();
+        defer iter.deinit();
+        while (try iter.next()) |value| {
+            try module_execution_order.append(self.allocator, module_graph.lookup(value).?);
+        }
+        // slog.debug("Topological sorted order of modules: {any}", .{module_execution_order.items});
+        for (module_execution_order.items) |module| {
+            slog.debug("Module in execution order: {s}", .{module.desc.name});
+        }
+
+        // modify roi out
+        for (module_execution_order.items) |module| {
+            // set roi in
+            for (module.desc.sockets) |socket| {
+                if (socket) |sock| {
+                    if (sock.type.direction() == .input) {
+                        if (sock.private.connected_to_module) |src_mod| {
+                            var sock_ptr = module.getSocketPtr(sock.name) orelse unreachable;
+                            slog.debug("Setting ROI for module {s} socket {s} from connected module {s}", .{ module.desc.name, sock.name, src_mod.desc.name });
+                            // const src_socket_idx = src_mod.getSocketIndex("output") orelse unreachable;
+                            const connected_to_module_socket_idx = sock_ptr.private.connected_to_module_socket_idx orelse unreachable;
+                            const connected_to_socket = src_mod.desc.sockets[connected_to_module_socket_idx] orelse unreachable;
+                            sock_ptr.roi = connected_to_socket.roi;
+                        }
+                    }
                 }
             }
 
-            // if the module has a modifyROIOut function, call it
-            // else copy roi from input to output
+            // modify roi out
             if (module.desc.modifyROIOut) |modifyROIOutFn| {
                 try modifyROIOutFn(self, module);
             } else {
                 if (module.desc.type != .source and module.desc.type != .sink) {
-                    const input_socket = module.getSocketPtr("input") orelse return error.ModuleMissingInputSock;
-                    const output_socket = module.getSocketPtr("output") orelse return error.ModuleMissingOutputSock;
+                    const input_socket = module.getSocketPtr("input") orelse return error.ModuleNoROIFnMissingInputSock;
+                    const output_socket = module.getSocketPtr("output") orelse return error.ModuleNoROIFnMissingOutputSock;
                     output_socket.roi = input_socket.roi;
                 }
-            }
-
-            if (module.desc.type != .sink) {
-                // update prev_out_roi for use on the next module
-                const output_socket = module.getSocketPtr("output") orelse return error.ModuleMissingOutputSock;
-                prev_out_roi = output_socket.roi;
             }
         }
     }
@@ -478,6 +556,7 @@ pub const Pipeline = struct {
                         // slog.debug("Allocating output texture for node socket {s} with connector handle {any}", .{ sock.name, conn_handle });
                         var buf: [256]u8 = undefined;
                         const str = try std.fmt.bufPrint(&buf, "id: {d}", .{conn_handle.id});
+                        slog.debug("Allocating output texture for node socket {s} with connector handle {any}", .{ sock.name, conn_handle });
                         const texture = try gpu.Texture.init(gpu_inst, str, sock.format, sock.roi.?);
                         // defer texture.deinit();
                         // store texture in connector pool
