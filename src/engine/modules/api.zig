@@ -6,7 +6,6 @@ pub const pipeline = @import("../pipeline.zig");
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
 pub const Pipeline = pipeline.Pipeline;
-// const slog = std.log.scoped(.api);
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 
@@ -55,28 +54,19 @@ pub const SocketDesc = struct {
     private: Private = .{},
 
     const Private = struct {
-        conn_handle: ?pipeline.ConnectorHandle = null,
+        // for output sockets of modules
+        connector_handle: ?pipeline.ConnectorHandle = null,
 
         // FOR GRAPH TRAVERSAL
         // for input sockets of modules
-        // connected_to_module: ?pipeline.ModuleHandle = null, // populated with pipe.connectModules()
-        // connected_to_module: ?*Module = null, // populated with pipe.connectModules()
-        // connected_to_module_socket_idx: ?usize = null,
         connected_to_module: ?SocketConnection(*Module) = null, // populated with pipe.connectModules()
 
         // for input sockets of nodes
-        // connected_to_node: ?pipeline.NodeHandle = null, // populated with pipe.connectNodes()
-        // connected_to_node_socket_idx: ?usize = null,
         connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodes()
 
         // for output sockets of modules
-        // associated_with_node: ?pipeline.NodeHandle = null, // populated with pipe.copyConnector()
-        // associated_with_node_socket_idx: ?usize = null,
         associated_with_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
         // for input sockets of nodes
-        // associated_with_module: ?pipeline.ModuleHandle = null, // populated with pipe.copyConnector()
-        // associated_with_module: ?*Module = null, // populated with pipe.copyConnector()
-        // associated_with_module_socket_idx: ?usize = null,
         associated_with_module: ?SocketConnection(*Module) = null, // populated with pipe.copyConnector()
 
         // offset in the upload staging buffer
@@ -84,27 +74,6 @@ pub const SocketDesc = struct {
         staging_offset: ?usize = null,
         staging: ?*anyopaque = null,
     };
-
-    pub fn getConnectedNode(self: *const SocketDesc) ?SocketConnection(pipeline.NodeHandle) {
-        if (self.private.connected_to_node) |src_node_handle_connection| {
-            return src_node_handle_connection;
-        } else if (self.private.associated_with_module) |assoc_mod| {
-            // if the node is not directly connected to another node,
-            // check if it is linked to a module then check what that
-            // module is connected to and then traverse to the node that
-            // is linked to that socket and connect to that node
-            // slog.debug("Socket {s} is associated with module {s}", .{ self.name, assoc_mod.item.desc.name });
-            const assoc_mod_socket = assoc_mod.item.desc.sockets[assoc_mod.socket_idx] orelse unreachable;
-            if (assoc_mod_socket.private.connected_to_module) |connected_to_mod| {
-                // slog.debug("Associated module socket {s} is connected to module {s}", .{ assoc_mod_socket.name, connected_to_mod.item.desc.name });
-                const connected_to_mod_socket = connected_to_mod.item.desc.sockets[connected_to_mod.socket_idx] orelse unreachable;
-                if (connected_to_mod_socket.private.associated_with_node) |src_node_handle_connection| {
-                    return src_node_handle_connection;
-                }
-            }
-        }
-        return null;
-    }
 };
 
 pub const Sockets = [MAX_SOCKETS]?SocketDesc;
@@ -144,21 +113,10 @@ pub const ModuleType = enum {
 pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
-    // enabled: bool,
 
-    // Use the first and last nodes connectors as module connectors
-    // connectors: []Connector,
     // The sockets describe the module's input and output interface
     // they can be null if the module has no input or output (sink or source only)
-    // input_socket: ?SocketDesc = null,
-    // output_socket: ?SocketDesc = null,
     sockets: Sockets,
-
-    // param_ui: []u8,
-    // param_uniform: []u8,
-
-    // uniform_offset: usize,
-    // uniform_size: usize,
 
     init: ?*const fn (mod: *Module) anyerror!void = null,
     deinit: ?*const fn (mod: *Module) anyerror!void = null,

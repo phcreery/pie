@@ -23,12 +23,12 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             \\ ==================================================
             \\
         ;
-        // const input_texture = if (module.desc.input_socket) |sock| if (sock.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
-        // const output_texture = if (module.desc.output_socket) |sock| if (sock.private.conn_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
-        const input_texture = if (module.getSocketPtr("input")) |sock| if (sock.private.conn_handle) |h| self.connector_pool.get(h) else null else null;
-        const output_texture = if (module.getSocketPtr("output")) |sock| if (sock.private.conn_handle) |h| self.connector_pool.get(h) else null else null;
+        // const input_texture = if (module.desc.input_socket) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
+        // const output_texture = if (module.desc.output_socket) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
+        const input_texture = if (module.getSocketPtr("input")) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) else null else null;
+        const output_texture = if (module.getSocketPtr("output")) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) else null else null;
         std.debug.print(module_text, .{
-            if (module.getSocketPtr("input")) |sock| if (sock.private.conn_handle) |h| h.id else null else null,
+            if (module.getSocketPtr("input")) |sock| if (sock.private.connector_handle) |h| h.id else null else null,
             if (input_texture) |input_tex| if (input_tex.*) |tex| tex.texture else null else null,
             if (module.getSocketPtr("input")) |sock| sock.name else "null",
             if (module.getSocketPtr("input")) |sock| sock.type else null,
@@ -44,7 +44,7 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             // if (module.desc.output_socket) |output_socket| output_socket.roi else null,
             if (module.getSocketPtr("output")) |sock| if (sock.roi) |roi| roi.w else null else null,
             if (module.getSocketPtr("output")) |sock| if (sock.roi) |roi| roi.h else null else null,
-            if (module.getSocketPtr("output")) |sock| if (sock.private.conn_handle) |h| h.id else null else null,
+            if (module.getSocketPtr("output")) |sock| if (sock.private.connector_handle) |h| h.id else null else null,
             if (output_texture) |output_tex| if (output_tex.*) |tex| tex.texture else null else null,
         });
     }
@@ -62,11 +62,11 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
         for (node.desc.sockets) |sock| {
             if (sock) |s| {
                 const connector_text = switch (s.type.direction()) {
-                    .input => std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{s.private.conn_handle.?.id}) catch "<- null",
-                    .output => std.fmt.allocPrint(std.heap.page_allocator, "-> {any}", .{s.private.conn_handle.?.id}) catch "-> null",
+                    .input => std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{self.getNodeConnectorHandle(s).?.id}) catch "<- null",
+                    .output => std.fmt.allocPrint(std.heap.page_allocator, "-> {any}", .{self.getNodeConnectorHandle(s).?.id}) catch "-> null",
                 };
                 var tex_text: ?*wgpu.Texture = null;
-                if (s.private.conn_handle) |h| {
+                if (self.getNodeConnectorHandle(s)) |h| {
                     const conn = self.connector_pool.getPtr(h) catch unreachable;
                     if (conn.*) |c| {
                         tex_text = c.texture;
