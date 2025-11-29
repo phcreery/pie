@@ -38,6 +38,7 @@ pub const ParamBufferHandle = ParamBufferPool.Handle;
 /// - Sink modules must create a single sink node
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
+
     gpu: ?*gpu.GPU,
 
     upload_buffer: ?gpu.Buffer,
@@ -46,11 +47,11 @@ pub const Pipeline = struct {
     download_buffer: ?gpu.Buffer,
     download_fba: ?std.heap.FixedBufferAllocator,
 
+    module_pool: ModulePool,
+
     node_pool: NodePool,
     node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
     node_execution_order: std.ArrayList(NodeHandle),
-
-    module_pool: ModulePool,
 
     connector_pool: ConnectorPool,
 

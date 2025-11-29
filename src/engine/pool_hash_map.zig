@@ -8,6 +8,7 @@ pub fn HashMapPool(comptime T: type) type {
         hash_map: std.AutoHashMap(usize, *T),
         current_id: usize = 0,
 
+        pub const column_fields = std.meta.fields(T);
         const Key = usize;
         pub const Handle = struct {
             id: Key,
@@ -23,6 +24,30 @@ pub fn HashMapPool(comptime T: type) type {
         }
 
         pub fn deinit(self: *Self) void {
+            switch (@typeInfo(T)) {
+                .optional => |optional_info| {
+                    if (@hasDecl(optional_info.child, "deinit")) {
+                        var it = self.iterator();
+                        while (it.next()) |handle| {
+                            // std.debug.print("Deinit optional handle {d}\n", .{handle.id});
+                            const value = self.get(handle) orelse continue;
+                            value.*.?.deinit();
+                        }
+                    }
+                },
+                .@"struct" => {
+                    if (@hasDecl(T, "deinit")) {
+                        var it = self.iterator();
+                        while (it.next()) |handle| {
+                            // std.debug.print("Deinit struct handle {d}\n", .{handle.id});
+                            const value = self.get(handle) orelse continue;
+                            value.deinit();
+                        }
+                    }
+                },
+                else => {},
+            }
+
             self.pool.deinit();
             self.hash_map.deinit();
         }
