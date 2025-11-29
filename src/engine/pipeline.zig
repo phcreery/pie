@@ -179,14 +179,22 @@ pub const Pipeline = struct {
         node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
         // for input sockets on nodes
         if (node.desc.sockets[node_socket_idx].?.type.direction() == .input) {
-            node.desc.sockets[node_socket_idx].?.private.associated_with_module = mod;
-            node.desc.sockets[node_socket_idx].?.private.associated_with_module_socket_idx = mod_socket_idx;
+            // node.desc.sockets[node_socket_idx].?.private.associated_with_module = mod;
+            // node.desc.sockets[node_socket_idx].?.private.associated_with_module_socket_idx = mod_socket_idx;
+            node.desc.sockets[node_socket_idx].?.private.associated_with_module = .{
+                .item = mod,
+                .socket_idx = mod_socket_idx,
+            };
         }
 
         // for output sockets on modules
         if (mod.desc.sockets[mod_socket_idx].?.type.direction() == .output) {
-            mod.desc.sockets[mod_socket_idx].?.private.associated_with_node = node_handle;
-            mod.desc.sockets[mod_socket_idx].?.private.associated_with_node_socket_idx = node_socket_idx;
+            // mod.desc.sockets[mod_socket_idx].?.private.associated_with_node = node_handle;
+            // mod.desc.sockets[mod_socket_idx].?.private.associated_with_node_socket_idx = node_socket_idx;
+            mod.desc.sockets[mod_socket_idx].?.private.associated_with_node = .{
+                .item = node_handle,
+                .socket_idx = node_socket_idx,
+            };
         }
     }
 
@@ -221,8 +229,12 @@ pub const Pipeline = struct {
 
         // dst_mod.desc.sockets[dst_socket_idx] = src_mod.desc.sockets[src_socket_idx];
         // dst_mod.desc.sockets[dst_socket_idx].?.format = src_mod.desc.sockets[src_socket_idx].?.format;
-        dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = src_mod_ptr;
-        dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module_socket_idx = src_socket_idx;
+        // dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = src_mod_ptr;
+        // dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module_socket_idx = src_socket_idx;
+        dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = .{
+            .item = src_mod_ptr,
+            .socket_idx = src_socket_idx,
+        };
     }
 
     pub fn run(self: *Pipeline) !void {
@@ -342,13 +354,14 @@ pub const Pipeline = struct {
             try module_graph.add(dst_mod);
             for (dst_mod.desc.sockets) |socket| {
                 if (socket) |sock| {
-                    if (sock.private.connected_to_module) |src_mod| {
+                    if (sock.private.connected_to_module) |src_connection| {
+                        const src_mod = src_connection.item;
                         try module_graph.add(src_mod);
                         // const src_mod = self.module_pool.getPtr(src_mod) catch unreachable;
 
                         slog.debug("Adding edge from module {s} to module {s}", .{ src_mod.desc.name, dst_mod.desc.name });
-                        const src_mod_sock_idx = sock.private.connected_to_module_socket_idx orelse unreachable;
-                        const src_mod_sock = src_mod.desc.sockets[src_mod_sock_idx] orelse unreachable;
+                        // const src_mod_sock_idx = sock.private.connected_to_module_socket_idx orelse unreachable;
+                        const src_mod_sock = src_mod.desc.sockets[src_connection.socket_idx] orelse unreachable;
                         var dst_mod_sock = dst_mod.getSocketPtr(sock.name) orelse return error.ModuleMissingInputSock;
 
                         // connect
@@ -388,9 +401,8 @@ pub const Pipeline = struct {
                     if (sock.type.direction() == .input) {
                         if (sock.private.connected_to_module) |connected_to_module| {
                             var socket_ptr = module.getSocketPtr(sock.name) orelse unreachable;
-                            slog.debug("Setting ROI for module {s} socket {s} from connected module {s}", .{ module.desc.name, sock.name, connected_to_module.desc.name });
-                            const connected_to_module_socket_idx = socket_ptr.private.connected_to_module_socket_idx orelse unreachable;
-                            const connected_to_socket = connected_to_module.desc.sockets[connected_to_module_socket_idx] orelse unreachable;
+                            slog.debug("Setting ROI for module {s} socket {s} from connected module {s}", .{ module.desc.name, sock.name, connected_to_module.item.desc.name });
+                            const connected_to_socket = connected_to_module.item.desc.sockets[connected_to_module.socket_idx] orelse unreachable;
                             socket_ptr.roi = connected_to_socket.roi;
                         }
                     }
@@ -480,56 +492,29 @@ pub const Pipeline = struct {
         }
     }
 
-    /// Builds a DAG graph for the node by connecting nodes based on matching connector handles
+    /// Builds a DAG graph for the node by connecting nodes based on connected_to_* and associated_with_* fields,
     /// then performs a topological sort to determine execution order
     fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
+        // NOTE: this is better then check over each possible connection like I was doing,
+        // but vkdt uses the connected_mi and associated_i fields to build the graph AND perform the DFS traversal
         std.debug.print("\n", .{});
         slog.debug("Building node execution order", .{});
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |dst_node_handle| {
             var dst_node = self.node_pool.getPtr(dst_node_handle) catch unreachable;
-            slog.debug("Processing node {s}", .{dst_node.desc.entry_point});
             try self.node_graph.add(dst_node_handle);
             for (dst_node.desc.sockets) |socket| {
                 if (socket) |sock| {
                     var dst_node_sock = dst_node.getSocketPtr(sock.name) orelse return error.ModuleMissingInputSock;
-                    slog.debug("Processing socket {s} of node {s}", .{ sock.name, dst_node.desc.entry_point });
-                    if (sock.private.connected_to_node) |src_node_handle| {
+                    if (sock.getConnectedNode()) |src_node_handle_connection| {
+                        const src_node_handle = src_node_handle_connection.item;
+                        // connect
                         try self.node_graph.add(src_node_handle);
                         const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
                         slog.debug("Adding edge from node {s} to node {s}", .{ src_node.desc.entry_point, dst_node.desc.entry_point });
-                        const src_node_sock_idx = sock.private.connected_to_node_socket_idx orelse unreachable;
-                        const src_node_sock = src_node.desc.sockets[src_node_sock_idx] orelse unreachable;
-
-                        // connect
-                        // TODO: check output connectors before configuring
-
+                        const src_node_sock = src_node.desc.sockets[src_node_handle_connection.socket_idx] orelse unreachable;
                         dst_node_sock.private.conn_handle = src_node_sock.private.conn_handle;
                         try self.node_graph.addEdge(src_node_handle, dst_node_handle, src_node_sock.private.conn_handle orelse unreachable);
-                    } else if (sock.private.associated_with_module) |assoc_mod| {
-                        // if the node is not direclty connected to another node,
-                        // check if it is linked to a module then check what that
-                        // module is connected to and then traverse to the node that
-                        // is linked to that socket and connect to that node
-                        slog.debug("Socket {s} of node {s} is associated with module {s}", .{ sock.name, dst_node.desc.entry_point, assoc_mod.desc.name });
-                        const assoc_mod_socket_idx = sock.private.associated_with_module_socket_idx orelse unreachable;
-                        const assoc_mod_socket = assoc_mod.desc.sockets[assoc_mod_socket_idx] orelse unreachable;
-                        if (assoc_mod_socket.private.connected_to_module) |connected_to_mod| {
-                            slog.debug("Associated module socket {s} is connected to module {s}", .{ assoc_mod_socket.name, connected_to_mod.desc.name });
-                            const connected_to_mod_socket_idx = assoc_mod_socket.private.connected_to_module_socket_idx orelse unreachable;
-                            const connected_to_mod_socket = connected_to_mod.desc.sockets[connected_to_mod_socket_idx] orelse unreachable;
-                            if (connected_to_mod_socket.private.associated_with_node) |src_node_handle| {
-                                try self.node_graph.add(src_node_handle);
-                                const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
-                                slog.debug(">>> Adding edge from node {s} to node {s}", .{ connected_to_mod.desc.name, dst_node.desc.entry_point });
-                                const src_node_sock_idx = connected_to_mod_socket.private.associated_with_node_socket_idx orelse unreachable;
-                                const src_node_sock = src_node.desc.sockets[src_node_sock_idx] orelse unreachable;
-
-                                // connect
-                                dst_node_sock.private.conn_handle = src_node_sock.private.conn_handle;
-                                try self.node_graph.addEdge(src_node_handle, dst_node_handle, src_node_sock.private.conn_handle orelse unreachable);
-                            }
-                        }
                     }
                 }
             }
