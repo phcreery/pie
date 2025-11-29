@@ -130,9 +130,10 @@ fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []
     var self: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
     const node = self.node_pool.getPtr(vert) catch unreachable;
     var enabled_srt = "[ ]";
-    if (node.mod.enabled) {
+    const node_mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
+    if (node_mod.enabled) {
         enabled_srt = "[x]";
     }
-    const res = std.fmt.bufPrint(buf, "{s} (id: {any}) {s} > {s}", .{ enabled_srt, vert.id, node.mod.desc.name, node.desc.entry_point }) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} (id: {any}) {s} > {s}", .{ enabled_srt, vert.id, node_mod.desc.name, node.desc.entry_point }) catch "<error>";
     return @constCast(res);
 }

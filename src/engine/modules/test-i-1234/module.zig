@@ -29,16 +29,18 @@ const roi: api.ROI = .{
     .h = 1,
 };
 
-pub fn modifyROIOut(pipe: *api.Pipeline, mod: *api.Module) !void {
-    _ = pipe;
+pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // mod.desc.output_socket.?.roi = roi;
-    const sock_idx = mod.getSocketIndex("output") orelse unreachable;
-    mod.desc.sockets[sock_idx].?.roi = roi;
+    // const sock_idx = mod.getSocketIndex("output") orelse unreachable;
+    // const sock_idx = api.getSocketIndex(pipe, mod, "output") orelse unreachable;
+    // mod.desc.sockets[sock_idx].?.roi = roi;
+    var socket = api.getModSocket(pipe, mod, "output") orelse unreachable;
+    socket.roi = roi;
 }
 
 pub fn readSource(
     pipe: *api.Pipeline,
-    mod: *api.Module,
+    mod: api.ModuleHandle,
     mapped: *anyopaque,
 ) !void {
     _ = pipe;
@@ -49,8 +51,9 @@ pub fn readSource(
     @memcpy(upload_buffer_ptr, &source);
 }
 
-pub fn createNodes(pipe: *api.Pipeline, mod: *api.Module) !void {
-    const same_as_mod_output_sock = mod.getSocket("output") orelse unreachable;
+pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+    // const same_as_mod_output_sock = mod.getSocket("output") orelse unreachable;
+    const same_as_mod_output_sock = api.getModSocket(pipe, mod, "output") orelse unreachable;
     const node_desc: api.NodeDesc = .{
         .type = .source,
         .shader_code = "",
@@ -58,7 +61,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: *api.Module) !void {
         .run_size = null,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
-            s[0] = same_as_mod_output_sock;
+            s[0] = same_as_mod_output_sock.*;
             break :init s;
         },
     };

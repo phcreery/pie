@@ -6,6 +6,8 @@ pub const pipeline = @import("../pipeline.zig");
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
 pub const Pipeline = pipeline.Pipeline;
+pub const ModuleHandle = pipeline.ModuleHandle;
+pub const NodeHandle = pipeline.NodeHandle;
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 
@@ -59,7 +61,7 @@ pub const SocketDesc = struct {
 
         // FOR GRAPH TRAVERSAL
         // for input sockets of modules
-        connected_to_module: ?SocketConnection(*Module) = null, // populated with pipe.connectModules()
+        connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModules()
 
         // for input sockets of nodes
         connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodes()
@@ -67,7 +69,7 @@ pub const SocketDesc = struct {
         // for output sockets of modules
         associated_with_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
         // for input sockets of nodes
-        associated_with_module: ?SocketConnection(*Module) = null, // populated with pipe.copyConnector()
+        associated_with_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
 
         // offset in the upload staging buffer
         // for source or sink offsets
@@ -118,27 +120,34 @@ pub const ModuleDesc = struct {
     // they can be null if the module has no input or output (sink or source only)
     sockets: Sockets,
 
-    init: ?*const fn (mod: *Module) anyerror!void = null,
-    deinit: ?*const fn (mod: *Module) anyerror!void = null,
-    createNodes: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
-    readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, mapped: *anyopaque) anyerror!void = null,
-    writeSink: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module, mapped: *anyopaque) anyerror!void = null,
-    modifyROIOut: ?*const fn (pipe: *pipeline.Pipeline, mod: *Module) anyerror!void = null,
+    init: ?*const fn (mod: ModuleHandle) anyerror!void = null,
+    deinit: ?*const fn (mod: ModuleHandle) anyerror!void = null,
+    createNodes: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
+    readSource: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
+    writeSink: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
+    modifyROIOut: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
 };
 
-pub fn addModule(pipe: *pipeline.Pipeline, module_desc: ModuleDesc) !*Module {
-    return pipe.addModule(module_desc);
-}
-
-pub fn addNode(pipe: *pipeline.Pipeline, mod: *Module, node_desc: NodeDesc) !pipeline.NodeHandle {
+/// PIPELINE HELPERS
+pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
     return pipe.addNode(mod, node_desc);
 }
 pub fn copyConnector(
-    pipe: *pipeline.Pipeline,
-    mod: *Module,
+    pipe: *Pipeline,
+    mod: ModuleHandle,
     mod_socket_name: []const u8,
-    node: pipeline.NodeHandle,
+    node: NodeHandle,
     node_socket_name: []const u8,
 ) !void {
     return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
+}
+
+pub fn getModSocket(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) ?*SocketDesc {
+    const mod = pipe.module_pool.getPtr(mod_handle) catch unreachable;
+    return mod.getSocketPtr(socket_name);
+}
+
+pub fn getSocketIndex(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) ?usize {
+    const mod = pipe.module_pool.getPtr(mod_handle) catch unreachable;
+    return mod.getSocketIndex(socket_name);
 }

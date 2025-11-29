@@ -43,8 +43,8 @@ const shader_code: []const u8 =
     \\    textureStore(output, coords, pixel);
     \\}
 ;
-pub fn createNodes(pipe: *api.Pipeline, mod: *api.Module) !void {
-    const mod_output_sock = mod.getSocket("output") orelse unreachable;
+pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+    const mod_output_sock = api.getModSocket(pipe, mod, "output") orelse unreachable;
     const node_desc: api.NodeDesc = .{
         .type = .compute,
         .shader_code = shader_code,

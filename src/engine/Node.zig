@@ -6,7 +6,7 @@ const pipeline = @import("pipeline.zig");
 const slog = std.log.scoped(.node);
 
 desc: api.NodeDesc,
-mod: *Module,
+mod: pipeline.ModuleHandle,
 shader: ?gpu.ShaderPipe = null,
 bindings: ?gpu.Bindings = null,
 
@@ -14,7 +14,7 @@ const Self = @This();
 
 pub fn init(
     pipe: *pipeline.Pipeline,
-    mod: *Module,
+    mod: pipeline.ModuleHandle,
     desc: api.NodeDesc,
 ) !Self {
     _ = pipe;
