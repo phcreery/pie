@@ -155,7 +155,6 @@ pub const Pipeline = struct {
 
     pub fn copyConnector(
         self: *Pipeline,
-        // mod: *Module,
         mod_handle: ModuleHandle,
         mod_socket_name: []const u8,
         node_handle: NodeHandle,
@@ -302,12 +301,10 @@ pub const Pipeline = struct {
             // check if it is linked to a module then check what that
             // module is connected to and then traverse to the node that
             // is linked to that socket and connect to that node
-            // slog.debug("Socket {s} is associated with module {s}", .{ self.name, assoc_mod.item.desc.name });
             const assoc_mod = pipe.module_pool.getPtr(assoc_mod_handle_connection.item) catch unreachable;
             const assoc_mod_socket = assoc_mod.desc.sockets[assoc_mod_handle_connection.socket_idx] orelse unreachable;
             if (assoc_mod_socket.private.connected_to_module) |connected_to_mod_handle_connection| {
                 const connected_to_mod = pipe.module_pool.getPtr(connected_to_mod_handle_connection.item) catch unreachable;
-                // slog.debug("Associated module socket {s} is connected to module {s}", .{ assoc_mod_socket.name, connected_to_mod.item.desc.name });
                 const connected_to_mod_socket = connected_to_mod.desc.sockets[connected_to_mod_handle_connection.socket_idx] orelse unreachable;
                 if (connected_to_mod_socket.private.associated_with_node) |src_node_handle_connection| {
                     return src_node_handle_connection;
@@ -364,7 +361,6 @@ pub const Pipeline = struct {
     fn runModulesModifyROIOut(self: *Pipeline) !void {
         // build execution order
         const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle, std.hash_map.AutoContext(ModuleHandle));
-        // const ModuleGraph = DirectedGraph(*Module, ConnectorHandle, std.hash_map.AutoContext(*Module));
         var module_graph = ModuleGraph.init(self.allocator);
         defer module_graph.deinit();
 
@@ -405,10 +401,6 @@ pub const Pipeline = struct {
             try module_execution_order.append(self.allocator, module_graph.lookup(value).?);
         }
         slog.debug("Topological sorted order of modules: {any}", .{module_execution_order.items});
-        // for (module_execution_order.items) |module_handle| {
-        //     const mod = self.module_pool.getPtr(module_handle) catch unreachable;
-        //     slog.debug("Module in execution order: {s}", .{mod.desc.name});
-        // }
 
         for (module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
@@ -515,8 +507,6 @@ pub const Pipeline = struct {
     fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
         // NOTE: this is better then check over each possible connection like I was doing,
         // but vkdt uses the connected_mi and associated_i fields to build the graph AND perform the DFS traversal
-        std.debug.print("\n", .{});
-        slog.debug("Building node execution order", .{});
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |dst_node_handle| {
             const dst_node = self.node_pool.getPtr(dst_node_handle) catch unreachable;
@@ -542,7 +532,6 @@ pub const Pipeline = struct {
             try self.node_execution_order.append(self.allocator, self.node_graph.lookup(value).?);
         }
         slog.debug("Topological sorted order of nodes: {any}", .{self.node_execution_order.items});
-        std.debug.print("\n", .{});
     }
 
     /// Allocates output textures and creates compute shaders for each node

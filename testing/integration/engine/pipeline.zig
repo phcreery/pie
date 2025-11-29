@@ -17,7 +17,6 @@ test "simple module test" {
     defer pipeline.deinit();
 
     const mod_test_i_1234 = try pipeline.addModule(pie.engine.modules.test_i_1234.module);
-    // _ = try pipeline.addModule(pie.engine.modules.test_double.module);
     const mod_test_multiply = try pipeline.addModule(pie.engine.modules.test_multiply.module);
     const mod_test_o_2468 = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
 
