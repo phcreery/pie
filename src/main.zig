@@ -11,10 +11,14 @@ pub const engine = @import("engine/engine.zig");
 pub const gpu = engine.gpu;
 pub const GPU = engine.gpu.GPU;
 pub const Texture = engine.gpu.Texture;
-// pub const Buffer = engine.gpu.Buffer;
+pub const Buffer = engine.gpu.Buffer;
 pub const pipeline = engine.pipeline;
 pub const Pipeline = engine.pipeline.Pipeline;
 pub const Module = engine.pipeline.Module;
+
+pub const std_options: std.Options = .{
+    .log_level = .warn,
+};
 
 pub fn main() !void {
     app.run();

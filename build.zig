@@ -125,34 +125,35 @@ pub fn build(b: *Build) !void {
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
 
-    // INTEGRATION TESTS
-    const integration_test_step = b.step("integration", "Run integration tests");
+    // INTEGRATION
     // first run the zig code as an executable
-    const mod_integration_test = b.createModule(.{
+    const mod_integration = b.createModule(.{
         .root_source_file = b.path("testing/integration/integration.zig"),
         .target = target,
         .optimize = optimize,
     });
-    mod_integration_test.addImport("pie", mod_main);
-    mod_integration_test.addImport("pretty", dep_pretty.module("pretty"));
-    // mod_integration_test.addImport("termsize", termsize.module("termsize"));
-    mod_integration_test.addImport("libraw", dep_libraw.module("libraw"));
-    mod_integration_test.addImport("zigimg", dep_zigimg.module("zigimg"));
-    mod_integration_test.addImport("ztracy", dep_ztracy.module("root"));
-    mod_integration_test.addImport("zpool", dep_zpool.module("root"));
-    const integration_tests_exe = b.addExecutable(.{
-        .name = "integration tests exe",
-        .root_module = mod_integration_test,
+    mod_integration.addImport("pie", mod_main);
+    mod_integration.addImport("pretty", dep_pretty.module("pretty"));
+    mod_integration.addImport("libraw", dep_libraw.module("libraw"));
+    mod_integration.addImport("zigimg", dep_zigimg.module("zigimg"));
+    mod_integration.addImport("ztracy", dep_ztracy.module("root"));
+    mod_integration.addImport("zpool", dep_zpool.module("root"));
+    const integration_exe = b.addExecutable(.{
+        .name = "integration exe",
+        .root_module = mod_integration,
     });
-    integration_tests_exe.linkLibrary(dep_ztracy.artifact("tracy"));
-    const integration_test_runner = b.addRunArtifact(integration_tests_exe);
-    test_step.dependOn(&integration_test_runner.step);
-    const integration_tests_tests = b.addTest(.{
-        .name = "integration tests tests",
-        .root_module = mod_integration_test,
+    integration_exe.linkLibrary(dep_ztracy.artifact("tracy"));
+    // const run_integration = b.addRunArtifact(integration_exe);
+    // integration_step.dependOn(&run_integration.step);
+
+    // INTEGRATION TESTS
+    const integration_test_step = b.step("integration", "Run integration tests");
+    const integration_tests = b.addTest(.{
+        .name = "integration tests",
+        .root_module = mod_integration,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
-    const run_integration_tests = b.addRunArtifact(integration_tests_tests);
+    const run_integration_tests = b.addRunArtifact(integration_tests);
     integration_test_step.dependOn(&run_integration_tests.step);
 
     // from here on different handling for native vs wasm builds

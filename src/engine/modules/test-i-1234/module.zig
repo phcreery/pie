@@ -30,10 +30,6 @@ const roi: api.ROI = .{
 };
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    // mod.desc.output_socket.?.roi = roi;
-    // const sock_idx = mod.getSocketIndex("output") orelse unreachable;
-    // const sock_idx = api.getSocketIndex(pipe, mod, "output") orelse unreachable;
-    // mod.desc.sockets[sock_idx].?.roi = roi;
     var socket = api.getModSocket(pipe, mod, "output") orelse unreachable;
     socket.roi = roi;
 }

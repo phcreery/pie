@@ -1,11 +1,11 @@
 const std = @import("std");
-// const pie = @import("pie");
 
 pub fn main() !void {
     // std.log.info("Starting Integration tests", .{});
 }
 
 test {
+    // std.testing.log_level = .debug;
     // GPU
     // _ = @import("engine/gpu_simple.zig");
     // _ = @import("engine/gpu_db.zig");

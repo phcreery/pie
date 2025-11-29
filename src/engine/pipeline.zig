@@ -249,6 +249,7 @@ pub const Pipeline = struct {
         // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
         self.runModulesPreCheck() catch unreachable;
         // self.runModulesModifyROIOut() catch unreachable;
+        self.runModulesCreateParamBufferHandles() catch unreachable;
         self.runModulesCreateOutputConnectorHandles() catch unreachable;
         self.runModulesModifyROIOut() catch unreachable;
 
@@ -359,6 +360,18 @@ pub const Pipeline = struct {
         }
     }
 
+    /// configure connectors only for module output connectors
+    fn runModulesCreateParamBufferHandles(self: *Pipeline) !void {
+        // create connector handles for output sockets
+        var mod_pool_handles = self.module_pool.liveHandles();
+        while (mod_pool_handles.next()) |module_handle| {
+            var module = self.module_pool.getPtr(module_handle) catch unreachable;
+            // create params buffer
+            const param_buffer_handle = try self.param_buffer_pool.add(null);
+            module.param_handle = param_buffer_handle;
+        }
+    }
+
     fn runModulesModifyROIOut(self: *Pipeline) !void {
         // build execution order
         const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle, std.hash_map.AutoContext(ModuleHandle));
@@ -369,7 +382,7 @@ pub const Pipeline = struct {
         while (mod_pool_handles.next()) |dst_mod_handle| {
             try module_graph.add(dst_mod_handle);
 
-            var dst_mod = self.module_pool.getPtr(dst_mod_handle) catch unreachable;
+            const dst_mod = self.module_pool.getPtr(dst_mod_handle) catch unreachable;
             for (dst_mod.desc.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.private.connected_to_module) |src_connection| {
@@ -385,12 +398,6 @@ pub const Pipeline = struct {
                     }
                 }
             }
-
-            // create params buffer
-            const param_buffer = try self.param_buffer_pool.add(null);
-            dst_mod.param_handle = param_buffer;
-            dst_mod.param_offset = 0;
-            dst_mod.param_size = 0;
         }
 
         var module_execution_order = std.ArrayList(ModuleHandle).initCapacity(self.allocator, 2) catch unreachable;
@@ -445,8 +452,8 @@ pub const Pipeline = struct {
             const buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
             // defer texture.deinit();
             // store texture in connector pool
-            const param = try self.param_buffer_pool.getPtr(param_handle);
-            param.* = buffer;
+            const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
+            param_buffer.* = buffer;
         }
     }
 
@@ -463,32 +470,13 @@ pub const Pipeline = struct {
                     slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
                     const mapped_param_buf_slice = try upload_allocator.alignedAlloc(f32, .@"16", 1);
 
-                    module.param_size = size_bytes;
                     const param_offset = @intFromPtr(mapped_param_buf_slice.ptr) - @intFromPtr(upload_fba.buffer.ptr);
-                    module.param_offset = param_offset;
                     module.mapped_param_buf_slice = mapped_param_buf_slice;
+                    module.param_offset = param_offset;
+                    module.param_size = size_bytes;
                 }
             }
         }
-    }
-
-    pub fn runModulesUploadParams(self: *Pipeline) !void {
-        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
-
-        upload_buffer.map();
-
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |module_handle| {
-            const module = self.module_pool.getPtr(module_handle) catch unreachable;
-            if (module.desc.type == .compute) {
-                if (module.enabled == false) continue;
-                const param_value = [_]f32{2.0}; // for testing
-                const mapped = module.mapped_param_buf_slice orelse unreachable;
-                @memcpy(mapped, &param_value);
-            }
-        }
-
-        upload_buffer.unmap();
     }
 
     /// create nodes for each module
@@ -684,6 +672,25 @@ pub const Pipeline = struct {
                 }
             }
         }
+    }
+
+    pub fn runModulesUploadParams(self: *Pipeline) !void {
+        var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
+
+        upload_buffer.map();
+
+        var mod_pool_handles = self.module_pool.liveHandles();
+        while (mod_pool_handles.next()) |module_handle| {
+            const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            if (module.desc.type == .compute) {
+                if (module.enabled == false) continue;
+                const param_value = [_]f32{2.0}; // for testing
+                const mapped = module.mapped_param_buf_slice orelse unreachable;
+                @memcpy(mapped, &param_value);
+            }
+        }
+
+        upload_buffer.unmap();
     }
 
     /// Calls module readSource() functions to upload source data to GPU

@@ -7,10 +7,13 @@ desc: api.ModuleDesc,
 enabled: bool,
 
 // for the buffer that will live on the gpu
+// the handle is needed for gpu pipeline bindings
 param_handle: ?pipeline.ParamBufferHandle = null,
 
-// the offset of this module's params in the staging buffer
+// the offset of this module's params in the staging/upload buffer
+// the slice is used for writing params to the staging buffer before uploading to gpu
 mapped_param_buf_slice: ?[]f32 = null,
+// the offset and size is needed for enqueueBufToBuf
 param_offset: ?usize = null,
 param_size: ?usize = null,
 

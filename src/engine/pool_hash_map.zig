@@ -1,5 +1,5 @@
 const std = @import("std");
-
+/// TODO: use arraylist or buffer for speed
 /// A memory pool that also maintains a hash map of its elements.
 /// This allows for fast lookups and removals by handle.
 pub fn HashMapPool(comptime T: type) type {
