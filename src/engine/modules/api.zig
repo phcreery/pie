@@ -56,11 +56,11 @@ pub const SocketDesc = struct {
         // connected_to_module: ?pipeline.ModuleHandle = null, // populated with pipe.connectModules()
         connected_to_module: ?*Module = null, // populated with pipe.connectModules()
         connected_to_module_socket_idx: ?usize = null,
+
         // for output sockets on modules
         associated_with_node: ?pipeline.NodeHandle = null, // populated with pipe.copyConnector()
         associated_with_node_socket_idx: ?usize = null,
-        // for input sockets that are the first in a module
-        // or output sockets that are the last in a module
+        // for input sockets on modules
         // associated_with_module: ?pipeline.ModuleHandle = null, // populated with pipe.copyConnector()
         associated_with_module: ?*Module = null, // populated with pipe.copyConnector()
         associated_with_module_socket_idx: ?usize = null,
