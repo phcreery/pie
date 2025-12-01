@@ -50,6 +50,11 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .shader_code = shader_code,
         .entry_point = "multiply",
         .run_size = mod_output_sock.roi,
+        .params = init: {
+            var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
+            p[0] = .{ .name = "value", .value = .{ .f32 = 2.0 } };
+            break :init p;
+        },
         .sockets = init: {
             var s: api.Sockets = @splat(null);
             s[0] = .{

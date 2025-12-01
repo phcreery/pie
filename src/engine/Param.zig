@@ -5,42 +5,78 @@ const gpu = @import("gpu.zig");
 const pipeline = @import("pipeline.zig");
 const slog = std.log.scoped(.param);
 
-pub const ParamType = enum {
-    integer,
-    float,
-    boolean,
+pub const ParamValueTag = enum {
+    i32,
+    f32,
+    // bool,
     // string,
+};
+pub const ParamValue = union(ParamValueTag) {
+    i32: i32,
+    f32: f32,
+    // bool: bool,
+    // string: []const u8,
 
-    pub fn size(self: ParamType) usize {
+    pub fn size(self: ParamValue) usize {
         return switch (self) {
-            .integer => @sizeOf(i64),
-            .float => @sizeOf(f64),
-            .boolean => @sizeOf(bool),
+            .i32 => @sizeOf(i32),
+            .f32 => @sizeOf(f32),
+            // .bool => @sizeOf(bool),
             // .string => @sizeOf([]const u8),
         };
     }
-};
-pub const ParamTypeValue = union(ParamType) {
-    integer: i64,
-    float: f64,
-    boolean: bool,
-    // string: []const u8,
+
+    /// Get the WebGPU alignment requirement of this ParamValue type
+    /// https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
+    pub fn alignment(self: ParamValue) usize {
+        return switch (self) {
+            .i32 => 4,
+            .f32 => 4,
+            // .bool => 1,
+            // .string => @alignOf([]const u8),
+        };
+    }
 };
 
-name: api.NodeDesc,
-param_type: ParamType,
-param_value: ParamTypeValue,
+name: []const u8,
+value: ParamValue,
 
 const Self = @This();
 
-pub fn init(
-    name: []const u8,
-    param_type: ParamType,
-    param_value: ParamTypeValue,
-) !Self {
+pub fn init(name: []const u8, value: ParamValue) Self {
     return Self{
         .name = name,
-        .param_type = param_type,
-        .param_value = param_value,
+        .value = value,
     };
+}
+
+test "Param module init" {
+    const Param = @This();
+    const param = Param.init("test_param", .{ .f32 = 3.14 });
+    // slog.info("Param initialized: {s}, value: {any}", .{ param.name, param.value });
+
+    switch (param.value) {
+        .f32 => |v| {
+            try std.testing.expect(v == 3.14);
+        },
+        else => {
+            try std.testing.expect(false);
+        },
+    }
+}
+
+test "Param module init 2" {
+    const Param = @This();
+    const param: Param = .{ .name = "test_param", .value = .{ .i32 = 314 } };
+    // slog.info("Param initialized: {s}, value: {any}", .{ param.name, param.value });
+    slog.info("Param value size: {any}", .{param.value.size()});
+
+    switch (param.value) {
+        .i32 => |v| {
+            try std.testing.expect(v == 314);
+        },
+        else => {
+            try std.testing.expect(false);
+        },
+    }
 }

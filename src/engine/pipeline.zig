@@ -448,12 +448,19 @@ pub const Pipeline = struct {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
             const param_handle = module.param_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
 
-            const size_bytes = @sizeOf(f32); // TODO: use module.desc.param_size
+            var size_bytes: usize = 0;
+            for (module.desc.params) |param| {
+                if (param) |p| {
+                    size_bytes += @sizeOf(p.value);
+                }
+            }
+
             const buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
             // defer texture.deinit();
             // store texture in connector pool
             const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
             param_buffer.* = buffer;
+            module.param_size = size_bytes;
         }
     }
 

@@ -19,9 +19,7 @@ param_size: ?usize = null,
 
 const Self = @This();
 
-pub fn init(
-    desc: api.ModuleDesc,
-) !Self {
+pub fn init(desc: api.ModuleDesc) !Self {
     return Self{
         .desc = desc,
         .enabled = true,

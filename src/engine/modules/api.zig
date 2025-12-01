@@ -5,11 +5,13 @@ pub const ROI = @import("../ROI.zig");
 pub const pipeline = @import("../pipeline.zig");
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
+pub const Param = @import("../Param.zig");
 pub const Pipeline = pipeline.Pipeline;
 pub const ModuleHandle = pipeline.ModuleHandle;
 pub const NodeHandle = pipeline.NodeHandle;
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
+pub const MAX_PARAMS_PER_MODULE = 16;
 
 pub const Direction = enum {
     input,
@@ -115,6 +117,7 @@ pub const ModuleType = enum {
 pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
+    params: ?[MAX_PARAMS_PER_MODULE]?Param = null,
 
     // The sockets describe the module's input and output interface
     // they can be null if the module has no input or output (sink or source only)

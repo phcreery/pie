@@ -107,32 +107,32 @@ test "simple compute test" {
     std.log.info("Upload params offset: {d}", .{param_offset});
 
     // PREP UPLOAD
-    const upload_buf = try upload_allocator.alignedAlloc(f16, .@"16", roi.w * roi.h * source_format.nchannels());
-    const upload_offset = @intFromPtr(upload_buf.ptr) - @intFromPtr(upload_fba.buffer.ptr);
-    std.log.info("Upload texture offset: {d}", .{upload_offset});
+    const src_buf = try upload_allocator.alignedAlloc(f16, .@"16", roi.w * roi.h * source_format.nchannels());
+    const src_offset = @intFromPtr(src_buf.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+    std.log.info("Upload texture offset: {d}", .{src_offset});
 
     // PREP DOWNLOAD
-    const download_offset = download_fba.end_index;
-    const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * destination_format.nchannels());
+    const dest_offset = download_fba.end_index;
+    const dest_buf = try download_allocator.alloc(f16, roi.w * roi.h * destination_format.nchannels());
 
     // UPLOAD
     upload.map();
-    @memcpy(upload_buf, &source);
+    @memcpy(src_buf, &source);
     @memcpy(param_buf, &param_value);
     upload.unmap();
 
     // RUN
     var encoder = try Encoder.start(&gpu);
     defer encoder.deinit();
-    encoder.enqueueBufToTex(&upload, upload_offset, &texture_in, roi) catch unreachable;
+    encoder.enqueueBufToTex(&upload, src_offset, &texture_in, roi) catch unreachable;
     encoder.enqueueBufToBuf(&upload, param_offset, &param_buffer, 0, @sizeOf(f32)) catch unreachable;
     encoder.enqueueShader(&multiply_shader_pipe, &multiply_shader_pipe_bindings, roi);
-    encoder.enqueueTexToBuf(&download, download_offset, &texture_out, roi) catch unreachable;
+    encoder.enqueueTexToBuf(&download, dest_offset, &texture_out, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
     download.map();
-    @memcpy(&destination, download_buf);
+    @memcpy(&destination, dest_buf);
     download.unmap();
 
     std.log.info("Download buffer contents: {any}", .{destination[0..4]});
