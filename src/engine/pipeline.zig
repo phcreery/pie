@@ -449,9 +449,12 @@ pub const Pipeline = struct {
             const param_handle = module.param_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
 
             var size_bytes: usize = 0;
-            for (module.desc.params) |param| {
-                if (param) |p| {
-                    size_bytes += @sizeOf(p.value);
+            if (module.desc.params) |params| {
+                for (params) |param| {
+                    if (param) |p| {
+                        // size_bytes += @sizeOf(p.value);
+                        size_bytes += p.value.size();
+                    }
                 }
             }
 
@@ -473,14 +476,17 @@ pub const Pipeline = struct {
                 var module = self.module_pool.getPtr(module_handle) catch unreachable;
                 if (module.desc.type == .compute) {
                     if (module.enabled == false) continue;
-                    const size_bytes = @sizeOf(f32); // TODO: use module.desc.param_size
+                    const size_bytes = module.param_size orelse return error.ModuleParamBufferSizeNotSet;
                     slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
-                    const mapped_param_buf_slice = try upload_allocator.alignedAlloc(f32, .@"16", 1);
+                    // const mapped_param_buf_slice = try upload_allocator.alignedAlloc(f32, .@"16", 1);
+                    const mapped_param_slice = try upload_allocator.alignedAlloc(u8, .@"16", size_bytes);
 
-                    const param_offset = @intFromPtr(mapped_param_buf_slice.ptr) - @intFromPtr(upload_fba.buffer.ptr);
-                    module.mapped_param_buf_slice = mapped_param_buf_slice;
+                    const param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+                    // module.mapped_param_buf_slice = mapped_param_buf_slice;
+                    const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_param_slice.ptr));
+                    module.mapped_param_slice_ptr = mapped_slice_ptr;
+
                     module.param_offset = param_offset;
-                    module.param_size = size_bytes;
                 }
             }
         }
@@ -691,9 +697,24 @@ pub const Pipeline = struct {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.desc.type == .compute) {
                 if (module.enabled == false) continue;
-                const param_value = [_]f32{2.0}; // for testing
-                const mapped = module.mapped_param_buf_slice orelse unreachable;
-                @memcpy(mapped, &param_value);
+
+                var list = std.ArrayList(u8).initCapacity(self.allocator, module.param_size orelse 0) catch unreachable;
+                defer list.deinit(self.allocator);
+
+                // const param_value = &[_]f32{2.0}; // for testing
+                // const param_value_bytes: []u8 = @ptrCast(@alignCast(@constCast(param_value)));
+
+                // serialize params into byte array
+                if (module.desc.params) |params| {
+                    for (params) |param| {
+                        if (param) |p| {
+                            const param_value_bytes: []u8 = @ptrCast(@alignCast(@constCast(&p.value)));
+                            try list.appendSlice(self.allocator, param_value_bytes);
+                        }
+                    }
+                }
+                const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.mapped_param_slice_ptr));
+                @memcpy(mapped_ptr, list.items);
             }
         }
 
