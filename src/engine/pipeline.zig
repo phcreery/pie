@@ -779,8 +779,9 @@ pub const Pipeline = struct {
                         const param_buffer = self.param_buffer_pool.getPtr(param_handle) catch unreachable;
                         var param_buf = param_buffer.* orelse return error.ModuleMissingParamBuffer;
                         const param_offset = mod.*.param_offset orelse return error.ModuleMissingParamBufferOffset;
+                        const param_size_bytes = mod.*.param_size orelse return error.ModuleParamBufferSizeNotSet;
                         slog.debug("Enqueueing param buffer at offset {d}", .{param_offset});
-                        encoder.enqueueBufToBuf(&upload_buffer, param_offset, &param_buf, 0, @sizeOf(f32)) catch unreachable;
+                        encoder.enqueueBufToBuf(&upload_buffer, param_offset, &param_buf, 0, param_size_bytes) catch unreachable;
                     } else {
                         slog.err("Compute node's module has no param buffer handle", .{});
                         return error.ModuleMissingParamBuffer;
