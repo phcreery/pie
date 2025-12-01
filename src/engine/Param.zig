@@ -5,6 +5,8 @@ const gpu = @import("gpu.zig");
 const pipeline = @import("pipeline.zig");
 const slog = std.log.scoped(.param);
 
+// see: https://github.com/greggman/webgpu-utils/blob/3f1a4561622ea53e160b91de0d2a196443722dfd/src/wgsl-types.ts#L22
+
 pub const ParamValueTag = enum {
     i32,
     f32,

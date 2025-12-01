@@ -73,8 +73,8 @@ pub const SocketDesc = struct {
         // for input sockets of nodes
         associated_with_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
 
-        // offset in the upload staging buffer
-        // for source or sink offsets
+        // offset in the upload or download staging buffer
+        // for source or sink sockets only
         staging_offset: ?usize = null,
         staging: ?*anyopaque = null,
     };

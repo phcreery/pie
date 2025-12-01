@@ -704,6 +704,10 @@ pub const Pipeline = struct {
                 // const param_value = &[_]f32{2.0}; // for testing
                 // const param_value_bytes: []u8 = @ptrCast(@alignCast(@constCast(param_value)));
 
+                // TODO: compute_byte_offset and length based on param types
+                // this needs to follow the webgpu layout rules
+                // currently we only support f32, u32, i32 types, so all alignment is 4 bytes
+
                 // serialize params into byte array
                 if (module.desc.params) |params| {
                     for (params) |param| {
