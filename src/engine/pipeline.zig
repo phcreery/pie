@@ -5,6 +5,7 @@ const api = @import("modules/api.zig");
 const util = @import("util.zig");
 const Module = @import("Module.zig");
 const Node = @import("Node.zig");
+const Param = @import("Param.zig");
 const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const GraphPrinter = @import("zig-graph/graph.zig").print.GraphPrinter;
@@ -228,6 +229,28 @@ pub const Pipeline = struct {
     pub fn getModuleParamPtr(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8) ?*api.Param {
         const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
         return mod.getParamPtr(param_name);
+    }
+
+    pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: Param.ParamValue) !void {
+        const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
+        const param = mod.getParamPtr(param_name) orelse unreachable;
+        if (std.meta.activeTag(param.value) != std.meta.activeTag(value)) {
+            return error.ParamTypeMismatch;
+        }
+        switch (value) {
+            .i32 => {
+                param.value = .{ .i32 = value.i32 };
+            },
+            .f32 => {
+                param.value = .{ .f32 = value.f32 };
+            },
+            // .bool => {
+            //     param.value = .bool(value.bool);
+            // },
+            // .string => {
+            //     param.value = .string(value.string);
+            // },
+        }
     }
 
     pub fn run(self: *Pipeline) !void {
@@ -711,11 +734,8 @@ pub const Pipeline = struct {
             if (module.desc.type == .compute) {
                 if (module.enabled == false) continue;
 
-                var list = std.ArrayList(u8).initCapacity(self.allocator, module.param_size orelse 0) catch unreachable;
+                var list = try std.ArrayList(u8).initCapacity(self.allocator, module.param_size orelse 0);
                 defer list.deinit(self.allocator);
-
-                // const param_value = &[_]f32{2.0}; // for testing
-                // const param_value_bytes: []u8 = @ptrCast(@alignCast(@constCast(param_value)));
 
                 // TODO: compute_byte_offset and length based on param types
                 // this needs to follow the webgpu layout rules
@@ -727,12 +747,13 @@ pub const Pipeline = struct {
                     for (params) |param| {
                         if (param) |*p| {
                             const param_value_bytes = p.value.asBytes();
+                            // TODO: ensure param_value_bytes.len == p.value.size()
                             try list.appendSlice(self.allocator, param_value_bytes);
                         }
                     }
                 }
 
-                std.debug.print("Uploading params for module {s}, total size {d} bytes\n", .{ module.desc.name, list.items.len });
+                slog.debug("Uploading params for module {s}, total size {d} bytes\n", .{ module.desc.name, list.items.len });
                 // print hex array
                 for (list.items) |byte| {
                     std.debug.print("{x:0>2} ", .{byte}); // {x:0>2} ensures two digits, zero-padded
