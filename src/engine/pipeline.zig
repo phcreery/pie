@@ -180,6 +180,27 @@ pub const Pipeline = struct {
         };
     }
 
+    pub fn connectNodes(
+        self: *Pipeline,
+        src_node: NodeHandle,
+        src_node_socket_name: []const u8,
+        dst_node: NodeHandle,
+        dst_node_socket_name: []const u8,
+    ) !void {
+        slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node, src_node_socket_name, dst_node, dst_node_socket_name });
+        var src_node_ptr = self.node_pool.getPtr(src_node) catch unreachable;
+        var dst_node_ptr = self.node_pool.getPtr(dst_node) catch unreachable;
+
+        slog.debug("Connecting node {s} socket {s} to node {s} socket {s}", .{ src_node_ptr.desc.entry_point, src_node_socket_name, dst_node_ptr.desc.entry_point, dst_node_socket_name });
+        const dst_socket_idx = dst_node_ptr.getSocketIndex(dst_node_socket_name) orelse unreachable;
+        const src_socket_idx = src_node_ptr.getSocketIndex(src_node_socket_name) orelse unreachable;
+
+        dst_node_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_node = .{
+            .item = src_node,
+            .socket_idx = src_socket_idx,
+        };
+    }
+
     pub fn copyConnector(
         self: *Pipeline,
         mod_handle: ModuleHandle,
@@ -263,7 +284,6 @@ pub const Pipeline = struct {
 
         // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
         self.runModulesPreCheck() catch unreachable;
-        // self.runModulesModifyROIOut() catch unreachable;
         self.runModulesCreateParamBufferHandles() catch unreachable;
         self.runModulesCreateOutputConnectorHandles() catch unreachable;
         self.runModulesModifyROIOut() catch unreachable;
@@ -273,7 +293,9 @@ pub const Pipeline = struct {
         self.runModulesCreateNodes() catch unreachable;
 
         // Then run nodes
+        self.runNodesCreateOutputConnectorHandles() catch unreachable;
         self.runNodesBuildExecutionOrder() catch unreachable;
+        // self.runNodesModifyROIOut() catch unreachable;
         // TODO: put these all in a single loop after building execution order
         self.runNodesInitConnectorTextures() catch unreachable;
 
@@ -374,6 +396,26 @@ pub const Pipeline = struct {
                         var this_sock = module.getSocketPtr(sock.name) orelse unreachable;
                         slog.debug("Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
                         this_sock.private.connector_handle = try self.connector_pool.add(null);
+                    }
+                }
+            }
+        }
+    }
+
+    /// configure connectors only for module output connectors
+    fn runNodesCreateOutputConnectorHandles(self: *Pipeline) !void {
+        // create connector handles for output sockets
+        var node_pool_handles = self.node_pool.liveHandles();
+        while (node_pool_handles.next()) |node_handle| {
+            var node = self.node_pool.getPtr(node_handle) catch unreachable;
+            for (node.desc.sockets) |socket| {
+                if (socket) |sock| {
+                    if (sock.type.direction() == .output) {
+                        var this_sock = node.getSocketPtr(sock.name) orelse unreachable;
+                        slog.debug("Creating connector handle for node {s} output socket {s}", .{ node.desc.entry_point, sock.name });
+                        if (this_sock.private.connector_handle == null) {
+                            this_sock.private.connector_handle = try self.connector_pool.add(null);
+                        }
                     }
                 }
             }
@@ -542,7 +584,8 @@ pub const Pipeline = struct {
                         const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
                         slog.debug("Adding edge from node {s} to node {s}", .{ src_node.desc.entry_point, dst_node.desc.entry_point });
                         const src_node_sock = src_node.desc.sockets[src_node_handle_connection.socket_idx] orelse unreachable;
-                        try self.node_graph.addEdge(src_node_handle, dst_node_handle, src_node_sock.private.connector_handle orelse unreachable);
+                        const connector_handle = src_node_sock.private.connector_handle orelse unreachable; // self.getNodeConnectorHandle(src_node_sock) ;
+                        try self.node_graph.addEdge(src_node_handle, dst_node_handle, connector_handle);
                     }
                 }
             }
