@@ -48,6 +48,26 @@ pub const ParamValue = union(ParamValueTag) {
             // .string => std.mem.asBytes(&self.string),
         };
     }
+
+    pub fn set(self: *ParamValue, value: ParamValue) !void {
+        if (std.meta.activeTag(self.*) != std.meta.activeTag(value)) {
+            return error.ParamTypeMismatch;
+        }
+        switch (value) {
+            .i32 => {
+                self.* = .{ .i32 = value.i32 };
+            },
+            .f32 => {
+                self.* = .{ .f32 = value.f32 };
+            },
+            // .bool => {
+            //     param.value = .bool(value.bool);
+            // },
+            // .string => {
+            //     param.value = .string(value.string);
+            // },
+        }
+    }
 };
 
 name: []const u8,

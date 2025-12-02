@@ -234,23 +234,7 @@ pub const Pipeline = struct {
     pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: Param.ParamValue) !void {
         const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
         const param = mod.getParamPtr(param_name) orelse unreachable;
-        if (std.meta.activeTag(param.value) != std.meta.activeTag(value)) {
-            return error.ParamTypeMismatch;
-        }
-        switch (value) {
-            .i32 => {
-                param.value = .{ .i32 = value.i32 };
-            },
-            .f32 => {
-                param.value = .{ .f32 = value.f32 };
-            },
-            // .bool => {
-            //     param.value = .bool(value.bool);
-            // },
-            // .string => {
-            //     param.value = .string(value.string);
-            // },
-        }
+        try param.value.set(value);
     }
 
     pub fn run(self: *Pipeline) !void {
