@@ -314,19 +314,15 @@ pub const Pipeline = struct {
     // Private Pipeline functions
     // ================================================
 
-    /// for printing purposes
+    /// pub for util printing purposes
     pub fn getNodeConnectorHandle(self: *Pipeline, socket: api.SocketDesc) ?ConnectorHandle {
         if (socket.private.connector_handle) |connector_handle| {
             return connector_handle;
         } else if (self.getConnectedNode(socket)) |connected_node_connection| {
             const connected_node = self.node_pool.getPtr(connected_node_connection.item) catch return null;
-            if (connected_node.desc.sockets[connected_node_connection.socket_idx]) |connected_node_socket| {
-                if (connected_node_socket.private.connector_handle) |connected_connector_handle| {
-                    return connected_connector_handle;
-                }
-                return null;
-            }
-            return null;
+            const connected_node_socket = connected_node.desc.sockets[connected_node_connection.socket_idx] orelse return null;
+            const connected_connector_handle = connected_node_socket.private.connector_handle orelse return null;
+            return connected_connector_handle;
         }
         return null;
     }
@@ -395,7 +391,9 @@ pub const Pipeline = struct {
                     if (sock.type.direction() == .output) {
                         var this_sock = module.getSocketPtr(sock.name) orelse unreachable;
                         slog.debug("Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
-                        this_sock.private.connector_handle = try self.connector_pool.add(null);
+                        if (this_sock.private.connector_handle == null) {
+                            this_sock.private.connector_handle = try self.connector_pool.add(null);
+                        }
                     }
                 }
             }
