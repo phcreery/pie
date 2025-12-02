@@ -20,6 +20,11 @@ test "simple module test" {
     const mod_test_multiply = try pipeline.addModule(pie.engine.modules.test_multiply.module);
     const mod_test_o_2468 = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
 
+    const multiplier = pipeline.getModuleParamPtr(mod_test_multiply, "multiplier") orelse unreachable;
+    multiplier.*.value.f32 = 2.0;
+    const adder = pipeline.getModuleParamPtr(mod_test_multiply, "adder") orelse unreachable;
+    adder.*.value.i32 = 0;
+
     pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;
     pipeline.connectModules(mod_test_multiply, "output", mod_test_o_2468, "input") catch unreachable;
 

@@ -48,7 +48,6 @@ pub fn readSource(
 }
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    // const same_as_mod_output_sock = mod.getSocket("output") orelse unreachable;
     const same_as_mod_output_sock = api.getModSocket(pipe, mod, "output") orelse unreachable;
     const node_desc: api.NodeDesc = .{
         .type = .source,

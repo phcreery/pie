@@ -38,6 +38,16 @@ pub const ParamValue = union(ParamValueTag) {
             // .string => @alignOf([]const u8),
         };
     }
+
+    pub fn asBytes(self: *const ParamValue) []u8 {
+        return switch (self.*) {
+            // .i32 => @ptrCast(@alignCast(@constCast(&self.i32))), // or std.mem.asBytes()
+            .i32 => std.mem.asBytes(@constCast(&self.i32)),
+            .f32 => @ptrCast(@alignCast(@constCast(&self.f32))),
+            // .bool => std.mem.asBytes(&self.bool),
+            // .string => std.mem.asBytes(&self.string),
+        };
+    }
 };
 
 name: []const u8,

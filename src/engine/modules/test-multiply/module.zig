@@ -5,7 +5,8 @@ pub var module: api.ModuleDesc = .{
     .type = .compute,
     .params = init: {
         var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
-        p[0] = .{ .name = "value", .value = .{ .f32 = 2.0 } };
+        p[0] = .{ .name = "multiplier", .value = .{ .f32 = 3.0 } }; // intentionally incorrectly set to 3.0
+        p[1] = .{ .name = "adder", .value = .{ .i32 = 3.0 } }; // intentionally incorrectly set to 3.0
         break :init p;
     },
     .sockets = init: {
@@ -35,7 +36,8 @@ pub var module: api.ModuleDesc = .{
 const shader_code: []const u8 =
     \\enable f16;
     \\struct Params {
-    \\    value: f32,
+    \\    multiplier: f32,
+    \\    adder:      i32,
     \\};
     \\@group(0) @binding(0) var                      input:  texture_2d<f32>;
     \\@group(0) @binding(1) var                      output: texture_storage_2d<rgba16float, write>;
@@ -44,7 +46,8 @@ const shader_code: []const u8 =
     \\fn multiply(@builtin(global_invocation_id) global_id: vec3<u32>) {
     \\    let coords = vec2<i32>(global_id.xy);
     \\    var pixel = vec4<f32>(textureLoad(input, coords, 0));
-    \\    pixel *= params.value;
+    \\    pixel *= params.multiplier;
+    \\    pixel += f32(params.adder);
     \\    textureStore(output, coords, pixel);
     \\}
 ;

@@ -135,13 +135,7 @@ pub const ModuleDesc = struct {
 pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
     return pipe.addNode(mod, node_desc);
 }
-pub fn copyConnector(
-    pipe: *Pipeline,
-    mod: ModuleHandle,
-    mod_socket_name: []const u8,
-    node: NodeHandle,
-    node_socket_name: []const u8,
-) !void {
+pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
     return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
 }
 

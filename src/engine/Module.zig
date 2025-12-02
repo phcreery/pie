@@ -1,6 +1,7 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
 const pipeline = @import("pipeline.zig");
+const Param = @import("Param.zig");
 const slog = std.log.scoped(.mod);
 
 desc: api.ModuleDesc,
@@ -29,17 +30,6 @@ pub fn init(desc: api.ModuleDesc) !Self {
 
 // HELPER FUNCTIONS
 
-pub fn getSocket(mod: *Self, name: []const u8) ?api.SocketDesc {
-    for (mod.desc.sockets) |sock| {
-        if (sock) |s| {
-            if (std.mem.eql(u8, s.name, name)) {
-                return s;
-            }
-        }
-    }
-    return null;
-}
-
 pub fn getSocketIndex(mod: *const Self, name: []const u8) ?usize {
     for (mod.desc.sockets, 0..) |sock, idx| {
         if (sock) |s| {
@@ -55,6 +45,29 @@ pub fn getSocketPtr(mod: *Self, name: []const u8) ?*api.SocketDesc {
     const idx = mod.getSocketIndex(name) orelse return null;
     if (mod.desc.sockets[idx]) |*sock| {
         return sock;
+    }
+    return null;
+}
+
+pub fn getParamIndex(mod: *const Self, name: []const u8) ?usize {
+    if (mod.desc.params) |params| {
+        for (params, 0..) |param, idx| {
+            if (param) |p| {
+                if (std.mem.eql(u8, p.name, name)) {
+                    return idx;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+pub fn getParamPtr(mod: *Self, name: []const u8) ?*Param {
+    const idx = mod.getParamIndex(name) orelse return null;
+    if (mod.desc.params) |*params| {
+        if (params[idx]) |*param| {
+            return param;
+        }
     }
     return null;
 }

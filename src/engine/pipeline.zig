@@ -142,6 +142,10 @@ pub const Pipeline = struct {
         }
     }
 
+    // ================================================
+    // Public Pipeline functions
+    // ================================================
+
     pub fn addModule(self: *Pipeline, module_desc: api.ModuleDesc) !ModuleHandle {
         slog.debug("Adding module to pipeline: {s}", .{module_desc.name});
         const module = try Module.init(module_desc);
@@ -152,6 +156,27 @@ pub const Pipeline = struct {
         slog.debug("Adding node to pipeline: {s}", .{node_desc.entry_point});
         const node = try Node.init(self, mod_handle, node_desc);
         return try self.node_pool.add(node);
+    }
+
+    pub fn connectModules(
+        self: *Pipeline,
+        src_mod: ModuleHandle,
+        src_mod_socket_name: []const u8,
+        dst_mod: ModuleHandle,
+        dst_mod_socket_name: []const u8,
+    ) !void {
+        slog.debug("Connecting module {any} socket {s} to module {any} socket {s}", .{ src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name });
+        var src_mod_ptr = self.module_pool.getPtr(src_mod) catch unreachable;
+        var dst_mod_ptr = self.module_pool.getPtr(dst_mod) catch unreachable;
+
+        slog.debug("Connecting module {s} socket {s} to module {s} socket {s}", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
+        const dst_socket_idx = dst_mod_ptr.getSocketIndex(dst_mod_socket_name) orelse unreachable;
+        const src_socket_idx = src_mod_ptr.getSocketIndex(src_mod_socket_name) orelse unreachable;
+
+        dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = .{
+            .item = src_mod,
+            .socket_idx = src_socket_idx,
+        };
     }
 
     pub fn copyConnector(
@@ -198,28 +223,11 @@ pub const Pipeline = struct {
     // ) !void {
     //     slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node_handle, src_node_socket_name, dst_node_handle, dst_node_socket_name });
     // TODO: check input connection to mach previous node output connection
-
     // }
 
-    pub fn connectModules(
-        self: *Pipeline,
-        src_mod: ModuleHandle,
-        src_mod_socket_name: []const u8,
-        dst_mod: ModuleHandle,
-        dst_mod_socket_name: []const u8,
-    ) !void {
-        slog.debug("Connecting module {any} socket {s} to module {any} socket {s}", .{ src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name });
-        var src_mod_ptr = self.module_pool.getPtr(src_mod) catch unreachable;
-        var dst_mod_ptr = self.module_pool.getPtr(dst_mod) catch unreachable;
-
-        slog.debug("Connecting module {s} socket {s} to module {s} socket {s}", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
-        const dst_socket_idx = dst_mod_ptr.getSocketIndex(dst_mod_socket_name) orelse unreachable;
-        const src_socket_idx = src_mod_ptr.getSocketIndex(src_mod_socket_name) orelse unreachable;
-
-        dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = .{
-            .item = src_mod,
-            .socket_idx = src_socket_idx,
-        };
+    pub fn getModuleParamPtr(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8) ?*api.Param {
+        const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
+        return mod.getParamPtr(param_name);
     }
 
     pub fn run(self: *Pipeline) !void {
@@ -265,7 +273,7 @@ pub const Pipeline = struct {
         self.runNodesAllocateUploadBufferForTextures() catch unreachable;
         self.runNodesCreateBindings() catch unreachable;
 
-        self.print();
+        self.printPipeToStdout();
 
         self.runModulesUploadParams() catch unreachable;
         self.runNodesUploadSource() catch unreachable;
@@ -273,12 +281,11 @@ pub const Pipeline = struct {
         self.runNodesDownloadSink() catch unreachable;
     }
 
-    pub fn print(self: *Pipeline) void {
-        // util.printModules(self);
-        util.printNodes(self);
-        util.printNodes2(self) catch unreachable;
-    }
+    // ================================================
+    // Private Pipeline functions
+    // ================================================
 
+    /// for printing purposes
     pub fn getNodeConnectorHandle(self: *Pipeline, socket: api.SocketDesc) ?ConnectorHandle {
         if (socket.private.connector_handle) |connector_handle| {
             return connector_handle;
@@ -295,7 +302,7 @@ pub const Pipeline = struct {
         return null;
     }
 
-    pub fn getConnectedNode(pipe: *Pipeline, socket: api.SocketDesc) ?api.SocketConnection(NodeHandle) {
+    fn getConnectedNode(pipe: *Pipeline, socket: api.SocketDesc) ?api.SocketConnection(NodeHandle) {
         if (socket.private.connected_to_node) |src_node_handle_connection| {
             return src_node_handle_connection;
         } else if (socket.private.associated_with_module) |assoc_mod_handle_connection| {
@@ -314,6 +321,12 @@ pub const Pipeline = struct {
             }
         }
         return null;
+    }
+
+    pub fn printPipeToStdout(self: *Pipeline) void {
+        // util.printModules(self);
+        util.printNodes(self);
+        util.printNodes2(self) catch unreachable;
     }
 
     fn runModulesPreCheck(self: *Pipeline) !void {
@@ -709,14 +722,23 @@ pub const Pipeline = struct {
                 // currently we only support f32, u32, i32 types, so all alignment is 4 bytes
 
                 // serialize params into byte array
+
                 if (module.desc.params) |params| {
                     for (params) |param| {
-                        if (param) |p| {
-                            const param_value_bytes: []u8 = @ptrCast(@alignCast(@constCast(&p.value)));
+                        if (param) |*p| {
+                            const param_value_bytes = p.value.asBytes();
                             try list.appendSlice(self.allocator, param_value_bytes);
                         }
                     }
                 }
+
+                std.debug.print("Uploading params for module {s}, total size {d} bytes\n", .{ module.desc.name, list.items.len });
+                // print hex array
+                for (list.items) |byte| {
+                    std.debug.print("{x:0>2} ", .{byte}); // {x:0>2} ensures two digits, zero-padded
+                }
+                std.debug.print("\n", .{});
+
                 const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.mapped_param_slice_ptr));
                 @memcpy(mapped_ptr, list.items);
             }
