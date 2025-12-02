@@ -15,7 +15,7 @@ const BindGroupEntry = pie.engine.gpu.BindGroupEntry;
 const MAX_BINDINGS = pie.engine.gpu.MAX_BINDINGS;
 const MAX_BIND_GROUPS = pie.engine.gpu.MAX_BIND_GROUPS;
 
-test "simple compute test" {
+test "simple compute test with parameters" {
     // INIT
     var gpu = try GPU.init();
     defer gpu.deinit();
