@@ -67,7 +67,8 @@ pub fn GraphPrinter(
             iter: anytype,
         ) !void {
             const MAX_LANES = 20;
-            const LANES = @min(MAX_LANES, @divFloor(self.term_width, 3) - 1); // 69 chars wide terminal, each lane takes 3 chars + 2 for borders
+            const LANES: usize = @min(MAX_LANES, @divFloor(self.term_width, 3) - 2); // 69 chars wide terminal, each lane takes 3 chars + 2 for borders
+            const EXTRA_WIDTH = @max(self.term_width - (LANES * 3 + 2) - 2, 0);
             var edge_lanes = Lanes(TEdge, MAX_LANES){};
             var vert_inputs: [MAX_LANES]?TEdge = @splat(null);
             var vert_outputs: [MAX_LANES]?TEdge = @splat(null);
@@ -96,6 +97,9 @@ pub fn GraphPrinter(
                     }
                     try writer.print("──", .{});
                 }
+                for (0..EXTRA_WIDTH) |_| {
+                    try writer.print("─", .{});
+                }
                 try writer.print("─┐\n", .{});
 
                 // print node name
@@ -107,6 +111,9 @@ pub fn GraphPrinter(
                 const num_spaces: isize = 3 * @as(isize, @intCast(LANES)) - @as(isize, @intCast(vert_name_slice.len)) + 1;
                 if (num_spaces > 0) {
                     for (0..@intCast(num_spaces)) |_| {
+                        try writer.print(" ", .{});
+                    }
+                    for (0..EXTRA_WIDTH) |_| {
                         try writer.print(" ", .{});
                     }
                 }
@@ -130,6 +137,9 @@ pub fn GraphPrinter(
                     }
                     try writer.print("──", .{});
                 }
+                for (0..EXTRA_WIDTH) |_| {
+                    try writer.print("─", .{});
+                }
                 try writer.print("─┘\n", .{});
 
                 // print | for active lanes
@@ -150,6 +160,9 @@ pub fn GraphPrinter(
                                 const num_dashes: isize = 3 * @as(isize, @intCast(LANES - i)) - @as(isize, @intCast(edge_name_slice.len)) - 1;
                                 if (num_dashes > 0) {
                                     for (0..@intCast(num_dashes)) |_| {
+                                        try writer.print("┄", .{});
+                                    }
+                                    for (0..EXTRA_WIDTH) |_| {
                                         try writer.print("┄", .{});
                                     }
                                 }

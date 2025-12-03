@@ -780,6 +780,7 @@ pub const Pipeline = struct {
 
                 slog.debug("Uploading params for module {s}, total size {d} bytes\n", .{ module.desc.name, list.items.len });
                 // print hex array
+                std.debug.print("Param bytes for module {s}: \n", .{module.desc.name});
                 for (list.items) |byte| {
                     std.debug.print("{x:0>2} ", .{byte}); // {x:0>2} ensures two digits, zero-padded
                 }
