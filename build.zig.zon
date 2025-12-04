@@ -117,6 +117,10 @@
             .url = "https://github.com/djmattyg007/zig-termsize/archive/refs/heads/update-for-zig-0.15.tar.gz",
             .hash = "termsize-0.1.0-0mwB1lwVAADBgWi3-mt2GMuiw3tqmscsoVDh7Rzpxud6",
         },
+        .zbench = .{
+            .url = "https://github.com/hendriknielaender/zbench/archive/3268a23da82231f1bd2c064de7fdf6fb7056126f.tar.gz",
+            .hash = "zbench-0.11.2-YTdc7zolAQDlBF9i0ywXIvDjafL3Kg27S-aFUq6dU5zy",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.

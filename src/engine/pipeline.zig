@@ -20,10 +20,11 @@ pub const NodeHandle = NodePool.Handle;
 const ConnectorPool = HashMapPool(?gpu.Texture);
 pub const ConnectorHandle = ConnectorPool.Handle;
 
+const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
+
 const ParamBufferPool = HashMapPool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
-// TODO: params pool
 // TODO: history pool
 
 /// The main pipeline structure that holds modules, nodes, and manages execution.
@@ -58,6 +59,9 @@ pub const Pipeline = struct {
 
     param_buffer_pool: ParamBufferPool,
 
+    reconfigured: bool = true,
+    dirty: bool = true,
+
     pub const MAX_MODULES = 100;
     pub const MAX_NODES = 200;
 
@@ -90,7 +94,6 @@ pub const Pipeline = struct {
         const node_pool = NodePool.init(allocator);
         errdefer node_pool.deinit();
 
-        const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
         var node_graph = NodeGraph.init(allocator);
         errdefer node_graph.deinit();
 
@@ -150,12 +153,14 @@ pub const Pipeline = struct {
     pub fn addModule(self: *Pipeline, module_desc: api.ModuleDesc) !ModuleHandle {
         slog.debug("Adding module to pipeline: {s}", .{module_desc.name});
         const module = try Module.init(module_desc);
+        self.reconfigured = true;
         return try self.module_pool.add(module);
     }
 
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
         slog.debug("Adding node to pipeline: {s}", .{node_desc.entry_point});
         const node = try Node.init(self, mod_handle, node_desc);
+        self.reconfigured = true;
         return try self.node_pool.add(node);
     }
 
@@ -178,6 +183,7 @@ pub const Pipeline = struct {
             .item = src_mod,
             .socket_idx = src_socket_idx,
         };
+        self.reconfigured = true;
     }
 
     pub fn connectNodes(
@@ -199,6 +205,7 @@ pub const Pipeline = struct {
             .item = src_node,
             .socket_idx = src_socket_idx,
         };
+        self.reconfigured = true;
     }
 
     pub fn copyConnector(
@@ -234,6 +241,7 @@ pub const Pipeline = struct {
                 .socket_idx = node_socket_idx,
             };
         }
+        self.reconfigured = true;
     }
 
     // pub fn connectNodes(
@@ -282,32 +290,42 @@ pub const Pipeline = struct {
 
         slog.debug("Running pipeline", .{});
 
-        // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
-        self.runModulesPreCheck() catch unreachable;
-        self.runModulesCreateParamBufferHandles() catch unreachable;
-        self.runModulesCreateOutputConnectorHandles() catch unreachable;
-        self.runModulesModifyROIOut() catch unreachable;
+        if (self.reconfigured) {
+            // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
+            self.runModulesPreCheck() catch unreachable;
+            self.runModulesCreateParamBufferHandles() catch unreachable;
+            self.runModulesCreateOutputConnectorHandles() catch unreachable;
+            self.runModulesModifyROIOut() catch unreachable;
 
-        self.runModulesInitParamBuffers() catch unreachable;
-        self.runModulesAllocateUploadBufferForParams() catch unreachable;
-        self.runModulesCreateNodes() catch unreachable;
+            self.runModulesInitParamBuffers() catch unreachable;
+            self.runModulesAllocateUploadBufferForParams() catch unreachable;
+            self.runModulesCreateNodes() catch unreachable;
 
-        // Then run nodes
-        self.runNodesCreateOutputConnectorHandles() catch unreachable;
-        self.runNodesBuildExecutionOrder() catch unreachable;
-        // self.runNodesModifyROIOut() catch unreachable;
-        // TODO: put these all in a single loop after building execution order
-        self.runNodesInitConnectorTextures() catch unreachable;
+            // Then run nodes
+            self.runNodesCreateOutputConnectorHandles() catch unreachable;
+            self.runNodesBuildExecutionOrder() catch unreachable;
 
-        self.runNodesAllocateUploadBufferForTextures() catch unreachable;
-        self.runNodesCreateBindings() catch unreachable;
+            self.printPipeToStdout();
+            self.runNodesInitConnectorTextures() catch unreachable;
+            self.runNodesAllocateUploadBufferForTextures() catch unreachable;
+            self.runNodesCreateBindings() catch unreachable;
+
+            // TODO: clean up modules
+            // TODO: clean up nodes
+
+            self.reconfigured = false;
+            self.dirty = true;
+        }
 
         self.printPipeToStdout();
 
-        self.runModulesUploadParams() catch unreachable;
-        self.runNodesUploadSource() catch unreachable;
-        self.runNodes() catch unreachable;
-        self.runNodesDownloadSink() catch unreachable;
+        if (self.dirty) {
+            self.runModulesUploadParams() catch unreachable;
+            self.runNodesUploadSource() catch unreachable;
+            self.runNodes() catch unreachable;
+            self.runNodesDownloadSink() catch unreachable;
+            self.dirty = false;
+        }
     }
 
     // ================================================
@@ -552,8 +570,14 @@ pub const Pipeline = struct {
         }
     }
 
+    /// remove all existing nodes and
     /// create nodes for each module
     fn runModulesCreateNodes(self: *Pipeline) !void {
+        var node_pool_handles = self.node_pool.liveHandles();
+        while (node_pool_handles.next()) |dst_node_handle| {
+            self.node_pool.remove(dst_node_handle);
+        }
+
         var mod_pool_handles = self.module_pool.liveHandles();
         while (mod_pool_handles.next()) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
@@ -569,6 +593,13 @@ pub const Pipeline = struct {
     fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
         // NOTE: this is better then check over each possible connection like I was doing,
         // but vkdt uses the connected_mi and associated_i fields to build the graph AND perform the DFS traversal
+        self.node_graph.deinit();
+        self.node_graph = NodeGraph.init(self.allocator);
+
+        // self.node_execution_order.clearAndFree(self.allocator);
+        self.node_execution_order.deinit(self.allocator);
+        self.node_execution_order = try std.ArrayList(NodeHandle).initCapacity(self.allocator, 2);
+
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |dst_node_handle| {
             const dst_node = self.node_pool.getPtr(dst_node_handle) catch unreachable;
@@ -692,7 +723,7 @@ pub const Pipeline = struct {
     fn runNodesAllocateUploadBufferForTextures(self: *Pipeline) !void {
         if (self.upload_fba) |*upload_fba| {
             // std.debug.print("Upload FBA: {any}\n", .{upload_fba});
-            std.debug.print("Upload FBA end index before allocation: {d}\n", .{upload_fba.end_index});
+            // std.debug.print("Upload FBA end index before allocation: {d}\n", .{upload_fba.end_index});
             var upload_allocator = upload_fba.allocator();
 
             // we currently only support one upload in the entire pipeline
@@ -730,6 +761,8 @@ pub const Pipeline = struct {
             const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
             var last_node_ptr = try self.node_pool.getPtr(last_node_handle);
 
+            std.debug.print("Last node: {d} {s}", .{ self.node_execution_order.items.len, last_node_ptr.desc.entry_point });
+
             if (last_node_ptr.desc.sockets[0]) |*sock| {
                 if (sock.type == .sink) {
                     const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
@@ -742,7 +775,7 @@ pub const Pipeline = struct {
                     sock.*.private.staging = mapped_slice_ptr;
                 } else {
                     slog.err("Sink node socket is not of type sink, skipping download", .{});
-                    return error.LastNodeInputSocketNotSource;
+                    return error.LastNodeInputSocketNotSink;
                 }
             }
         }

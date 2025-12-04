@@ -15,25 +15,26 @@ pub fn build(b: *Build) !void {
     //     .ofmt = .c,
     // });
     const optimize = b.standardOptimizeOption(.{});
+    const opts = .{ .target = target, .optimize = optimize };
 
     const opt_docking = b.option(bool, "docking", "Build with docking support") orelse false;
-    const ztracy_options = .{
-        .enable_ztracy = b.option(
-            bool,
-            "enable_ztracy",
-            "Enable Tracy profile markers",
-        ) orelse false,
-        .enable_fibers = b.option(
-            bool,
-            "enable_fibers",
-            "Enable Tracy fiber support",
-        ) orelse false,
-        .on_demand = b.option(
-            bool,
-            "on_demand",
-            "Build tracy with TRACY_ON_DEMAND",
-        ) orelse false,
-    };
+    // const ztracy_options = .{
+    //     .enable_ztracy = b.option(
+    //         bool,
+    //         "enable_ztracy",
+    //         "Enable Tracy profile markers",
+    //     ) orelse false,
+    //     .enable_fibers = b.option(
+    //         bool,
+    //         "enable_fibers",
+    //         "Enable Tracy fiber support",
+    //     ) orelse false,
+    //     .on_demand = b.option(
+    //         bool,
+    //         "on_demand",
+    //         "Build tracy with TRACY_ON_DEMAND",
+    //     ) orelse false,
+    // };
 
     // Get the matching Zig module name, C header search path and C library for
     // vanilla imgui vs the imgui docking branch.
@@ -46,38 +47,21 @@ pub fn build(b: *Build) !void {
         .optimize = optimize,
         .with_sokol_imgui = true,
     });
-    const dep_cimgui = b.dependency("cimgui", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const dep_pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
-    const dep_zdt = b.dependency("zdt", .{ .target = target, .optimize = optimize });
-    const dep_libraw = b.dependency("libraw", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const dep_wgpu_native = b.dependency("wgpu_native_zig", .{ .target = target, .optimize = optimize });
-    const dep_zigimg = b.dependency("zigimg", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const dep_ztracy = b.dependency("ztracy", .{
-        .enable_ztracy = ztracy_options.enable_ztracy,
-        .enable_fibers = ztracy_options.enable_fibers,
-        .on_demand = ztracy_options.on_demand,
-    });
-    const dep_zpool = b.dependency("zpool", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const dep_sizeify = b.dependency("sizeify", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const termsize = b.dependency("termsize", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    const dep_cimgui = b.dependency("cimgui", opts);
+    const dep_pretty = b.dependency("pretty", opts);
+    const dep_zdt = b.dependency("zdt", opts);
+    const dep_libraw = b.dependency("libraw", opts);
+    const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
+    const dep_zigimg = b.dependency("zigimg", opts);
+    // const dep_ztracy = b.dependency("ztracy", .{
+    //     .enable_ztracy = ztracy_options.enable_ztracy,
+    //     .enable_fibers = ztracy_options.enable_fibers,
+    //     .on_demand = ztracy_options.on_demand,
+    // });
+    // const dep_zpool = b.dependency("zpool", opts);
+    const dep_sizeify = b.dependency("sizeify", opts);
+    const termsize = b.dependency("termsize", opts);
+    const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -110,7 +94,7 @@ pub fn build(b: *Build) !void {
     mod_main.addImport("wgpu-c", dep_wgpu_native.module("wgpu-c"));
     mod_main.addImport("zigimg", dep_zigimg.module("zigimg"));
     // mod_main.addImport("ztracy", dep_ztracy.module("root"));
-    mod_main.addImport("zpool", dep_zpool.module("root"));
+    // mod_main.addImport("zpool", dep_zpool.module("root"));
     mod_main.addImport("sizeify", dep_sizeify.module("sizeify"));
     mod_main.addImport("termsize", termsize.module("termsize"));
 
@@ -136,13 +120,15 @@ pub fn build(b: *Build) !void {
     mod_integration.addImport("pretty", dep_pretty.module("pretty"));
     mod_integration.addImport("libraw", dep_libraw.module("libraw"));
     mod_integration.addImport("zigimg", dep_zigimg.module("zigimg"));
-    mod_integration.addImport("ztracy", dep_ztracy.module("root"));
-    mod_integration.addImport("zpool", dep_zpool.module("root"));
-    const integration_exe = b.addExecutable(.{
-        .name = "integration exe",
-        .root_module = mod_integration,
-    });
-    integration_exe.linkLibrary(dep_ztracy.artifact("tracy"));
+    // mod_integration.addImport("ztracy", dep_ztracy.module("root"));
+    // mod_integration.addImport("zpool", dep_zpool.module("root"));
+    mod_integration.addImport("zbench", dep_zbench.module("zbench"));
+
+    // const integration_exe = b.addExecutable(.{
+    //     .name = "integration exe",
+    //     .root_module = mod_integration,
+    // });
+    // integration_exe.linkLibrary(dep_ztracy.artifact("tracy"));
     // const run_integration = b.addRunArtifact(integration_exe);
     // integration_step.dependOn(&run_integration.step);
 
