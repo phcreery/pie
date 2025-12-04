@@ -305,7 +305,6 @@ pub const Pipeline = struct {
             self.runNodesCreateOutputConnectorHandles() catch unreachable;
             self.runNodesBuildExecutionOrder() catch unreachable;
 
-            self.printPipeToStdout();
             self.runNodesInitConnectorTextures() catch unreachable;
             self.runNodesAllocateUploadBufferForTextures() catch unreachable;
             self.runNodesCreateBindings() catch unreachable;
@@ -317,7 +316,7 @@ pub const Pipeline = struct {
             self.dirty = true;
         }
 
-        self.printPipeToStdout();
+        // self.printPipeToStdout();
 
         if (self.dirty) {
             self.runModulesUploadParams() catch unreachable;
@@ -761,8 +760,6 @@ pub const Pipeline = struct {
             const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
             var last_node_ptr = try self.node_pool.getPtr(last_node_handle);
 
-            std.debug.print("Last node: {d} {s}", .{ self.node_execution_order.items.len, last_node_ptr.desc.entry_point });
-
             if (last_node_ptr.desc.sockets[0]) |*sock| {
                 if (sock.type == .sink) {
                     const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
@@ -813,11 +810,14 @@ pub const Pipeline = struct {
 
                 slog.debug("Uploading params for module {s}, total size {d} bytes\n", .{ module.desc.name, list.items.len });
                 // print hex array
-                std.debug.print("Param bytes for module {s}: \n", .{module.desc.name});
+                slog.debug("Param bytes for module {s}: \n", .{module.desc.name});
+                var buf: [100]u8 = undefined;
+                var w: std.io.Writer = .fixed(&buf);
                 for (list.items) |byte| {
-                    std.debug.print("{x:0>2} ", .{byte}); // {x:0>2} ensures two digits, zero-padded
+                    try w.print("{x:0>2} ", .{byte});
                 }
-                std.debug.print("\n", .{});
+                const printed = w.buffered();
+                slog.debug("{s}\n", .{printed});
 
                 const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.mapped_param_slice_ptr));
                 @memcpy(mapped_ptr, list.items);
