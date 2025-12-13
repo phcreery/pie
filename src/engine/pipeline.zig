@@ -59,7 +59,7 @@ pub const Pipeline = struct {
 
     param_buffer_pool: ParamBufferPool,
 
-    reconfigured: bool = true,
+    rerouted: bool = true,
     dirty: bool = true,
 
     pub const MAX_MODULES = 100;
@@ -153,14 +153,14 @@ pub const Pipeline = struct {
     pub fn addModule(self: *Pipeline, module_desc: api.ModuleDesc) !ModuleHandle {
         slog.debug("Adding module to pipeline: {s}", .{module_desc.name});
         const module = try Module.init(module_desc);
-        self.reconfigured = true;
+        self.rerouted = true;
         return try self.module_pool.add(module);
     }
 
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
         slog.debug("Adding node to pipeline: {s}", .{node_desc.entry_point});
         const node = try Node.init(self, mod_handle, node_desc);
-        self.reconfigured = true;
+        self.rerouted = true;
         return try self.node_pool.add(node);
     }
 
@@ -183,7 +183,7 @@ pub const Pipeline = struct {
             .item = src_mod,
             .socket_idx = src_socket_idx,
         };
-        self.reconfigured = true;
+        self.rerouted = true;
     }
 
     pub fn connectNodes(
@@ -205,7 +205,7 @@ pub const Pipeline = struct {
             .item = src_node,
             .socket_idx = src_socket_idx,
         };
-        self.reconfigured = true;
+        self.rerouted = true;
     }
 
     pub fn copyConnector(
@@ -241,7 +241,7 @@ pub const Pipeline = struct {
                 .socket_idx = node_socket_idx,
             };
         }
-        self.reconfigured = true;
+        self.rerouted = true;
     }
 
     // pub fn connectNodes(
@@ -290,10 +290,11 @@ pub const Pipeline = struct {
 
         slog.debug("Running pipeline", .{});
 
-        if (self.reconfigured) {
+        if (self.rerouted) {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
             self.runModulesPreCheck() catch unreachable;
             self.runModulesCreateParamBufferHandles() catch unreachable;
+
             self.runModulesCreateOutputConnectorHandles() catch unreachable;
             self.runModulesModifyROIOut() catch unreachable;
 
@@ -309,10 +310,10 @@ pub const Pipeline = struct {
             self.runNodesAllocateUploadBufferForTextures() catch unreachable;
             self.runNodesCreateBindings() catch unreachable;
 
-            // TODO: clean up modules
-            // TODO: clean up nodes
+            // TODO: clean up unused modules
+            // TODO: clean up unused nodes
 
-            self.reconfigured = false;
+            self.rerouted = false;
             self.dirty = true;
         }
 
