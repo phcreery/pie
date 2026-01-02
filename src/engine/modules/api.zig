@@ -63,10 +63,10 @@ pub const SocketDesc = struct {
 
         // FOR GRAPH TRAVERSAL
         // for input sockets of modules
-        connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModules()
+        connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModulesName()
 
         // for input sockets of nodes
-        connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodes()
+        connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
 
         // for output sockets of modules
         associated_with_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
@@ -135,6 +135,7 @@ pub const ModuleDesc = struct {
 pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
     return pipe.addNode(mod, node_desc);
 }
+
 pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
     return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
 }

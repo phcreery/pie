@@ -82,6 +82,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const node_sub = try pipe.addNode(mod, node_sub_desc);
 
     try pipe.copyConnector(mod, "input", node_add, "input");
-    try pipe.connectNodes(node_add, "output", node_sub, "input");
+    try pipe.connectNodesName(node_add, "output", node_sub, "input");
     try pipe.copyConnector(mod, "output", node_sub, "output");
 }

@@ -629,6 +629,7 @@ pub const ShaderPipe = struct {
         bind_group_layout_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupLayoutEntry,
     ) !Self {
         slog.debug("Initializing ShaderPipe for {s}", .{entry_point});
+        std.debug.print("Compiling shader for {s}\n", .{entry_point});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
         // of this like a C-style header declaration, ensuring both the pipeline and bind group agree

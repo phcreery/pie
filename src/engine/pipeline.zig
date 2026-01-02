@@ -164,7 +164,7 @@ pub const Pipeline = struct {
         return try self.node_pool.add(node);
     }
 
-    pub fn connectModules(
+    pub fn connectModulesName(
         self: *Pipeline,
         src_mod: ModuleHandle,
         src_mod_socket_name: []const u8,
@@ -186,7 +186,7 @@ pub const Pipeline = struct {
         self.rerouted = true;
     }
 
-    pub fn connectNodes(
+    pub fn connectNodesName(
         self: *Pipeline,
         src_node: NodeHandle,
         src_node_socket_name: []const u8,
@@ -244,7 +244,7 @@ pub const Pipeline = struct {
         self.rerouted = true;
     }
 
-    // pub fn connectNodes(
+    // pub fn connectNodesName(
     //     self: *Pipeline,
     //     src_node_handle: NodeHandle,
     //     src_node_socket_name: []const u8,
@@ -663,19 +663,9 @@ pub const Pipeline = struct {
             if (node.desc.type == .compute) {
                 // CREATE DESCRIPTIONS
                 // all sockets are on group 0
-                var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 for (node.desc.sockets, 0..) |socket, binding_number| {
                     if (socket) |sock| {
-                        // prepare shader pipe connections
-                        layout_group_0_binding[binding_number] = gpu.BindGroupLayoutEntry{
-                            .texture = .{
-                                .access = sock.type.toShaderPipeBindGroupLayoutEntryAccess(),
-                                .format = sock.format,
-                            },
-                        };
-                        slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
-
                         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
                         const conn = try self.connector_pool.getPtr(connector_handle);
                         const texture = conn.* orelse return error.NodeSocketMissingConnectorTexture;
@@ -686,33 +676,20 @@ pub const Pipeline = struct {
                 }
 
                 // params are on group 1
-                var layout_group_1_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 var bind_group_1_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 const mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
                 if (mod.*.param_handle) |param_handle| {
                     const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
                     const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
-                    layout_group_1_binding[0] = .{ .buffer = .{} };
                     bind_group_1_binds[0] = .{ .buffer = param_buf };
                 }
 
-                // CREATE SHADER PIPE AND BINDINGS
-                slog.debug("Creating shader for node with entry point: {s}", .{node.desc.entry_point});
-                var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
-                layout_group[0] = layout_group_0_binding;
-                layout_group[1] = layout_group_1_binding;
-                const shader = try gpu.ShaderPipe.init(
-                    gpu_inst,
-                    node.desc.shader_code,
-                    node.desc.entry_point,
-                    layout_group,
-                );
-                node.shader = shader;
-
+                // CREATE BINDINGS
                 slog.debug("Creating bindings for node with entry point: {s}", .{node.desc.entry_point});
                 var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 bind_group[0] = bind_group_0_binds;
                 bind_group[1] = bind_group_1_binds;
+                const shader = node.shader orelse return error.NodeShaderNotCreated;
                 const bindings = try gpu.Bindings.init(gpu_inst, &shader, bind_group);
                 // defer bindings.deinit();
                 node.bindings = bindings;
