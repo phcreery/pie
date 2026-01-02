@@ -244,17 +244,6 @@ pub const Pipeline = struct {
         self.rerouted = true;
     }
 
-    // pub fn connectNodesName(
-    //     self: *Pipeline,
-    //     src_node_handle: NodeHandle,
-    //     src_node_socket_name: []const u8,
-    //     dst_node_handle: NodeHandle,
-    //     dst_node_socket_name: []const u8,
-    // ) !void {
-    //     slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node_handle, src_node_socket_name, dst_node_handle, dst_node_socket_name });
-    // TODO: check input connection to mach previous node output connection
-    // }
-
     pub fn getModuleParamPtr(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8) ?*api.Param {
         const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
         return mod.getParamPtr(param_name);

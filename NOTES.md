@@ -1,0 +1,34 @@
+
+## Zig notes
+
+- Image Loaders
+
+  - LibRaw
+  - rawloader
+  - rawspeed
+
+- Examples
+
+  - https://github.com/riverwm/river/
+    - files are structs
+    - one global allocator, similar to C
+    - interfaces with external c dependencies
+  - https://github.com/tigerbeetle/tigerbeetle/
+    - Construct larger structs in-place by passing an out pointer during initialization.
+    - https://github.com/tigerbeetle/tigerbeetle/blob/5b485508373f5eed99cb52a75ec692ec569a6990/docs/TIGER_STYLE.md#cache-invalidation
+    - large build.zig
+  - https://github.com/foxnne/pixi
+  - https://github.com/ghostty-org/ghostty
+  - https://github.com/karlseguin/zul
+
+- Documentation
+  - style standards: https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md
+  - Interfaces in zig
+    - ["raw doggin' interfaces"](https://www.youtube.com/watch?v=ZOllg8C3ows): https://www.openmymind.net/Zig-Interfaces/
+    - https://github.com/permutationlock/ztrait
+    - https://github.com/permutationlock/zimpl
+    - https://github.com/nilslice/zig-interface
+    - https://github.com/yglcode/zig_interfaces
+    - https://williamw520.github.io/2025/07/13/zig-interface-revisited.html
+  - https://ziggit.dev/t/convention-for-init-deinit/4865/2
+  - [Zig cheatsheet](https://gist.github.com/jdmichaud/b75ee234bfa87283a6337e06a3b70767)
