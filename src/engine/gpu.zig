@@ -9,10 +9,8 @@ const slog = std.log.scoped(.gpu);
 const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
 const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
-// pub const MAX_BIND_GROUP_LAYOUT_ENTRIES: usize = 8; // arbitrary max limit set here for now
-// pub const MAX_BIND_GROUP_ENTRIES: usize = 8;
-pub const MAX_BIND_GROUPS: usize = 4; // the min of MAX_BIND_GROUP_LAYOUT_ENTRIES and MAX_BIND_GROUP_ENTRIES
-pub const MAX_BINDINGS: usize = 8; // the min of MAX_BIND_GROUP_LAYOUT_ENTRIES and MAX_BIND_GROUP_ENTRIES
+pub const MAX_BIND_GROUPS: usize = 4;
+pub const MAX_BINDINGS: usize = 8;
 
 // Workgroup size must match the compute shader
 pub const WORKGROUP_SIZE_X: u32 = 8;
@@ -629,7 +627,7 @@ pub const ShaderPipe = struct {
         bind_group_layout_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupLayoutEntry,
     ) !Self {
         slog.debug("Initializing ShaderPipe for {s}", .{name});
-        std.debug.print("Compiling shader for {s}\n", .{name});
+        // std.debug.print("Compiling shader for {s}\n", .{name});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
         // of this like a C-style header declaration, ensuring both the pipeline and bind group agree

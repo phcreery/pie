@@ -662,13 +662,25 @@ pub const Pipeline = struct {
 
             if (node.desc.type == .compute) {
                 // CREATE DESCRIPTIONS
-                // all sockets are on group 0
+
+                // params are on group 0
                 var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
+                const mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
+                if (mod.*.param_handle) |param_handle| {
+                    const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
+                    const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
+                    layout_group_0_binding[0] = .{ .buffer = .{} };
+                    bind_group_0_binds[0] = .{ .buffer = param_buf };
+                }
+
+                // all sockets are on group 1
+                var layout_group_1_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+                var bind_group_1_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 for (node.desc.sockets, 0..) |socket, binding_number| {
                     if (socket) |sock| {
                         // prepare shader pipe connections
-                        layout_group_0_binding[binding_number] = gpu.BindGroupLayoutEntry{
+                        layout_group_1_binding[binding_number] = gpu.BindGroupLayoutEntry{
                             .texture = .{
                                 .access = sock.type.toShaderPipeBindGroupLayoutEntryAccess(),
                                 .format = sock.format,
@@ -679,24 +691,15 @@ pub const Pipeline = struct {
                         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
                         const conn = try self.connector_pool.getPtr(connector_handle);
                         const texture = conn.* orelse return error.NodeSocketMissingConnectorTexture;
-                        bind_group_0_binds[binding_number] = gpu.BindGroupEntry{
+                        bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
                             .texture = texture,
                         };
                     }
                 }
 
-                // params are on group 1
-                var layout_group_1_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
-                var bind_group_1_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
-                const mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
-                if (mod.*.param_handle) |param_handle| {
-                    const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
-                    const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
-                    layout_group_1_binding[0] = .{ .buffer = .{} };
-                    bind_group_1_binds[0] = .{ .buffer = param_buf };
-                }
-
                 // CREATE SHADER PIPE AND BINDINGS
+                // ideally this would be done once on startup, but vkdt runs dt_graph_create_shader_module()
+                // with the spirv code for each node every frame in dt_graph_run_nodes_allocate()
                 slog.debug("Creating shader for node with entry point: {s}", .{node.desc.name});
                 var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 layout_group[0] = layout_group_0_binding;
