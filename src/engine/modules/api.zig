@@ -93,7 +93,7 @@ pub const NodeType = enum {
 pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
     shader_code: []const u8,
-    entry_point: []const u8,
+    name: []const u8,
     run_size: ?ROI = null,
     sockets: Sockets,
 };

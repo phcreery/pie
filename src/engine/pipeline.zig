@@ -158,7 +158,7 @@ pub const Pipeline = struct {
     }
 
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
-        slog.debug("Adding node to pipeline: {s}", .{node_desc.entry_point});
+        slog.debug("Adding node to pipeline: {s}", .{node_desc.name});
         const node = try Node.init(self, mod_handle, node_desc);
         self.rerouted = true;
         return try self.node_pool.add(node);
@@ -197,7 +197,7 @@ pub const Pipeline = struct {
         var src_node_ptr = self.node_pool.getPtr(src_node) catch unreachable;
         var dst_node_ptr = self.node_pool.getPtr(dst_node) catch unreachable;
 
-        slog.debug("Connecting node {s} socket {s} to node {s} socket {s}", .{ src_node_ptr.desc.entry_point, src_node_socket_name, dst_node_ptr.desc.entry_point, dst_node_socket_name });
+        slog.debug("Connecting node {s} socket {s} to node {s} socket {s}", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
         const dst_socket_idx = dst_node_ptr.getSocketIndex(dst_node_socket_name) orelse unreachable;
         const src_socket_idx = src_node_ptr.getSocketIndex(src_node_socket_name) orelse unreachable;
 
@@ -428,7 +428,7 @@ pub const Pipeline = struct {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
                         var this_sock = node.getSocketPtr(sock.name) orelse unreachable;
-                        slog.debug("Creating connector handle for node {s} output socket {s}", .{ node.desc.entry_point, sock.name });
+                        slog.debug("Creating connector handle for node {s} output socket {s}", .{ node.desc.name, sock.name });
                         if (this_sock.private.connector_handle == null) {
                             this_sock.private.connector_handle = try self.connector_pool.add(null);
                         }
@@ -611,7 +611,7 @@ pub const Pipeline = struct {
                         // connect
                         try self.node_graph.add(src_node_handle);
                         const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
-                        slog.debug("Adding edge from node {s} to node {s}", .{ src_node.desc.entry_point, dst_node.desc.entry_point });
+                        slog.debug("Adding edge from node {s} to node {s}", .{ src_node.desc.name, dst_node.desc.name });
                         const src_node_sock = src_node.desc.sockets[src_node_handle_connection.socket_idx] orelse unreachable;
                         const connector_handle = src_node_sock.private.connector_handle orelse unreachable; // self.getNodeConnectorHandle(src_node_sock) ;
                         try self.node_graph.addEdge(src_node_handle, dst_node_handle, connector_handle);
@@ -663,9 +663,19 @@ pub const Pipeline = struct {
             if (node.desc.type == .compute) {
                 // CREATE DESCRIPTIONS
                 // all sockets are on group 0
+                var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 for (node.desc.sockets, 0..) |socket, binding_number| {
                     if (socket) |sock| {
+                        // prepare shader pipe connections
+                        layout_group_0_binding[binding_number] = gpu.BindGroupLayoutEntry{
+                            .texture = .{
+                                .access = sock.type.toShaderPipeBindGroupLayoutEntryAccess(),
+                                .format = sock.format,
+                            },
+                        };
+                        slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
+
                         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
                         const conn = try self.connector_pool.getPtr(connector_handle);
                         const texture = conn.* orelse return error.NodeSocketMissingConnectorTexture;
@@ -676,20 +686,33 @@ pub const Pipeline = struct {
                 }
 
                 // params are on group 1
+                var layout_group_1_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 var bind_group_1_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 const mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
                 if (mod.*.param_handle) |param_handle| {
                     const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
                     const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
+                    layout_group_1_binding[0] = .{ .buffer = .{} };
                     bind_group_1_binds[0] = .{ .buffer = param_buf };
                 }
 
-                // CREATE BINDINGS
-                slog.debug("Creating bindings for node with entry point: {s}", .{node.desc.entry_point});
+                // CREATE SHADER PIPE AND BINDINGS
+                slog.debug("Creating shader for node with entry point: {s}", .{node.desc.name});
+                var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+                layout_group[0] = layout_group_0_binding;
+                layout_group[1] = layout_group_1_binding;
+                const shader = try gpu.ShaderPipe.init(
+                    gpu_inst,
+                    node.desc.shader_code,
+                    "main",
+                    layout_group,
+                );
+                node.shader = shader;
+
+                slog.debug("Creating bindings for node with entry point: {s}", .{node.desc.name});
                 var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 bind_group[0] = bind_group_0_binds;
                 bind_group[1] = bind_group_1_binds;
-                const shader = node.shader orelse return error.NodeShaderNotCreated;
                 const bindings = try gpu.Bindings.init(gpu_inst, &shader, bind_group);
                 // defer bindings.deinit();
                 node.bindings = bindings;
@@ -708,7 +731,7 @@ pub const Pipeline = struct {
             const first_node_handle = self.node_execution_order.items[0];
             var first_node_ptr = self.node_pool.getPtr(first_node_handle) catch unreachable;
 
-            slog.debug("First node: {s}", .{first_node_ptr.desc.entry_point});
+            slog.debug("First node: {s}", .{first_node_ptr.desc.name});
 
             // TODO: support multiple source uploads in the future
             // TODO: find the correct input socket by type
@@ -868,7 +891,7 @@ pub const Pipeline = struct {
                     }
                     var shader = node.shader orelse return error.NodeMissingShader;
                     var bindings = node.bindings orelse return error.NodeMissingBindings;
-                    slog.debug("Enqueueing compute shader for node {s}", .{node.desc.entry_point});
+                    slog.debug("Enqueueing compute shader for node {s}", .{node.desc.name});
                     encoder.enqueueShader(
                         &shader,
                         &bindings,
@@ -876,7 +899,7 @@ pub const Pipeline = struct {
                     );
                 },
                 .source => {
-                    slog.debug("Enqueueing source node {s} buffer to texture copy", .{node.desc.entry_point});
+                    slog.debug("Enqueueing source node {s} buffer to texture copy", .{node.desc.name});
                     const connector_handle = self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle;
                     const connector = self.connector_pool.getPtr(connector_handle) catch unreachable;
                     var tex = connector.* orelse return error.PipelineMissingSourceNodeTexture;
@@ -886,7 +909,7 @@ pub const Pipeline = struct {
                     encoder.enqueueBufToTex(&upload_buffer, staging_offset, &tex, roi) catch unreachable;
                 },
                 .sink => {
-                    slog.debug("Enqueueing sink node {s} texture to buffer copy", .{node.desc.entry_point});
+                    slog.debug("Enqueueing sink node {s} texture to buffer copy", .{node.desc.name});
                     const connector = self.connector_pool.getPtr(self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle) catch unreachable;
                     var tex = connector.* orelse return error.PipelineMissingSinkNodeTexture;
                     const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;

@@ -109,10 +109,10 @@ pub fn main() !void {
     const pipeline = device.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
         .vertex = wgpu.VertexState{
             .module = shader_module,
-            .entry_point = wgpu.StringView.fromSlice("vs_main"),
+            .name = wgpu.StringView.fromSlice("vs_main"),
         },
         .primitive = wgpu.PrimitiveState{},
-        .fragment = &wgpu.FragmentState{ .module = shader_module, .entry_point = wgpu.StringView.fromSlice("fs_main"), .target_count = color_targets.len, .targets = color_targets.ptr },
+        .fragment = &wgpu.FragmentState{ .module = shader_module, .name = wgpu.StringView.fromSlice("fs_main"), .target_count = color_targets.len, .targets = color_targets.ptr },
         .multisample = wgpu.MultisampleState{},
     }).?;
     defer pipeline.release();

@@ -198,7 +198,7 @@ pub fn main() !void {
         .layout = pipeline_layout,
         .compute = wgpu.ProgrammableStageDescriptor{
             .module = shader_module,
-            .entry_point = wgpu.StringView.fromSlice("doubleMe"),
+            .name = wgpu.StringView.fromSlice("doubleMe"),
         },
     }).?;
     defer pipeline.release();

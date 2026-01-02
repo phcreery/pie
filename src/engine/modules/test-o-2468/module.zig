@@ -41,7 +41,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const node_desc: api.NodeDesc = .{
         .type = .sink,
         .shader_code = "",
-        .entry_point = "Sink",
+        .name = "Sink",
         .run_size = null,
         .sockets = init: {
             var s: api.Sockets = @splat(null);

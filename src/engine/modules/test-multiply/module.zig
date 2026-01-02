@@ -43,7 +43,7 @@ const shader_code: []const u8 =
     \\@group(0) @binding(1) var                      output: texture_storage_2d<rgba16float, write>;
     \\@group(1) @binding(0) var<storage, read_write> params: Params;
     \\@compute @workgroup_size(8, 8, 1)
-    \\fn multiply(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    \\fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     \\    let coords = vec2<i32>(global_id.xy);
     \\    var pixel = vec4<f32>(textureLoad(input, coords, 0));
     \\    pixel *= params.multiplier;
@@ -56,7 +56,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const node_desc: api.NodeDesc = .{
         .type = .compute,
         .shader_code = shader_code,
-        .entry_point = "multiply",
+        .name = "multiply",
         .run_size = mod_output_sock.roi,
         .sockets = init: {
             var s: api.Sockets = @splat(null);

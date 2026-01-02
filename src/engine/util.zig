@@ -58,7 +58,7 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
 
         std.debug.print("==== NODE ========================================\n", .{});
         std.debug.print(" ID:                {d}\n", .{node_handle.id});
-        std.debug.print(" Entry Point:       \"{s}\" ({s})\n", .{ node.desc.entry_point, @tagName(node.desc.type) });
+        std.debug.print(" Entry Point:       \"{s}\" ({s})\n", .{ node.desc.name, @tagName(node.desc.type) });
         for (node.desc.sockets) |sock| {
             if (sock) |s| {
                 const connector_text = switch (s.type.direction()) {
@@ -134,6 +134,6 @@ fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []
     if (node_mod.enabled) {
         enabled_srt = "[x]";
     }
-    const res = std.fmt.bufPrint(buf, "{s} (id: {any}) {s} > {s}", .{ enabled_srt, vert.id, node_mod.desc.name, node.desc.entry_point }) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} (id: {any}) {s} > {s}", .{ enabled_srt, vert.id, node_mod.desc.name, node.desc.name }) catch "<error>";
     return @constCast(res);
 }

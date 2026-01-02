@@ -614,7 +614,7 @@ pub const BindGroupLayoutEntry = struct {
 };
 
 pub const ShaderPipe = struct {
-    entry_point: []const u8,
+    name: []const u8,
     wgpu_bind_group_layouts: [MAX_BIND_GROUPS]?*wgpu.BindGroupLayout,
     shader_module: *wgpu.ShaderModule,
     pipeline_layout: *wgpu.PipelineLayout,
@@ -625,11 +625,11 @@ pub const ShaderPipe = struct {
     pub fn init(
         gpu: *GPU,
         shader_source: []const u8,
-        entry_point: []const u8,
+        name: []const u8,
         bind_group_layout_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupLayoutEntry,
     ) !Self {
-        slog.debug("Initializing ShaderPipe for {s}", .{entry_point});
-        std.debug.print("Compiling shader for {s}\n", .{entry_point});
+        slog.debug("Initializing ShaderPipe for {s}", .{name});
+        std.debug.print("Compiling shader for {s}\n", .{name});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
         // of this like a C-style header declaration, ensuring both the pipeline and bind group agree
@@ -696,7 +696,7 @@ pub const ShaderPipe = struct {
                 bind_count += 1;
             }
             const wgpu_bind_group_layout = gpu.device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
-                // .label = wgpu.StringView.fromSlice("Bind Group Layout for " ++ entry_point),
+                // .label = wgpu.StringView.fromSlice("Bind Group Layout for " ++ name),
                 .label = wgpu.StringView.fromSlice("Bind Group Layout"),
                 .entry_count = bind_count,
                 .entries = &wgpu_g0_bind_group_layout_entries,
@@ -716,19 +716,19 @@ pub const ShaderPipe = struct {
         }
         // The pipeline layout describes the bind groups that a pipeline expects
         const wgpu_pipeline_layout = gpu.device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
-            // .label = wgpu.StringView.fromSlice("Pipeline Layout for " ++ entry_point),
+            // .label = wgpu.StringView.fromSlice("Pipeline Layout for " ++ name),
             .label = wgpu.StringView.fromSlice("Pipeline Layout"),
             .bind_group_layout_count = bind_group_layout_count,
             .bind_group_layouts = &bind_group_layouts,
         }).?;
         errdefer wgpu_pipeline_layout.release();
 
-        slog.debug("Compiling shader for {s}", .{entry_point});
+        slog.debug("Compiling shader for {s}", .{name});
 
         // Create the shader module from WGSL source code.
         // You can also load SPIR-V or use the Naga IR.
         const shader_module = gpu.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
-            // .label = "Compute Shader for " ++ entry_point,
+            // .label = "Compute Shader for " ++ name,
             .label = "Compute Shader",
             .code = shader_source,
         })).?;
@@ -740,13 +740,13 @@ pub const ShaderPipe = struct {
             .layout = wgpu_pipeline_layout,
             .compute = wgpu.ProgrammableStageDescriptor{
                 .module = shader_module,
-                .entry_point = wgpu.StringView.fromSlice(entry_point),
+                .entry_point = wgpu.StringView.fromSlice(name),
             },
         }).?;
         errdefer pipeline.release();
 
         return ShaderPipe{
-            .entry_point = entry_point,
+            .name = name,
             .wgpu_bind_group_layouts = wgpu_bind_group_layouts,
             .shader_module = shader_module,
             .pipeline_layout = wgpu_pipeline_layout,
@@ -755,7 +755,7 @@ pub const ShaderPipe = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        slog.debug("De-initializing ShaderPass {s}", .{self.entry_point});
+        slog.debug("De-initializing ShaderPass {s}", .{self.name});
 
         for (self.wgpu_bind_group_layouts) |bind_group_layout| {
             var bgl = bind_group_layout orelse continue;

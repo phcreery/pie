@@ -50,7 +50,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const node_desc: api.NodeDesc = .{
         .type = .source,
         .shader_code = "",
-        .entry_point = "Source",
+        .name = "Source",
         .run_size = null,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
