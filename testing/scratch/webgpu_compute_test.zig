@@ -3,7 +3,6 @@
 
 const std = @import("std");
 const wgpu = @import("wgpu");
-const wgpuc = @import("wgpu-c");
 
 const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
 const output_size = 4;

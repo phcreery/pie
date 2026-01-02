@@ -83,20 +83,22 @@ pub fn build(b: *Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "sokol", .module = dep_sokol.module("sokol") },
+            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
+            .{ .name = "pretty", .module = dep_pretty.module("pretty") },
+            .{ .name = "zdt", .module = dep_zdt.module("zdt") },
+            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            .{ .name = "wgpu", .module = dep_wgpu_native.module("wgpu") },
+            // .{ .name = "wgpu-c", .module = dep_wgpu_native.module("wgpu-c") },
+            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
+            // .{ .name = "ztracy", .module = dep_ztracy.module("root")  },
+            // .{ .name = "zpool", .module = dep_zpool.module("root")  },
+            .{ .name = "sizeify", .module = dep_sizeify.module("sizeify") },
+            .{ .name = "termsize", .module = termsize.module("termsize") },
+        },
     });
     mod_main.addOptions("build_options", mod_options);
-    mod_main.addImport("sokol", dep_sokol.module("sokol"));
-    mod_main.addImport(cimgui_conf.module_name, dep_cimgui.module(cimgui_conf.module_name));
-    mod_main.addImport("pretty", dep_pretty.module("pretty"));
-    mod_main.addImport("zdt", dep_zdt.module("zdt"));
-    mod_main.addImport("libraw", dep_libraw.module("libraw"));
-    mod_main.addImport("wgpu", dep_wgpu_native.module("wgpu"));
-    mod_main.addImport("wgpu-c", dep_wgpu_native.module("wgpu-c"));
-    mod_main.addImport("zigimg", dep_zigimg.module("zigimg"));
-    // mod_main.addImport("ztracy", dep_ztracy.module("root"));
-    // mod_main.addImport("zpool", dep_zpool.module("root"));
-    mod_main.addImport("sizeify", dep_sizeify.module("sizeify"));
-    mod_main.addImport("termsize", termsize.module("termsize"));
 
     // TESTS
     // UNIT TESTS
@@ -115,14 +117,16 @@ pub fn build(b: *Build) !void {
         .root_source_file = b.path("testing/integration/integration.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "pie", .module = mod_main },
+            .{ .name = "pretty", .module = dep_pretty.module("pretty") },
+            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
+            // .{ .name = "ztracy", .module = dep_ztracy.module("root") },
+            // .{ .name = "zpool", .module = dep_zpool.module("root") },
+            .{ .name = "zbench", .module = dep_zbench.module("zbench") },
+        },
     });
-    mod_integration.addImport("pie", mod_main);
-    mod_integration.addImport("pretty", dep_pretty.module("pretty"));
-    mod_integration.addImport("libraw", dep_libraw.module("libraw"));
-    mod_integration.addImport("zigimg", dep_zigimg.module("zigimg"));
-    // mod_integration.addImport("ztracy", dep_ztracy.module("root"));
-    // mod_integration.addImport("zpool", dep_zpool.module("root"));
-    mod_integration.addImport("zbench", dep_zbench.module("zbench"));
 
     // const integration_exe = b.addExecutable(.{
     //     .name = "integration exe",
