@@ -729,6 +729,7 @@ pub const ShaderPipe = struct {
             // .label = "Compute Shader for " ++ name,
             .label = "Compute Shader",
             .code = shader_source,
+            // .stage = @as(wgpu.ShaderStage, 0x0000000000000004), //wgpu.ShaderStage.compute, // needed for GLSL
         })).?;
 
         // The pipeline is the ready-to-go program state for the GPU. It contains the shader modules,

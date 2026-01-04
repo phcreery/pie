@@ -30,8 +30,8 @@ pub const ParamBufferHandle = ParamBufferPool.Handle;
 /// The main pipeline structure that holds modules, nodes, and manages execution.
 /// This is heavily inspired by vkdt.
 ///
-/// The current difference is that modules are executed in order, rather than
-/// in a DAG structure. This simplifies the execution model but I might change this later.
+/// The modules are put in a DAG, they they each create nodes which are put in
+/// their own DAG, and then the nodes are executed in the order determined by the DAG.
 ///
 /// A couple rules:
 /// - Source modules must have a source output socket and no input socket
