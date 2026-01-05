@@ -11,18 +11,18 @@ const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const GraphPrinter = @import("zig-graph/graph.zig").print.GraphPrinter;
 const slog = std.log.scoped(.pipe);
 
-const ModulePool = HashMapPool(Module);
+pub const ModulePool = HashMapPool(Module);
 pub const ModuleHandle = ModulePool.Handle;
 
-const NodePool = HashMapPool(Node);
+pub const NodePool = HashMapPool(Node);
 pub const NodeHandle = NodePool.Handle;
 
-const ConnectorPool = HashMapPool(?gpu.Texture);
+pub const ConnectorPool = HashMapPool(?gpu.Texture);
 pub const ConnectorHandle = ConnectorPool.Handle;
 
-const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
+pub const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
 
-const ParamBufferPool = HashMapPool(?gpu.Buffer);
+pub const ParamBufferPool = HashMapPool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
 // TODO: history pool
@@ -306,7 +306,7 @@ pub const Pipeline = struct {
             self.dirty = true;
         }
 
-        // self.printPipeToStdout();
+        self.printPipeToStdout();
 
         if (self.dirty) {
             self.runModulesUploadParams() catch unreachable;
@@ -334,7 +334,8 @@ pub const Pipeline = struct {
         return null;
     }
 
-    fn getConnectedNode(pipe: *Pipeline, socket: api.SocketDesc) ?api.SocketConnection(NodeHandle) {
+    /// pub for debugging purposes
+    pub fn getConnectedNode(pipe: *Pipeline, socket: api.SocketDesc) ?api.SocketConnection(NodeHandle) {
         if (socket.private.connected_to_node) |src_node_handle_connection| {
             return src_node_handle_connection;
         } else if (socket.private.associated_with_module) |assoc_mod_handle_connection| {
