@@ -8,7 +8,7 @@ pub fn HashMapPool(comptime T: type) type {
         hash_map: std.AutoHashMap(usize, *T),
         current_id: usize = 0,
 
-        pub const column_fields = std.meta.fields(T);
+        // pub const column_fields = std.meta.fields(T);
         const Key = usize;
         pub const Handle = struct {
             id: Key,

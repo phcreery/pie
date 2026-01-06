@@ -76,7 +76,7 @@ pub const SocketDesc = struct {
         // offset in the upload or download staging buffer
         // for source or sink sockets only
         staging_offset: ?usize = null,
-        staging: ?*anyopaque = null,
+        staging_ptr: ?*anyopaque = null,
     };
 };
 

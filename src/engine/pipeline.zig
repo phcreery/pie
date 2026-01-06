@@ -594,10 +594,11 @@ pub const Pipeline = struct {
         while (node_pool_handles.next()) |dst_node_handle| {
             const dst_node = self.node_pool.getPtr(dst_node_handle) catch unreachable;
             try self.node_graph.add(dst_node_handle);
-            for (dst_node.desc.sockets) |socket| {
-                if (socket) |sock| {
-                    if (self.getConnectedNode(sock)) |src_node_handle_connection| {
+            for (&dst_node.desc.sockets) |*socket| {
+                if (socket.*) |*sock| {
+                    if (self.getConnectedNode(sock.*)) |src_node_handle_connection| {
                         const src_node_handle = src_node_handle_connection.item;
+                        sock.private.connected_to_node = src_node_handle_connection; // flatten meta connection
                         // connect
                         try self.node_graph.add(src_node_handle);
                         const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
@@ -737,7 +738,7 @@ pub const Pipeline = struct {
                     const upload_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(upload_fba.buffer.ptr);
                     sock.*.private.staging_offset = upload_offset;
                     const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
-                    sock.*.private.staging = mapped_slice_ptr;
+                    sock.*.private.staging_ptr = mapped_slice_ptr;
                 } else {
                     slog.err("First node only socket is not of type source, skipping upload", .{});
                     return error.FirstNodeInputSocketNotSource;
@@ -763,7 +764,7 @@ pub const Pipeline = struct {
                     const download_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(download_fba.buffer.ptr);
                     sock.*.private.staging_offset = download_offset;
                     const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
-                    sock.*.private.staging = mapped_slice_ptr;
+                    sock.*.private.staging_ptr = mapped_slice_ptr;
                 } else {
                     slog.err("Sink node socket is not of type sink, skipping download", .{});
                     return error.LastNodeInputSocketNotSink;
@@ -841,9 +842,9 @@ pub const Pipeline = struct {
                 const first_node_mod = self.module_pool.getPtr(first_node.*.mod) catch unreachable;
                 if (first_node_mod.desc.readSource) |readSourceFn| {
                     slog.debug("Uploading source data for first node", .{});
-                    const mapped = sock.*.private.staging orelse unreachable;
+                    const mapped_ptr = sock.*.private.staging_ptr orelse unreachable;
                     slog.debug("Calling readSource function for first node", .{});
-                    readSourceFn(self, first_node.*.mod, mapped) catch unreachable;
+                    readSourceFn(self, first_node.*.mod, mapped_ptr) catch unreachable;
                 } else {
                     slog.err("First node source module has no readSource function defined", .{});
                     return error.NodeMissingReadSourceFunction;
@@ -934,8 +935,8 @@ pub const Pipeline = struct {
                 const last_node_mod = self.module_pool.getPtr(last_node.*.mod) catch unreachable;
                 if (last_node_mod.desc.writeSink) |writeSinkFn| {
                     slog.debug("Downloading sink data for last node", .{});
-                    const mapped = sock.*.private.staging orelse unreachable;
-                    writeSinkFn(self, last_node.mod, mapped) catch unreachable;
+                    const mapped_ptr = sock.*.private.staging_ptr orelse unreachable;
+                    writeSinkFn(self, last_node.mod, mapped_ptr) catch unreachable;
                 } else {
                     slog.err("Sink node has no writeSink function defined", .{});
                     return error.NodeMissingWriteSinkFunction;

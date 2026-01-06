@@ -7,6 +7,7 @@ pub const api = @import("modules/api.zig");
 pub const modules = @import("modules/modules.zig");
 
 pub const graph = @import("zig-graph/graph.zig");
+pub const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
 
 pub const GPU = gpu.GPU;
 pub const Buffer = gpu.Buffer;
