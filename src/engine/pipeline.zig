@@ -38,6 +38,8 @@ pub const ParamBufferHandle = ParamBufferPool.Handle;
 /// - Source modules must create a single source node
 /// - Sink modules must have a sink input socket and no output socket
 /// - Sink modules must create a single sink node
+/// - Source nodes must be first in execution order. TODO: make any source node work
+/// - Sink nodes must be last in execution order. TODO: make any sink node work
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
 
@@ -50,6 +52,7 @@ pub const Pipeline = struct {
     download_fba: ?std.heap.FixedBufferAllocator,
 
     module_pool: ModulePool,
+    module_execution_order: std.ArrayList(ModuleHandle),
 
     node_pool: NodePool,
     node_graph: DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle)),
@@ -91,6 +94,9 @@ pub const Pipeline = struct {
         const module_pool = ModulePool.init(allocator);
         errdefer module_pool.deinit();
 
+        const module_execution_order = std.ArrayList(ModuleHandle).initCapacity(allocator, 2) catch unreachable;
+        errdefer module_execution_order.deinit();
+
         const node_pool = NodePool.init(allocator);
         errdefer node_pool.deinit();
 
@@ -117,6 +123,7 @@ pub const Pipeline = struct {
             .download_fba = download_fba,
 
             .module_pool = module_pool,
+            .module_execution_order = module_execution_order,
 
             .node_pool = node_pool,
             .node_graph = node_graph,
@@ -132,6 +139,7 @@ pub const Pipeline = struct {
         slog.debug("De-initializing Pipeline", .{});
         // the pool deinit will take care of deallocating the textures
         self.module_pool.deinit();
+        self.module_execution_order.deinit(self.allocator);
         self.node_execution_order.deinit(self.allocator);
         self.node_graph.deinit();
         self.node_pool.deinit();
@@ -282,13 +290,14 @@ pub const Pipeline = struct {
         if (self.rerouted) {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
             self.runModulesPreCheck() catch unreachable;
-            self.runModulesCreateParamBufferHandles() catch unreachable;
-
             self.runModulesCreateOutputConnectorHandles() catch unreachable;
-            self.runModulesModifyROIOut() catch unreachable;
+            self.runModulesBuildExecutionOrder() catch unreachable;
 
+            self.runModulesCreateParamBufferHandles() catch unreachable;
+            self.runModulesModifyROIOut() catch unreachable;
             self.runModulesInitParamBuffers() catch unreachable;
             self.runModulesAllocateUploadBufferForParams() catch unreachable;
+
             self.runModulesCreateNodes() catch unreachable;
 
             // Then run nodes
@@ -388,59 +397,7 @@ pub const Pipeline = struct {
         }
     }
 
-    /// configure connectors only for module output connectors
-    fn runModulesCreateOutputConnectorHandles(self: *Pipeline) !void {
-        // create connector handles for output sockets
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |module_handle| {
-            var module = self.module_pool.getPtr(module_handle) catch unreachable;
-            for (module.desc.sockets) |socket| {
-                if (socket) |sock| {
-                    if (sock.type.direction() == .output) {
-                        var this_sock = module.getSocketPtr(sock.name) orelse unreachable;
-                        slog.debug("Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
-                        if (this_sock.private.connector_handle == null) {
-                            this_sock.private.connector_handle = try self.connector_pool.add(null);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// configure connectors only for module output connectors
-    fn runNodesCreateOutputConnectorHandles(self: *Pipeline) !void {
-        // create connector handles for output sockets
-        var node_pool_handles = self.node_pool.liveHandles();
-        while (node_pool_handles.next()) |node_handle| {
-            var node = self.node_pool.getPtr(node_handle) catch unreachable;
-            for (node.desc.sockets) |socket| {
-                if (socket) |sock| {
-                    if (sock.type.direction() == .output) {
-                        var this_sock = node.getSocketPtr(sock.name) orelse unreachable;
-                        slog.debug("Creating connector handle for node {s} output socket {s}", .{ node.desc.name, sock.name });
-                        if (this_sock.private.connector_handle == null) {
-                            this_sock.private.connector_handle = try self.connector_pool.add(null);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// configure connectors only for module output connectors
-    fn runModulesCreateParamBufferHandles(self: *Pipeline) !void {
-        // create connector handles for output sockets
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |module_handle| {
-            var module = self.module_pool.getPtr(module_handle) catch unreachable;
-            // create params buffer
-            const param_buffer_handle = try self.param_buffer_pool.add(null);
-            module.param_handle = param_buffer_handle;
-        }
-    }
-
-    fn runModulesModifyROIOut(self: *Pipeline) !void {
+    fn runModulesBuildExecutionOrder(self: *Pipeline) !void {
         // build execution order
         const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle, std.hash_map.AutoContext(ModuleHandle));
         var module_graph = ModuleGraph.init(self.allocator);
@@ -468,17 +425,109 @@ pub const Pipeline = struct {
             }
         }
 
-        var module_execution_order = std.ArrayList(ModuleHandle).initCapacity(self.allocator, 2) catch unreachable;
-        defer module_execution_order.deinit(self.allocator);
-
+        // self.module_execution_order.clear();
         var iter = try module_graph.topSortIterator();
         defer iter.deinit();
         while (try iter.next()) |value| {
-            try module_execution_order.append(self.allocator, module_graph.lookup(value).?);
+            try self.module_execution_order.append(self.allocator, module_graph.lookup(value).?);
         }
-        slog.debug("Topological sorted order of modules: {any}", .{module_execution_order.items});
+        slog.debug("Topological sorted order of modules: {any}", .{self.module_execution_order.items});
+    }
 
-        for (module_execution_order.items) |module_handle| {
+    /// configure connectors only for module output connectors
+    fn runModulesCreateOutputConnectorHandles(self: *Pipeline) !void {
+        // create connector handles for output sockets
+        var mod_pool_handles = self.module_pool.liveHandles();
+        while (mod_pool_handles.next()) |module_handle| {
+            // for (self.module_execution_order.items) |module_handle| {
+            var module = self.module_pool.getPtr(module_handle) catch unreachable;
+            for (module.desc.sockets) |socket| {
+                if (socket) |sock| {
+                    if (sock.type.direction() == .output) {
+                        var this_sock = module.getSocketPtr(sock.name) orelse unreachable;
+                        slog.debug("Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
+                        if (this_sock.private.connector_handle == null) {
+                            this_sock.private.connector_handle = try self.connector_pool.add(null);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// configure connectors only for module output connectors
+    fn runNodesCreateOutputConnectorHandles(self: *Pipeline) !void {
+        // create connector handles for output sockets
+        var node_pool_handles = self.node_pool.liveHandles();
+        while (node_pool_handles.next()) |node_handle| {
+            // for (self.node_execution_order.items) |node_handle| {
+            var node = self.node_pool.getPtr(node_handle) catch unreachable;
+            for (node.desc.sockets) |socket| {
+                if (socket) |sock| {
+                    if (sock.type.direction() == .output) {
+                        var this_sock = node.getSocketPtr(sock.name) orelse unreachable;
+                        slog.debug("Creating connector handle for node {s} output socket {s}", .{ node.desc.name, sock.name });
+                        if (this_sock.private.connector_handle == null) {
+                            this_sock.private.connector_handle = try self.connector_pool.add(null);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// configure connectors only for module output connectors
+    fn runModulesCreateParamBufferHandles(self: *Pipeline) !void {
+        // create connector handles for output sockets
+        // var mod_pool_handles = self.module_pool.liveHandles();
+        // while (mod_pool_handles.next()) |module_handle| {
+        for (self.module_execution_order.items) |module_handle| {
+            var module = self.module_pool.getPtr(module_handle) catch unreachable;
+            // create params buffer
+            const param_buffer_handle = try self.param_buffer_pool.add(null);
+            module.param_handle = param_buffer_handle;
+        }
+    }
+
+    fn runModulesModifyROIOut(self: *Pipeline) !void {
+        // build execution order
+        // const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle, std.hash_map.AutoContext(ModuleHandle));
+        // var module_graph = ModuleGraph.init(self.allocator);
+        // defer module_graph.deinit();
+
+        // var mod_pool_handles = self.module_pool.liveHandles();
+        // while (mod_pool_handles.next()) |dst_mod_handle| {
+        //     try module_graph.add(dst_mod_handle);
+
+        //     const dst_mod = self.module_pool.getPtr(dst_mod_handle) catch unreachable;
+        //     for (dst_mod.desc.sockets) |socket| {
+        //         if (socket) |sock| {
+        //             if (sock.private.connected_to_module) |src_connection| {
+        //                 const src_mod_handle = src_connection.item;
+
+        //                 try module_graph.add(src_mod_handle);
+        //                 const src_mod = self.module_pool.getPtr(src_mod_handle) catch unreachable;
+        //                 slog.debug("Adding edge from module {s} to module {s}", .{ src_mod.desc.name, dst_mod.desc.name });
+        //                 const src_mod_sock = src_mod.desc.sockets[src_connection.socket_idx] orelse unreachable;
+
+        //                 // connect
+        //                 try module_graph.addEdge(src_mod_handle, dst_mod_handle, src_mod_sock.private.connector_handle orelse unreachable);
+        //             }
+        //         }
+        //     }
+        // }
+
+        // var module_execution_order = std.ArrayList(ModuleHandle).initCapacity(self.allocator, 2) catch unreachable;
+        // defer module_execution_order.deinit(self.allocator);
+
+        // var iter = try module_graph.topSortIterator();
+        // defer iter.deinit();
+        // while (try iter.next()) |value| {
+        //     try module_execution_order.append(self.allocator, module_graph.lookup(value).?);
+        // }
+        // slog.debug("Topological sorted order of modules: {any}", .{module_execution_order.items});
+
+        for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
             // set roi in based on connected module roi out
             for (module.desc.sockets) |socket| {
@@ -539,8 +588,9 @@ pub const Pipeline = struct {
         if (self.upload_fba) |*upload_fba| {
             var upload_allocator = upload_fba.allocator();
 
-            var mod_pool_handles = self.module_pool.liveHandles();
-            while (mod_pool_handles.next()) |module_handle| {
+            // var mod_pool_handles = self.module_pool.liveHandles();
+            // while (mod_pool_handles.next()) |module_handle| {
+            for (self.module_execution_order.items) |module_handle| {
                 var module = self.module_pool.getPtr(module_handle) catch unreachable;
                 if (module.desc.type == .compute) {
                     if (module.enabled == false) continue;
@@ -564,12 +614,13 @@ pub const Pipeline = struct {
     /// create nodes for each module
     fn runModulesCreateNodes(self: *Pipeline) !void {
         var node_pool_handles = self.node_pool.liveHandles();
-        while (node_pool_handles.next()) |dst_node_handle| {
-            self.node_pool.remove(dst_node_handle);
+        while (node_pool_handles.next()) |node_handle| {
+            self.node_pool.remove(node_handle);
         }
 
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |module_handle| {
+        // var mod_pool_handles = self.module_pool.liveHandles();
+        // while (mod_pool_handles.next()) |module_handle| {
+        for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.enabled == false) continue;
             if (module.desc.createNodes) |createNodesFn| {
@@ -778,8 +829,9 @@ pub const Pipeline = struct {
 
         upload_buffer.map();
 
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |module_handle| {
+        // var mod_pool_handles = self.module_pool.liveHandles();
+        // while (mod_pool_handles.next()) |module_handle| {
+        for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.desc.type == .compute) {
                 if (module.enabled == false) continue;
