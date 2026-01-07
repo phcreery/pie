@@ -10,39 +10,6 @@ const console = @import("../cli/console.zig");
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const slog = std.log.scoped(.util);
 
-/// Builds a DAG graph for the node by connecting nodes based on connected_to_* and associated_with_* fields,
-/// then performs a topological sort to determine execution order
-pub fn buildNodeGraph(
-    self: *pipeline.Pipeline,
-    node_graph: *DirectedGraph(pipeline.NodeHandle, pipeline.ConnectorHandle, std.hash_map.AutoContext(pipeline.NodeHandle)),
-) !void {
-    // NOTE: this is better then check over each possible connection like I was doing,
-    // but vkdt uses the connected_mi and associated_i fields to build the graph AND perform the DFS traversal
-    // const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
-    // node_graph = NodeGraph.init(self.allocator);
-
-    var node_pool_handles = self.node_pool.liveHandles();
-    while (node_pool_handles.next()) |dst_node_handle| {
-        const dst_node = self.node_pool.getPtr(dst_node_handle) catch unreachable;
-        try node_graph.add(dst_node_handle);
-        for (&dst_node.desc.sockets) |*socket| {
-            if (socket.*) |*sock| {
-                if (self.getConnectedNode(sock.*)) |src_node_handle_connection| {
-                    const src_node_handle = src_node_handle_connection.item;
-                    sock.private.connected_to_node = src_node_handle_connection; // flatten meta connection
-                    // connect
-                    try node_graph.add(src_node_handle);
-                    const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
-                    slog.debug("Adding edge from node {s} to node {s}", .{ src_node.desc.name, dst_node.desc.name });
-                    const src_node_sock = src_node.desc.sockets[src_node_handle_connection.socket_idx] orelse unreachable;
-                    const connector_handle = src_node_sock.private.connector_handle orelse unreachable; // self.getNodeConnectorHandle(src_node_sock) ;
-                    try node_graph.addEdge(src_node_handle, dst_node_handle, connector_handle);
-                }
-            }
-        }
-    }
-}
-
 pub fn printModules(self: *pipeline.Pipeline) void {
     std.debug.print("MODULE LISTING\n", .{});
     var module_pool_handles = self.module_pool.liveHandles();
@@ -146,7 +113,7 @@ pub fn printNodes2(self: *pipeline.Pipeline) !void {
     const NodeGraph = DirectedGraph(pipeline.NodeHandle, pipeline.ConnectorHandle, std.hash_map.AutoContext(pipeline.NodeHandle));
     var node_graph = NodeGraph.init(self.allocator);
     defer node_graph.deinit();
-    try buildNodeGraph(self, &node_graph);
+    try pipeline.buildGraph(self, &node_graph);
 
     var iter1 = try node_graph.topSortIterator();
     defer iter1.deinit();
