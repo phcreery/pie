@@ -1,3 +1,5 @@
+/// primarily for printing the pipeline state for debugging purposes
+/// most of the code in here is pretty ugly
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const api = @import("modules/api.zig");
@@ -5,12 +7,47 @@ const gpu = @import("gpu.zig");
 const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
 const console = @import("../cli/console.zig");
+const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
+const slog = std.log.scoped(.util);
+
+/// Builds a DAG graph for the node by connecting nodes based on connected_to_* and associated_with_* fields,
+/// then performs a topological sort to determine execution order
+pub fn buildNodeGraph(
+    self: *pipeline.Pipeline,
+    node_graph: *DirectedGraph(pipeline.NodeHandle, pipeline.ConnectorHandle, std.hash_map.AutoContext(pipeline.NodeHandle)),
+) !void {
+    // NOTE: this is better then check over each possible connection like I was doing,
+    // but vkdt uses the connected_mi and associated_i fields to build the graph AND perform the DFS traversal
+    // const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
+    // node_graph = NodeGraph.init(self.allocator);
+
+    var node_pool_handles = self.node_pool.liveHandles();
+    while (node_pool_handles.next()) |dst_node_handle| {
+        const dst_node = self.node_pool.getPtr(dst_node_handle) catch unreachable;
+        try node_graph.add(dst_node_handle);
+        for (&dst_node.desc.sockets) |*socket| {
+            if (socket.*) |*sock| {
+                if (self.getConnectedNode(sock.*)) |src_node_handle_connection| {
+                    const src_node_handle = src_node_handle_connection.item;
+                    sock.private.connected_to_node = src_node_handle_connection; // flatten meta connection
+                    // connect
+                    try node_graph.add(src_node_handle);
+                    const src_node = self.node_pool.getPtr(src_node_handle) catch unreachable;
+                    slog.debug("Adding edge from node {s} to node {s}", .{ src_node.desc.name, dst_node.desc.name });
+                    const src_node_sock = src_node.desc.sockets[src_node_handle_connection.socket_idx] orelse unreachable;
+                    const connector_handle = src_node_sock.private.connector_handle orelse unreachable; // self.getNodeConnectorHandle(src_node_sock) ;
+                    try node_graph.addEdge(src_node_handle, dst_node_handle, connector_handle);
+                }
+            }
+        }
+    }
+}
 
 pub fn printModules(self: *pipeline.Pipeline) void {
     std.debug.print("MODULE LISTING\n", .{});
-    // while (self.module_pool.liveHandles().next()) |module_handle| {
-    //     const module = self.module_pool.getColumn(module_handle, .val) catch unreachable;
-    for (self.modules.items) |*module| {
+    var module_pool_handles = self.module_pool.liveHandles();
+    while (module_pool_handles.next()) |module_handle| {
+        const module = self.module_pool.getPtr(module_handle) catch unreachable;
         // slog.info("Module: {s}, enabled: {any}", .{ module.desc.name, module.enabled });
         const module_text =
             \\ ==== MODULE ======================================
@@ -23,8 +60,6 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             \\ ==================================================
             \\
         ;
-        // const input_texture = if (module.desc.input_socket) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
-        // const output_texture = if (module.desc.output_socket) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) catch unreachable else null else null;
         const input_texture = if (module.getSocketPtr("input")) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) else null else null;
         const output_texture = if (module.getSocketPtr("output")) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) else null else null;
         std.debug.print(module_text, .{
@@ -108,10 +143,15 @@ pub fn printNodes2(self: *pipeline.Pipeline) !void {
     }
     try stdout.print("\n", .{});
 
-    var iter1 = try self.node_graph.topSortIterator();
+    const NodeGraph = DirectedGraph(pipeline.NodeHandle, pipeline.ConnectorHandle, std.hash_map.AutoContext(pipeline.NodeHandle));
+    var node_graph = NodeGraph.init(self.allocator);
+    defer node_graph.deinit();
+    try buildNodeGraph(self, &node_graph);
+
+    var iter1 = try node_graph.topSortIterator();
     defer iter1.deinit();
 
-    var printer = self.node_graph.printer(edgePrinterCb, vertPrinterCb, self, term_size.width);
+    var printer = node_graph.printer(edgePrinterCb, vertPrinterCb, self, term_size.width);
     try printer.print(stdout, &iter1);
 
     try stdout.flush(); // Don't forget to flush!
