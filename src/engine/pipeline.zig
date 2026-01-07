@@ -413,6 +413,9 @@ pub const Pipeline = struct {
         var module_dag_iter = try PooledDagDfsIterator(Module).iterator(self.allocator, &self.module_pool);
         defer module_dag_iter.deinit();
 
+        // clear previous execution order
+        self.module_execution_order.clearAndFree(self.allocator);
+
         while (module_dag_iter.next()) |maybe_node_handle| {
             const node_handle = maybe_node_handle orelse break;
             try self.module_execution_order.append(self.allocator, node_handle);
@@ -584,6 +587,9 @@ pub const Pipeline = struct {
                 }
             }
         }
+
+        // clear previous execution order
+        self.node_execution_order.clearAndFree(self.allocator);
 
         var node_dag_iter = try PooledDagDfsIterator(Node).iterator(self.allocator, &self.node_pool);
         defer node_dag_iter.deinit();
