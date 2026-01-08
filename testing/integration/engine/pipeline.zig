@@ -17,7 +17,7 @@ const PipeBench = struct {
     pub fn run(self: Self, _: std.mem.Allocator) void {
         self.pipeline.rerouted = true;
         self.pipeline.dirty = true;
-        try self.pipeline.run();
+        self.pipeline.run() catch unreachable;
     }
 };
 
@@ -62,10 +62,10 @@ test "simple module test" {
     pipeline.connectModulesName(mod_test_multiply, "output", mod_test_2nodes, "input") catch unreachable;
     pipeline.connectModulesName(mod_test_2nodes, "output", mod_test_o_2468, "input") catch unreachable;
 
-    // try pipeline.run();
+    try pipeline.run();
     // pipeline.rerouted = true;
     // pipeline.dirty = true;
     // try pipeline.run();
 
-    try runPipeBench(allocator, &pipeline);
+    // try runPipeBench(allocator, &pipeline);
 }

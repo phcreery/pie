@@ -61,6 +61,8 @@ pub const Pipeline = struct {
     rerouted: bool = true,
     dirty: bool = true,
 
+    perf_metrics: PerfMetrics = .{},
+
     pub const MAX_MODULES = 100;
     pub const MAX_NODES = 200;
 
@@ -278,26 +280,39 @@ pub const Pipeline = struct {
 
         slog.debug("Running pipeline", .{});
 
+        var timer = try std.time.Timer.start();
+
         if (self.rerouted) {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
             self.runModulesPreCheck() catch unreachable;
             self.runModulesCreateOutputConnectorHandles() catch unreachable;
+            self.perf_metrics.runModulesCreateOutputConnectorHandles_time_ns = timer.lap();
             self.runModulesBuildExecutionOrder() catch unreachable;
+            self.perf_metrics.runModulesBuildExecutionOrder_time_ns = timer.lap();
 
             self.runModulesCreateParamBufferHandles() catch unreachable;
+            self.perf_metrics.runModulesCreateParamBufferHandles_time_ns = timer.lap();
             self.runModulesModifyROIOut() catch unreachable;
+            self.perf_metrics.runModulesModifyROIOut_time_ns = timer.lap();
             self.runModulesInitParamBuffers() catch unreachable;
+            self.perf_metrics.runModulesInitParamBuffers_time_ns = timer.lap();
             self.runModulesAllocateUploadBufferForParams() catch unreachable;
+            self.perf_metrics.runModulesAllocateUploadBufferForParams_time_ns = timer.lap();
 
             self.runModulesCreateNodes() catch unreachable;
-
+            self.perf_metrics.runModulesCreateNodes_time_ns = timer.lap();
             // Then run nodes
             self.runNodesCreateOutputConnectorHandles() catch unreachable;
+            self.perf_metrics.runNodesCreateOutputConnectorHandles_time_ns = timer.lap();
             self.runNodesBuildExecutionOrder() catch unreachable;
+            self.perf_metrics.runNodesBuildExecutionOrder_time_ns = timer.lap();
 
             self.runNodesInitConnectorTextures() catch unreachable;
+            self.perf_metrics.runNodesInitConnectorTextures_time_ns = timer.lap();
             self.runNodesAllocateUploadBufferForTextures() catch unreachable;
+            self.perf_metrics.runNodesAllocateUploadBufferForTextures_time_ns = timer.lap();
             self.runNodesCreateBindings() catch unreachable;
+            self.perf_metrics.runNodesCreateBindings_time_ns = timer.lap();
 
             // TODO: clean up unused modules
             // TODO: clean up unused nodes
@@ -310,11 +325,17 @@ pub const Pipeline = struct {
 
         if (self.dirty) {
             self.runModulesUploadParams() catch unreachable;
+            self.perf_metrics.runModulesUploadParams_time_ns = timer.lap();
             self.runNodesUploadSource() catch unreachable;
+            self.perf_metrics.runNodesUploadSource_time_ns = timer.lap();
             self.runNodes() catch unreachable;
+            self.perf_metrics.runNodes_time_ns = timer.lap();
             self.runNodesDownloadSink() catch unreachable;
+            self.perf_metrics.runNodesDownloadSink_time_ns = timer.lap();
             self.dirty = false;
         }
+
+        self.perf_metrics.printReport();
     }
 
     // ================================================
@@ -572,21 +593,21 @@ pub const Pipeline = struct {
         // right now, nodes are not directly connected to each other across modules
         // so we need to traverse the module connections to find the actual source node
 
-        // ┌───────────┐                         ┌───────────┐
-        // │ mod1      < -- module connection -- < mod2      │
-        // │ ┌───────┐ │                         │ ┌───────┐ │
-        // │ │ node1 │ │                         │ │ node2 │ │
-        // │ └───────┘ │                         │ └───────┘ │
-        // └───────────┘                         └───────────┘
+        // ┌───────────┐                         ┌──────────────────────┐
+        // │   mod1    <--- module connection ---<        mod2          │
+        // │\┌───────┐/│                         │\┌───────┐  ┌───────┐/│
+        // │ │ node1 │ │                         │ │ node2 <--< node3 │ │
+        // │ └───────┘ │                         │ └───────┘  └───────┘ │
+        // └───────────┘                         └──────────────────────┘
         //
         // will become
         //
-        // ┌───────────┐                         ┌───────────┐
-        // │ mod1      < -- module connection -- < mod2      │
-        // │ ┌───────┐ │                         │ ┌───────┐ │
-        // │ │ node1 < ----- node connection ----- < node2 │ │
-        // │ └───────┘ │                         │ └───────┘ │
-        // └───────────┘                         └───────────┘
+        // ┌───────────┐                         ┌──────────────────────┐
+        // │   mod1    <--- module connection ---<        mod2          │
+        // │\┌───────┐/│                         │\┌───────┐  ┌───────┐/│
+        // │ │ node1 <------ node connection ------< node2 <--< node3 │ │
+        // │ └───────┘ │                         │ └───────┘  └───────┘ │
+        // └───────────┘                         └──────────────────────┘
 
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |dst_node_handle| {
@@ -1085,3 +1106,46 @@ pub fn buildGraph(
         }
     }
 }
+
+pub const PerfMetrics = struct {
+    runModulesCreateOutputConnectorHandles_time_ns: u64 = 0,
+    runModulesBuildExecutionOrder_time_ns: u64 = 0,
+    runModulesCreateParamBufferHandles_time_ns: u64 = 0,
+    runModulesModifyROIOut_time_ns: u64 = 0,
+    runModulesInitParamBuffers_time_ns: u64 = 0,
+    runModulesAllocateUploadBufferForParams_time_ns: u64 = 0,
+    runModulesCreateNodes_time_ns: u64 = 0,
+    runNodesCreateOutputConnectorHandles_time_ns: u64 = 0,
+    runNodesBuildExecutionOrder_time_ns: u64 = 0,
+    runNodesInitConnectorTextures_time_ns: u64 = 0,
+    runNodesAllocateUploadBufferForTextures_time_ns: u64 = 0,
+    runNodesCreateBindings_time_ns: u64 = 0,
+    runModulesUploadParams_time_ns: u64 = 0,
+    runNodesUploadSource_time_ns: u64 = 0,
+    runNodes_time_ns: u64 = 0,
+    runNodesDownloadSink_time_ns: u64 = 0,
+
+    const Self = @This();
+
+    fn printReport(self: *PerfMetrics) void {
+        const printfn = std.debug.print;
+        // const printfn = slog.info;
+        var total_time_ns: f64 = 0;
+        inline for (std.meta.fields(Self)) |field| {
+            const field_name = field.name;
+            const field_value = @field(self, field_name);
+            total_time_ns += @as(f64, @floatFromInt(field_value));
+        }
+        printfn("Pipeline Performance Report:\n", .{});
+        inline for (std.meta.fields(Self)) |field| {
+            const field_name = field.name;
+            const field_value = @field(self, field_name);
+            printfn(" {d: >4.2}% {d: >4.2} ms {s}\n", .{
+                @as(f64, @floatFromInt(field_value)) / total_time_ns * 100.0,
+                @as(f64, @floatFromInt(field_value)) / std.time.ns_per_ms,
+                field_name,
+            });
+        }
+        printfn(" Total time: {d} ms\n", .{total_time_ns / std.time.ns_per_ms});
+    }
+};
