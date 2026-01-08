@@ -71,10 +71,10 @@ const shader_code: []const u8 =
 //     \\}
 // ;
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    const mod_output_sock = api.getModSocket(pipe, mod, "output") orelse unreachable;
+    const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader_code = shader_code,
+        .shader = try api.compileShader(pipe, shader_code),
         .name = "multiply",
         .run_size = mod_output_sock.roi,
         .sockets = init: {

@@ -12,7 +12,7 @@ pub const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
 pub const GPU = gpu.GPU;
 pub const Buffer = gpu.Buffer;
 pub const Encoder = gpu.Encoder;
-pub const ShaderPipe = gpu.ShaderPipe;
+pub const ComputePipeline = gpu.ComputePipeline;
 pub const Texture = gpu.Texture;
 pub const TextureFormat = gpu.TextureFormat;
 

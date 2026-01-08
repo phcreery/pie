@@ -5,7 +5,8 @@ const ROI = pie.engine.ROI;
 const GPU = pie.engine.gpu.GPU;
 const Buffer = pie.engine.gpu.Buffer;
 const Encoder = pie.engine.gpu.Encoder;
-const ShaderPipe = pie.engine.gpu.ShaderPipe;
+const Shader = pie.engine.gpu.Shader;
+const ComputePipeline = pie.engine.gpu.ComputePipeline;
 const Texture = pie.engine.gpu.Texture;
 const TextureFormat = pie.engine.gpu.TextureFormat;
 const Bindings = pie.engine.gpu.Bindings;
@@ -40,6 +41,8 @@ test "simple compute double buffer test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
+    const shader = Shader.compile(&gpu, shader_code, .{}) catch unreachable;
+
     var layout_group_0_binding: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
     layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
@@ -52,8 +55,8 @@ test "simple compute double buffer test" {
     // };
     var layout_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
     layout_group[0] = layout_group_0_binding;
-    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", layout_group);
-    defer shader_pipe.deinit();
+    var compute_pipeline = try ComputePipeline.init(&gpu, shader, "doubleMe", layout_group);
+    defer compute_pipeline.deinit();
 
     // MEMORY
     var texture_a = try Texture.init(&gpu, "a", format, roi);
@@ -66,14 +69,14 @@ test "simple compute double buffer test" {
     bind_group_a_to_b[0] = @splat(null);
     bind_group_a_to_b[0].?[0] = .{ .texture = texture_a };
     bind_group_a_to_b[0].?[1] = .{ .texture = texture_b };
-    var bindings_a_to_b = try Bindings.init(&gpu, &shader_pipe, bind_group_a_to_b);
+    var bindings_a_to_b = try Bindings.init(&gpu, &compute_pipeline, bind_group_a_to_b);
     defer bindings_a_to_b.deinit();
 
     var bind_group_b_to_a: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
     bind_group_b_to_a[0] = @splat(null);
     bind_group_b_to_a[0].?[0] = .{ .texture = texture_b };
     bind_group_b_to_a[0].?[1] = .{ .texture = texture_a };
-    var bindings_b_to_a = try Bindings.init(&gpu, &shader_pipe, bind_group_b_to_a);
+    var bindings_b_to_a = try Bindings.init(&gpu, &compute_pipeline, bind_group_b_to_a);
     defer bindings_b_to_a.deinit();
 
     // ALLOCATORS
@@ -104,8 +107,8 @@ test "simple compute double buffer test" {
     var encoder = try Encoder.start(&gpu);
     defer encoder.deinit();
     encoder.enqueueBufToTex(&upload, upload_offset, &texture_a, roi) catch unreachable;
-    encoder.enqueueShader(&shader_pipe, &bindings_a_to_b, roi);
-    encoder.enqueueShader(&shader_pipe, &bindings_b_to_a, roi);
+    encoder.enqueueShader(&compute_pipeline, &bindings_a_to_b, roi);
+    encoder.enqueueShader(&compute_pipeline, &bindings_b_to_a, roi);
     encoder.enqueueTexToBuf(&download, download_offset, &texture_a, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 

@@ -681,7 +681,7 @@ pub const Pipeline = struct {
                         // prepare shader pipe connections
                         layout_group_1_binding[binding_number] = gpu.BindGroupLayoutEntry{
                             .texture = .{
-                                .access = sock.type.toShaderPipeBindGroupLayoutEntryAccess(),
+                                .access = sock.type.toComputePipelineBindGroupLayoutEntryAccess(),
                                 .format = sock.format,
                             },
                         };
@@ -703,19 +703,21 @@ pub const Pipeline = struct {
                 var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 layout_group[0] = layout_group_0_binding;
                 layout_group[1] = layout_group_1_binding;
-                const shader = try gpu.ShaderPipe.init(
+
+                const shader = node.desc.shader orelse return error.NodeMissingShaderCode;
+                const pipeline = try gpu.ComputePipeline.init(
                     gpu_inst,
-                    node.desc.shader_code,
+                    shader,
                     "main",
                     layout_group,
                 );
-                node.shader = shader;
+                node.compute_pipeline = pipeline;
 
                 slog.debug("Creating bindings for node with entry point: {s}", .{node.desc.name});
                 var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 bind_group[0] = bind_group_0_binds;
                 bind_group[1] = bind_group_1_binds;
-                const bindings = try gpu.Bindings.init(gpu_inst, &shader, bind_group);
+                const bindings = try gpu.Bindings.init(gpu_inst, &pipeline, bind_group);
                 // defer bindings.deinit();
                 node.bindings = bindings;
             }
@@ -887,11 +889,11 @@ pub const Pipeline = struct {
                         slog.err("Compute node's module has no param buffer handle", .{});
                         return error.ModuleMissingParamBuffer;
                     }
-                    var shader = node.shader orelse return error.NodeMissingShader;
+                    var compute_pipeline = node.compute_pipeline orelse return error.NodeMissingShader;
                     var bindings = node.bindings orelse return error.NodeMissingBindings;
                     slog.debug("Enqueueing compute shader for node {s}", .{node.desc.name});
                     encoder.enqueueShader(
-                        &shader,
+                        &compute_pipeline,
                         &bindings,
                         node.desc.run_size.?,
                     );

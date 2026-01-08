@@ -5,7 +5,8 @@ const ROI = pie.engine.ROI;
 const GPU = pie.engine.gpu.GPU;
 const Buffer = pie.engine.gpu.Buffer;
 const Encoder = pie.engine.gpu.Encoder;
-const ShaderPipe = pie.engine.gpu.ShaderPipe;
+const Shader = pie.engine.gpu.Shader;
+const ComputePipeline = pie.engine.gpu.ComputePipeline;
 const Texture = pie.engine.gpu.Texture;
 const Bindings = pie.engine.gpu.Bindings;
 const TextureFormat = pie.engine.gpu.TextureFormat;
@@ -44,6 +45,8 @@ test "simple compute test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
+    const shader = Shader.compile(&gpu, shader_code, .{}) catch unreachable;
+
     var layout_group_0_binding: [pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
     layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
@@ -51,8 +54,8 @@ test "simple compute test" {
     var layout_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group[0] = layout_group_0_binding;
 
-    var shader_pipe = try ShaderPipe.init(&gpu, shader_code, "doubleMe", layout_group);
-    defer shader_pipe.deinit();
+    var compute_pipeline = try ComputePipeline.init(&gpu, shader, "doubleMe", layout_group);
+    defer compute_pipeline.deinit();
 
     // MEMORY
     var texture_in = try Texture.init(&gpu, "in", source_format, roi);
@@ -68,7 +71,7 @@ test "simple compute test" {
     var bind_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group[0] = bind_group_0_binds;
 
-    var bindings = try Bindings.init(&gpu, &shader_pipe, bind_group);
+    var bindings = try Bindings.init(&gpu, &compute_pipeline, bind_group);
     defer bindings.deinit();
 
     // ALLOCATORS
@@ -99,7 +102,7 @@ test "simple compute test" {
     var encoder = try Encoder.start(&gpu);
     defer encoder.deinit();
     encoder.enqueueBufToTex(&upload, upload_offset, &texture_in, roi) catch unreachable;
-    encoder.enqueueShader(&shader_pipe, &bindings, roi);
+    encoder.enqueueShader(&compute_pipeline, &bindings, roi);
     encoder.enqueueTexToBuf(&download, download_offset, &texture_out, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 

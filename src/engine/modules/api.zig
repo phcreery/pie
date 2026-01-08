@@ -24,7 +24,7 @@ pub const SocketType = enum {
     source,
     sink,
 
-    pub fn toShaderPipeBindGroupLayoutEntryAccess(self: SocketType) gpu.BindGroupLayoutEntryAccess {
+    pub fn toComputePipelineBindGroupLayoutEntryAccess(self: SocketType) gpu.BindGroupLayoutEntryAccess {
         return switch (self) {
             .read => gpu.BindGroupLayoutEntryAccess.read,
             .write => gpu.BindGroupLayoutEntryAccess.write,
@@ -92,7 +92,8 @@ pub const NodeType = enum {
 // vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
 pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
-    shader_code: []const u8,
+    // shader_code: []const u8,
+    shader: ?gpu.Shader = null,
     name: []const u8,
     run_size: ?ROI = null,
     sockets: Sockets,
@@ -132,6 +133,11 @@ pub const ModuleDesc = struct {
 };
 
 /// PIPELINE HELPERS
+pub fn compileShader(pipe: *Pipeline, shader_code: []const u8) !gpu.Shader {
+    const gpu_inst = pipe.gpu orelse return error.GPUNotInitialized;
+    return gpu.Shader.compile(gpu_inst, shader_code, .{});
+}
+
 pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
     return pipe.addNode(mod, node_desc);
 }
@@ -140,12 +146,12 @@ pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []cons
     return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
 }
 
-pub fn getModSocket(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) ?*SocketDesc {
-    const mod = pipe.module_pool.getPtr(mod_handle) catch unreachable;
-    return mod.getSocketPtr(socket_name);
+pub fn getModSocket(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !*SocketDesc {
+    const mod = try pipe.module_pool.getPtr(mod_handle);
+    return mod.getSocketPtr(socket_name).?;
 }
 
-pub fn getSocketIndex(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) ?usize {
-    const mod = pipe.module_pool.getPtr(mod_handle) catch unreachable;
-    return mod.getSocketIndex(socket_name);
+pub fn getSocketIndex(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !usize {
+    const mod = try pipe.module_pool.getPtr(mod_handle);
+    return mod.getSocketIndex(socket_name).?;
 }

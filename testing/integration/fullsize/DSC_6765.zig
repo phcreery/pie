@@ -109,7 +109,7 @@ test "load raw, demosaic, save" {
         \\    textureStore(output, coords, pxf);
         \\}
     ;
-    const convert_conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
+    const convert_conns = [_]pie.engine.gpu.ComputePipelineConn{ .{
         .binding = 0,
         .type = .input,
         .format = .rgba16uint,
@@ -118,8 +118,8 @@ test "load raw, demosaic, save" {
         .type = .output,
         .format = .rgba16float,
     } };
-    var convert_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, convert, "convert", convert_conns);
-    defer convert_shader_pipe.deinit();
+    var convert_compute_pipeline = try pie.engine.gpu.ComputePipeline.init(&gpu, convert, "convert", convert_conns);
+    defer convert_compute_pipeline.deinit();
 
     // UPPER MEMORY
     var texture_upper_in = try pie.engine.gpu.Texture.init(&gpu, convert_conns[0].format, roi_in_upper);
@@ -128,7 +128,7 @@ test "load raw, demosaic, save" {
     var texture_upper_out = try pie.engine.gpu.Texture.init(&gpu, convert_conns[1].format, roi_out_upper);
     defer texture_upper_out.deinit();
 
-    var bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &convert_shader_pipe, &texture_upper_in, &texture_upper_out);
+    var bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, &texture_upper_in, &texture_upper_out);
     defer bindings_upper.deinit();
 
     // LOWER MEMORY
@@ -138,16 +138,16 @@ test "load raw, demosaic, save" {
     var texture_lower_out = try pie.engine.gpu.Texture.init(&gpu, convert_conns[1].format, roi_out_lower);
     defer texture_lower_out.deinit();
 
-    var bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &convert_shader_pipe, &texture_lower_in, &texture_lower_out);
+    var bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, &texture_lower_in, &texture_lower_out);
     defer bindings_lower.deinit();
 
     encoder.enqueueBufToTex(&gpu_allocator, &texture_upper_in, roi_in_upper) catch unreachable;
     encoder.enqueueBufToTex(&gpu_allocator, &texture_lower_in, roi_in_lower) catch unreachable;
 
     // PASS 1 | TOP HALF
-    encoder.enqueueShader(&convert_shader_pipe, &bindings_upper, roi_out_upper);
+    encoder.enqueueShader(&convert_compute_pipeline, &bindings_upper, roi_out_upper);
     // PASS 2 | BOTTOM HALF
-    encoder.enqueueShader(&convert_shader_pipe, &bindings_lower, roi_out_lower);
+    encoder.enqueueShader(&convert_compute_pipeline, &bindings_lower, roi_out_lower);
 
     // { // early exit after conversion
     //     gpu.enqueueUnmount(&texture_upper_out, convert_conns[1].format, roi_out_upper) catch unreachable;
@@ -193,7 +193,7 @@ test "load raw, demosaic, save" {
     //     \\    textureStore(output, coords, rgba);
     //     \\}
     // ;
-    // const demosaic_conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
+    // const demosaic_conns = [_]pie.engine.gpu.ComputePipelineConn{ .{
     //     .binding = 0,
     //     .type = .input,
     //     .format = .rgba16float,
@@ -265,7 +265,7 @@ test "load raw, demosaic, save" {
         \\    textureStore(output, coords, rgba);
         \\}
     ;
-    const demosaic_conns = [_]pie.engine.gpu.ShaderPipeConn{ .{
+    const demosaic_conns = [_]pie.engine.gpu.ComputePipelineConn{ .{
         .binding = 0,
         .type = .input,
         .format = .rgba16float,
@@ -274,8 +274,8 @@ test "load raw, demosaic, save" {
         .type = .output,
         .format = .rgba16float,
     } };
-    var demosaic_shader_pipe = try pie.engine.gpu.ShaderPipe.init(&gpu, demosaic_packed, "demosaic_packed", demosaic_conns);
-    defer demosaic_shader_pipe.deinit();
+    var demosaic_compute_pipeline = try pie.engine.gpu.ComputePipeline.init(&gpu, demosaic_packed, "demosaic_packed", demosaic_conns);
+    defer demosaic_compute_pipeline.deinit();
 
     // UPPER MEMORY
     var texture_upper_in2 = texture_upper_out; // reuse the output of the format conversion
@@ -286,7 +286,7 @@ test "load raw, demosaic, save" {
     var texture_upper_out2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[1].format, roi_out_upper);
     defer texture_upper_out2.deinit();
 
-    bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_shader_pipe, &texture_upper_in2, &texture_upper_out2);
+    bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_compute_pipeline, &texture_upper_in2, &texture_upper_out2);
     defer bindings_upper.deinit();
 
     // LOWER MEMORY
@@ -298,16 +298,16 @@ test "load raw, demosaic, save" {
     var texture_lower_out2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[1].format, roi_out_lower);
     defer texture_lower_out2.deinit();
 
-    bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_shader_pipe, &texture_lower_in2, &texture_lower_out2);
+    bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_compute_pipeline, &texture_lower_in2, &texture_lower_out2);
     defer bindings_lower.deinit();
 
     // copy from last step
     // We are going to do two passes as if the hardware buffer does not allow a full image to be copied to a texture at once
 
     // PASS 1 | TOP HALF
-    encoder.enqueueShader(&demosaic_shader_pipe, &bindings_upper, roi_out_upper);
+    encoder.enqueueShader(&demosaic_compute_pipeline, &bindings_upper, roi_out_upper);
     // PASS 2 | BOTTOM HALF
-    encoder.enqueueShader(&demosaic_shader_pipe, &bindings_lower, roi_out_lower);
+    encoder.enqueueShader(&demosaic_compute_pipeline, &bindings_lower, roi_out_lower);
 
     encoder.enqueueTexToBuf(&gpu_allocator, &texture_upper_out2, roi_out_upper) catch unreachable;
     encoder.enqueueTexToBuf(&gpu_allocator, &texture_lower_out2, roi_out_lower) catch unreachable;

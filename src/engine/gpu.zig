@@ -262,7 +262,7 @@ pub const Encoder = struct {
         return command_buffer;
     }
 
-    pub fn enqueueShader(self: *Self, shader_pipe: *const ShaderPipe, bindings: *Bindings, work_size: ROI) void {
+    pub fn enqueueShader(self: *Self, compute_pipeline: *const ComputePipeline, bindings: *Bindings, work_size: ROI) void {
         slog.debug("Enqueuing compute shader", .{});
         // A compute pass is a single series of compute operations. While we are recording a compute
         // pass, we cannot record to the encoder.
@@ -270,7 +270,7 @@ pub const Encoder = struct {
             .label = wgpu.StringView.fromSlice("Compute Pass"),
         }).?;
         // Set the pipeline that we want to use
-        compute_pass.setPipeline(shader_pipe.pipeline);
+        compute_pass.setPipeline(compute_pipeline.pipeline);
 
         // compute_pass.setBindGroup(0, bindings.bind_group, 0, null);
         for (bindings.bind_groups, 0..) |bind_group, index| {
@@ -537,7 +537,7 @@ pub const Bindings = struct {
 
     pub fn init(
         gpu: *GPU,
-        shader_pipe: *const ShaderPipe,
+        compute_pipeline: *const ComputePipeline,
         bind_group_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupEntry,
     ) !Self {
         slog.debug("Creating Bindings", .{});
@@ -572,7 +572,7 @@ pub const Bindings = struct {
             }
             const wgpu_bind_group = gpu.device.createBindGroup(&wgpu.BindGroupDescriptor{
                 .label = wgpu.StringView.fromSlice("Bind Group"),
-                .layout = shader_pipe.wgpu_bind_group_layouts[bind_group_number].?,
+                .layout = compute_pipeline.wgpu_bind_group_layouts[bind_group_number].?,
                 .entry_count = bind_count,
                 .entries = &wgpu_bind_group_entries,
             }).?;
@@ -611,22 +611,78 @@ pub const BindGroupLayoutEntry = struct {
     buffer: ?BindGroupLayoutBufferEntry = null,
 };
 
-pub const ShaderPipe = struct {
+// pub const Shader = wgpu.ShaderModule;
+
+pub const ShaderLanguage = enum {
+    wgsl,
+    // spirv,
+    glsl,
+};
+
+pub const CompileShaderOpts = struct {
+    name: []const u8 = "Compute Shader",
+    type: ShaderLanguage = .wgsl,
+};
+
+pub const Shader = struct {
+    shader_module: *wgpu.ShaderModule,
+
+    const Self = @This();
+
+    pub fn compile(
+        gpu: *GPU,
+        shader_source: []const u8,
+        opts: CompileShaderOpts,
+    ) !Shader {
+        slog.debug("Compiling shader {s}", .{opts.name});
+
+        const descriptor = switch (opts.type) {
+            .wgsl => wgpu.shaderModuleWGSLDescriptor(.{
+                .label = opts.name,
+                .code = shader_source,
+            }),
+            // .spirv => wgpu.shaderModuleSPIRVDescriptor(.{
+            //     .label = opts.name,
+            //     .code = shader_source,
+            //     .code_size = @as(usize, shader_source.len) / @sizeOf(u32), // need to test
+            // }),
+            .glsl => wgpu.shaderModuleGLSLDescriptor(.{
+                .label = opts.name,
+                .code = shader_source,
+                .stage = @as(wgpu.ShaderStage, 0x0000000000000004), //wgpu.ShaderStage.compute, // needed for GLSL
+            }),
+        };
+
+        const shader_module = gpu.device.createShaderModule(&descriptor).?;
+
+        return Self{
+            .shader_module = shader_module,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.shader_module.release();
+    }
+};
+
+pub const ComputePipeline = struct {
     name: []const u8,
     wgpu_bind_group_layouts: [MAX_BIND_GROUPS]?*wgpu.BindGroupLayout,
-    shader_module: *wgpu.ShaderModule,
     pipeline_layout: *wgpu.PipelineLayout,
+    // shader_module: *wgpu.ShaderModule,
+    // shader: *Shader,
     pipeline: *wgpu.ComputePipeline,
 
     const Self = @This();
 
     pub fn init(
         gpu: *GPU,
-        shader_source: []const u8,
+        // shader_source: []const u8,
+        shader: Shader,
         name: []const u8,
         bind_group_layout_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupLayoutEntry,
     ) !Self {
-        slog.debug("Initializing ShaderPipe for {s}", .{name});
+        slog.debug("Initializing ComputePipeline for {s}", .{name});
         // std.debug.print("Compiling shader for {s}\n", .{name});
 
         // A bind group layout describes the types of resources that a bind group can contain. Think
@@ -721,33 +777,24 @@ pub const ShaderPipe = struct {
         }).?;
         errdefer wgpu_pipeline_layout.release();
 
-        slog.debug("Compiling shader for {s}", .{name});
-
-        // Create the shader module from WGSL source code.
-        // You can also load SPIR-V or use the Naga IR.
-        const shader_module = gpu.device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
-            // .label = "Compute Shader for " ++ name,
-            .label = "Compute Shader",
-            .code = shader_source,
-            // .stage = @as(wgpu.ShaderStage, 0x0000000000000004), //wgpu.ShaderStage.compute, // needed for GLSL
-        })).?;
-
         // The pipeline is the ready-to-go program state for the GPU. It contains the shader modules,
         // the interfaces (bind group layouts) and the shader entry point.
+        // this does some compilation/validation/linking as well
         const pipeline = gpu.device.createComputePipeline(&wgpu.ComputePipelineDescriptor{
             .label = wgpu.StringView.fromSlice("Compute Pipeline"),
             .layout = wgpu_pipeline_layout,
             .compute = wgpu.ProgrammableStageDescriptor{
-                .module = shader_module,
+                .module = shader.shader_module,
                 .entry_point = wgpu.StringView.fromSlice(name),
             },
         }).?;
         errdefer pipeline.release();
 
-        return ShaderPipe{
+        return ComputePipeline{
             .name = name,
             .wgpu_bind_group_layouts = wgpu_bind_group_layouts,
-            .shader_module = shader_module,
+            // .shader_module = shader_module,
+            // .shader = shader,
             .pipeline_layout = wgpu_pipeline_layout,
             .pipeline = pipeline,
         };
@@ -761,7 +808,7 @@ pub const ShaderPipe = struct {
             bgl.release();
         }
 
-        self.shader_module.release();
+        // self.shader_module.release();
         self.pipeline_layout.release();
         self.pipeline.release();
     }

@@ -6,7 +6,8 @@ const ROI = pie.engine.ROI;
 const GPU = pie.engine.gpu.GPU;
 const Buffer = pie.engine.gpu.Buffer;
 const Encoder = pie.engine.gpu.Encoder;
-const ShaderPipe = pie.engine.gpu.ShaderPipe;
+const Shader = pie.engine.gpu.Shader;
+const ComputePipeline = pie.engine.gpu.ComputePipeline;
 const Texture = pie.engine.gpu.Texture;
 const Bindings = pie.engine.gpu.Bindings;
 const TextureFormat = pie.engine.gpu.TextureFormat;
@@ -46,6 +47,8 @@ test "simple compute test with parameters" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
+    const shader = Shader.compile(&gpu, shader_code, .{}) catch unreachable;
+
     var layout_group_0_binding: [MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
     layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
@@ -57,8 +60,8 @@ test "simple compute test with parameters" {
     layout_group[0] = layout_group_0_binding;
     layout_group[1] = layout_group_1_binding;
 
-    var multiply_shader_pipe = try ShaderPipe.init(&gpu, shader_code, "multiply", layout_group);
-    defer multiply_shader_pipe.deinit();
+    var multiply_compute_pipeline = try ComputePipeline.init(&gpu, shader, "multiply", layout_group);
+    defer multiply_compute_pipeline.deinit();
 
     // STAGING BUFFERS
     // these are intentionally over-provisioned to avoid OOM issues
@@ -87,8 +90,8 @@ test "simple compute test with parameters" {
     bind_group[0] = bind_group_0_binds;
     bind_group[1] = bind_group_1_binds;
 
-    var multiply_shader_pipe_bindings = try Bindings.init(&gpu, &multiply_shader_pipe, bind_group);
-    defer multiply_shader_pipe_bindings.deinit();
+    var multiply_compute_pipeline_bindings = try Bindings.init(&gpu, &multiply_compute_pipeline, bind_group);
+    defer multiply_compute_pipeline_bindings.deinit();
 
     // ALLOCATORS
     var upload_fba = upload.fixedBufferAllocator();
@@ -126,7 +129,7 @@ test "simple compute test with parameters" {
     defer encoder.deinit();
     encoder.enqueueBufToTex(&upload, src_offset, &texture_in, roi) catch unreachable;
     encoder.enqueueBufToBuf(&upload, param_offset, &param_buffer, 0, @sizeOf(f32)) catch unreachable;
-    encoder.enqueueShader(&multiply_shader_pipe, &multiply_shader_pipe_bindings, roi);
+    encoder.enqueueShader(&multiply_compute_pipeline, &multiply_compute_pipeline_bindings, roi);
     encoder.enqueueTexToBuf(&download, dest_offset, &texture_out, roi) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 

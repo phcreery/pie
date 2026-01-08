@@ -29,7 +29,7 @@ pub fn writeSink(
     mod: api.ModuleHandle,
     mapped: *anyopaque,
 ) !void {
-    const sock = api.getModSocket(pipe, mod, "input") orelse unreachable;
+    const sock = try api.getModSocket(pipe, mod, "input");
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
     const download_buffer_slice = download_buffer_ptr[0..(sock.roi.?.w * sock.roi.?.h * sock.format.nchannels())];
     std.debug.print("Downloaded buffer: {any}\n", .{download_buffer_slice});
@@ -37,10 +37,9 @@ pub fn writeSink(
 }
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    const same_as_mod_output_sock = api.getModSocket(pipe, mod, "input") orelse unreachable;
+    const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "input");
     const node_desc: api.NodeDesc = .{
         .type = .sink,
-        .shader_code = "",
         .name = "Sink",
         .run_size = null,
         .sockets = init: {

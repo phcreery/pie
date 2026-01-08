@@ -28,7 +28,7 @@ const roi: api.ROI = .{
 };
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    var socket = api.getModSocket(pipe, mod, "output") orelse unreachable;
+    var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;
 }
 
@@ -46,10 +46,9 @@ pub fn readSource(
 }
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    const same_as_mod_output_sock = api.getModSocket(pipe, mod, "output") orelse unreachable;
+    const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .source,
-        .shader_code = "",
         .name = "Source",
         .run_size = null,
         .sockets = init: {
