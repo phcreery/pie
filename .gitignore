@@ -34,3 +34,6 @@ zig-cache/
 *.dng
 *.cr2
 *.cr3
+
+# misc
+.DS_Store
