@@ -17,7 +17,6 @@
         "orelse",
         "rgba",
         "rois",
-        "sizeify",
         "sokol",
         "Texel",
         "usize",

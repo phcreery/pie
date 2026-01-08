@@ -59,7 +59,6 @@ pub fn build(b: *Build) !void {
     //     .on_demand = ztracy_options.on_demand,
     // });
     // const dep_zpool = b.dependency("zpool", opts);
-    const dep_sizeify = b.dependency("sizeify", opts);
     const termsize = b.dependency("termsize", opts);
     const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
 
@@ -94,7 +93,6 @@ pub fn build(b: *Build) !void {
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             // .{ .name = "ztracy", .module = dep_ztracy.module("root")  },
             // .{ .name = "zpool", .module = dep_zpool.module("root")  },
-            .{ .name = "sizeify", .module = dep_sizeify.module("sizeify") },
             .{ .name = "termsize", .module = termsize.module("termsize") },
         },
     });

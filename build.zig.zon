@@ -109,10 +109,6 @@
             .url = "git+https://github.com/zig-gamedev/zpool/#2ebe5b065d19989a0c5b4f06227c524c8404c516",
             .hash = "zpool-0.11.0-dev-bG692YNDAQAyX1pDZKrJrDmorwVqVNTZbbH-zpoDQO-N",
         },
-        .sizeify = .{
-            .url = "git+https://github.com/ciathefed/sizeify#d975b91872badbc08e04231e96e086e7a78938a2",
-            .hash = "sizeify-0.0.0-URVFj1EhAAAXtotBNFwEx5W70ygRnAdHjBYcg4F_CahM",
-        },
         .termsize = .{
             .url = "https://github.com/djmattyg007/zig-termsize/archive/refs/heads/update-for-zig-0.15.tar.gz",
             .hash = "termsize-0.1.0-0mwB1lwVAADBgWi3-mt2GMuiw3tqmscsoVDh7Rzpxud6",

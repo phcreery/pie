@@ -2,7 +2,6 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
-const sizeify = @import("sizeify");
 
 const slog = std.log.scoped(.gpu);
 
@@ -76,7 +75,7 @@ pub const Buffer = struct {
 
         if (size_bytes) |s| {
             if (s > max_buffer_size) {
-                slog.err("Requested Buffer size {f} exceeds max buffer size {f}", .{ sizeify.fmt(s, .decimal_short), sizeify.fmt(max_buffer_size, .decimal_short) });
+                slog.err("Requested Buffer size {B:.4} exceeds max buffer size {B:.4}", .{ s, max_buffer_size });
                 return error.InvalidInput;
             }
         }
@@ -85,7 +84,7 @@ pub const Buffer = struct {
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        slog.debug("Creating Buffer with upload buffer size {f}", .{sizeify.fmt(buffer_size_bytes, .decimal_short)});
+        slog.debug("Creating Buffer with upload buffer size {B:.4}", .{buffer_size_bytes});
         const buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("buffer"),
             .usage = memory_type.toGPUBufferUsage(),
@@ -111,7 +110,7 @@ pub const Buffer = struct {
         self: *Self,
         size_bytes: usize,
     ) *anyopaque {
-        slog.debug("Mapping GPU buffer of size {f}", .{sizeify.fmt(size_bytes, .decimal_short)});
+        slog.debug("Mapping GPU buffer of size {B:.4}", .{size_bytes});
 
         // TODO: first check mapped status
         // https://github.com/gfx-rs/wgpu-native/blob/d8238888998db26ceab41942f269da0fa32b890c/src/unimplemented.rs#L25
@@ -890,9 +889,9 @@ pub const GPU = struct {
         slog.info(" max_compute_workgroup_size_y: {d}", .{limits.max_compute_workgroup_size_y});
         slog.info(" max_compute_workgroup_size_z: {d}", .{limits.max_compute_workgroup_size_z});
         slog.info(" max_compute_workgroups_per_dimension: {d}", .{limits.max_compute_workgroups_per_dimension});
-        slog.info(" max_buffer_size: {f}", .{sizeify.fmt(limits.max_buffer_size, .decimal_short)});
-        slog.info(" max_uniform_buffer_binding_size: {f}", .{sizeify.fmt(limits.max_uniform_buffer_binding_size, .decimal_short)});
-        slog.info(" max_storage_buffer_binding_size: {f}", .{sizeify.fmt(limits.max_storage_buffer_binding_size, .decimal_short)});
+        slog.info(" max_buffer_size: {B:.2}", .{limits.max_buffer_size});
+        slog.info(" max_uniform_buffer_binding_size: {B:.2}", .{limits.max_uniform_buffer_binding_size});
+        slog.info(" max_storage_buffer_binding_size: {B:.2}", .{limits.max_storage_buffer_binding_size});
         slog.info(" min_uniform_buffer_offset_alignment: {d}", .{limits.min_uniform_buffer_offset_alignment});
         slog.info(" min_storage_buffer_offset_alignment: {d}", .{limits.min_storage_buffer_offset_alignment});
 
