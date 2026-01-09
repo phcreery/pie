@@ -72,15 +72,9 @@ test "load raw, demosaic, save" {
     const image_size_in_h = @as(u32, @intCast(pie_raw_image.height));
     const source_format = pie.engine.gpu.TextureFormat.rgba16uint;
     const destination_format = pie.engine.gpu.TextureFormat.rgba16float;
-    // var destination = std.mem.zeroes([4]f16);
-    // var destination = std.mem.zeroes([image_size_in_w * image_size_in_h * 4]f16);
-    // var destination = try std.ArrayList(f16).initCapacity(allocator, image_size_in_w * image_size_in_h * 4);
-    // defer destination.deinit(allocator);
-    var destination = allocator.alloc(f16, image_size_in_w * image_size_in_h * 4) catch unreachable;
-    defer allocator.free(destination);
 
     var roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
-    roi_in = roi_in.div(4, 1); // we have 1/4 width input (packed RGGB)
+    roi_in = roi_in.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
     var roi_out = roi_in;
     const roi_in_upper, const roi_in_lower = roi_in.splitH();
@@ -107,7 +101,6 @@ test "load raw, demosaic, save" {
     std.log.info("Upload buffer contents: ", .{});
     printImgBufContents(u16, init_contents_u16, roi_in.w * 2);
 
-    // gpu_allocator.upload(u16, init_contents_u16, .rgba16uint, roi_in);
     // PREP UPLOAD
     const upload_offset_upper = upload_fba.end_index;
     const upload_buf_upper = try upload_allocator.alloc(f16, roi_in_upper.w * roi_in_upper.h * source_format.nchannels());
@@ -120,10 +113,19 @@ test "load raw, demosaic, save" {
     const download_offset_lower = download_fba.end_index;
     const download_buf_lower = try download_allocator.alloc(f16, roi_out_lower.w * roi_out_lower.h * destination_format.nchannels());
 
+    // print init_contents_u16 len and roi_in_upper.w * roi_in_upper.h * source_format.nchannels()
+    std.log.info("init_contents_u16.len: {d}", .{init_contents_u16.len});
+    std.log.info("roi_in_upper.w * roi_in_upper.h * source_format.nchannels(): {d}", .{roi_in_upper.w * roi_in_upper.h * source_format.nchannels()});
+
+    printImgBufContents(u16, init_contents_u16, roi_out.w * 2);
+
     // UPLOAD
     upload.map();
     @memcpy(upload_buf_upper, @as([]f16, @ptrCast(@alignCast(init_contents_u16[0 .. roi_in_upper.w * roi_in_upper.h * source_format.nchannels()]))));
     @memcpy(upload_buf_lower, @as([]f16, @ptrCast(@alignCast(init_contents_u16[roi_in_upper.w * roi_in_upper.h * source_format.nchannels() ..]))));
+
+    printImgBufContents(f16, upload_buf_upper, roi_out.w * 2);
+    printImgBufContents(f16, upload_buf_lower, roi_out.w * 2);
     upload.unmap();
 
     var encoder = try pie.engine.gpu.Encoder.start(&gpu);
@@ -164,14 +166,14 @@ test "load raw, demosaic, save" {
     var texture_upper_out = try pie.engine.gpu.Texture.init(&gpu, "upper_out", layout_group_0_binding_convert[1].?.texture.?.format, roi_out_upper);
     defer texture_upper_out.deinit();
 
-    var bind_group_0_binds: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-    bind_group_0_binds[0] = .{ .texture = texture_upper_in };
-    bind_group_0_binds[1] = .{ .texture = texture_upper_out };
+    var bind_group_0_binds_upper_convert: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_0_binds_upper_convert[0] = .{ .texture = texture_upper_in };
+    bind_group_0_binds_upper_convert[1] = .{ .texture = texture_upper_out };
 
-    var bind_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
-    bind_group[0] = bind_group_0_binds;
+    var bind_group_upper_convert: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_upper_convert[0] = bind_group_0_binds_upper_convert;
 
-    var bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, bind_group);
+    var bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, bind_group_upper_convert);
     defer bindings_upper.deinit();
 
     // LOWER MEMORY
@@ -199,17 +201,27 @@ test "load raw, demosaic, save" {
     // PASS 2 | BOTTOM HALF
     encoder.enqueueShader(&convert_compute_pipeline, &bindings_lower, roi_out_lower);
 
-    // { // early exit after conversion
-    //     gpu.enqueueUnmount(&texture_upper_out, convert_conns[1].format, roi_out_upper) catch unreachable;
-    //     gpu.enqueueUnmount(&texture_lower_out, convert_conns[1].format, roi_out_lower) catch unreachable;
-    //     gpu.run();
-    //     const result_convert = try gpu.mapDownload(f16, convert_conns[1].format, roi_out_lower);
-    //     std.log.info("\nDownload buffer contents: ", .{});
-    //     printImgBufContents(f16, result_convert, roi_out_lower.w * 2);
-    //     if (true) {
-    //         return error.SkipZigTest;
-    //     }
-    // }
+    { // EARLY DOWNLOAD TO TEST FORMAT CONVERSION
+        encoder.enqueueTexToBuf(&download, download_offset_upper, &texture_upper_out, roi_out_upper) catch unreachable;
+        encoder.enqueueTexToBuf(&download, download_offset_lower, &texture_lower_out, roi_out_lower) catch unreachable;
+        gpu.run(encoder.finish()) catch unreachable;
+
+        // DOWNLOAD
+        var destination = try allocator.alloc(f16, roi_out.w * roi_out.h * destination_format.nchannels());
+        defer allocator.free(destination);
+
+        download.map();
+        @memcpy(destination[0..download_buf_upper.len], download_buf_upper);
+        @memcpy(destination[download_buf_upper.len..], download_buf_lower);
+        download.unmap();
+
+        std.log.info("\nDownload buffer contents: ", .{});
+        // printImgBufContents(f16, destination, roi_out.w * 4);
+        printImgBufContents(f16, destination, roi_out.w * 2);
+        if (true) {
+            return error.SkipZigTest;
+        }
+    }
 
     roi_out_upper = roi_in_upper.scaled(2, 0.5); // works
     roi_out_lower = roi_in_lower.scaled(2, 0.5); // works
@@ -341,11 +353,11 @@ test "load raw, demosaic, save" {
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
-    // const result = try gpu_allocator.download(f16, .rgba16float, roi_out);
-    // DOWNLOAD
+    var destination = try allocator.alloc(f16, roi_out.w * roi_out.h * destination_format.nchannels());
+    defer allocator.free(destination);
+
     download.map();
     @memcpy(destination[0..download_buf_upper.len], download_buf_upper);
-    std.debug.print("Downloaded upper half size: {d} {d}\n", .{ download_buf_upper.len, download_buf_lower.len });
     @memcpy(destination[download_buf_upper.len..], download_buf_lower);
     download.unmap();
 

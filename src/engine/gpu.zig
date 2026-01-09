@@ -358,7 +358,7 @@ pub const Encoder = struct {
         const source = wgpu.TexelCopyTextureInfo{
             .texture = texture.texture,
             .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = src_x, .y = src_y, .z = 0 },
+            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
         const offset = @as(u64, mem_offset) + @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
