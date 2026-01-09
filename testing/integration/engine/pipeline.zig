@@ -47,7 +47,12 @@ test "simple module test" {
     var gpu_instance = try gpu.GPU.init();
     defer gpu_instance.deinit();
 
-    var pipeline = Pipeline.init(allocator, &gpu_instance) catch unreachable;
+    const pipeline_config: pie.engine.pipeline.PipelineConfig = .{
+        .upload_buffer_size_bytes = 1024,
+        .download_buffer_size_bytes = 1024,
+    };
+
+    var pipeline = Pipeline.init(allocator, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
     const mod_test_i_1234 = try pipeline.addModule(pie.engine.modules.test_i_1234.module);

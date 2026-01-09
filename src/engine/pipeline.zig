@@ -22,6 +22,11 @@ pub const ConnectorHandle = ConnectorPool.Handle;
 pub const ParamBufferPool = HashMapPool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
+pub const PipelineConfig = struct {
+    upload_buffer_size_bytes: ?usize = null,
+    download_buffer_size_bytes: ?usize = null,
+};
+
 // TODO: history pool
 
 /// The main pipeline structure that holds modules, nodes, and manages execution.
@@ -66,7 +71,11 @@ pub const Pipeline = struct {
     pub const MAX_MODULES = 100;
     pub const MAX_NODES = 200;
 
-    pub fn init(allocator: std.mem.Allocator, gpu_instance: ?*gpu.GPU) !Pipeline {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        gpu_instance: ?*gpu.GPU,
+        config: PipelineConfig,
+    ) !Pipeline {
         if (gpu_instance == null) {
             slog.debug("No GPU instance provided, performing a dry run", .{});
         }
@@ -75,12 +84,12 @@ pub const Pipeline = struct {
         var download_buffer: ?gpu.Buffer = null;
         var download_fba: ?std.heap.FixedBufferAllocator = null;
         if (gpu_instance) |gpu_inst| {
-            upload_buffer = try gpu.Buffer.init(gpu_inst, null, .upload);
+            upload_buffer = try gpu.Buffer.init(gpu_inst, config.upload_buffer_size_bytes, .upload);
             if (upload_buffer) |*ub| {
                 upload_fba = ub.fixedBufferAllocator();
                 errdefer ub.deinit();
             }
-            download_buffer = try gpu.Buffer.init(gpu_inst, null, .download);
+            download_buffer = try gpu.Buffer.init(gpu_inst, config.download_buffer_size_bytes, .download);
             if (download_buffer) |*db| {
                 download_fba = db.fixedBufferAllocator();
                 errdefer db.deinit();
@@ -332,8 +341,16 @@ pub const Pipeline = struct {
             self.perf_metrics.runNodes_time_ns = timer.lap();
             self.runNodesDownloadSink() catch unreachable;
             self.perf_metrics.runNodesDownloadSink_time_ns = timer.lap();
+
             self.dirty = false;
         }
+
+        // because we are using a fixed buffer allocator, the end index tells us how much of the buffer is used
+        // ideally, we would use an allocator that can free elements at the beginning or middle
+        self.perf_metrics.uploadBuffer_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.buffer.len else 0;
+        self.perf_metrics.uploadBufferUsage_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.end_index else 0;
+        self.perf_metrics.downloadBuffer_size_bytes = if (self.download_fba) |*download_fba| download_fba.buffer.len else 0;
+        self.perf_metrics.downloadBufferUsage_size_bytes = if (self.download_fba) |*download_fba| download_fba.end_index else 0;
 
         self.perf_metrics.printReport();
     }
@@ -1125,6 +1142,11 @@ pub const PerfMetrics = struct {
     runNodes_time_ns: u64 = 0,
     runNodesDownloadSink_time_ns: u64 = 0,
 
+    uploadBuffer_size_bytes: usize = 0,
+    uploadBufferUsage_size_bytes: usize = 0,
+    downloadBuffer_size_bytes: usize = 0,
+    downloadBufferUsage_size_bytes: usize = 0,
+
     const Self = @This();
 
     fn printReport(self: *PerfMetrics) void {
@@ -1133,19 +1155,36 @@ pub const PerfMetrics = struct {
         var total_time_ns: f64 = 0;
         inline for (std.meta.fields(Self)) |field| {
             const field_name = field.name;
-            const field_value = @field(self, field_name);
-            total_time_ns += @as(f64, @floatFromInt(field_value));
+            if (std.mem.endsWith(u8, field_name, "time_ns")) {
+                const field_value = @field(self, field_name);
+                total_time_ns += @as(f64, @floatFromInt(field_value));
+            }
         }
         printfn("Pipeline Performance Report:\n", .{});
         inline for (std.meta.fields(Self)) |field| {
             const field_name = field.name;
-            const field_value = @field(self, field_name);
-            printfn(" {d: >4.2}% {d: >4.2} ms {s}\n", .{
-                @as(f64, @floatFromInt(field_value)) / total_time_ns * 100.0,
-                @as(f64, @floatFromInt(field_value)) / std.time.ns_per_ms,
-                field_name,
-            });
+            if (std.mem.endsWith(u8, field_name, "time_ns")) {
+                const field_value = @field(self, field_name);
+                printfn(" {d: >5.2}% {d: >5.2} ms {s}\n", .{
+                    @as(f64, @floatFromInt(field_value)) / total_time_ns * 100.0,
+                    @as(f64, @floatFromInt(field_value)) / std.time.ns_per_ms,
+                    field_name,
+                });
+            }
         }
         printfn(" Total time: {d} ms\n", .{total_time_ns / std.time.ns_per_ms});
+
+        printfn(" {d: >5.2}% {B:.2}/{B:.2} {s}\n", .{
+            @as(f64, @floatFromInt(self.uploadBufferUsage_size_bytes)) / @as(f64, @floatFromInt(self.uploadBuffer_size_bytes)) * 100.0,
+            self.uploadBufferUsage_size_bytes,
+            self.uploadBuffer_size_bytes,
+            "uploadBuffer_size_bytes",
+        });
+        printfn(" {d: >5.2}% {B:.2}/{B:.2} {s}\n", .{
+            @as(f64, @floatFromInt(self.downloadBufferUsage_size_bytes)) / @as(f64, @floatFromInt(self.downloadBuffer_size_bytes)) * 100.0,
+            self.downloadBufferUsage_size_bytes,
+            self.downloadBuffer_size_bytes,
+            "downloadBuffer_size_bytes",
+        });
     }
 };
