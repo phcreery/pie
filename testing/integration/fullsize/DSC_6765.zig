@@ -22,7 +22,7 @@ test "load raw, demosaic, save" {
     // Read contents from file
     const file_name = "testing/integration/fullsize/DSC_6765.NEF";
     const file = try std.fs.cwd().openFile(file_name, .{});
-    var pie_raw_image = try pie.iraw.RawImage.read(allocator, file);
+    var pie_raw_image = try pie.engine.modules.i_raw.RawImage.read(allocator, file);
     defer pie_raw_image.deinit();
 
     // flattened u16 array of the 2d rggb array
@@ -70,6 +70,14 @@ test "load raw, demosaic, save" {
     // SIZES
     const image_size_in_w = @as(u32, @intCast(pie_raw_image.width));
     const image_size_in_h = @as(u32, @intCast(pie_raw_image.height));
+    const source_format = pie.engine.gpu.TextureFormat.rgba16uint;
+    const destination_format = pie.engine.gpu.TextureFormat.rgba16float;
+    // var destination = std.mem.zeroes([4]f16);
+    // var destination = std.mem.zeroes([image_size_in_w * image_size_in_h * 4]f16);
+    // var destination = try std.ArrayList(f16).initCapacity(allocator, image_size_in_w * image_size_in_h * 4);
+    // defer destination.deinit(allocator);
+    var destination = allocator.alloc(f16, image_size_in_w * image_size_in_h * 4) catch unreachable;
+    defer allocator.free(destination);
 
     var roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
     roi_in = roi_in.div(4, 1); // we have 1/4 width input (packed RGGB)
@@ -81,15 +89,42 @@ test "load raw, demosaic, save" {
     var gpu = try pie.engine.gpu.GPU.init();
     defer gpu.deinit();
 
-    var gpu_allocator = try pie.engine.gpu.Buffer.init(&gpu, null);
-    defer gpu_allocator.deinit();
+    // these are intentionally over-provisioned to avoid OOM issues
+    var upload = try pie.engine.gpu.Buffer.init(&gpu, 10 * 1024 * 1024 * pie.engine.gpu.TextureFormat.rgba16float.bpp(), .upload);
+    defer upload.deinit();
+    var download = try pie.engine.gpu.Buffer.init(&gpu, 10 * 1024 * 1024 * pie.engine.gpu.TextureFormat.rgba16float.bpp(), .download);
+    defer download.deinit();
+
+    // ALLOCATORS
+    var upload_fba = upload.fixedBufferAllocator();
+    var upload_allocator = upload_fba.allocator();
+
+    var download_fba = download.fixedBufferAllocator();
+    var download_allocator = download_fba.allocator();
 
     // UPLOAD
     std.log.info("Image region: {any} {any}", .{ roi_in.w, roi_in.h });
     std.log.info("Upload buffer contents: ", .{});
     printImgBufContents(u16, init_contents_u16, roi_in.w * 2);
 
-    gpu_allocator.upload(u16, init_contents_u16, .rgba16uint, roi_in);
+    // gpu_allocator.upload(u16, init_contents_u16, .rgba16uint, roi_in);
+    // PREP UPLOAD
+    const upload_offset_upper = upload_fba.end_index;
+    const upload_buf_upper = try upload_allocator.alloc(f16, roi_in_upper.w * roi_in_upper.h * source_format.nchannels());
+    const upload_offset_lower = upload_fba.end_index;
+    const upload_buf_lower = try upload_allocator.alloc(f16, roi_in_lower.w * roi_in_lower.h * source_format.nchannels());
+
+    // PREP DOWNLOAD
+    const download_offset_upper = download_fba.end_index;
+    const download_buf_upper = try download_allocator.alloc(f16, roi_out_upper.w * roi_out_upper.h * destination_format.nchannels());
+    const download_offset_lower = download_fba.end_index;
+    const download_buf_lower = try download_allocator.alloc(f16, roi_out_lower.w * roi_out_lower.h * destination_format.nchannels());
+
+    // UPLOAD
+    upload.map();
+    @memcpy(upload_buf_upper, @as([]f16, @ptrCast(@alignCast(init_contents_u16[0 .. roi_in_upper.w * roi_in_upper.h * source_format.nchannels()]))));
+    @memcpy(upload_buf_lower, @as([]f16, @ptrCast(@alignCast(init_contents_u16[roi_in_upper.w * roi_in_upper.h * source_format.nchannels() ..]))));
+    upload.unmap();
 
     var encoder = try pie.engine.gpu.Encoder.start(&gpu);
     defer encoder.deinit();
@@ -109,40 +144,55 @@ test "load raw, demosaic, save" {
         \\    textureStore(output, coords, pxf);
         \\}
     ;
-    const convert_conns = [_]pie.engine.gpu.ComputePipelineConn{ .{
-        .binding = 0,
-        .type = .input,
-        .format = .rgba16uint,
-    }, .{
-        .binding = 1,
-        .type = .output,
-        .format = .rgba16float,
-    } };
-    var convert_compute_pipeline = try pie.engine.gpu.ComputePipeline.init(&gpu, convert, "convert", convert_conns);
+    var shader_convert = try pie.engine.gpu.Shader.compile(&gpu, convert, .{});
+    defer shader_convert.deinit();
+
+    var layout_group_0_binding_convert: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    layout_group_0_binding_convert[0] = .{ .texture = .{ .access = .read, .format = .rgba16uint } };
+    layout_group_0_binding_convert[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
+
+    var layout_group_convert: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    layout_group_convert[0] = layout_group_0_binding_convert;
+
+    var convert_compute_pipeline = try pie.engine.gpu.ComputePipeline.init(&gpu, shader_convert, "convert", layout_group_convert);
     defer convert_compute_pipeline.deinit();
 
     // UPPER MEMORY
-    var texture_upper_in = try pie.engine.gpu.Texture.init(&gpu, convert_conns[0].format, roi_in_upper);
+    var texture_upper_in = try pie.engine.gpu.Texture.init(&gpu, "upper_in", layout_group_0_binding_convert[0].?.texture.?.format, roi_in_upper);
     defer texture_upper_in.deinit();
 
-    var texture_upper_out = try pie.engine.gpu.Texture.init(&gpu, convert_conns[1].format, roi_out_upper);
+    var texture_upper_out = try pie.engine.gpu.Texture.init(&gpu, "upper_out", layout_group_0_binding_convert[1].?.texture.?.format, roi_out_upper);
     defer texture_upper_out.deinit();
 
-    var bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, &texture_upper_in, &texture_upper_out);
+    var bind_group_0_binds: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_0_binds[0] = .{ .texture = texture_upper_in };
+    bind_group_0_binds[1] = .{ .texture = texture_upper_out };
+
+    var bind_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group[0] = bind_group_0_binds;
+
+    var bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, bind_group);
     defer bindings_upper.deinit();
 
     // LOWER MEMORY
-    var texture_lower_in = try pie.engine.gpu.Texture.init(&gpu, convert_conns[0].format, roi_in_lower);
+    var texture_lower_in = try pie.engine.gpu.Texture.init(&gpu, "lower_in", layout_group_0_binding_convert[0].?.texture.?.format, roi_in_lower);
     defer texture_lower_in.deinit();
 
-    var texture_lower_out = try pie.engine.gpu.Texture.init(&gpu, convert_conns[1].format, roi_out_lower);
+    var texture_lower_out = try pie.engine.gpu.Texture.init(&gpu, "lower_out", layout_group_0_binding_convert[1].?.texture.?.format, roi_out_lower);
     defer texture_lower_out.deinit();
 
-    var bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, &texture_lower_in, &texture_lower_out);
+    var bind_group_0_binds_lower_convert: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_0_binds_lower_convert[0] = .{ .texture = texture_lower_in };
+    bind_group_0_binds_lower_convert[1] = .{ .texture = texture_lower_out };
+
+    var bind_group_lower_convert: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_lower_convert[0] = bind_group_0_binds_lower_convert;
+
+    var bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, bind_group_lower_convert);
     defer bindings_lower.deinit();
 
-    encoder.enqueueBufToTex(&gpu_allocator, &texture_upper_in, roi_in_upper) catch unreachable;
-    encoder.enqueueBufToTex(&gpu_allocator, &texture_lower_in, roi_in_lower) catch unreachable;
+    encoder.enqueueBufToTex(&upload, upload_offset_upper, &texture_upper_in, roi_in_upper) catch unreachable;
+    encoder.enqueueBufToTex(&upload, upload_offset_lower, &texture_lower_in, roi_in_lower) catch unreachable;
 
     // PASS 1 | TOP HALF
     encoder.enqueueShader(&convert_compute_pipeline, &bindings_upper, roi_out_upper);
@@ -166,43 +216,6 @@ test "load raw, demosaic, save" {
     roi_out = pie.engine.ROI.full(image_size_in_w, image_size_in_h).div(2, 2);
 
     // DEMOSAIC WITH COMPUTE SHADER
-    // const demosaic: []const u8 =
-    //     \\enable f16;
-    //     \\@group(0) @binding(0) var input:  texture_2d<f32>;
-    //     \\@group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
-    //     \\@compute @workgroup_size(8, 8, 1)
-    //     \\fn demosaic(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    //     \\    var coords = vec2<i32>(global_id.xy);
-    //     \\    // the input will not be stored as rgba, instead it will be
-    //     \\    // [ r 0 0 0 ] [ 0 g 0 0 ] ...
-    //     \\    // [ 0 g 0 0 ] [ 0 0 b 0 ] ...
-    //     \\    // [ r 0 0 0 ] [ 0 g 0 0 ] ...
-    //     \\    // [ 0 g 0 0 ] [ 0 0 b 0 ] ...
-    //     \\    // so we need to decode our coords
-    //     \\    var r: f32;
-    //     \\    var g1: f32;
-    //     \\    var g2: f32;
-    //     \\    var b: f32;
-    //     \\    let base_coords = coords * vec2<i32>(2, 2);
-    //     \\    r = textureLoad(input, base_coords + vec2<i32>(0, 0), 0).r;
-    //     \\    g1 = textureLoad(input, base_coords + vec2<i32>(1, 0), 0).g;
-    //     \\    g2 = textureLoad(input, base_coords + vec2<i32>(0, 1), 0).a;
-    //     \\    b = textureLoad(input, base_coords + vec2<i32>(1, 1), 0).b;
-    //     \\    let g = (g1 + g2) / 2.0;
-    //     \\    let rgba = vec4<f32>(r, g, b, 1);
-    //     \\    textureStore(output, coords, rgba);
-    //     \\}
-    // ;
-    // const demosaic_conns = [_]pie.engine.gpu.ComputePipelineConn{ .{
-    //     .binding = 0,
-    //     .type = .input,
-    //     .format = .rgba16float,
-    // }, .{
-    //     .binding = 1,
-    //     .type = .output,
-    //     .format = .rgba16float,
-    // } };
-
     const demosaic_packed: []const u8 =
         \\enable f16;
         \\@group(0) @binding(0) var input:  texture_2d<f32>;
@@ -265,40 +278,54 @@ test "load raw, demosaic, save" {
         \\    textureStore(output, coords, rgba);
         \\}
     ;
-    const demosaic_conns = [_]pie.engine.gpu.ComputePipelineConn{ .{
-        .binding = 0,
-        .type = .input,
-        .format = .rgba16float,
-    }, .{
-        .binding = 1,
-        .type = .output,
-        .format = .rgba16float,
-    } };
-    var demosaic_compute_pipeline = try pie.engine.gpu.ComputePipeline.init(&gpu, demosaic_packed, "demosaic_packed", demosaic_conns);
+    var shader_demosaic = try pie.engine.gpu.Shader.compile(&gpu, demosaic_packed, .{});
+    defer shader_demosaic.deinit();
+
+    var layout_group_0_binding: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
+    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
+
+    var layout_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    layout_group[0] = layout_group_0_binding;
+    var demosaic_compute_pipeline = try pie.engine.gpu.ComputePipeline.init(&gpu, shader_demosaic, "demosaic_packed", layout_group);
     defer demosaic_compute_pipeline.deinit();
 
     // UPPER MEMORY
-    var texture_upper_in2 = texture_upper_out; // reuse the output of the format conversion
+    const texture_upper_in2 = texture_upper_out; // reuse the output of the format conversion
     // var texture_upper_in2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[0].format, roi_in_upper);
     // defer texture_upper_in2.deinit();
     // gpu.enqueueCopyTextureToTexture(&texture_upper_out, &texture_upper_in2, roi_in_upper) catch unreachable;
 
-    var texture_upper_out2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[1].format, roi_out_upper);
+    var texture_upper_out2 = try pie.engine.gpu.Texture.init(&gpu, "upper_out2", layout_group_0_binding[1].?.texture.?.format, roi_out_upper);
     defer texture_upper_out2.deinit();
 
-    bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_compute_pipeline, &texture_upper_in2, &texture_upper_out2);
+    var bind_group_0_binds_upper: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_0_binds_upper[0] = .{ .texture = texture_upper_in2 };
+    bind_group_0_binds_upper[1] = .{ .texture = texture_upper_out2 };
+
+    var bind_group_upper: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_upper[0] = bind_group_0_binds_upper;
+
+    bindings_upper = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_compute_pipeline, bind_group_upper);
     defer bindings_upper.deinit();
 
     // LOWER MEMORY
-    var texture_lower_in2 = texture_lower_out; // reuse the output of the format conversion
+    const texture_lower_in2 = texture_lower_out; // reuse the output of the format conversion
     // var texture_lower_in2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[0].format, roi_in_lower);
     // defer texture_lower_in2.deinit();
     // gpu.enqueueCopyTextureToTexture(&texture_lower_out, &texture_lower_in2, roi_in_lower) catch unreachable;
 
-    var texture_lower_out2 = try pie.engine.gpu.Texture.init(&gpu, demosaic_conns[1].format, roi_out_lower);
+    var texture_lower_out2 = try pie.engine.gpu.Texture.init(&gpu, "lower_out2", layout_group_0_binding[1].?.texture.?.format, roi_out_lower);
     defer texture_lower_out2.deinit();
 
-    bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_compute_pipeline, &texture_lower_in2, &texture_lower_out2);
+    var bind_group_0_binds_lower: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_0_binds_lower[0] = .{ .texture = texture_lower_in2 };
+    bind_group_0_binds_lower[1] = .{ .texture = texture_lower_out2 };
+
+    var bind_group_lower: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    bind_group_lower[0] = bind_group_0_binds_lower;
+
+    bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &demosaic_compute_pipeline, bind_group_lower);
     defer bindings_lower.deinit();
 
     // copy from last step
@@ -309,23 +336,29 @@ test "load raw, demosaic, save" {
     // PASS 2 | BOTTOM HALF
     encoder.enqueueShader(&demosaic_compute_pipeline, &bindings_lower, roi_out_lower);
 
-    encoder.enqueueTexToBuf(&gpu_allocator, &texture_upper_out2, roi_out_upper) catch unreachable;
-    encoder.enqueueTexToBuf(&gpu_allocator, &texture_lower_out2, roi_out_lower) catch unreachable;
+    encoder.enqueueTexToBuf(&download, download_offset_upper, &texture_upper_out2, roi_out_upper) catch unreachable;
+    encoder.enqueueTexToBuf(&download, download_offset_lower, &texture_lower_out2, roi_out_lower) catch unreachable;
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
-    const result = try gpu_allocator.download(f16, .rgba16float, roi_out);
+    // const result = try gpu_allocator.download(f16, .rgba16float, roi_out);
+    // DOWNLOAD
+    download.map();
+    @memcpy(destination[0..download_buf_upper.len], download_buf_upper);
+    std.debug.print("Downloaded upper half size: {d} {d}\n", .{ download_buf_upper.len, download_buf_lower.len });
+    @memcpy(destination[download_buf_upper.len..], download_buf_lower);
+    download.unmap();
 
     std.log.info("\nDownload buffer contents: ", .{});
-    printImgBufContents(f16, result, roi_out.w * 4);
+    printImgBufContents(f16, destination, roi_out.w * 4);
 
     // EXPORT PNG
     {
         // convert f16 slice to f32 slice
         std.log.info("Casting f16 to f32", .{});
-        const output_slice = try allocator.alloc(f32, result.len);
+        const output_slice = try allocator.alloc(f32, destination.len);
         defer allocator.free(output_slice);
-        for (result, 0..) |value, i| {
+        for (destination, 0..) |value, i| {
             output_slice[i] = @as(f32, value);
         }
 
