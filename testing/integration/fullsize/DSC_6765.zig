@@ -77,16 +77,23 @@ test "load raw, demosaic, save" {
     roi_in = roi_in.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
     var roi_out = roi_in;
-    const roi_in_upper, const roi_in_lower = roi_in.splitH();
+    var roi_in_upper, var roi_in_lower = roi_in.splitH();
     var roi_out_upper, var roi_out_lower = roi_out.splitH();
+
+    // since we are splitting the texture and buffer by hand, set x and y to 0
+    roi_in_upper.x = 0;
+    roi_in_upper.y = 0;
+    roi_out_upper.x = 0;
+    roi_out_upper.y = 0;
 
     var gpu = try pie.engine.gpu.GPU.init();
     defer gpu.deinit();
 
     // these are intentionally over-provisioned to avoid OOM issues
-    var upload = try pie.engine.gpu.Buffer.init(&gpu, 10 * 1024 * 1024 * pie.engine.gpu.TextureFormat.rgba16float.bpp(), .upload);
+    const some_size_larger_than_needed = 20 * 1024 * 1024 * pie.engine.gpu.TextureFormat.rgba16float.bpp();
+    var upload = try pie.engine.gpu.Buffer.init(&gpu, some_size_larger_than_needed, .upload);
     defer upload.deinit();
-    var download = try pie.engine.gpu.Buffer.init(&gpu, 10 * 1024 * 1024 * pie.engine.gpu.TextureFormat.rgba16float.bpp(), .download);
+    var download = try pie.engine.gpu.Buffer.init(&gpu, some_size_larger_than_needed, .download);
     defer download.deinit();
 
     // ALLOCATORS
@@ -96,36 +103,28 @@ test "load raw, demosaic, save" {
     var download_fba = download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
-    // UPLOAD
-    std.log.info("Image region: {any} {any}", .{ roi_in.w, roi_in.h });
-    std.log.info("Upload buffer contents: ", .{});
-    printImgBufContents(u16, init_contents_u16, roi_in.w * 2);
-
     // PREP UPLOAD
     const upload_offset_upper = upload_fba.end_index;
-    const upload_buf_upper = try upload_allocator.alloc(f16, roi_in_upper.w * roi_in_upper.h * source_format.nchannels());
+    const upload_buf_upper = try upload_allocator.alloc(u8, roi_in_upper.w * roi_in_upper.h * source_format.bpp());
     const upload_offset_lower = upload_fba.end_index;
-    const upload_buf_lower = try upload_allocator.alloc(f16, roi_in_lower.w * roi_in_lower.h * source_format.nchannels());
+    const upload_buf_lower = try upload_allocator.alloc(u8, roi_in_lower.w * roi_in_lower.h * source_format.bpp());
 
     // PREP DOWNLOAD
     const download_offset_upper = download_fba.end_index;
-    const download_buf_upper = try download_allocator.alloc(f16, roi_out_upper.w * roi_out_upper.h * destination_format.nchannels());
+    const download_buf_upper = try download_allocator.alloc(u8, roi_out_upper.w * roi_out_upper.h * destination_format.bpp());
     const download_offset_lower = download_fba.end_index;
-    const download_buf_lower = try download_allocator.alloc(f16, roi_out_lower.w * roi_out_lower.h * destination_format.nchannels());
+    const download_buf_lower = try download_allocator.alloc(u8, roi_out_lower.w * roi_out_lower.h * destination_format.bpp());
 
-    // print init_contents_u16 len and roi_in_upper.w * roi_in_upper.h * source_format.nchannels()
-    std.log.info("init_contents_u16.len: {d}", .{init_contents_u16.len});
-    std.log.info("roi_in_upper.w * roi_in_upper.h * source_format.nchannels(): {d}", .{roi_in_upper.w * roi_in_upper.h * source_format.nchannels()});
-
-    printImgBufContents(u16, init_contents_u16, roi_out.w * 2);
+    // print offsets
+    // std.log.info("Upload offset upper: {d}", .{upload_offset_upper});
+    // std.log.info("Upload offset lower: {d}", .{upload_offset_lower});
+    // std.log.info("Download offset upper: {d}", .{download_offset_upper});
+    // std.log.info("Download offset lower: {d}", .{download_offset_lower});
 
     // UPLOAD
     upload.map();
-    @memcpy(upload_buf_upper, @as([]f16, @ptrCast(@alignCast(init_contents_u16[0 .. roi_in_upper.w * roi_in_upper.h * source_format.nchannels()]))));
-    @memcpy(upload_buf_lower, @as([]f16, @ptrCast(@alignCast(init_contents_u16[roi_in_upper.w * roi_in_upper.h * source_format.nchannels() ..]))));
-
-    printImgBufContents(f16, upload_buf_upper, roi_out.w * 2);
-    printImgBufContents(f16, upload_buf_lower, roi_out.w * 2);
+    @memcpy(upload_buf_upper, @as([*]u8, @ptrCast(@alignCast(init_contents_u16[0 .. roi_in_upper.w * roi_in_upper.h * source_format.nchannels()]))));
+    @memcpy(upload_buf_lower, @as([*]u8, @ptrCast(@alignCast(init_contents_u16[roi_in_upper.w * roi_in_upper.h * source_format.nchannels() ..]))));
     upload.unmap();
 
     var encoder = try pie.engine.gpu.Encoder.start(&gpu);
@@ -193,35 +192,42 @@ test "load raw, demosaic, save" {
     var bindings_lower = try pie.engine.gpu.Bindings.init(&gpu, &convert_compute_pipeline, bind_group_lower_convert);
     defer bindings_lower.deinit();
 
-    encoder.enqueueBufToTex(&upload, upload_offset_upper, &texture_upper_in, roi_in_upper) catch unreachable;
-    encoder.enqueueBufToTex(&upload, upload_offset_lower, &texture_lower_in, roi_in_lower) catch unreachable;
-
     // PASS 1 | TOP HALF
+    encoder.enqueueBufToTex(&upload, upload_offset_upper, &texture_upper_in, roi_in_upper) catch unreachable;
     encoder.enqueueShader(&convert_compute_pipeline, &bindings_upper, roi_out_upper);
+
     // PASS 2 | BOTTOM HALF
+    encoder.enqueueBufToTex(&upload, upload_offset_lower, &texture_lower_in, roi_in_lower) catch unreachable;
     encoder.enqueueShader(&convert_compute_pipeline, &bindings_lower, roi_out_lower);
 
-    { // EARLY DOWNLOAD TO TEST FORMAT CONVERSION
-        encoder.enqueueTexToBuf(&download, download_offset_upper, &texture_upper_out, roi_out_upper) catch unreachable;
-        encoder.enqueueTexToBuf(&download, download_offset_lower, &texture_lower_out, roi_out_lower) catch unreachable;
-        gpu.run(encoder.finish()) catch unreachable;
+    // { // EARLY DOWNLOAD TO TEST FORMAT CONVERSION
+    //     encoder.enqueueTexToBuf(&download, download_offset_upper, &texture_upper_out, roi_out_upper) catch unreachable;
+    //     encoder.enqueueTexToBuf(&download, download_offset_lower, &texture_lower_out, roi_out_lower) catch unreachable;
+    //     gpu.run(encoder.finish()) catch unreachable;
 
-        // DOWNLOAD
-        var destination = try allocator.alloc(f16, roi_out.w * roi_out.h * destination_format.nchannels());
-        defer allocator.free(destination);
+    //     // DOWNLOAD
+    //     var destination = try allocator.alloc(u8, roi_out.w * roi_out.h * destination_format.bpp());
+    //     defer allocator.free(destination);
 
-        download.map();
-        @memcpy(destination[0..download_buf_upper.len], download_buf_upper);
-        @memcpy(destination[download_buf_upper.len..], download_buf_lower);
-        download.unmap();
+    //     download.map();
+    //     @memcpy(destination[0..download_buf_upper.len], download_buf_upper);
+    //     @memcpy(destination[download_buf_upper.len..], download_buf_lower);
 
-        std.log.info("\nDownload buffer contents: ", .{});
-        // printImgBufContents(f16, destination, roi_out.w * 4);
-        printImgBufContents(f16, destination, roi_out.w * 2);
-        if (true) {
-            return error.SkipZigTest;
-        }
-    }
+    //     // std.debug.print("----- download_buf_upper\n", .{});
+    //     // printImgBufContents(u8, download_buf_upper, roi_out.w * 2);
+    //     // std.debug.print("----- download_buf_lower\n", .{});
+    //     // printImgBufContents(u8, download_buf_lower, roi_out.w * 2);
+    //     // std.debug.print("-----\n", .{});
+
+    //     download.unmap();
+
+    //     std.log.info("\nDownload buffer contents: ", .{});
+    //     // printImgBufContents(u8, destination, roi_out.w * 4);
+    //     printImgBufContents(u8, destination, roi_out.w * 2);
+    //     if (true) {
+    //         return error.SkipZigTest;
+    //     }
+    // }
 
     roi_out_upper = roi_in_upper.scaled(2, 0.5); // works
     roi_out_lower = roi_in_lower.scaled(2, 0.5); // works
@@ -357,8 +363,8 @@ test "load raw, demosaic, save" {
     defer allocator.free(destination);
 
     download.map();
-    @memcpy(destination[0..download_buf_upper.len], download_buf_upper);
-    @memcpy(destination[download_buf_upper.len..], download_buf_lower);
+    @memcpy(destination[0..download_buf_upper.len], @as([*]f16, @ptrCast(@alignCast(download_buf_upper))));
+    @memcpy(destination[download_buf_upper.len..], @as([*]f16, @ptrCast(@alignCast(download_buf_lower))));
     download.unmap();
 
     std.log.info("\nDownload buffer contents: ", .{});

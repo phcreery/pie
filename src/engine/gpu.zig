@@ -318,7 +318,7 @@ pub const Encoder = struct {
             .height = roi.h,
             .depth_or_array_layers = 1,
         };
-        const offset = @as(u64, mem_offset) + @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
+        const offset = @as(u64, mem_offset); //+ @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
         const source = wgpu.TexelCopyBufferInfo{
             .buffer = memory.buffer,
             .layout = wgpu.TexelCopyBufferLayout{
@@ -361,11 +361,10 @@ pub const Encoder = struct {
             // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
             .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
         };
-        const offset = @as(u64, mem_offset) + @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
+        const offset = @as(u64, mem_offset); //+ @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
         const destination = wgpu.TexelCopyBufferInfo{
             .buffer = buffer.buffer,
             .layout = wgpu.TexelCopyBufferLayout{
-                // .offset = 0,
                 .offset = offset,
                 .bytes_per_row = padded_bytes_per_row,
                 .rows_per_image = roi.h,
