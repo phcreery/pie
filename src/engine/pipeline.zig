@@ -292,7 +292,6 @@ pub const Pipeline = struct {
 
         slog.debug("Running pipeline", .{});
 
-        self.perf.timerClear();
         try self.perf.timerStart();
 
         if (self.rerouted) {
@@ -315,6 +314,7 @@ pub const Pipeline = struct {
 
             self.runModulesCreateNodes() catch unreachable;
             self.perf.timerLap("runModulesCreateNodes") catch unreachable;
+
             // Then run nodes
             self.runNodesCreateOutputConnectorHandles() catch unreachable;
             self.perf.timerLap("runNodesCreateOutputConnectorHandles") catch unreachable;
@@ -330,6 +330,7 @@ pub const Pipeline = struct {
 
             // TODO: clean up unused modules
             // TODO: clean up unused nodes
+            // TODO: clean up unused connectors
 
             self.rerouted = false;
             self.dirty = true;
@@ -350,14 +351,11 @@ pub const Pipeline = struct {
             self.dirty = false;
         }
 
-        // self.perf.uploadBuffer_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.size else 0;
-        // self.perf.uploadBufferUsage_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.size - upload_fba.totalFreeSpace() else 0;
-        // self.perf.downloadBuffer_size_bytes = if (self.download_fba) |*download_fba| download_fba.size else 0;
-        // self.perf.downloadBufferUsage_size_bytes = if (self.download_fba) |*download_fba| download_fba.size - download_fba.totalFreeSpace() else 0;
         self.perf.recordUploadBufferUsage(self.upload_fba);
         self.perf.recordDownloadBufferUsage(self.download_fba);
         self.perf.countModules(&self.module_pool);
         self.perf.countNodes(&self.node_pool);
+        self.perf.countConnectors(&self.connector_pool);
         self.perf.printReport();
     }
 
@@ -1134,16 +1132,17 @@ pub const PerfMetrics = struct {
     allocator: std.mem.Allocator,
 
     timer: std.time.Timer,
-    keys: std.ArrayList([]const u8),
+    time_keys: std.ArrayList([]const u8),
     times: std.StringHashMap(u64),
 
-    uploadBuffer_size_bytes: ?usize,
-    uploadBufferUsage_size_bytes: ?usize,
-    downloadBuffer_size_bytes: ?usize,
-    downloadBufferUsage_size_bytes: ?usize,
+    upload_buffer_size_bytes: ?usize,
+    upload_buffer_usage_size_bytes: ?usize,
+    download_buffer_size_bytes: ?usize,
+    download_buffer_usage_size_bytes: ?usize,
 
     number_of_modules: ?usize,
     number_of_nodes: ?usize,
+    number_of_connectors: ?usize,
 
     const Self = @This();
 
@@ -1151,48 +1150,46 @@ pub const PerfMetrics = struct {
         return PerfMetrics{
             .allocator = allocator,
             .timer = undefined,
-            .keys = try std.ArrayList([]const u8).initCapacity(allocator, 16),
+            .time_keys = try std.ArrayList([]const u8).initCapacity(allocator, 16),
             .times = std.StringHashMap(u64).init(allocator),
-            .uploadBuffer_size_bytes = null,
-            .uploadBufferUsage_size_bytes = null,
-            .downloadBuffer_size_bytes = null,
-            .downloadBufferUsage_size_bytes = null,
+            .upload_buffer_size_bytes = null,
+            .upload_buffer_usage_size_bytes = null,
+            .download_buffer_size_bytes = null,
+            .download_buffer_usage_size_bytes = null,
             .number_of_modules = null,
             .number_of_nodes = null,
+            .number_of_connectors = null,
         };
     }
 
     fn deinit(self: *PerfMetrics) void {
         self.times.deinit();
-        self.keys.deinit(self.allocator);
+        self.time_keys.deinit(self.allocator);
     }
 
     /// TIMER
     fn timerStart(self: *PerfMetrics) !void {
+        self.timer.reset();
+        self.time_keys.clearAndFree(self.allocator);
+        self.times.clearAndFree();
         self.timer = try std.time.Timer.start();
     }
 
     fn timerLap(self: *PerfMetrics, name: []const u8) !void {
         const elapsed_ns = self.timer.lap();
         _ = try self.times.put(name, elapsed_ns);
-        try self.keys.append(self.allocator, name);
+        try self.time_keys.append(self.allocator, name);
         self.timer.reset();
-    }
-
-    fn timerClear(self: *PerfMetrics) void {
-        self.timer.reset();
-        self.keys.clearAndFree(self.allocator);
-        self.times.clearAndFree();
     }
 
     /// BUFFER
     fn recordUploadBufferUsage(self: *PerfMetrics, upload_fba: ?gpu.Buffer.Allocator) void {
-        self.uploadBuffer_size_bytes = if (upload_fba) |*fba| fba.size else 0;
-        self.uploadBufferUsage_size_bytes = if (upload_fba) |*fba| fba.size - fba.totalFreeSpace() else 0;
+        self.upload_buffer_size_bytes = if (upload_fba) |*fba| fba.size else 0;
+        self.upload_buffer_usage_size_bytes = if (upload_fba) |*fba| fba.size - fba.totalFreeSpace() else 0;
     }
     fn recordDownloadBufferUsage(self: *PerfMetrics, download_fba: ?gpu.Buffer.Allocator) void {
-        self.downloadBuffer_size_bytes = if (download_fba) |*fba| fba.size else 0;
-        self.downloadBufferUsage_size_bytes = if (download_fba) |*fba| fba.size - fba.totalFreeSpace() else 0;
+        self.download_buffer_size_bytes = if (download_fba) |*fba| fba.size else 0;
+        self.download_buffer_usage_size_bytes = if (download_fba) |*fba| fba.size - fba.totalFreeSpace() else 0;
     }
 
     /// POOL
@@ -1216,6 +1213,16 @@ pub const PerfMetrics = struct {
         }
     }
 
+    fn countConnectors(self: *PerfMetrics, connector_pool: *ConnectorPool) void {
+        if (self.number_of_connectors == null) {
+            self.number_of_connectors = 0;
+        }
+        var conn_pool_handles = connector_pool.liveHandles();
+        while (conn_pool_handles.next()) |_| {
+            self.number_of_connectors.? += 1;
+        }
+    }
+
     fn printReport(self: *PerfMetrics) void {
         // const printFn = std.debug.print;
         const printFn = slog.info;
@@ -1228,7 +1235,7 @@ pub const PerfMetrics = struct {
         }
 
         printFn("Pipeline Performance Report:", .{});
-        for (self.keys.items) |key| {
+        for (self.time_keys.items) |key| {
             const entry = self.times.getPtr(key) orelse continue;
             printFn(" {d: >5.2}% {d: >5.2} ms {s}", .{
                 @as(f64, @floatFromInt(entry.*)) / total_time_ns * 100.0,
@@ -1238,26 +1245,25 @@ pub const PerfMetrics = struct {
         }
         printFn(" Total time: {d} ms", .{total_time_ns / std.time.ns_per_ms});
 
-        const uploadBufferUsage_size_bytes = self.uploadBufferUsage_size_bytes orelse 0;
-        const uploadBuffer_size_bytes = self.uploadBuffer_size_bytes orelse 0;
-        const downloadBufferUsage_size_bytes = self.downloadBufferUsage_size_bytes orelse 0;
-        const downloadBuffer_size_bytes = self.downloadBuffer_size_bytes orelse 0;
+        const upload_buffer_usage_size_bytes = self.upload_buffer_usage_size_bytes orelse 0;
+        const upload_buffer_size_bytes = self.upload_buffer_size_bytes orelse 0;
+        const download_buffer_usage_size_bytes = self.download_buffer_usage_size_bytes orelse 0;
+        const download_buffer_size_bytes = self.download_buffer_size_bytes orelse 0;
         printFn(" {d: >5.2}% {B:.2}/{B:.2} {s}", .{
-            @as(f64, @floatFromInt(uploadBufferUsage_size_bytes)) / @as(f64, @floatFromInt(uploadBuffer_size_bytes)) * 100.0,
-            uploadBufferUsage_size_bytes,
-            uploadBuffer_size_bytes,
-            "uploadBuffer_size_bytes",
+            @as(f64, @floatFromInt(upload_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(upload_buffer_size_bytes)) * 100.0,
+            upload_buffer_usage_size_bytes,
+            upload_buffer_size_bytes,
+            "upload_buffer_size_bytes",
         });
         printFn(" {d: >5.2}% {B:.2}/{B:.2} {s}", .{
-            @as(f64, @floatFromInt(downloadBufferUsage_size_bytes)) / @as(f64, @floatFromInt(downloadBuffer_size_bytes)) * 100.0,
-            downloadBufferUsage_size_bytes,
-            downloadBuffer_size_bytes,
-            "downloadBuffer_size_bytes",
+            @as(f64, @floatFromInt(download_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(download_buffer_size_bytes)) * 100.0,
+            download_buffer_usage_size_bytes,
+            download_buffer_size_bytes,
+            "download_buffer_size_bytes",
         });
 
-        const number_of_modules = self.number_of_modules orelse 0;
-        const number_of_nodes = self.number_of_nodes orelse 0;
-        printFn(" {d} modules", .{number_of_modules});
-        printFn(" {d} nodes", .{number_of_nodes});
+        printFn(" {d} modules", .{self.number_of_modules orelse 0});
+        printFn(" {d} nodes", .{self.number_of_nodes orelse 0});
+        printFn(" {d} connectors", .{self.number_of_connectors orelse 0});
     }
 };
