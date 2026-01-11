@@ -568,7 +568,7 @@ pub const Pipeline = struct {
                     if (module.enabled == false) continue;
                     const size_bytes = module.param_size orelse return error.ModuleParamBufferSizeNotSet;
                     slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
-                    const mapped_param_slice = try upload_allocator.alignedAlloc(u8, .@"16", size_bytes);
+                    const mapped_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
                     const param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
                     const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_param_slice.ptr));
@@ -794,7 +794,7 @@ pub const Pipeline = struct {
                 if (sock.type == .source) {
                     const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
                     slog.debug("Allocating upload buffer for textures for size {d} bytes", .{size_bytes});
-                    const mapped_slice = try upload_allocator.alignedAlloc(u8, .@"16", size_bytes);
+                    const mapped_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
                     const upload_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(upload_fba.ptr);
                     sock.*.private.staging_offset = upload_offset;
@@ -819,7 +819,7 @@ pub const Pipeline = struct {
                 if (sock.type == .sink) {
                     const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
                     slog.debug("Allocating download buffer at for size {d} bytes", .{size_bytes});
-                    const mapped_slice = try download_allocator.alignedAlloc(u8, .@"16", size_bytes);
+                    const mapped_slice = try download_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
                     const download_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(download_fba.ptr);
                     sock.*.private.staging_offset = download_offset;
