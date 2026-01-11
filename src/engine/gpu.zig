@@ -2,10 +2,14 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
+const zuballoc = @import("zuballoc");
 
 const slog = std.log.scoped(.gpu);
 
-const COPY_BUFFER_ALIGNMENT: u64 = 4; // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
+// Copy error Buffer offset 4 is not aligned to block size or `COPY_BUFFER_ALIGNMENT`
+// https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
+// const COPY_BUFFER_ALIGNMENT: u64 = 4; //
+pub const COPY_BUFFER_ALIGNMENT: std.mem.Alignment = .@"8";
 const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
 pub const MAX_BIND_GROUPS: usize = 4;
@@ -171,14 +175,18 @@ pub const Buffer = struct {
         @memcpy(upload_buffer_slice, data);
     }
 
-    pub fn fixedBufferAllocator(gpu_memory: *Buffer) std.heap.FixedBufferAllocator {
+    // pub const BufferAllocator = std.heap.FixedBufferAllocator;
+    pub const Allocator = zuballoc.SubAllocator;
+
+    pub fn fixedBufferAllocator(self: *Self) !Allocator {
         // slog.debug("Buffer size: {d}", .{gpu_memory.buffer_size});
-        const mapped_ptr: *anyopaque = gpu_memory.mapSize(gpu_memory.buffer_size);
-        defer gpu_memory.unmap();
+        const mapped_ptr: *anyopaque = self.mapSize(self.buffer_size);
+        defer self.unmap();
         const buffer_ptr: [*]u8 = @ptrCast(@alignCast(mapped_ptr));
-        const buffer_slice = buffer_ptr[0..@as(usize, gpu_memory.buffer_size)];
-        const fba = std.heap.FixedBufferAllocator.init(buffer_slice);
-        return fba;
+        const buffer_slice = buffer_ptr[0..@as(usize, self.buffer_size)];
+        // const buf_allocator = std.heap.FixedBufferAllocator.init(buffer_slice);
+        const buf_allocator = try zuballoc.SubAllocator.init(std.heap.smp_allocator, buffer_slice, 256);
+        return buf_allocator;
     }
 
     /// Alternative mapUpload that writes directly to a texture

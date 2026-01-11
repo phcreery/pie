@@ -63,20 +63,20 @@ test "simple compute test with parameters" {
     var multiply_compute_pipeline = try ComputePipeline.init(&gpu, shader, "multiply", layout_group);
     defer multiply_compute_pipeline.deinit();
 
-    // STAGING BUFFERS
+    // BUFFERS
     // these are intentionally over-provisioned to avoid OOM issues
-    var upload = try Buffer.init(&gpu, 16 * TextureFormat.rgba16float.bpp() + 16 * @sizeOf(f32), .upload);
+    var upload = try Buffer.init(&gpu, 100 * 16 * TextureFormat.rgba16float.bpp() + 16 * @sizeOf(f32), .upload);
     defer upload.deinit();
-    var download = try Buffer.init(&gpu, 1 * TextureFormat.rgba16float.bpp(), .download);
+    var download = try Buffer.init(&gpu, 100 * 1 * TextureFormat.rgba16float.bpp(), .download);
     defer download.deinit();
+    var param_buffer = try Buffer.init(&gpu, 100 * @sizeOf(f32), .storage);
+    defer param_buffer.deinit();
 
-    // MEMORY
+    // TEXTURES
     var texture_in = try Texture.init(&gpu, "in", source_format, roi);
     defer texture_in.deinit();
     var texture_out = try Texture.init(&gpu, "out", destination_format, roi);
     defer texture_out.deinit();
-    var param_buffer = try Buffer.init(&gpu, @sizeOf(f32), .storage);
-    defer param_buffer.deinit();
 
     // BINDINGS
     var bind_group_0_binds: [MAX_BINDINGS]?BindGroupEntry = @splat(null);
@@ -94,29 +94,31 @@ test "simple compute test with parameters" {
     defer multiply_compute_pipeline_bindings.deinit();
 
     // ALLOCATORS
-    var upload_fba = upload.fixedBufferAllocator();
+    var upload_fba = try upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
-    const induced_buf = try upload_allocator.alignedAlloc(f16, .@"16", roi.w * roi.h * source_format.nchannels());
-    const induced_offset = @intFromPtr(induced_buf.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+    const induced_buf = try upload_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
+    const induced_offset = @intFromPtr(induced_buf.ptr) - @intFromPtr(upload_fba.ptr);
     std.log.info("Upload induced offset: {d}", .{induced_offset});
 
-    var download_fba = download.fixedBufferAllocator();
+    var download_fba = try download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
     // PREP PARAMS
-    const param_buf = try upload_allocator.alignedAlloc(f32, .@"16", 1);
-    const param_offset = @intFromPtr(param_buf.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+    const param_buf = try upload_allocator.alignedAlloc(f32, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, 1);
+    const param_offset = @intFromPtr(param_buf.ptr) - @intFromPtr(upload_fba.ptr);
+
     std.log.info("Upload params offset: {d}", .{param_offset});
 
     // PREP UPLOAD
-    const src_buf = try upload_allocator.alignedAlloc(f16, .@"16", roi.w * roi.h * source_format.nchannels());
-    const src_offset = @intFromPtr(src_buf.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+    const src_buf = try upload_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
+    const src_offset = @intFromPtr(src_buf.ptr) - @intFromPtr(upload_fba.ptr);
+
     std.log.info("Upload texture offset: {d}", .{src_offset});
 
     // PREP DOWNLOAD
-    const dest_offset = download_fba.end_index;
-    const dest_buf = try download_allocator.alloc(f16, roi.w * roi.h * destination_format.nchannels());
+    const dest_buf = try download_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * destination_format.nchannels());
+    const dest_offset = @intFromPtr(dest_buf.ptr) - @intFromPtr(download_fba.ptr);
 
     // UPLOAD
     upload.map();

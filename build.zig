@@ -61,6 +61,10 @@ pub fn build(b: *Build) !void {
     // const dep_zpool = b.dependency("zpool", opts);
     const termsize = b.dependency("termsize", opts);
     const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
+    const dep_zuballoc = b.dependency("zuballoc", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -94,6 +98,7 @@ pub fn build(b: *Build) !void {
             // .{ .name = "ztracy", .module = dep_ztracy.module("root")  },
             // .{ .name = "zpool", .module = dep_zpool.module("root")  },
             .{ .name = "termsize", .module = termsize.module("termsize") },
+            .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
     mod_main.addOptions("build_options", mod_options);

@@ -15,9 +15,9 @@ test "simple compute double buffer test" {
     var gpu = try GPU.init();
     defer gpu.deinit();
 
-    var upload = try Buffer.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .upload);
+    var upload = try Buffer.init(&gpu, 100 * 4 * TextureFormat.rgba16float.bpp(), .upload);
     defer upload.deinit();
-    var download = try Buffer.init(&gpu, 4 * TextureFormat.rgba16float.bpp(), .download);
+    var download = try Buffer.init(&gpu, 100 * 4 * TextureFormat.rgba16float.bpp(), .download);
     defer download.deinit();
 
     const format = TextureFormat.rgba16float;
@@ -80,23 +80,21 @@ test "simple compute double buffer test" {
     defer bindings_b_to_a.deinit();
 
     // ALLOCATORS
-    var upload_fba = upload.fixedBufferAllocator();
+    var upload_fba = try upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
     _ = try upload_allocator.alloc(f16, roi.w * roi.h * format.nchannels());
 
-    var download_fba = download.fixedBufferAllocator();
+    var download_fba = try download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD
-    const upload_offset = upload_fba.end_index;
-    const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * format.nchannels());
-    // const offset = upload_buf.ptr - upload_fba.buffer.ptr
-    std.log.info("Upload offset: {d}", .{upload_offset});
+    const upload_buf = try upload_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * format.nchannels());
+    const upload_offset = @intFromPtr(upload_buf.ptr) - @intFromPtr(upload_fba.ptr);
 
     // PREP DOWNLOAD
-    const download_offset = download_fba.end_index;
-    const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * format.nchannels());
+    const download_buf = try download_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * format.nchannels());
+    const download_offset = @intFromPtr(download_buf.ptr) - @intFromPtr(download_fba.ptr);
 
     // UPLOAD
     upload.map();

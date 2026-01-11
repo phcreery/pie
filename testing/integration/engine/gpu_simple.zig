@@ -75,23 +75,23 @@ test "simple compute test" {
     defer bindings.deinit();
 
     // ALLOCATORS
-    var upload_fba = upload.fixedBufferAllocator();
+    var upload_fba = try upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
     _ = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
 
-    var download_fba = download.fixedBufferAllocator();
+    var download_fba = try download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD
-    const upload_offset = upload_fba.end_index;
-    const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
-    // const offset = upload_buf.ptr - upload_fba.buffer.ptr
+    // const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
+    const upload_buf = try upload_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
+    const upload_offset = @intFromPtr(upload_buf.ptr) - @intFromPtr(upload_fba.ptr);
     std.log.info("Upload offset: {d}", .{upload_offset});
 
     // PREP DOWNLOAD
-    const download_offset = download_fba.end_index;
-    const download_buf = try download_allocator.alloc(f16, roi.w * roi.h * destination_format.nchannels());
+    const download_buf = try download_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * destination_format.nchannels());
+    const download_offset = @intFromPtr(download_buf.ptr) - @intFromPtr(download_fba.ptr);
 
     // UPLOAD
     upload.map();

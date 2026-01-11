@@ -48,10 +48,10 @@ pub const Pipeline = struct {
     gpu: ?*gpu.GPU,
 
     upload_buffer: ?gpu.Buffer,
-    upload_fba: ?std.heap.FixedBufferAllocator,
+    upload_fba: ?gpu.Buffer.Allocator,
 
     download_buffer: ?gpu.Buffer,
-    download_fba: ?std.heap.FixedBufferAllocator,
+    download_fba: ?gpu.Buffer.Allocator,
 
     module_pool: ModulePool,
     module_execution_order: std.ArrayList(ModuleHandle),
@@ -80,18 +80,18 @@ pub const Pipeline = struct {
             slog.debug("No GPU instance provided, performing a dry run", .{});
         }
         var upload_buffer: ?gpu.Buffer = null;
-        var upload_fba: ?std.heap.FixedBufferAllocator = null;
+        var upload_fba: ?gpu.Buffer.Allocator = null;
         var download_buffer: ?gpu.Buffer = null;
-        var download_fba: ?std.heap.FixedBufferAllocator = null;
+        var download_fba: ?gpu.Buffer.Allocator = null;
         if (gpu_instance) |gpu_inst| {
             upload_buffer = try gpu.Buffer.init(gpu_inst, config.upload_buffer_size_bytes, .upload);
             if (upload_buffer) |*ub| {
-                upload_fba = ub.fixedBufferAllocator();
+                upload_fba = try ub.fixedBufferAllocator();
                 errdefer ub.deinit();
             }
             download_buffer = try gpu.Buffer.init(gpu_inst, config.download_buffer_size_bytes, .download);
             if (download_buffer) |*db| {
-                download_fba = db.fixedBufferAllocator();
+                download_fba = try db.fixedBufferAllocator();
                 errdefer db.deinit();
             }
         } else {
@@ -347,12 +347,10 @@ pub const Pipeline = struct {
             self.dirty = false;
         }
 
-        // because we are using a fixed buffer allocator, the end index tells us how much of the buffer is used
-        // ideally, we would use an allocator that can free elements at the beginning or middle
-        self.perf_metrics.uploadBuffer_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.buffer.len else 0;
-        self.perf_metrics.uploadBufferUsage_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.end_index else 0;
-        self.perf_metrics.downloadBuffer_size_bytes = if (self.download_fba) |*download_fba| download_fba.buffer.len else 0;
-        self.perf_metrics.downloadBufferUsage_size_bytes = if (self.download_fba) |*download_fba| download_fba.end_index else 0;
+        self.perf_metrics.uploadBuffer_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.size else 0;
+        self.perf_metrics.uploadBufferUsage_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.size - upload_fba.totalFreeSpace() else 0;
+        self.perf_metrics.downloadBuffer_size_bytes = if (self.download_fba) |*download_fba| download_fba.size else 0;
+        self.perf_metrics.downloadBufferUsage_size_bytes = if (self.download_fba) |*download_fba| download_fba.size - download_fba.totalFreeSpace() else 0;
 
         if (self.perf_metrics.number_of_modules == null) {
             self.perf_metrics.number_of_modules = 0;
@@ -572,7 +570,7 @@ pub const Pipeline = struct {
                     slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
                     const mapped_param_slice = try upload_allocator.alignedAlloc(u8, .@"16", size_bytes);
 
-                    const param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+                    const param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
                     const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_param_slice.ptr));
                     module.mapped_param_slice_ptr = mapped_slice_ptr;
 
@@ -798,7 +796,7 @@ pub const Pipeline = struct {
                     slog.debug("Allocating upload buffer for textures for size {d} bytes", .{size_bytes});
                     const mapped_slice = try upload_allocator.alignedAlloc(u8, .@"16", size_bytes);
 
-                    const upload_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(upload_fba.buffer.ptr);
+                    const upload_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(upload_fba.ptr);
                     sock.*.private.staging_offset = upload_offset;
                     const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
                     sock.*.private.staging_ptr = mapped_slice_ptr;
@@ -823,7 +821,7 @@ pub const Pipeline = struct {
                     slog.debug("Allocating download buffer at for size {d} bytes", .{size_bytes});
                     const mapped_slice = try download_allocator.alignedAlloc(u8, .@"16", size_bytes);
 
-                    const download_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(download_fba.buffer.ptr);
+                    const download_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(download_fba.ptr);
                     sock.*.private.staging_offset = download_offset;
                     const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_slice.ptr));
                     sock.*.private.staging_ptr = mapped_slice_ptr;

@@ -117,6 +117,10 @@
             .url = "https://github.com/hendriknielaender/zbench/archive/3268a23da82231f1bd2c064de7fdf6fb7056126f.tar.gz",
             .hash = "zbench-0.11.2-YTdc7zolAQDlBF9i0ywXIvDjafL3Kg27S-aFUq6dU5zy",
         },
+        .zuballoc = .{
+            .url = "git+https://github.com/Justus2308/zuballoc.git#68eab414d6d3b1e9aa5ea31139e2e02827ab7350",
+            .hash = "zuballoc-0.1.0-uXtpGsOiAAAc_AqFTLo7DCd5JGjKVkICl84jw1vf6xfH",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.
