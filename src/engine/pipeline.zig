@@ -66,7 +66,7 @@ pub const Pipeline = struct {
     rerouted: bool = true,
     dirty: bool = true,
 
-    perf_metrics: PerfMetrics = .{},
+    perf: PerfMetrics,
 
     pub const MAX_MODULES = 100;
     pub const MAX_NODES = 200;
@@ -98,22 +98,22 @@ pub const Pipeline = struct {
             upload_buffer = null;
         }
 
-        const module_pool = ModulePool.init(allocator);
+        var module_pool = ModulePool.init(allocator);
         errdefer module_pool.deinit();
 
-        const module_execution_order = std.ArrayList(ModuleHandle).initCapacity(allocator, 2) catch unreachable;
-        errdefer module_execution_order.deinit();
+        var module_execution_order = std.ArrayList(ModuleHandle).initCapacity(allocator, 2) catch unreachable;
+        errdefer module_execution_order.deinit(allocator);
 
-        const node_pool = NodePool.init(allocator);
+        var node_pool = NodePool.init(allocator);
         errdefer node_pool.deinit();
 
-        const node_execution_order = std.ArrayList(NodeHandle).initCapacity(allocator, 2) catch unreachable;
-        errdefer node_execution_order.deinit();
+        var node_execution_order = std.ArrayList(NodeHandle).initCapacity(allocator, 2) catch unreachable;
+        errdefer node_execution_order.deinit(allocator);
 
-        const connector_pool = ConnectorPool.init(allocator);
+        var connector_pool = ConnectorPool.init(allocator);
         errdefer connector_pool.deinit();
 
-        const param_buffer_pool = ParamBufferPool.init(allocator);
+        var param_buffer_pool = ParamBufferPool.init(allocator);
         errdefer param_buffer_pool.deinit();
 
         return Pipeline{
@@ -135,6 +135,8 @@ pub const Pipeline = struct {
             .connector_pool = connector_pool,
 
             .param_buffer_pool = param_buffer_pool,
+
+            .perf = try PerfMetrics.init(allocator),
         };
     }
 
@@ -147,6 +149,7 @@ pub const Pipeline = struct {
         self.node_pool.deinit();
         self.connector_pool.deinit();
         self.param_buffer_pool.deinit();
+        self.perf.deinit();
 
         if (self.upload_buffer) |*upload_buffer| {
             upload_buffer.deinit();
@@ -289,41 +292,41 @@ pub const Pipeline = struct {
 
         slog.debug("Running pipeline", .{});
 
-        self.perf_metrics.reset();
-        var timer = try std.time.Timer.start();
+        self.perf.timerClear();
+        try self.perf.timerStart();
 
         if (self.rerouted) {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
             self.runModulesPreCheck() catch unreachable;
 
             self.runModulesCreateOutputConnectorHandles() catch unreachable;
-            self.perf_metrics.runModulesCreateOutputConnectorHandles_time_ns = timer.lap();
+            self.perf.timerLap("runModulesCreateOutputConnectorHandles") catch unreachable;
             self.runModulesBuildExecutionOrder() catch unreachable;
-            self.perf_metrics.runModulesBuildExecutionOrder_time_ns = timer.lap();
+            self.perf.timerLap("runModulesBuildExecutionOrder") catch unreachable;
 
             self.runModulesCreateParamBufferHandles() catch unreachable;
-            self.perf_metrics.runModulesCreateParamBufferHandles_time_ns = timer.lap();
+            self.perf.timerLap("runModulesCreateParamBufferHandles") catch unreachable;
             self.runModulesModifyROIOut() catch unreachable;
-            self.perf_metrics.runModulesModifyROIOut_time_ns = timer.lap();
+            self.perf.timerLap("runModulesModifyROIOut") catch unreachable;
             self.runModulesInitParamBuffers() catch unreachable;
-            self.perf_metrics.runModulesInitParamBuffers_time_ns = timer.lap();
+            self.perf.timerLap("runModulesInitParamBuffers") catch unreachable;
             self.runModulesAllocateUploadBufferForParams() catch unreachable;
-            self.perf_metrics.runModulesAllocateUploadBufferForParams_time_ns = timer.lap();
+            self.perf.timerLap("runModulesAllocateUploadBufferForParams") catch unreachable;
 
             self.runModulesCreateNodes() catch unreachable;
-            self.perf_metrics.runModulesCreateNodes_time_ns = timer.lap();
+            self.perf.timerLap("runModulesCreateNodes") catch unreachable;
             // Then run nodes
             self.runNodesCreateOutputConnectorHandles() catch unreachable;
-            self.perf_metrics.runNodesCreateOutputConnectorHandles_time_ns = timer.lap();
+            self.perf.timerLap("runNodesCreateOutputConnectorHandles") catch unreachable;
             self.runNodesBuildExecutionOrder() catch unreachable;
-            self.perf_metrics.runNodesBuildExecutionOrder_time_ns = timer.lap();
+            self.perf.timerLap("runNodesBuildExecutionOrder") catch unreachable;
 
             self.runNodesInitConnectorTextures() catch unreachable;
-            self.perf_metrics.runNodesInitConnectorTextures_time_ns = timer.lap();
+            self.perf.timerLap("runNodesInitConnectorTextures") catch unreachable;
             self.runNodesAllocateUploadBufferForTextures() catch unreachable;
-            self.perf_metrics.runNodesAllocateUploadBufferForTextures_time_ns = timer.lap();
+            self.perf.timerLap("runNodesAllocateUploadBufferForTextures") catch unreachable;
             self.runNodesCreateBindings() catch unreachable;
-            self.perf_metrics.runNodesCreateBindings_time_ns = timer.lap();
+            self.perf.timerLap("runNodesCreateBindings") catch unreachable;
 
             // TODO: clean up unused modules
             // TODO: clean up unused nodes
@@ -336,38 +339,26 @@ pub const Pipeline = struct {
 
         if (self.dirty) {
             self.runModulesUploadParams() catch unreachable;
-            self.perf_metrics.runModulesUploadParams_time_ns = timer.lap();
+            self.perf.timerLap("runModulesUploadParams") catch unreachable;
             self.runNodesUploadSource() catch unreachable;
-            self.perf_metrics.runNodesUploadSource_time_ns = timer.lap();
+            self.perf.timerLap("runNodesUploadSource") catch unreachable;
             self.runNodes() catch unreachable;
-            self.perf_metrics.runNodes_time_ns = timer.lap();
+            self.perf.timerLap("runNodes") catch unreachable;
             self.runNodesDownloadSink() catch unreachable;
-            self.perf_metrics.runNodesDownloadSink_time_ns = timer.lap();
+            self.perf.timerLap("runNodesDownloadSink") catch unreachable;
 
             self.dirty = false;
         }
 
-        self.perf_metrics.uploadBuffer_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.size else 0;
-        self.perf_metrics.uploadBufferUsage_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.size - upload_fba.totalFreeSpace() else 0;
-        self.perf_metrics.downloadBuffer_size_bytes = if (self.download_fba) |*download_fba| download_fba.size else 0;
-        self.perf_metrics.downloadBufferUsage_size_bytes = if (self.download_fba) |*download_fba| download_fba.size - download_fba.totalFreeSpace() else 0;
-
-        if (self.perf_metrics.number_of_modules == null) {
-            self.perf_metrics.number_of_modules = 0;
-        }
-        if (self.perf_metrics.number_of_nodes == null) {
-            self.perf_metrics.number_of_nodes = 0;
-        }
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |_| {
-            self.perf_metrics.number_of_modules.? += 1;
-        }
-        var node_pool_handles = self.node_pool.liveHandles();
-        while (node_pool_handles.next()) |_| {
-            self.perf_metrics.number_of_nodes.? += 1;
-        }
-
-        self.perf_metrics.printReport();
+        // self.perf.uploadBuffer_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.size else 0;
+        // self.perf.uploadBufferUsage_size_bytes = if (self.upload_fba) |*upload_fba| upload_fba.size - upload_fba.totalFreeSpace() else 0;
+        // self.perf.downloadBuffer_size_bytes = if (self.download_fba) |*download_fba| download_fba.size else 0;
+        // self.perf.downloadBufferUsage_size_bytes = if (self.download_fba) |*download_fba| download_fba.size - download_fba.totalFreeSpace() else 0;
+        self.perf.recordUploadBufferUsage(self.upload_fba);
+        self.perf.recordDownloadBufferUsage(self.download_fba);
+        self.perf.countModules(&self.module_pool);
+        self.perf.countNodes(&self.node_pool);
+        self.perf.printReport();
     }
 
     // ================================================
@@ -1140,80 +1131,124 @@ pub fn buildGraph(
 }
 
 pub const PerfMetrics = struct {
-    runModulesCreateOutputConnectorHandles_time_ns: ?u64 = null,
-    runModulesBuildExecutionOrder_time_ns: ?u64 = null,
-    runModulesCreateParamBufferHandles_time_ns: ?u64 = null,
-    runModulesModifyROIOut_time_ns: ?u64 = null,
-    runModulesInitParamBuffers_time_ns: ?u64 = null,
-    runModulesAllocateUploadBufferForParams_time_ns: ?u64 = null,
-    runModulesCreateNodes_time_ns: ?u64 = null,
-    runNodesCreateOutputConnectorHandles_time_ns: ?u64 = null,
-    runNodesBuildExecutionOrder_time_ns: ?u64 = null,
-    runNodesInitConnectorTextures_time_ns: ?u64 = null,
-    runNodesAllocateUploadBufferForTextures_time_ns: ?u64 = null,
-    runNodesCreateBindings_time_ns: ?u64 = null,
-    runModulesUploadParams_time_ns: ?u64 = null,
-    runNodesUploadSource_time_ns: ?u64 = null,
-    runNodes_time_ns: ?u64 = null,
-    runNodesDownloadSink_time_ns: ?u64 = null,
+    allocator: std.mem.Allocator,
 
-    uploadBuffer_size_bytes: ?usize = null,
-    uploadBufferUsage_size_bytes: ?usize = null,
-    downloadBuffer_size_bytes: ?usize = null,
-    downloadBufferUsage_size_bytes: ?usize = null,
+    timer: std.time.Timer,
+    keys: std.ArrayList([]const u8),
+    times: std.StringHashMap(u64),
 
-    number_of_modules: ?usize = null,
-    number_of_nodes: ?usize = null,
+    uploadBuffer_size_bytes: ?usize,
+    uploadBufferUsage_size_bytes: ?usize,
+    downloadBuffer_size_bytes: ?usize,
+    downloadBufferUsage_size_bytes: ?usize,
+
+    number_of_modules: ?usize,
+    number_of_nodes: ?usize,
 
     const Self = @This();
 
-    fn reset(self: *PerfMetrics) void {
-        inline for (std.meta.fields(Self)) |field| {
-            const field_name = field.name;
-            @field(self, field_name) = null;
+    fn init(allocator: std.mem.Allocator) !PerfMetrics {
+        return PerfMetrics{
+            .allocator = allocator,
+            .timer = undefined,
+            .keys = try std.ArrayList([]const u8).initCapacity(allocator, 16),
+            .times = std.StringHashMap(u64).init(allocator),
+            .uploadBuffer_size_bytes = null,
+            .uploadBufferUsage_size_bytes = null,
+            .downloadBuffer_size_bytes = null,
+            .downloadBufferUsage_size_bytes = null,
+            .number_of_modules = null,
+            .number_of_nodes = null,
+        };
+    }
+
+    fn deinit(self: *PerfMetrics) void {
+        self.times.deinit();
+        self.keys.deinit(self.allocator);
+    }
+
+    /// TIMER
+    fn timerStart(self: *PerfMetrics) !void {
+        self.timer = try std.time.Timer.start();
+    }
+
+    fn timerLap(self: *PerfMetrics, name: []const u8) !void {
+        const elapsed_ns = self.timer.lap();
+        _ = try self.times.put(name, elapsed_ns);
+        try self.keys.append(self.allocator, name);
+        self.timer.reset();
+    }
+
+    fn timerClear(self: *PerfMetrics) void {
+        self.timer.reset();
+        self.keys.clearAndFree(self.allocator);
+        self.times.clearAndFree();
+    }
+
+    /// BUFFER
+    fn recordUploadBufferUsage(self: *PerfMetrics, upload_fba: ?gpu.Buffer.Allocator) void {
+        self.uploadBuffer_size_bytes = if (upload_fba) |*fba| fba.size else 0;
+        self.uploadBufferUsage_size_bytes = if (upload_fba) |*fba| fba.size - fba.totalFreeSpace() else 0;
+    }
+    fn recordDownloadBufferUsage(self: *PerfMetrics, download_fba: ?gpu.Buffer.Allocator) void {
+        self.downloadBuffer_size_bytes = if (download_fba) |*fba| fba.size else 0;
+        self.downloadBufferUsage_size_bytes = if (download_fba) |*fba| fba.size - fba.totalFreeSpace() else 0;
+    }
+
+    /// POOL
+    fn countModules(self: *PerfMetrics, module_pool: *ModulePool) void {
+        if (self.number_of_modules == null) {
+            self.number_of_modules = 0;
+        }
+        var mod_pool_handles = module_pool.liveHandles();
+        while (mod_pool_handles.next()) |_| {
+            self.number_of_modules.? += 1;
+        }
+    }
+
+    fn countNodes(self: *PerfMetrics, node_pool: *NodePool) void {
+        if (self.number_of_nodes == null) {
+            self.number_of_nodes = 0;
+        }
+        var node_pool_handles = node_pool.liveHandles();
+        while (node_pool_handles.next()) |_| {
+            self.number_of_nodes.? += 1;
         }
     }
 
     fn printReport(self: *PerfMetrics) void {
-        // const printfn = std.debug.print;
-        const printfn = slog.info;
+        // const printFn = std.debug.print;
+        const printFn = slog.info;
+
         var total_time_ns: f64 = 0;
-        inline for (std.meta.fields(Self)) |field| {
-            const field_name = field.name;
-            if (std.mem.endsWith(u8, field_name, "time_ns")) {
-                const maybe_field_value = @field(self, field_name);
-                if (maybe_field_value) |field_value| {
-                    total_time_ns += @as(f64, @floatFromInt(field_value));
-                }
-            }
+
+        var it = self.times.iterator();
+        while (it.next()) |entry| {
+            total_time_ns += @as(f64, @floatFromInt(entry.value_ptr.*));
         }
-        printfn("Pipeline Performance Report:", .{});
-        inline for (std.meta.fields(Self)) |field| {
-            const field_name = field.name;
-            if (std.mem.endsWith(u8, field_name, "time_ns")) {
-                const maybe_field_value = @field(self, field_name);
-                if (maybe_field_value) |field_value| {
-                    printfn(" {d: >5.2}% {d: >5.2} ms {s}", .{
-                        @as(f64, @floatFromInt(field_value)) / total_time_ns * 100.0,
-                        @as(f64, @floatFromInt(field_value)) / std.time.ns_per_ms,
-                        field_name,
-                    });
-                }
-            }
+
+        printFn("Pipeline Performance Report:", .{});
+        for (self.keys.items) |key| {
+            const entry = self.times.getPtr(key) orelse continue;
+            printFn(" {d: >5.2}% {d: >5.2} ms {s}", .{
+                @as(f64, @floatFromInt(entry.*)) / total_time_ns * 100.0,
+                @as(f64, @floatFromInt(entry.*)) / std.time.ns_per_ms,
+                key,
+            });
         }
-        printfn(" Total time: {d} ms", .{total_time_ns / std.time.ns_per_ms});
+        printFn(" Total time: {d} ms", .{total_time_ns / std.time.ns_per_ms});
 
         const uploadBufferUsage_size_bytes = self.uploadBufferUsage_size_bytes orelse 0;
         const uploadBuffer_size_bytes = self.uploadBuffer_size_bytes orelse 0;
         const downloadBufferUsage_size_bytes = self.downloadBufferUsage_size_bytes orelse 0;
         const downloadBuffer_size_bytes = self.downloadBuffer_size_bytes orelse 0;
-        printfn(" {d: >5.2}% {B:.2}/{B:.2} {s}", .{
+        printFn(" {d: >5.2}% {B:.2}/{B:.2} {s}", .{
             @as(f64, @floatFromInt(uploadBufferUsage_size_bytes)) / @as(f64, @floatFromInt(uploadBuffer_size_bytes)) * 100.0,
             uploadBufferUsage_size_bytes,
             uploadBuffer_size_bytes,
             "uploadBuffer_size_bytes",
         });
-        printfn(" {d: >5.2}% {B:.2}/{B:.2} {s}", .{
+        printFn(" {d: >5.2}% {B:.2}/{B:.2} {s}", .{
             @as(f64, @floatFromInt(downloadBufferUsage_size_bytes)) / @as(f64, @floatFromInt(downloadBuffer_size_bytes)) * 100.0,
             downloadBufferUsage_size_bytes,
             downloadBuffer_size_bytes,
@@ -1222,7 +1257,7 @@ pub const PerfMetrics = struct {
 
         const number_of_modules = self.number_of_modules orelse 0;
         const number_of_nodes = self.number_of_nodes orelse 0;
-        printfn(" {d} modules", .{number_of_modules});
-        printfn(" {d} nodes", .{number_of_nodes});
+        printFn(" {d} modules", .{number_of_modules});
+        printFn(" {d} nodes", .{number_of_nodes});
     }
 };
