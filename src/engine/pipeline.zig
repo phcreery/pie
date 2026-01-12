@@ -339,7 +339,7 @@ pub const Pipeline = struct {
             self.dirty = true;
         }
 
-        self.printPipeToStdout();
+        // self.printPipeToStdout();
 
         if (self.dirty) {
             self.runModulesUploadParams() catch unreachable;
@@ -579,18 +579,9 @@ pub const Pipeline = struct {
     fn runModulesReCreateNodes(self: *Pipeline) !void {
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |node_handle| {
-            // free associated connector handles
-            // const node = self.node_pool.getPtr(node_handle) catch unreachable;
-            // for (node.desc.sockets) |socket| {
-            //     if (socket) |sock| {
-            //         if (sock.private.connector_handle) |connector_handle| {
-            //             slog.info("Freeing connector handle {any} for node {s} socket {s}", .{ connector_handle, node.desc.name, sock.name });
-            //             self.connector_pool.remove(connector_handle);
-            //         }
-            //     }
-            // }
             // remove node
-            slog.info("Removing node {any} from pipeline", .{node_handle});
+            // we leave connectors alone for now since they are shared with modules and may be reused
+            slog.debug("Removing node {any} from pipeline", .{node_handle});
             self.node_pool.remove(node_handle);
         }
 
@@ -615,10 +606,9 @@ pub const Pipeline = struct {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
                         var this_sock = node.getSocketPtr(sock.name) orelse unreachable;
-                        // slog.info("Creating connector handle for node {s} output socket {s}", .{ node.desc.name, sock.name });
                         if (this_sock.private.connector_handle == null) {
                             this_sock.private.connector_handle = try self.connector_pool.add(null);
-                            slog.info("Created connector handle {any} for node {any} {s} output socket {s}", .{ this_sock.private.connector_handle.?, node_handle, node.desc.name, sock.name });
+                            slog.debug("Created connector handle {any} for node {any} {s} output socket {s}", .{ this_sock.private.connector_handle.?, node_handle, node.desc.name, sock.name });
                         }
                     }
                 }
@@ -700,10 +690,9 @@ pub const Pipeline = struct {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
                         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
-                        // slog.debug("Allocating output texture for node socket {s} with connector handle {any}", .{ sock.name, connector_handle });
                         var buf: [256]u8 = undefined;
                         const str = try std.fmt.bufPrint(&buf, "id: {d}", .{connector_handle.id});
-                        slog.info("Allocating output texture for node {any} {s} socket {s} with connector handle {any}", .{ node_handle, node.desc.name, sock.name, connector_handle });
+                        slog.debug("Allocating output texture for node {any} {s} socket {s} with connector handle {any}", .{ node_handle, node.desc.name, sock.name, connector_handle });
                         const texture = try gpu.Texture.init(gpu_inst, str, sock.format, sock.roi.?);
                         // defer texture.deinit();
                         // store texture in connector pool
@@ -828,7 +817,7 @@ pub const Pipeline = struct {
             }
 
             if (!found) {
-                slog.info("Freeing unused connector {any}", .{connector_handle});
+                slog.debug("Freeing unused connector {any}", .{connector_handle});
                 self.connector_pool.remove(connector_handle);
             }
         }
@@ -1305,7 +1294,7 @@ pub const PerfMetrics = struct {
                 key,
             });
         }
-        printFn(" Total time: {d} ms", .{total_time_ns / std.time.ns_per_ms});
+        printFn(" Total time: {d:.2} ms  (<33.33 ms for 30fps, <16.67 ms for 60fps)", .{total_time_ns / std.time.ns_per_ms});
 
         const upload_buffer_usage_size_bytes = self.upload_buffer_usage_size_bytes orelse 0;
         const upload_buffer_size_bytes = self.upload_buffer_size_bytes orelse 0;
