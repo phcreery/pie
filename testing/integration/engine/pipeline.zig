@@ -59,6 +59,7 @@ test "simple module test" {
     const mod_test_multiply = try pipeline.addModule(pie.engine.modules.test_multiply.module);
     const mod_test_2nodes = try pipeline.addModule(pie.engine.modules.test_2nodes.module);
     const mod_test_o_2468 = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
+    _ = try pipeline.addModule(pie.engine.modules.test_multiply.module); // dummy
 
     pipeline.setModuleParam(mod_test_multiply, "multiplier", .{ .f32 = 2.0 }) catch unreachable;
     pipeline.setModuleParam(mod_test_multiply, "adder", .{ .i32 = 0 }) catch unreachable;

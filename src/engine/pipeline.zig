@@ -70,6 +70,7 @@ pub const Pipeline = struct {
 
     pub const MAX_MODULES = 100;
     pub const MAX_NODES = 200;
+    pub const MAX_CONNECTORS = 500;
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -290,7 +291,7 @@ pub const Pipeline = struct {
         // (submit queue)
         // dt_graph_run_nodes_download     (download sink data from GPU to CPU)
 
-        slog.debug("Running pipeline", .{});
+        slog.info("Running pipeline", .{});
 
         try self.perf.timerStart();
 
@@ -312,7 +313,7 @@ pub const Pipeline = struct {
             self.runModulesAllocateUploadBufferForParams() catch unreachable;
             self.perf.timerLap("runModulesAllocateUploadBufferForParams") catch unreachable;
 
-            self.runModulesCreateNodes() catch unreachable;
+            self.runModulesReCreateNodes() catch unreachable;
             self.perf.timerLap("runModulesCreateNodes") catch unreachable;
 
             // Then run nodes
@@ -328,15 +329,17 @@ pub const Pipeline = struct {
             self.runNodesCreateBindings() catch unreachable;
             self.perf.timerLap("runNodesCreateBindings") catch unreachable;
 
-            // TODO: clean up unused modules
-            // TODO: clean up unused nodes
+            // ~TODO~: clean up unused modules - although modules are always kept and user added/removed...
+            // ~TODO~: clean up unused nodes - although nodes are always re-created from modules...
             // TODO: clean up unused connectors
+            self.freeUnusedConnectors() catch unreachable;
+            self.perf.timerLap("freeUnusedConnectors") catch unreachable;
 
             self.rerouted = false;
             self.dirty = true;
         }
 
-        // self.printPipeToStdout();
+        self.printPipeToStdout();
 
         if (self.dirty) {
             self.runModulesUploadParams() catch unreachable;
@@ -402,6 +405,7 @@ pub const Pipeline = struct {
         print.printModules(self);
         print.printNodes(self);
         print.printNodes2(self) catch unreachable;
+        print.printNodeExecutionOrder(self);
     }
 
     fn runModulesPreCheck(self: *Pipeline) !void {
@@ -476,7 +480,7 @@ pub const Pipeline = struct {
         // } else |err| {
         //     slog.debug("Error during DAG traversal: {any}\n", .{err});
         // }
-        slog.debug("Topological sorted order of modules: {any}", .{self.module_execution_order.items});
+        // slog.debug("Topological sorted order of modules: {any}", .{self.module_execution_order.items});
     }
 
     /// configure connectors only for module output connectors
@@ -523,10 +527,11 @@ pub const Pipeline = struct {
 
     fn runModulesInitParamBuffers(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |module_handle| {
+        // var mod_pool_handles = self.module_pool.liveHandles();
+        // while (mod_pool_handles.next()) |module_handle| {
+        for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
-            const param_handle = module.param_handle orelse return error.NodeOutputSocketMissingConnectorHandle;
+            const param_handle = module.param_handle orelse return error.ModuleOutputSocketMissingConnectorHandle;
 
             var size_bytes: usize = 0;
             if (module.desc.params) |params| {
@@ -571,9 +576,21 @@ pub const Pipeline = struct {
 
     /// remove all existing nodes and
     /// create nodes for each module
-    fn runModulesCreateNodes(self: *Pipeline) !void {
+    fn runModulesReCreateNodes(self: *Pipeline) !void {
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |node_handle| {
+            // free associated connector handles
+            // const node = self.node_pool.getPtr(node_handle) catch unreachable;
+            // for (node.desc.sockets) |socket| {
+            //     if (socket) |sock| {
+            //         if (sock.private.connector_handle) |connector_handle| {
+            //             slog.info("Freeing connector handle {any} for node {s} socket {s}", .{ connector_handle, node.desc.name, sock.name });
+            //             self.connector_pool.remove(connector_handle);
+            //         }
+            //     }
+            // }
+            // remove node
+            slog.info("Removing node {any} from pipeline", .{node_handle});
             self.node_pool.remove(node_handle);
         }
 
@@ -586,7 +603,8 @@ pub const Pipeline = struct {
         }
     }
 
-    /// configure connectors only for module output connectors
+    /// configure connectors only for node output connectors
+    /// these are typically for connectors the exist between nodes of the same module
     fn runNodesCreateOutputConnectorHandles(self: *Pipeline) !void {
         // create connector handles for output sockets
         var node_pool_handles = self.node_pool.liveHandles();
@@ -597,9 +615,10 @@ pub const Pipeline = struct {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
                         var this_sock = node.getSocketPtr(sock.name) orelse unreachable;
-                        slog.debug("Creating connector handle for node {s} output socket {s}", .{ node.desc.name, sock.name });
+                        // slog.info("Creating connector handle for node {s} output socket {s}", .{ node.desc.name, sock.name });
                         if (this_sock.private.connector_handle == null) {
                             this_sock.private.connector_handle = try self.connector_pool.add(null);
+                            slog.info("Created connector handle {any} for node {any} {s} output socket {s}", .{ this_sock.private.connector_handle.?, node_handle, node.desc.name, sock.name });
                         }
                     }
                 }
@@ -684,7 +703,7 @@ pub const Pipeline = struct {
                         // slog.debug("Allocating output texture for node socket {s} with connector handle {any}", .{ sock.name, connector_handle });
                         var buf: [256]u8 = undefined;
                         const str = try std.fmt.bufPrint(&buf, "id: {d}", .{connector_handle.id});
-                        slog.debug("Allocating output texture for node socket {s} with connector handle {any}", .{ sock.name, connector_handle });
+                        slog.info("Allocating output texture for node {any} {s} socket {s} with connector handle {any}", .{ node_handle, node.desc.name, sock.name, connector_handle });
                         const texture = try gpu.Texture.init(gpu_inst, str, sock.format, sock.roi.?);
                         // defer texture.deinit();
                         // store texture in connector pool
@@ -762,6 +781,55 @@ pub const Pipeline = struct {
                 const bindings = try gpu.Bindings.init(gpu_inst, &pipeline, bind_group);
                 // defer bindings.deinit();
                 node.bindings = bindings;
+            }
+        }
+    }
+
+    fn freeUnusedConnectors(self: *Pipeline) !void {
+        var conn_pool_handles = self.connector_pool.liveHandles();
+        while (conn_pool_handles.next()) |connector_handle| {
+            // check if connector is used in any module or node
+            var found = false;
+
+            // check modules
+            var mod_pool_handles = self.module_pool.liveHandles();
+            while (mod_pool_handles.next()) |module_handle| {
+                const module = self.module_pool.getPtr(module_handle) catch unreachable;
+                for (module.desc.sockets) |socket| {
+                    if (socket) |sock| {
+                        if (sock.private.connector_handle) |h| {
+                            if (h.id == connector_handle.id) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (found) break;
+            }
+
+            // check nodes
+            if (!found) {
+                var node_pool_handles = self.node_pool.liveHandles();
+                while (node_pool_handles.next()) |node_handle| {
+                    const node = self.node_pool.getPtr(node_handle) catch unreachable;
+                    for (node.desc.sockets) |socket| {
+                        if (socket) |sock| {
+                            if (sock.private.connector_handle) |h| {
+                                if (h.id == connector_handle.id) {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (found) break;
+                }
+            }
+
+            if (!found) {
+                slog.info("Freeing unused connector {any}", .{connector_handle});
+                self.connector_pool.remove(connector_handle);
             }
         }
     }
@@ -1109,7 +1177,6 @@ pub fn buildGraph(
     var pool_handles = pool.liveHandles();
     while (pool_handles.next()) |dst_node_handle| {
         const dst_node = pool.getPtr(dst_node_handle) catch unreachable;
-        try graph.add(dst_node_handle);
         for (dst_node.desc.sockets) |socket| {
             if (socket) |sock| {
                 // if (self.getConnectedNode(sock.*)) |src_node_handle_connection| {
@@ -1117,6 +1184,7 @@ pub fn buildGraph(
                 const src_node_handle_connection = maybe_connected_to orelse continue;
                 const src_node_handle = src_node_handle_connection.item;
                 // connect
+                try graph.add(dst_node_handle);
                 try graph.add(src_node_handle);
                 const src_node = pool.getPtr(src_node_handle) catch unreachable;
                 const src_node_sock = src_node.desc.sockets[src_node_handle_connection.socket_idx] orelse unreachable;
@@ -1194,9 +1262,7 @@ pub const PerfMetrics = struct {
 
     /// POOL
     fn countModules(self: *PerfMetrics, module_pool: *ModulePool) void {
-        if (self.number_of_modules == null) {
-            self.number_of_modules = 0;
-        }
+        self.number_of_modules = 0;
         var mod_pool_handles = module_pool.liveHandles();
         while (mod_pool_handles.next()) |_| {
             self.number_of_modules.? += 1;
@@ -1204,9 +1270,7 @@ pub const PerfMetrics = struct {
     }
 
     fn countNodes(self: *PerfMetrics, node_pool: *NodePool) void {
-        if (self.number_of_nodes == null) {
-            self.number_of_nodes = 0;
-        }
+        self.number_of_nodes = 0;
         var node_pool_handles = node_pool.liveHandles();
         while (node_pool_handles.next()) |_| {
             self.number_of_nodes.? += 1;
@@ -1214,9 +1278,7 @@ pub const PerfMetrics = struct {
     }
 
     fn countConnectors(self: *PerfMetrics, connector_pool: *ConnectorPool) void {
-        if (self.number_of_connectors == null) {
-            self.number_of_connectors = 0;
-        }
+        self.number_of_connectors = 0;
         var conn_pool_handles = connector_pool.liveHandles();
         while (conn_pool_handles.next()) |_| {
             self.number_of_connectors.? += 1;

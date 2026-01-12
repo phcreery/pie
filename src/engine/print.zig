@@ -8,10 +8,11 @@ const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
 const console = @import("../cli/console.zig");
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
+const Node = @import("Node.zig");
 const slog = std.log.scoped(.util);
 
 pub fn printModules(self: *pipeline.Pipeline) void {
-    std.debug.print("MODULE LISTING\n", .{});
+    std.debug.print("MODULE LISTING (ORDERED AS APPEARANCE IN POOL ITERATOR)\n", .{});
     var module_pool_handles = self.module_pool.liveHandles();
     while (module_pool_handles.next()) |module_handle| {
         const module = self.module_pool.getPtr(module_handle) catch unreachable;
@@ -53,7 +54,7 @@ pub fn printModules(self: *pipeline.Pipeline) void {
 }
 
 pub fn printNodes(self: *pipeline.Pipeline) void {
-    std.debug.print("NODE LISTING (ORDERED AS APPEARANCE IN NODE POOL)\n", .{});
+    std.debug.print("NODE LISTING (ORDERED AS APPEARANCE IN POOL ITERATOR)\n", .{});
     var node_pool_handles = self.node_pool.liveHandles();
     while (node_pool_handles.next()) |node_handle| {
         const node = self.node_pool.getPtr(node_handle) catch unreachable;
@@ -64,12 +65,24 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
         for (node.desc.sockets) |sock| {
             if (sock) |s| {
                 const connector_text = switch (s.type.direction()) {
-                    .input => std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{self.getNodeConnectorHandle(s).?.id}) catch "<- null",
-                    .output => std.fmt.allocPrint(std.heap.page_allocator, "-> {any}", .{self.getNodeConnectorHandle(s).?.id}) catch "-> null",
+                    .input => input: {
+                        if (self.getNodeConnectorHandle(s)) |h| {
+                            break :input std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{h.id}) catch "<- null";
+                        } else {
+                            break :input "<- null";
+                        }
+                    },
+                    .output => output: {
+                        if (self.getNodeConnectorHandle(s)) |h| {
+                            break :output std.fmt.allocPrint(std.heap.page_allocator, "-> {any}", .{h.id}) catch "-> null";
+                        } else {
+                            break :output "-> null";
+                        }
+                    },
                 };
                 var tex_text: ?*wgpu.Texture = null;
                 if (self.getNodeConnectorHandle(s)) |h| {
-                    const conn = self.connector_pool.getPtr(h) catch unreachable;
+                    const conn = self.connector_pool.getPtr(h) catch break;
                     if (conn.*) |c| {
                         tex_text = c.texture;
                     }
@@ -113,7 +126,7 @@ pub fn printNodes2(self: *pipeline.Pipeline) !void {
     const NodeGraph = DirectedGraph(pipeline.NodeHandle, pipeline.ConnectorHandle, std.hash_map.AutoContext(pipeline.NodeHandle));
     var node_graph = NodeGraph.init(self.allocator);
     defer node_graph.deinit();
-    try pipeline.buildGraph(self, &node_graph);
+    try pipeline.buildGraph(Node, &self.node_pool, &node_graph);
 
     var iter1 = try node_graph.topSortIterator();
     defer iter1.deinit();
@@ -122,6 +135,14 @@ pub fn printNodes2(self: *pipeline.Pipeline) !void {
     try printer.print(stdout, &iter1);
 
     try stdout.flush(); // Don't forget to flush!
+}
+
+pub fn printNodeExecutionOrder(self: *pipeline.Pipeline) void {
+    std.debug.print("NODE EXECUTION ORDER\n", .{});
+    for (self.node_execution_order.items, 0..) |node_handle, idx| {
+        const node = self.node_pool.getPtr(node_handle) catch unreachable;
+        std.debug.print(" {d}. {s} (id: {d})\n", .{ idx + 1, node.desc.name, node_handle.id });
+    }
 }
 
 fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaque) []u8 {

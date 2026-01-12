@@ -31,7 +31,9 @@ pub fn HashMapPool(comptime T: type) type {
                         while (it.next()) |handle| {
                             // std.debug.print("Deinit optional handle {d}\n", .{handle.id});
                             const value = self.get(handle) orelse continue;
-                            value.*.?.deinit();
+                            if (value.*) |*inner| {
+                                inner.deinit();
+                            }
                         }
                     }
                 },
