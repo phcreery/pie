@@ -24,8 +24,8 @@ pub var module: api.ModuleDesc = .{
 
 const shader_code: []const u8 =
     \\enable f16;
-    \\@group(0) @binding(0) var input:  texture_2d<u32>;
-    \\@group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
+    \\@group(1) @binding(0) var input:  texture_2d<u32>;
+    \\@group(1) @binding(1) var output: texture_storage_2d<rgba16float, write>;
     \\@compute @workgroup_size(8, 8, 1)
     \\fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     \\    var coords = vec2<i32>(global_id.xy);
@@ -46,7 +46,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             s[0] = .{
                 .name = "input",
                 .type = .read,
-                .format = .rgba16float,
+                .format = .rgba16uint,
                 .roi = null,
             };
             s[1] = .{

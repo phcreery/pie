@@ -38,7 +38,7 @@ fn runPipeBench(allocator: std.mem.Allocator, pipeline: *Pipeline) !void {
     try writer.flush();
 }
 
-test "simple module test" {
+test "simple test modules" {
     const allocator = std.testing.allocator;
 
     const cp_out = pie.cli.console.UTF8ConsoleOutput.init();

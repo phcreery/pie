@@ -304,6 +304,9 @@ pub const Pipeline = struct {
             self.runModulesBuildExecutionOrder() catch unreachable;
             self.perf.timerLap("runModulesBuildExecutionOrder") catch unreachable;
 
+            self.runModulesInit() catch unreachable;
+            self.perf.timerLap("runModulesInit") catch unreachable;
+
             self.runModulesCreateParamBufferHandles() catch unreachable;
             self.perf.timerLap("runModulesCreateParamBufferHandles") catch unreachable;
             self.runModulesModifyROIOut() catch unreachable;
@@ -326,6 +329,7 @@ pub const Pipeline = struct {
             self.perf.timerLap("runNodesInitConnectorTextures") catch unreachable;
             self.runNodesAllocateUploadBufferForTextures() catch unreachable;
             self.perf.timerLap("runNodesAllocateUploadBufferForTextures") catch unreachable;
+            self.printPipeToStdout();
             self.runNodesCreateBindings() catch unreachable;
             self.perf.timerLap("runNodesCreateBindings") catch unreachable;
 
@@ -481,6 +485,15 @@ pub const Pipeline = struct {
         //     slog.debug("Error during DAG traversal: {any}\n", .{err});
         // }
         // slog.debug("Topological sorted order of modules: {any}", .{self.module_execution_order.items});
+    }
+
+    fn runModulesInit(self: *Pipeline) !void {
+        for (self.module_execution_order.items) |module_handle| {
+            const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            if (module.desc.init) |initFn| {
+                try initFn(self.allocator, self, module_handle);
+            }
+        }
     }
 
     /// configure connectors only for module output connectors
@@ -721,6 +734,7 @@ pub const Pipeline = struct {
                     const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
                     layout_group_0_binding[0] = .{ .buffer = .{} };
                     bind_group_0_binds[0] = .{ .buffer = param_buf };
+                    std.debug.print("Added bind group 0 entry for param buffer {any}\n", .{bind_group_0_binds[0]});
                 }
 
                 // all sockets are on group 1
@@ -743,6 +757,7 @@ pub const Pipeline = struct {
                         bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
                             .texture = texture,
                         };
+                        std.debug.print("Added bind group entry for binding {d} {any}\n", .{ binding_number, bind_group_1_binds[binding_number] });
                     }
                 }
 
@@ -767,6 +782,9 @@ pub const Pipeline = struct {
                 var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 bind_group[0] = bind_group_0_binds;
                 bind_group[1] = bind_group_1_binds;
+                // std.debug.print("Bind group 0 binds: {any}\n", .{bind_group[0]});
+                // std.debug.print("Bind group 1 binds: {any}\n", .{bind_group[1]});
+
                 const bindings = try gpu.Bindings.init(gpu_inst, &pipeline, bind_group);
                 // defer bindings.deinit();
                 node.bindings = bindings;

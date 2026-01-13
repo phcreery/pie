@@ -103,7 +103,7 @@ pub var module: api.ModuleDesc = .{
     .modifyROIOut = modifyROIOut,
 };
 
-pub fn init(allocator: std.mem.Allocator, mod: api.ModuleHandle) !void {
+pub fn init(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod_handle: api.ModuleHandle) !void {
     var raw_image = try allocator.create(RawImage);
     errdefer raw_image.deinit();
 
@@ -111,36 +111,38 @@ pub fn init(allocator: std.mem.Allocator, mod: api.ModuleHandle) !void {
     raw_image.* = try RawImage.read(allocator, file);
     errdefer raw_image.deinit();
 
+    var mod = try api.getModule(pipe, mod_handle);
     mod.desc.data = raw_image;
 }
 
-pub fn deinit(allocator: std.mem.Allocator, mod: api.ModuleHandle) !void {
-    const data_ptr = mod.desc.data orelse return;
-    const raw_image = @as(*RawImage, @ptrCast(data_ptr));
+pub fn deinit(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+    const m = try api.getModule(pipe, mod);
+    const data_ptr = m.desc.data orelse return;
+    const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
     raw_image.deinit();
     allocator.destroy(raw_image);
 }
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    const data_ptr = mod.desc.data orelse return error.ModuleDataMissing;
-    const raw_image = @as(*RawImage, @ptrCast(data_ptr));
-    const roi: api.ROI = .{
-        .w = raw_image.width,
-        .h = raw_image.height,
+    const m = try api.getModule(pipe, mod);
+    const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
+    const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
+    var roi: api.ROI = .{
+        .w = @intCast(raw_image.width),
+        .h = @intCast(raw_image.height),
     };
+    roi = roi.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;
 }
 
 pub fn readSource(pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
-    _ = pipe;
-    const data_ptr = mod.desc.data orelse return error.ModuleDataMissing;
-    const raw_image = @as(*RawImage, @ptrCast(data_ptr));
+    const m = try api.getModule(pipe, mod);
+    const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
+    const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
 
-    const upload_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
-    // const upload_buffer_slice = upload_buffer_ptr[0..(roi.w * roi.h * 4)];
-    // @memcpy(upload_buffer_ptr, &source);
+    const upload_buffer_ptr: [*]u16 = @ptrCast(@alignCast(mapped));
     @memcpy(upload_buffer_ptr, raw_image.raw_image);
 }
 

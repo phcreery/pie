@@ -858,13 +858,21 @@ pub const GPU = struct {
         }
 
         // We then create a `Device` and a `Queue` from the `Adapter`.
+        // https://webgpureport.org/
         const required_features = [_]wgpu.FeatureName{
             .shader_f16, // enable f16 support
             .texture_adapter_specific_format_features,
             // .mappable_primary_buffers, // https://docs.rs/wgpu-types/0.7.0/wgpu_types/struct.Features.html#associatedconstant.MAPPABLE_PRIMARY_BUFFERS
         };
+        const required_limits = wgpu.Limits{
+            // .max_bind_groups = 8,
+            // .max_bindings_per_bind_group = 16,
+            // .max_texture_dimension_2d = 16384,
+            .max_storage_buffer_binding_size = 1024 * 1024 * 1024, // 1 GB
+            .max_buffer_size = 1024 * 1024 * 1024, // 1 GB
+        };
         const device_descriptor = wgpu.DeviceDescriptor{
-            .required_limits = null,
+            .required_limits = &required_limits,
             .required_features = &required_features,
         };
         const device_request = adapter.requestDeviceSync(

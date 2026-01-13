@@ -126,8 +126,8 @@ pub const ModuleDesc = struct {
 
     data: ?*anyopaque = null,
 
-    init: ?*const fn (allocator: std.mem.Allocator, mod: ModuleHandle) anyerror!void = null,
-    deinit: ?*const fn (allocator: std.mem.Allocator, mod: ModuleHandle) anyerror!void = null,
+    init: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
+    deinit: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     createNodes: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
     writeSink: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
@@ -146,6 +146,10 @@ pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHan
 
 pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
     return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
+}
+
+pub fn getModule(pipe: *Pipeline, mod_handle: ModuleHandle) !*Module {
+    return pipe.module_pool.getPtr(mod_handle);
 }
 
 pub fn getModSocket(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !*SocketDesc {
