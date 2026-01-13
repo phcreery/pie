@@ -124,8 +124,10 @@ pub const ModuleDesc = struct {
     // they can be null if the module has no input or output (sink or source only)
     sockets: Sockets,
 
-    init: ?*const fn (mod: ModuleHandle) anyerror!void = null,
-    deinit: ?*const fn (mod: ModuleHandle) anyerror!void = null,
+    data: ?*anyopaque = null,
+
+    init: ?*const fn (allocator: std.mem.Allocator, mod: ModuleHandle) anyerror!void = null,
+    deinit: ?*const fn (allocator: std.mem.Allocator, mod: ModuleHandle) anyerror!void = null,
     createNodes: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
     writeSink: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,

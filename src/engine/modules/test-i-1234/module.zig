@@ -32,11 +32,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     socket.roi = roi;
 }
 
-pub fn readSource(
-    pipe: *api.Pipeline,
-    mod: api.ModuleHandle,
-    mapped: *anyopaque,
-) !void {
+pub fn readSource(pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     _ = pipe;
     _ = mod;
 
@@ -47,16 +43,19 @@ pub fn readSource(
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_desc: api.NodeDesc = .{
-        .type = .source,
-        .name = "Source",
-        .run_size = null,
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = same_as_mod_output_sock.*;
-            break :init s;
+    const node = try api.addNode(
+        pipe,
+        mod,
+        .{
+            .type = .source,
+            .name = "Source",
+            .run_size = null,
+            .sockets = init: {
+                var s: api.Sockets = @splat(null);
+                s[0] = same_as_mod_output_sock.*;
+                break :init s;
+            },
         },
-    };
-    const node = try api.addNode(pipe, mod, node_desc);
+    );
     try api.copyConnector(pipe, mod, "output", node, "output");
 }
