@@ -17,7 +17,7 @@ const BORDER = "=" ** 80;
 var current_test: ?[]const u8 = null;
 
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .debug,
 };
 
 pub fn main() !void {

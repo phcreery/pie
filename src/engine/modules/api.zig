@@ -127,10 +127,10 @@ pub const ModuleDesc = struct {
     data: ?*anyopaque = null,
 
     init: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
-    deinit: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
+    deinit: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) void = null,
     createNodes: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
-    writeSink: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
+    writeSink: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
     modifyROIOut: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
 };
 

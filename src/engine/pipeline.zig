@@ -95,8 +95,6 @@ pub const Pipeline = struct {
                 download_fba = try db.fixedBufferAllocator();
                 errdefer db.deinit();
             }
-        } else {
-            upload_buffer = null;
         }
 
         var module_pool = ModulePool.init(allocator);
@@ -144,6 +142,7 @@ pub const Pipeline = struct {
     pub fn deinit(self: *Pipeline) void {
         slog.debug("De-initializing Pipeline", .{});
         // the pool deinit will take care of deallocating the textures
+        self.runModulesDeinit();
         self.module_pool.deinit();
         self.module_execution_order.deinit(self.allocator);
         self.node_execution_order.deinit(self.allocator);
@@ -797,55 +796,6 @@ pub const Pipeline = struct {
         }
     }
 
-    fn freeUnusedConnectors(self: *Pipeline) !void {
-        var conn_pool_handles = self.connector_pool.liveHandles();
-        while (conn_pool_handles.next()) |connector_handle| {
-            // check if connector is used in any module or node
-            var found = false;
-
-            // check modules
-            var mod_pool_handles = self.module_pool.liveHandles();
-            while (mod_pool_handles.next()) |module_handle| {
-                const module = self.module_pool.getPtr(module_handle) catch unreachable;
-                for (module.desc.sockets) |socket| {
-                    if (socket) |sock| {
-                        if (sock.private.connector_handle) |h| {
-                            if (h.id == connector_handle.id) {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (found) break;
-            }
-
-            // check nodes
-            if (!found) {
-                var node_pool_handles = self.node_pool.liveHandles();
-                while (node_pool_handles.next()) |node_handle| {
-                    const node = self.node_pool.getPtr(node_handle) catch unreachable;
-                    for (node.desc.sockets) |socket| {
-                        if (socket) |sock| {
-                            if (sock.private.connector_handle) |h| {
-                                if (h.id == connector_handle.id) {
-                                    found = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (found) break;
-                }
-            }
-
-            if (!found) {
-                slog.debug("Freeing unused connector {any}", .{connector_handle});
-                self.connector_pool.remove(connector_handle);
-            }
-        }
-    }
-
     fn runNodesAllocateUploadBufferForTextures(self: *Pipeline) !void {
         if (self.upload_fba) |*upload_fba| {
             var upload_allocator = upload_fba.allocator();
@@ -1055,7 +1005,7 @@ pub const Pipeline = struct {
                 if (last_node_mod.desc.writeSink) |writeSinkFn| {
                     slog.debug("Downloading sink data for last node", .{});
                     const mapped_ptr = sock.*.private.staging_ptr orelse unreachable;
-                    writeSinkFn(self, last_node.mod, mapped_ptr) catch unreachable;
+                    try writeSinkFn(self.allocator, self, last_node.mod, mapped_ptr);
                 } else {
                     slog.err("Sink node has no writeSink function defined", .{});
                     return error.NodeMissingWriteSinkFunction;
@@ -1067,6 +1017,64 @@ pub const Pipeline = struct {
         }
 
         download_buffer.unmap();
+    }
+
+    fn freeUnusedConnectors(self: *Pipeline) !void {
+        var conn_pool_handles = self.connector_pool.liveHandles();
+        while (conn_pool_handles.next()) |connector_handle| {
+            // check if connector is used in any module or node
+            var found = false;
+
+            // check modules
+            var mod_pool_handles = self.module_pool.liveHandles();
+            while (mod_pool_handles.next()) |module_handle| {
+                const module = self.module_pool.getPtr(module_handle) catch unreachable;
+                for (module.desc.sockets) |socket| {
+                    if (socket) |sock| {
+                        if (sock.private.connector_handle) |h| {
+                            if (h.id == connector_handle.id) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (found) break;
+            }
+
+            // check nodes
+            if (!found) {
+                var node_pool_handles = self.node_pool.liveHandles();
+                while (node_pool_handles.next()) |node_handle| {
+                    const node = self.node_pool.getPtr(node_handle) catch unreachable;
+                    for (node.desc.sockets) |socket| {
+                        if (socket) |sock| {
+                            if (sock.private.connector_handle) |h| {
+                                if (h.id == connector_handle.id) {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (found) break;
+                }
+            }
+
+            if (!found) {
+                slog.debug("Freeing unused connector {any}", .{connector_handle});
+                self.connector_pool.remove(connector_handle);
+            }
+        }
+    }
+
+    fn runModulesDeinit(self: *Pipeline) void {
+        for (self.module_execution_order.items) |module_handle| {
+            const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            if (module.desc.deinit) |deinitFn| {
+                deinitFn(self.allocator, self, module_handle);
+            }
+        }
     }
 };
 
@@ -1305,7 +1313,7 @@ pub const PerfMetrics = struct {
         printFn("Pipeline Performance Report:", .{});
         for (self.time_keys.items) |key| {
             const entry = self.times.getPtr(key) orelse continue;
-            printFn(" {d: >5.2}% {d: >5.2} ms {s}", .{
+            printFn(" {d: >5.2}% {d: >8.2} ms {s}", .{
                 @as(f64, @floatFromInt(entry.*)) / total_time_ns * 100.0,
                 @as(f64, @floatFromInt(entry.*)) / std.time.ns_per_ms,
                 key,

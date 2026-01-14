@@ -115,8 +115,8 @@ pub fn init(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod_handle: api.M
     mod.desc.data = raw_image;
 }
 
-pub fn deinit(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    const m = try api.getModule(pipe, mod);
+pub fn deinit(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.ModuleHandle) void {
+    const m = api.getModule(pipe, mod) catch return;
     const data_ptr = m.desc.data orelse return;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
     raw_image.deinit();
@@ -127,11 +127,13 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
-    var roi: api.ROI = .{
+    const roi: api.ROI = .{
         .w = @intCast(raw_image.width),
         .h = @intCast(raw_image.height),
     };
-    roi = roi.div(4, 1); // we have 1/4 width input (packed RG/GB)
+    // TODO:
+    // we have packed RG/GB
+    // roi = roi.div(2, 2);
 
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;

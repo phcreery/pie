@@ -75,6 +75,7 @@ test "load raw, demosaic, save" {
 
     var roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
     roi_in = roi_in.div(4, 1); // we have 1/4 width input (packed RG/GB)
+    // roi_in = roi_in.div(2, 2); // we have 1/4 width input (packed RG/GB)
 
     var roi_out = roi_in;
     var roi_in_upper, var roi_in_lower = roi_in.splitH();
@@ -85,6 +86,10 @@ test "load raw, demosaic, save" {
     roi_in_upper.y = 0;
     roi_out_upper.x = 0;
     roi_out_upper.y = 0;
+    roi_in_lower.x = 0;
+    roi_in_lower.y = 0;
+    roi_out_lower.x = 0;
+    roi_out_lower.y = 0;
 
     var gpu = try pie.engine.gpu.GPU.init();
     defer gpu.deinit();
@@ -97,23 +102,27 @@ test "load raw, demosaic, save" {
     defer download.deinit();
 
     // ALLOCATORS
-    var upload_fba = upload.fixedBufferAllocator();
+    var upload_fba = try upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
 
-    var download_fba = download.fixedBufferAllocator();
+    var download_fba = try download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD
-    const upload_offset_upper = upload_fba.end_index;
-    const upload_buf_upper = try upload_allocator.alloc(u8, roi_in_upper.w * roi_in_upper.h * source_format.bpp());
-    const upload_offset_lower = upload_fba.end_index;
-    const upload_buf_lower = try upload_allocator.alloc(u8, roi_in_lower.w * roi_in_lower.h * source_format.bpp());
+    // const upload_offset_upper = upload_fba.end_index;
+    const upload_buf_upper = try upload_allocator.alignedAlloc(u8, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi_in_upper.w * roi_in_upper.h * source_format.bpp());
+    const upload_offset_upper = @intFromPtr(upload_buf_upper.ptr) - @intFromPtr(upload_fba.ptr);
+    // const upload_offset_lower = upload_fba.end_index;
+    const upload_buf_lower = try upload_allocator.alignedAlloc(u8, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi_in_lower.w * roi_in_lower.h * source_format.bpp());
+    const upload_offset_lower = @intFromPtr(upload_buf_lower.ptr) - @intFromPtr(upload_fba.ptr);
 
     // PREP DOWNLOAD
-    const download_offset_upper = download_fba.end_index;
-    const download_buf_upper = try download_allocator.alloc(u8, roi_out_upper.w * roi_out_upper.h * destination_format.bpp());
-    const download_offset_lower = download_fba.end_index;
-    const download_buf_lower = try download_allocator.alloc(u8, roi_out_lower.w * roi_out_lower.h * destination_format.bpp());
+    // const download_offset_upper = download_fba.end_index;
+    const download_buf_upper = try download_allocator.alignedAlloc(u8, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi_out_upper.w * roi_out_upper.h * destination_format.bpp());
+    const download_offset_upper = @intFromPtr(download_buf_upper.ptr) - @intFromPtr(download_fba.ptr);
+    // const download_offset_lower = download_fba.end_index;
+    const download_buf_lower = try download_allocator.alignedAlloc(u8, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi_out_lower.w * roi_out_lower.h * destination_format.bpp());
+    const download_offset_lower = @intFromPtr(download_buf_lower.ptr) - @intFromPtr(download_fba.ptr);
 
     // print offsets
     // std.log.info("Upload offset upper: {d}", .{upload_offset_upper});
@@ -229,9 +238,10 @@ test "load raw, demosaic, save" {
     //     }
     // }
 
-    roi_out_upper = roi_in_upper.scaled(2, 0.5); // works
-    roi_out_lower = roi_in_lower.scaled(2, 0.5); // works
+    // roi_out_upper = roi_in_upper.scaled(2, 0.5); // works
+    // roi_out_lower = roi_in_lower.scaled(2, 0.5); // works
     roi_out = pie.engine.ROI.full(image_size_in_w, image_size_in_h).div(2, 2);
+    roi_out_upper, roi_out_lower = roi_out.splitH();
 
     // DEMOSAIC WITH COMPUTE SHADER
     const demosaic_packed: []const u8 =

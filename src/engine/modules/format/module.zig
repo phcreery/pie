@@ -1,13 +1,8 @@
 const api = @import("../api.zig");
 
 pub var module: api.ModuleDesc = .{
-    .name = "format uint16_to_float16",
+    .name = "format",
     .type = .compute,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
-        p[0] = .{ .name = "dummy", .value = .{ .f32 = 3.0 } }; // dumm for now
-        break :init p;
-    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{
@@ -41,11 +36,12 @@ const shader_code: []const u8 =
 ;
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
+    const roi_out = mod_output_sock.roi.?.div(4, 1);
     const node_desc: api.NodeDesc = .{
         .type = .compute,
         .shader = try api.compileShader(pipe, shader_code),
         .name = "uint16_to_float16",
-        .run_size = mod_output_sock.roi,
+        .run_size = roi_out,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
             s[0] = .{

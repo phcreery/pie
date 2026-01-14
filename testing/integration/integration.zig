@@ -12,8 +12,8 @@ test {
     // _ = @import("engine/gpu_param.zig");
 
     // PIPELINE
-    _ = @import("engine/pipeline.zig");
-    // _ = @import("engine/fullsize.zig");
+    // _ = @import("engine/pipeline.zig");
+    _ = @import("engine/fullsize.zig");
 
     // MISC
     // _ = @import("fullsize/DSC_6765.zig");

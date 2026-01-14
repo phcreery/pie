@@ -1,5 +1,7 @@
 pub const i_raw = @import("i-raw/module.zig");
 pub const format = @import("format/module.zig");
+pub const demosaic = @import("demosaic/module.zig");
+pub const o_png = @import("o-png/module.zig");
 
 pub const test_multiply = @import("test-multiply/module.zig");
 pub const test_2nodes = @import("test-2nodes/module.zig");

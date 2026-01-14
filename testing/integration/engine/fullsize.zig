@@ -23,10 +23,12 @@ test "fullsize through pipeline" {
 
     const mod_i_raw = try pipeline.addModule(pie.engine.modules.i_raw.module);
     const mod_format = try pipeline.addModule(pie.engine.modules.format.module);
-    const mod_test_o_firstbytes = try pipeline.addModule(pie.engine.modules.test_o_firstbytes.module);
+    const mod_demosaic = try pipeline.addModule(pie.engine.modules.demosaic.module);
+    // const mod_test_o_firstbytes = try pipeline.addModule(pie.engine.modules.test_o_firstbytes.module);
+    const mod_o_png = try pipeline.addModule(pie.engine.modules.o_png.module);
 
     pipeline.connectModulesName(mod_i_raw, "output", mod_format, "input") catch unreachable;
-    pipeline.connectModulesName(mod_format, "output", mod_test_o_firstbytes, "input") catch unreachable;
-
+    pipeline.connectModulesName(mod_format, "output", mod_demosaic, "input") catch unreachable;
+    pipeline.connectModulesName(mod_demosaic, "output", mod_o_png, "input") catch unreachable;
     try pipeline.run();
 }
