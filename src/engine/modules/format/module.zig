@@ -3,6 +3,11 @@ const api = @import("../api.zig");
 pub var module: api.ModuleDesc = .{
     .name = "format uint16_to_float16",
     .type = .compute,
+    .params = init: {
+        var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
+        p[0] = .{ .name = "dummy", .value = .{ .f32 = 3.0 } }; // dumm for now
+        break :init p;
+    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{

@@ -60,13 +60,15 @@ test "simple test modules" {
     const mod_test_2nodes = try pipeline.addModule(pie.engine.modules.test_2nodes.module);
     const mod_test_o_2468 = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
     _ = try pipeline.addModule(pie.engine.modules.test_multiply.module); // dummy
+    const mod_test_nop = try pipeline.addModule(pie.engine.modules.test_nop.module);
 
     pipeline.setModuleParam(mod_test_multiply, "multiplier", .{ .f32 = 2.0 }) catch unreachable;
     pipeline.setModuleParam(mod_test_multiply, "adder", .{ .i32 = 0 }) catch unreachable;
 
     pipeline.connectModulesName(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;
     pipeline.connectModulesName(mod_test_multiply, "output", mod_test_2nodes, "input") catch unreachable;
-    pipeline.connectModulesName(mod_test_2nodes, "output", mod_test_o_2468, "input") catch unreachable;
+    pipeline.connectModulesName(mod_test_2nodes, "output", mod_test_nop, "input") catch unreachable;
+    pipeline.connectModulesName(mod_test_nop, "output", mod_test_o_2468, "input") catch unreachable;
 
     try pipeline.run();
     pipeline.rerouted = true;

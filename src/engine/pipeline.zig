@@ -501,8 +501,11 @@ pub const Pipeline = struct {
         for (self.module_execution_order.items) |module_handle| {
             var module = self.module_pool.getPtr(module_handle) catch unreachable;
             // create params buffer
-            const param_buffer_handle = try self.param_buffer_pool.add(null);
-            module.param_handle = param_buffer_handle;
+            if (module.desc.params) |params| {
+                if (params.len == 0) continue;
+                const param_buffer_handle = try self.param_buffer_pool.add(null);
+                module.param_handle = param_buffer_handle;
+            }
         }
     }
 
@@ -544,7 +547,6 @@ pub const Pipeline = struct {
         // while (mod_pool_handles.next()) |module_handle| {
         for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
-            const param_handle = module.param_handle orelse return error.ModuleOutputSocketMissingConnectorHandle;
 
             var size_bytes: usize = 0;
             if (module.desc.params) |params| {
@@ -559,9 +561,13 @@ pub const Pipeline = struct {
             const buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
             // defer texture.deinit();
             // store texture in connector pool
-            const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
-            param_buffer.* = buffer;
-            module.param_size = size_bytes;
+
+            // const param_handle = module.param_handle orelse return error.ModuleOutputSocketMissingConnectorHandle;
+            if (module.param_handle) |param_handle| {
+                const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
+                param_buffer.* = buffer;
+                module.param_size = size_bytes;
+            }
         }
     }
 
@@ -573,7 +579,7 @@ pub const Pipeline = struct {
                 var module = self.module_pool.getPtr(module_handle) catch unreachable;
                 if (module.desc.type == .compute) {
                     if (module.enabled == false) continue;
-                    const size_bytes = module.param_size orelse return error.ModuleParamBufferSizeNotSet;
+                    const size_bytes = module.param_size orelse continue;
                     slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
                     const mapped_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
@@ -734,7 +740,6 @@ pub const Pipeline = struct {
                     const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
                     layout_group_0_binding[0] = .{ .buffer = .{} };
                     bind_group_0_binds[0] = .{ .buffer = param_buf };
-                    std.debug.print("Added bind group 0 entry for param buffer {any}\n", .{bind_group_0_binds[0]});
                 }
 
                 // all sockets are on group 1
@@ -757,7 +762,7 @@ pub const Pipeline = struct {
                         bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
                             .texture = texture,
                         };
-                        std.debug.print("Added bind group entry for binding {d} {any}\n", .{ binding_number, bind_group_1_binds[binding_number] });
+                        slog.debug("Added bind group entry for binding {d} {any}", .{ binding_number, bind_group_1_binds[binding_number] });
                     }
                 }
 
@@ -906,17 +911,15 @@ pub const Pipeline = struct {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.desc.type == .compute) {
                 if (module.enabled == false) continue;
-
-                var list = try std.ArrayList(u8).initCapacity(self.allocator, module.param_size orelse 0);
-                defer list.deinit(self.allocator);
-
-                // TODO: compute_byte_offset and length based on param types
-                // this needs to follow the webgpu layout rules
-                // currently we only support f32, u32, i32 types, so all alignment is 4 bytes
-
-                // serialize params into byte array
-
                 if (module.desc.params) |params| {
+                    var list = try std.ArrayList(u8).initCapacity(self.allocator, module.param_size orelse 0);
+                    defer list.deinit(self.allocator);
+
+                    // TODO: compute_byte_offset and length based on param types
+                    // this needs to follow the webgpu layout rules
+                    // currently we only support f32, u32, i32 types, so all alignment is 4 bytes
+
+                    // serialize params into byte array
                     for (params) |param| {
                         if (param) |*p| {
                             const param_value_bytes = p.value.asBytes();
@@ -924,21 +927,20 @@ pub const Pipeline = struct {
                             try list.appendSlice(self.allocator, param_value_bytes);
                         }
                     }
-                }
+                    slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.desc.name, list.items.len });
+                    // print hex array
+                    slog.debug("Param bytes for module {s}:", .{module.desc.name});
+                    var buf: [100]u8 = undefined;
+                    var w: std.io.Writer = .fixed(&buf);
+                    for (list.items) |byte| {
+                        try w.print("{x:0>2} ", .{byte});
+                    }
+                    const printed = w.buffered();
+                    slog.debug("{s}", .{printed});
 
-                slog.debug("Uploading params for module {s}, total size {d} bytes\n", .{ module.desc.name, list.items.len });
-                // print hex array
-                slog.debug("Param bytes for module {s}: \n", .{module.desc.name});
-                var buf: [100]u8 = undefined;
-                var w: std.io.Writer = .fixed(&buf);
-                for (list.items) |byte| {
-                    try w.print("{x:0>2} ", .{byte});
+                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.mapped_param_slice_ptr));
+                    @memcpy(mapped_ptr, list.items);
                 }
-                const printed = w.buffered();
-                slog.debug("{s}\n", .{printed});
-
-                const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.mapped_param_slice_ptr));
-                @memcpy(mapped_ptr, list.items);
             }
         }
 
@@ -1002,9 +1004,6 @@ pub const Pipeline = struct {
                         const param_size_bytes = mod.*.param_size orelse return error.ModuleParamBufferSizeNotSet;
                         slog.debug("Enqueueing param buffer at offset {d}", .{param_offset});
                         encoder.enqueueBufToBuf(&upload_buffer, param_offset, &param_buf, 0, param_size_bytes) catch unreachable;
-                    } else {
-                        slog.err("Compute node's module has no param buffer handle", .{});
-                        return error.ModuleMissingParamBuffer;
                     }
                     var compute_pipeline = node.compute_pipeline orelse return error.NodeMissingShader;
                     var bindings = node.bindings orelse return error.NodeMissingBindings;
