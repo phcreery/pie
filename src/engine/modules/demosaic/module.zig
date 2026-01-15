@@ -49,6 +49,9 @@ const shader_code: []const u8 =
     \\    //   [ r g r g ] [ r g r g ] ...
     \\    //   [ g b g b ] [ g b g b ] ... ]
     \\    // iw,ih == raw_width/4, raw_height
+    \\    // the reason raw_width is divided by 4 is that raw_width is not the number
+    \\    // of pixels (RG/GB), but the number of photosensors (R or G or B)
+    \\    // so we divide by four to get the correct width in "RGBA" pixels
     \\    // when we index this texture, we will get
     \\    // (0,0) -> [ r g r g ]  // wrong
     \\    // (1,1) -> [ g b g b ]  // wrong

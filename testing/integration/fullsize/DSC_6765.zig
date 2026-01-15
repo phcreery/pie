@@ -74,8 +74,8 @@ test "load raw, demosaic, save" {
     const destination_format = pie.engine.gpu.TextureFormat.rgba16float;
 
     var roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
-    roi_in = roi_in.div(4, 1); // we have 1/4 width input (packed RG/GB)
-    // roi_in = roi_in.div(2, 2); // we have 1/4 width input (packed RG/GB)
+    // roi_in = roi_in.div(4, 1); // we have 1/4 width input (packed RG/GB)
+    roi_in = roi_in.div(2, 2); // we have 1/4 width input (packed RG/GB)
 
     var roi_out = roi_in;
     var roi_in_upper, var roi_in_lower = roi_in.splitH();
