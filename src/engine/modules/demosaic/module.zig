@@ -101,13 +101,7 @@ const shader_code: []const u8 =
     \\}
 ;
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    // const mod_input_sock = try api.getModSocket(pipe, mod, "input");
-    // const run_size = mod_input_sock.roi.?.scaled(0.5, 0.5);
-    // const roi_half = mod_input_sock.roi.?.div(2, 2);
-
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    std.debug.print("Demosaic createNodes output roi: {any}\n", .{mod_output_sock.roi});
-
     const node_desc: api.NodeDesc = .{
         .type = .compute,
         .shader = try api.compileShader(pipe, shader_code),

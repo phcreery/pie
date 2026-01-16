@@ -1,6 +1,5 @@
 const std = @import("std");
 const libraw = @import("libraw");
-const CFA = @import("../shared/CFA.zig");
 
 const api = @import("../api.zig");
 
@@ -9,7 +8,7 @@ pub const RawImage = struct {
     height: usize,
     raw_image: []u16,
     max_value: u32,
-    filters: CFA,
+    filters: api.CFA,
     libraw_rp: *libraw.libraw_data_t,
 
     pub fn read(allocator: std.mem.Allocator, file: std.fs.File) !RawImage {
@@ -43,7 +42,7 @@ pub const RawImage = struct {
             .height = img_height,
             .raw_image = raw_image,
             .max_value = max_value,
-            .filters = try CFA.fromLibraw(&libraw_rp.*.rawdata.iparams.cdesc, libraw_rp.*.rawdata.iparams.filters),
+            .filters = try api.CFA.fromLibraw(&libraw_rp.*.rawdata.iparams.cdesc, libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
         };
     }
@@ -62,7 +61,7 @@ test "libraw version" {
 
 test "open raw image" {
     const allocator = std.testing.allocator;
-    const file = try std.fs.cwd().openFile("testing/integration/fullsize/DSC_6765.NEF", .{});
+    const file = try std.fs.cwd().openFile("testing/images/DSC_6765.NEF", .{});
     var raw_image = try RawImage.read(allocator, file);
     defer raw_image.deinit();
     try std.testing.expect(raw_image.width == 6016);
@@ -71,7 +70,7 @@ test "open raw image" {
     try std.testing.expect(raw_image.libraw_rp.sizes.raw_height == 4016);
     try std.testing.expect(raw_image.libraw_rp.sizes.iwidth == 6016);
     try std.testing.expect(raw_image.libraw_rp.sizes.iheight == 4016);
-    try std.testing.expectEqual([2][2]CFA.FilterColor{
+    try std.testing.expectEqual([2][2]api.CFA.FilterColor{
         .{ .R, .G },
         .{ .G2, .B },
     }, raw_image.filters.pattern);

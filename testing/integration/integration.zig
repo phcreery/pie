@@ -10,11 +10,11 @@ test {
     // _ = @import("engine/gpu_simple.zig");
     // _ = @import("engine/gpu_db.zig");
     // _ = @import("engine/gpu_param.zig");
-    // _ = @import("engine/gpu_fullsize_DSC_6765.zig");
+    _ = @import("engine/gpu_fullsize_DSC_6765.zig");
 
     // PIPELINE
     // _ = @import("engine/pipe_simple.zig");
-    _ = @import("engine/pipe_fullsize.zig");
+    // _ = @import("engine/pipe_fullsize.zig");
 
     // MISC
     // _ = @import("misc/zpool.zig");

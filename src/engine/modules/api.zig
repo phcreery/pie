@@ -1,6 +1,7 @@
 /// API definitions for engine pipeline modules and nodes
 const std = @import("std");
 const gpu = @import("../gpu.zig");
+
 pub const ROI = @import("../ROI.zig");
 pub const pipeline = @import("../pipeline.zig");
 pub const Module = @import("../Module.zig");
@@ -9,6 +10,8 @@ pub const Param = @import("../Param.zig");
 pub const Pipeline = pipeline.Pipeline;
 pub const ModuleHandle = pipeline.ModuleHandle;
 pub const NodeHandle = pipeline.NodeHandle;
+
+pub const CFA = @import("./shared/CFA.zig");
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 pub const MAX_PARAMS_PER_MODULE = 16;
