@@ -153,7 +153,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         mod,
         .{
             .type = .source,
-            .name = "Source",
+            .name = "source",
             .run_size = null,
             .sockets = init: {
                 var s: api.Sockets = @splat(null);

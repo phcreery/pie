@@ -325,12 +325,10 @@ pub const Pipeline = struct {
             self.perf.timerLap("runNodesCreateOutputConnectorHandles") catch unreachable;
             self.runNodesBuildExecutionOrder() catch unreachable;
             self.perf.timerLap("runNodesBuildExecutionOrder") catch unreachable;
-
             self.runNodesInitConnectorTextures() catch unreachable;
             self.perf.timerLap("runNodesInitConnectorTextures") catch unreachable;
             self.runNodesAllocateUploadBufferForTextures() catch unreachable;
             self.perf.timerLap("runNodesAllocateUploadBufferForTextures") catch unreachable;
-            self.printPipeToStdout();
             self.runNodesCreateBindings() catch unreachable;
             self.perf.timerLap("runNodesCreateBindings") catch unreachable;
 
@@ -344,7 +342,7 @@ pub const Pipeline = struct {
             self.dirty = true;
         }
 
-        // self.printPipeToStdout();
+        self.printPipeToStdout();
 
         if (self.dirty) {
             self.runModulesUploadParams() catch unreachable;
@@ -1350,13 +1348,13 @@ pub const PerfMetrics = struct {
         const upload_buffer_size_bytes = self.upload_buffer_size_bytes orelse 0;
         const download_buffer_usage_size_bytes = self.download_buffer_usage_size_bytes orelse 0;
         const download_buffer_size_bytes = self.download_buffer_size_bytes orelse 0;
-        printFn(" {d: >5.2}% {B:.2}/{B:.2} {s}", .{
+        printFn(" {d: >5.2}% {B:>6.2}/{B:.2} {s}", .{
             @as(f64, @floatFromInt(upload_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(upload_buffer_size_bytes)) * 100.0,
             upload_buffer_usage_size_bytes,
             upload_buffer_size_bytes,
             "upload_buffer_size_bytes",
         });
-        printFn(" {d: >5.2}% {B:.2}/{B:.2} {s}", .{
+        printFn(" {d: >5.2}% {B:>6.2}/{B:.2} {s}", .{
             @as(f64, @floatFromInt(download_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(download_buffer_size_bytes)) * 100.0,
             download_buffer_usage_size_bytes,
             download_buffer_size_bytes,

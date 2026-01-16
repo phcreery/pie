@@ -71,7 +71,7 @@ test "simple test modules" {
     pipeline.connectModulesName(mod_test_nop, "output", mod_test_o_2468, "input") catch unreachable;
 
     try pipeline.run();
-    pipeline.rerouted = true;
+    // pipeline.rerouted = true;
     pipeline.dirty = true;
     try pipeline.run();
 

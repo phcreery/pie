@@ -105,7 +105,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const node_desc: api.NodeDesc = .{
         .type = .compute,
         .shader = shader_code,
-        .name = "demosaic",
+        .name = "halfsize",
         .run_size = mod_output_sock.roi,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
