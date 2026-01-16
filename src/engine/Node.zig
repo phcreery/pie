@@ -7,6 +7,7 @@ const slog = std.log.scoped(.node);
 
 desc: api.NodeDesc,
 mod: pipeline.ModuleHandle,
+shader: ?gpu.Shader = null,
 compute_pipeline: ?gpu.ComputePipeline = null,
 bindings: ?gpu.Bindings = null,
 

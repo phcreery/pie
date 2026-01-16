@@ -317,6 +317,8 @@ pub const Pipeline = struct {
 
             self.runModulesReCreateNodes() catch unreachable;
             self.perf.timerLap("runModulesCreateNodes") catch unreachable;
+            self.runNodesCompileShaders() catch unreachable;
+            self.perf.timerLap("runNodesCompileShaders") catch unreachable;
 
             // Then run nodes
             self.runNodesCreateOutputConnectorHandles() catch unreachable;
@@ -620,6 +622,15 @@ pub const Pipeline = struct {
             }
         }
     }
+    fn runNodesCompileShaders(self: *Pipeline) !void {
+        var node_pool_handles = self.node_pool.liveHandles();
+        while (node_pool_handles.next()) |node_handle| {
+            var node = self.node_pool.getPtr(node_handle) catch unreachable;
+            if (node.desc.shader) |shader| {
+                node.shader = try api.compileShader(self, shader);
+            }
+        }
+    }
 
     /// configure connectors only for node output connectors
     /// these are typically for connectors the exist between nodes of the same module
@@ -783,7 +794,7 @@ pub const Pipeline = struct {
                 layout_group[0] = layout_group_0_binding;
                 layout_group[1] = layout_group_1_binding;
 
-                const shader = node.desc.shader orelse return error.NodeMissingShaderCode;
+                const shader = node.shader orelse return error.NodeMissingShaderCode;
                 const pipeline = try gpu.ComputePipeline.init(
                     gpu_inst,
                     shader,

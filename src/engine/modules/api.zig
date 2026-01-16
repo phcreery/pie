@@ -95,8 +95,8 @@ pub const NodeType = enum {
 // vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
 pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
-    // shader_code: []const u8,
-    shader: ?gpu.Shader = null,
+    shader: ?[]const u8 = null,
+    // shader: ?gpu.Shader = null,
     name: []const u8,
     run_size: ?ROI = null,
     sockets: Sockets,
