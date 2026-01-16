@@ -90,7 +90,7 @@ pub var module: api.ModuleDesc = .{
         s[0] = .{
             .name = "output",
             .type = .source,
-            .format = .rgba16uint,
+            .format = .rggb16uint,
             .roi = null,
         };
         break :init s;
@@ -98,7 +98,6 @@ pub var module: api.ModuleDesc = .{
     .init = init,
     .deinit = deinit,
     .readSource = readSource,
-    .writeSink = null,
     .createNodes = createNodes,
     .modifyROIOut = modifyROIOut,
 };
@@ -107,7 +106,7 @@ pub fn init(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod_handle: api.M
     var raw_image = try allocator.create(RawImage);
     errdefer raw_image.deinit();
 
-    const file = try std.fs.cwd().openFile("testing/integration/fullsize/DSC_6765.NEF", .{});
+    const file = try std.fs.cwd().openFile("testing/images/DSC_6765.NEF", .{});
     raw_image.* = try RawImage.read(allocator, file);
     errdefer raw_image.deinit();
 
@@ -131,9 +130,8 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .w = @intCast(raw_image.width),
         .h = @intCast(raw_image.height),
     };
-    // TODO:
-    // we have packed RG/GB
-    // roi = roi.div(2, 2);
+
+    // THIS IS A WORKAROUND: for single channel read-write storage texture limitation
     roi = roi.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
     var socket = try api.getModSocket(pipe, mod, "output");

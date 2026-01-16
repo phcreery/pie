@@ -16,6 +16,7 @@
         "nchannels",
         "orelse",
         "rgba",
+        "rggb",
         "rois",
         "sokol",
         "Texel",

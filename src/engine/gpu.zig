@@ -429,6 +429,10 @@ pub const TextureFormat = enum {
     r16uint,
     r16float,
 
+    // special cases
+    rggb16float, // we will treat this as rgba16float with quarter width
+    rggb16uint,
+
     pub fn toWGPUFormat(self: TextureFormat) wgpu.TextureFormat {
         return switch (self) {
             .rgba16float => wgpu.TextureFormat.rgba16_float,
@@ -436,6 +440,10 @@ pub const TextureFormat = enum {
             .r8uint => wgpu.TextureFormat.r8_uint,
             .r16uint => wgpu.TextureFormat.r16_uint,
             .r16float => wgpu.TextureFormat.r16_float,
+
+            // special cases
+            .rggb16float => wgpu.TextureFormat.rgba16_float,
+            .rggb16uint => wgpu.TextureFormat.rgba16_uint,
         };
     }
 
@@ -446,6 +454,10 @@ pub const TextureFormat = enum {
             .r8uint => wgpu.SampleType.u_int,
             .r16uint => wgpu.SampleType.u_int,
             .r16float => wgpu.SampleType.float,
+
+            // special cases
+            .rggb16float => wgpu.SampleType.float,
+            .rggb16uint => wgpu.SampleType.u_int,
         };
     }
 
@@ -464,6 +476,10 @@ pub const TextureFormat = enum {
             .r8uint => 1,
             .r16uint => 1,
             .r16float => 1,
+
+            // special cases
+            .rggb16float => 4,
+            .rggb16uint => 4,
         };
     }
 
@@ -474,6 +490,10 @@ pub const TextureFormat = enum {
             .r8uint => @sizeOf(u8),
             .r16uint => @sizeOf(u16),
             .r16float => @sizeOf(f16),
+
+            // special cases
+            .rggb16float => @sizeOf(f16),
+            .rggb16uint => @sizeOf(u16),
         };
     }
 };
@@ -836,7 +856,9 @@ pub const GPU = struct {
         const instance = wgpu.Instance.create(null).?;
         errdefer instance.release();
 
-        const adapter_request = instance.requestAdapterSync(&wgpu.RequestAdapterOptions{}, 0);
+        const adapter_request = instance.requestAdapterSync(&wgpu.RequestAdapterOptions{
+            .power_preference = .high_performance,
+        }, 0);
         const adapter = switch (adapter_request.status) {
             .success => adapter_request.adapter.?,
             else => return error.NoAdapter,
@@ -861,7 +883,7 @@ pub const GPU = struct {
         // https://webgpureport.org/
         const required_features = [_]wgpu.FeatureName{
             .shader_f16, // enable f16 support
-            .texture_adapter_specific_format_features,
+            .texture_adapter_specific_format_features, // without this flag, read/write storage access is not allowed at all.
             // .mappable_primary_buffers, // https://docs.rs/wgpu-types/0.7.0/wgpu_types/struct.Features.html#associatedconstant.MAPPABLE_PRIMARY_BUFFERS
         };
         const required_limits = wgpu.Limits{

@@ -9,7 +9,7 @@ pub var module: api.ModuleDesc = .{
         s[0] = .{
             .name = "input",
             .type = .read,
-            .format = .rgba16float,
+            .format = .rggb16float,
             .roi = null,
         };
         s[1] = .{
@@ -27,8 +27,8 @@ pub var module: api.ModuleDesc = .{
 fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const input_sock = try api.getModSocket(pipe, mod, "input");
     var roi: api.ROI = input_sock.roi.?;
+    // const roi_half = roi.div(2, 2);
     // we have packed RG/GB
-    // const roi_half = roi.div(2, 2); // demosaic reduces width and height by 2
     const roi_half = roi.scaled(2, 0.5);
     var output_sock = try api.getModSocket(pipe, mod, "output");
     output_sock.roi = roi_half;
@@ -118,14 +118,14 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             s[0] = .{
                 .name = "input",
                 .type = .read,
-                .format = .rgba16float,
+                .format = .rggb16float,
                 .roi = null,
             };
             s[1] = .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-                .roi = mod_output_sock.roi,
+                .roi = null,
             };
             break :init s;
         },

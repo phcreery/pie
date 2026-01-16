@@ -47,7 +47,7 @@ pub fn writeSink(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Mod
 
         try zig_image.convert(allocator, .rgba64);
         var write_buffer2: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-        try zig_image.writeToFilePath(allocator, "testing/integration/fullsize/DSC_6765_debayered.png", write_buffer2[0..], .{ .png = .{} });
+        try zig_image.writeToFilePath(allocator, "testing/images/DSC_6765_debayered.png", write_buffer2[0..], .{ .png = .{} });
     }
 }
 

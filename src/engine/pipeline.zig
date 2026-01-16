@@ -184,7 +184,7 @@ pub const Pipeline = struct {
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
     ) !void {
-        slog.debug("Connecting module {any} socket {s} to module {any} socket {s}", .{ src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name });
+        // slog.debug("Connecting module {any} socket {s} to module {any} socket {s}", .{ src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name });
         var src_mod_ptr = self.module_pool.getPtr(src_mod) catch unreachable;
         var dst_mod_ptr = self.module_pool.getPtr(dst_mod) catch unreachable;
 
@@ -529,6 +529,15 @@ pub const Pipeline = struct {
             // modify roi out
             if (module.desc.modifyROIOut) |modifyROIOutFn| {
                 try modifyROIOutFn(self, module_handle);
+
+                // THIS IS A WORKAROUND: for single channel read-write storage texture limitation
+                // if we are a source module, and we source rggb data, pack it into quarter width 4-channel texture
+                // if (module.desc.type == .source) {
+                //     const output_socket = module.getSocketPtr("output") orelse return error.SourceModuleOfRGGBMissingOutputSock;
+                //     if (output_socket.format == .rggb16float or output_socket.format == .rggb16uint) {
+                //         output_socket.roi = output_socket.roi.?.div(4, 1);
+                //     }
+                // }
             } else {
                 // auto propagate roi from input to output
                 if (module.desc.type != .source and module.desc.type != .sink) {
@@ -711,7 +720,8 @@ pub const Pipeline = struct {
                         var buf: [256]u8 = undefined;
                         const str = try std.fmt.bufPrint(&buf, "id: {d}", .{connector_handle.id});
                         slog.debug("Allocating output texture for node {any} {s} socket {s} with connector handle {any}", .{ node_handle, node.desc.name, sock.name, connector_handle });
-                        const texture = try gpu.Texture.init(gpu_inst, str, sock.format, sock.roi.?);
+                        const roi = sock.roi orelse return error.NodeOutputSocketMissingROICode;
+                        const texture = try gpu.Texture.init(gpu_inst, str, sock.format, roi);
                         // defer texture.deinit();
                         // store texture in connector pool
                         const conn = try self.connector_pool.getPtr(connector_handle);
@@ -1063,6 +1073,10 @@ pub const Pipeline = struct {
 
             if (!found) {
                 slog.debug("Freeing unused connector {any}", .{connector_handle});
+                const conn = try self.connector_pool.getPtr(connector_handle);
+                if (conn.*) |*tex| {
+                    tex.deinit();
+                }
                 self.connector_pool.remove(connector_handle);
             }
         }

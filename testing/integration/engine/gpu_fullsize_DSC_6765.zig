@@ -82,10 +82,15 @@ test "load raw, demosaic, save" {
     // SIZES
     const image_size_in_w = @as(u32, @intCast(pie_raw_image.width));
     const image_size_in_h = @as(u32, @intCast(pie_raw_image.height));
-    const source_format = TextureFormat.rgba16uint;
+    const source_format = TextureFormat.rgba16float;
     const destination_format = TextureFormat.rgba16float;
 
     var roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
+
+    // THIS IS A WORKAROUND: I don't seem that wgpu supports single channel f16 storage textures.
+    // see "texture-formats-tier2" in webgpu spec
+    // "The adapter does not support write access for storage textures of format R16Float"
+    // so will will pack it into a RGBA16Float
     roi_in = roi_in.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
     var roi_out = roi_in;
@@ -106,7 +111,7 @@ test "load raw, demosaic, save" {
     defer gpu.deinit();
 
     // these are intentionally over-provisioned to avoid OOM issues
-    const some_size_larger_than_needed = 20 * 1024 * 1024 * TextureFormat.rgba16float.bpp();
+    const some_size_larger_than_needed = 20 * pie_raw_image.width * pie_raw_image.height * TextureFormat.r16float.bpp();
     var upload = try Buffer.init(&gpu, some_size_larger_than_needed, .upload);
     defer upload.deinit();
     var download = try Buffer.init(&gpu, some_size_larger_than_needed, .download);
@@ -151,6 +156,23 @@ test "load raw, demosaic, save" {
     defer encoder.deinit();
 
     // FORMAT CONVERSION WITH COMPUTE SHADER
+    // const convert: []const u8 =
+    //     \\enable f16;
+    //     \\@group(0) @binding(0) var input:  texture_2d<u32>;
+    //     \\@group(0) @binding(1) var output: texture_storage_2d<r16float, write>;
+    //     \\@compute @workgroup_size(8, 8, 1)
+    //     \\fn convert(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    //     \\    var coords = vec2<i32>(global_id.xy);
+    //     \\    // textureLoad always returns a vec4, even for single channel textures
+    //     \\    let px = textureLoad(input, coords, 0);
+    //     \\    // textureLoad always expects vec4, even for single channel textures
+    //     \\    let pxf = vec4<f32>(f32(px.r), 0.0, 0.0, 1.0) / 4096.0; // max_value
+    //     \\    //let pxf = f32(px.r) / 4096.0; // max_value
+    //     \\    textureStore(output, coords, pxf);
+    //     \\}
+    // ;
+
+    // THIS IS A WORKAROUND
     const convert: []const u8 =
         \\enable f16;
         \\@group(0) @binding(0) var input:  texture_2d<u32>;
@@ -159,8 +181,6 @@ test "load raw, demosaic, save" {
         \\fn convert(@builtin(global_invocation_id) global_id: vec3<u32>) {
         \\    var coords = vec2<i32>(global_id.xy);
         \\    let px = textureLoad(input, coords, 0);
-        \\    //let pxf = bitcast<vec4<f32>>(px); // does not work
-        \\    //let pxf = vec4<f32>(1.0,2.0,3.0,4.0); // for testing
         \\    let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a)) / 4096.0; // max_value
         \\    textureStore(output, coords, pxf);
         \\}
@@ -255,6 +275,62 @@ test "load raw, demosaic, save" {
     roi_out_upper, roi_out_lower = roi_out.splitH();
 
     // DEMOSAIC WITH COMPUTE SHADER
+    // const demosaic_packed: []const u8 =
+    //     \\enable f16;
+    //     \\@group(0) @binding(0) var input:  texture_2d<f32>;
+    //     \\@group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
+    //     \\@compute @workgroup_size(8, 8, 1)
+    //     \\fn demosaic_packed(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    //     \\    var coords = vec2<i32>(global_id.xy);
+    //     \\    // INPUT
+    //     \\    // libraw outputs the raw data as a 1D buffer, but we will interpret it
+    //     \\    // as a single channel 2D texture with a stride of raw_width
+    //     \\    // [ (r)g r g r g r g  ...
+    //     \\    //    g(b)g b g b g b ...
+    //     \\    //    r g r g r g r g  ...
+    //     \\    //    g b g b g b g b  ... ]
+    //     \\    // iw,ih == raw_width, raw_height
+    //     \\    // when we index this texture, we will get
+    //     \\    // (0,0) -> [ r ]  // wrong
+    //     \\    // (1,1) -> [ b ]  // wrong
+    //     \\    //
+    //     \\    // we want the mosaic
+    //     \\    // [  /r g\ r g  r g  r g ...
+    //     \\    //    \g b/ g b  g b  g b ...
+    //     \\    //     r g /r g\ r g  r g ...
+    //     \\    //     g b \g b/ g b  g b ... ]
+    //     \\    //  w,h  =  raw_width/2, raw_height/2
+    //     \\    // so that an invocation coord of
+    //     \\    // (0,0) -> [ r g g b ]
+    //     \\    // (1,1) -> [ r g g b ]
+    //     \\    //
+    //     \\    // OUTPUT
+    //     \\    // we want pixels to be reconstructed as:
+    //     \\    // [ [(r g b 1)] [ r g b 1 ] ...
+    //     \\    //   [ r g b 1 ] [(r g b 1)] ...
+    //     \\    //   [ r g b 1 ] [ r g b 1 ] ...
+    //     \\    //   [ r g b 1 ] [ r g b 1 ] ... ]
+    //     \\    // ow,oh == raw_width/2, raw_height/2
+    //     \\    // (0,0) -> [ r g b 1 ]  // correct
+    //     \\    // (1,1) -> [ r g b 1 ]  // correct
+    //     \\    //
+    //     \\    // DECODE
+    //     \\    var r: f32;
+    //     \\    var g1: f32;
+    //     \\    var g2: f32;
+    //     \\    var b: f32;
+    //     \\    let base_coords_x: i32 = coords.x * 2; // integer division
+    //     \\    let base_coords_y: i32 = coords.y * 2;
+    //     \\    r = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 0), 0);
+    //     \\    g1 = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 0), 0);
+    //     \\    g2 = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 1), 0);
+    //     \\    b = textureLoad(input, vec2<i32>(base_coords_x, base_coords_y + 1), 0);
+    //     \\    let g = (g1 + g2) / 2.0;
+    //     \\    let rgba = vec4<f32>(r, g, b, 1);
+    //     \\    textureStore(output, coords, rgba);
+    //     \\}
+    // ;
+    // THIS IS A WORKAROUND
     const demosaic_packed: []const u8 =
         \\enable f16;
         \\@group(0) @binding(0) var input:  texture_2d<f32>;
@@ -282,7 +358,7 @@ test "load raw, demosaic, save" {
         \\    // so that an invocation coord of
         \\    // (0,0) -> [ r g g b ]
         \\    // (1,1) -> [ r g g b ]
-        \\    // 
+        \\    //
         \\    // OUTPUT
         \\    // we want pixels to be reconstructed as:
         \\    // [ [(r g b 1)] [ r g b 1 ] ...
