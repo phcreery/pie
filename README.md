@@ -21,3 +21,7 @@ This may require changing the default allocator.
 ## Build Requirements
 
 zig 0.15.1
+
+### Linux
+
+`alsa-lib-devel libX11-devel mesa-libGL mesa-libGL-devel libXi-devel libXcursor-devel`
