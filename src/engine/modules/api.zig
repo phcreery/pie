@@ -6,6 +6,7 @@ pub const ROI = @import("../ROI.zig");
 pub const pipeline = @import("../pipeline.zig");
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
+pub const Socket = @import("../Socket.zig");
 pub const Param = @import("../Param.zig");
 pub const Pipeline = pipeline.Pipeline;
 pub const ModuleHandle = pipeline.ModuleHandle;
@@ -16,45 +17,45 @@ pub const CFA = @import("./shared/CFA.zig");
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 pub const MAX_PARAMS_PER_MODULE = 16;
 
-pub const Direction = enum {
-    input,
-    output,
-};
+// pub const Direction = enum {
+//     input,
+//     output,
+// };
 
-pub const SocketType = enum {
-    read,
-    write,
-    source,
-    sink,
+// pub const SocketType = enum {
+//     read,
+//     write,
+//     source,
+//     sink,
 
-    pub fn toComputePipelineBindGroupLayoutEntryAccess(self: SocketType) gpu.BindGroupLayoutEntryAccess {
-        return switch (self) {
-            .read => gpu.BindGroupLayoutEntryAccess.read,
-            .write => gpu.BindGroupLayoutEntryAccess.write,
-            else => unreachable,
-        };
-    }
+//     pub fn toComputePipelineBindGroupLayoutEntryAccess(self: SocketType) gpu.BindGroupLayoutEntryAccess {
+//         return switch (self) {
+//             .read => gpu.BindGroupLayoutEntryAccess.read,
+//             .write => gpu.BindGroupLayoutEntryAccess.write,
+//             else => unreachable,
+//         };
+//     }
 
-    pub fn direction(self: SocketType) Direction {
-        return switch (self) {
-            .read => Direction.input,
-            .write => Direction.output,
-            .source => Direction.output,
-            .sink => Direction.input,
-        };
-    }
-};
+//     pub fn direction(self: SocketType) Direction {
+//         return switch (self) {
+//             .read => Direction.input,
+//             .write => Direction.output,
+//             .source => Direction.output,
+//             .sink => Direction.input,
+//         };
+//     }
+// };
 
-pub fn SocketConnection(comptime TItem: type) type {
-    return struct {
-        item: TItem,
-        socket_idx: usize,
-    };
-}
+// pub fn SocketConnection(comptime TItem: type) type {
+//     return struct {
+//         item: TItem,
+//         socket_idx: usize,
+//     };
+// }
 
 pub const SocketDesc = struct {
     name: []const u8,
-    type: SocketType,
+    type: Socket.SocketType,
     format: gpu.TextureFormat,
     roi: ?ROI = null,
 
@@ -66,15 +67,15 @@ pub const SocketDesc = struct {
 
         // FOR GRAPH TRAVERSAL
         // for input sockets of modules
-        connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModulesName()
+        connected_to_module: ?Socket.SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModulesName()
 
         // for input sockets of nodes
-        connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
+        connected_to_node: ?Socket.SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
 
         // for output sockets of modules
-        associated_with_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
+        associated_with_node: ?Socket.SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
         // for input sockets of nodes
-        associated_with_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
+        associated_with_module: ?Socket.SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
 
         // offset in the upload or download staging buffer
         // for source or sink sockets only

@@ -16,7 +16,7 @@ const PipeBench = struct {
     }
 
     pub fn run(self: Self, _: std.mem.Allocator) void {
-        self.pipeline.rerouted = true;
+        // self.pipeline.rerouted = true;
         self.pipeline.dirty = true;
         self.pipeline.run(self.arena) catch unreachable;
     }
@@ -25,7 +25,7 @@ const PipeBench = struct {
 fn runPipeBench(allocator: std.mem.Allocator, arena: std.mem.Allocator, pipeline: *Pipeline) !void {
     const config: zbench.Config = .{
         // .iterations = 0,
-        .max_iterations = 10,
+        .max_iterations = 100,
         // .time_budget_ns = 1e9, // 1 second
     };
     var bench = zbench.Benchmark.init(allocator, config);
@@ -77,10 +77,10 @@ test "simple test modules" {
     pipeline.connectModulesName(mod_test_2nodes, "output", mod_test_nop, "input") catch unreachable;
     pipeline.connectModulesName(mod_test_nop, "output", mod_test_o_2468, "input") catch unreachable;
 
-    // try pipeline.run(aa);
+    try pipeline.run(aa);
     // pipeline.rerouted = true;
     // pipeline.dirty = true;
     // try pipeline.run(aa);
 
-    try runPipeBench(allocator, aa, &pipeline);
+    // try runPipeBench(allocator, aa, &pipeline);
 }

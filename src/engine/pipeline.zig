@@ -5,6 +5,7 @@ const api = @import("modules/api.zig");
 const print = @import("print.zig");
 const Module = @import("Module.zig");
 const Node = @import("Node.zig");
+const Socket = @import("Socket.zig");
 const Param = @import("Param.zig");
 const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
@@ -383,7 +384,7 @@ pub const Pipeline = struct {
     }
 
     /// pub for debugging purposes
-    pub fn getConnectedNode(pipe: *Pipeline, socket: api.SocketDesc) ?api.SocketConnection(NodeHandle) {
+    pub fn getConnectedNode(pipe: *Pipeline, socket: api.SocketDesc) ?Socket.SocketConnection(NodeHandle) {
         if (socket.private.connected_to_node) |src_node_handle_connection| {
             return src_node_handle_connection;
         } else if (socket.private.associated_with_module) |assoc_mod_handle_connection| {
