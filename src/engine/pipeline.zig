@@ -268,7 +268,7 @@ pub const Pipeline = struct {
         try param.value.set(value);
     }
 
-    pub fn run(self: *Pipeline) !void {
+    pub fn run(self: *Pipeline, arena: std.mem.Allocator) !void {
 
         // Order of Operations:
         // dt_graph_run_modules
@@ -300,7 +300,7 @@ pub const Pipeline = struct {
 
             self.runModulesCreateOutputConnectorHandles() catch unreachable;
             self.perf.timerLap("runModulesCreateOutputConnectorHandles") catch unreachable;
-            self.runModulesBuildExecutionOrder() catch unreachable;
+            self.runModulesBuildExecutionOrder(arena) catch unreachable;
             self.perf.timerLap("runModulesBuildExecutionOrder") catch unreachable;
 
             self.runModulesInit() catch unreachable;
@@ -323,7 +323,7 @@ pub const Pipeline = struct {
             // Then run nodes
             self.runNodesCreateOutputConnectorHandles() catch unreachable;
             self.perf.timerLap("runNodesCreateOutputConnectorHandles") catch unreachable;
-            self.runNodesBuildExecutionOrder() catch unreachable;
+            self.runNodesBuildExecutionOrder(arena) catch unreachable;
             self.perf.timerLap("runNodesBuildExecutionOrder") catch unreachable;
             self.runNodesInitConnectorTextures() catch unreachable;
             self.perf.timerLap("runNodesInitConnectorTextures") catch unreachable;
@@ -345,7 +345,7 @@ pub const Pipeline = struct {
         self.printPipeToStdout();
 
         if (self.dirty) {
-            self.runModulesUploadParams() catch unreachable;
+            self.runModulesUploadParams(arena) catch unreachable;
             self.perf.timerLap("runModulesUploadParams") catch unreachable;
             self.runNodesUploadSource() catch unreachable;
             self.perf.timerLap("runNodesUploadSource") catch unreachable;
@@ -459,13 +459,13 @@ pub const Pipeline = struct {
     }
 
     // build execution order of modules based on DAG
-    fn runModulesBuildExecutionOrder(self: *Pipeline) !void {
+    fn runModulesBuildExecutionOrder(self: *Pipeline, arena: std.mem.Allocator) !void {
         // clear previous execution order
         self.module_execution_order.clearAndFree(self.allocator);
 
         // OPTION #1
         const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle, std.hash_map.AutoContext(ModuleHandle));
-        var module_graph = ModuleGraph.init(self.allocator);
+        var module_graph = ModuleGraph.init(arena);
         defer module_graph.deinit();
         buildGraph(Module, &self.module_pool, &module_graph) catch unreachable;
         var iter = try module_graph.topSortIterator();
@@ -475,7 +475,7 @@ pub const Pipeline = struct {
         }
 
         // OPTION #2
-        // var module_dag_iter = try PooledDagDfsIterator(Module).iterator(self.allocator, &self.module_pool);
+        // var module_dag_iter = try PooledDagDfsIterator(Module).iterator(arena, &self.module_pool);
         // defer module_dag_iter.deinit();
         // while (module_dag_iter.next()) |maybe_node_handle| {
         //     const node_handle = maybe_node_handle orelse break;
@@ -654,7 +654,7 @@ pub const Pipeline = struct {
 
     /// Builds a DAG graph for the node by connecting nodes based on connected_to_* and associated_with_* fields,
     /// then performs a topological sort to determine execution order
-    fn runNodesBuildExecutionOrder(self: *Pipeline) !void {
+    fn runNodesBuildExecutionOrder(self: *Pipeline, arena: std.mem.Allocator) !void {
         // flatten all meta connections first
         // right now, nodes are not directly connected to each other across modules
         // so we need to traverse the module connections to find the actual source node
@@ -692,7 +692,7 @@ pub const Pipeline = struct {
 
         // OPTION #1
         const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
-        var node_graph = NodeGraph.init(self.allocator);
+        var node_graph = NodeGraph.init(arena);
         defer node_graph.deinit();
         buildGraph(Node, &self.node_pool, &node_graph) catch unreachable;
         var iter = try node_graph.topSortIterator();
@@ -871,7 +871,7 @@ pub const Pipeline = struct {
         }
     }
 
-    pub fn runModulesUploadParams(self: *Pipeline) !void {
+    pub fn runModulesUploadParams(self: *Pipeline, arena: std.mem.Allocator) !void {
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
 
         upload_buffer.map();
@@ -881,8 +881,8 @@ pub const Pipeline = struct {
             if (module.desc.type == .compute) {
                 if (module.enabled == false) continue;
                 if (module.desc.params) |params| {
-                    var list = try std.ArrayList(u8).initCapacity(self.allocator, module.param_size orelse 0);
-                    defer list.deinit(self.allocator);
+                    var list = try std.ArrayList(u8).initCapacity(arena, module.param_size orelse 0);
+                    defer list.deinit(arena);
 
                     // TODO: compute_byte_offset and length based on param types
                     // this needs to follow the webgpu layout rules
@@ -893,7 +893,7 @@ pub const Pipeline = struct {
                         if (param) |*p| {
                             const param_value_bytes = p.value.asBytes();
                             // TODO: ensure param_value_bytes.len == p.value.size()
-                            try list.appendSlice(self.allocator, param_value_bytes);
+                            try list.appendSlice(arena, param_value_bytes);
                         }
                     }
                     slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.desc.name, list.items.len });

@@ -7,21 +7,22 @@ const Pipeline = pie.engine.Pipeline;
 
 const PipeBench = struct {
     pipeline: *Pipeline,
+    arena: std.mem.Allocator,
 
     const Self = @This();
 
-    fn init(p: *Pipeline) Self {
-        return .{ .pipeline = p };
+    fn init(p: *Pipeline, arena: std.mem.Allocator) Self {
+        return .{ .pipeline = p, .arena = arena };
     }
 
     pub fn run(self: Self, _: std.mem.Allocator) void {
         self.pipeline.rerouted = true;
         self.pipeline.dirty = true;
-        self.pipeline.run() catch unreachable;
+        self.pipeline.run(self.arena) catch unreachable;
     }
 };
 
-fn runPipeBench(allocator: std.mem.Allocator, pipeline: *Pipeline) !void {
+fn runPipeBench(allocator: std.mem.Allocator, arena: std.mem.Allocator, pipeline: *Pipeline) !void {
     const config: zbench.Config = .{
         // .iterations = 0,
         .max_iterations = 10,
@@ -29,7 +30,7 @@ fn runPipeBench(allocator: std.mem.Allocator, pipeline: *Pipeline) !void {
     };
     var bench = zbench.Benchmark.init(allocator, config);
     defer bench.deinit();
-    try bench.addParam("Pipeline Benchmark", &PipeBench.init(pipeline), .{});
+    try bench.addParam("Pipeline Benchmark", &PipeBench.init(pipeline, arena), .{});
 
     var buf: [1024]u8 = undefined;
     var stdout = std.fs.File.stdout().writer(&buf);
@@ -40,6 +41,12 @@ fn runPipeBench(allocator: std.mem.Allocator, pipeline: *Pipeline) !void {
 
 test "simple test modules" {
     const allocator = std.testing.allocator;
+
+    // const aa = allocator;
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
 
     const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
@@ -70,10 +77,10 @@ test "simple test modules" {
     pipeline.connectModulesName(mod_test_2nodes, "output", mod_test_nop, "input") catch unreachable;
     pipeline.connectModulesName(mod_test_nop, "output", mod_test_o_2468, "input") catch unreachable;
 
-    try pipeline.run();
+    // try pipeline.run(aa);
     // pipeline.rerouted = true;
-    pipeline.dirty = true;
-    try pipeline.run();
+    // pipeline.dirty = true;
+    // try pipeline.run(aa);
 
-    // try runPipeBench(allocator, &pipeline);
+    try runPipeBench(allocator, aa, &pipeline);
 }
