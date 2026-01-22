@@ -17,41 +17,12 @@ pub const CFA = @import("./shared/CFA.zig");
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 pub const MAX_PARAMS_PER_MODULE = 16;
 
-// pub const Direction = enum {
-//     input,
-//     output,
-// };
-
-// pub const SocketType = enum {
-//     read,
-//     write,
-//     source,
-//     sink,
-
-//     pub fn toComputePipelineBindGroupLayoutEntryAccess(self: SocketType) gpu.BindGroupLayoutEntryAccess {
-//         return switch (self) {
-//             .read => gpu.BindGroupLayoutEntryAccess.read,
-//             .write => gpu.BindGroupLayoutEntryAccess.write,
-//             else => unreachable,
-//         };
-//     }
-
-//     pub fn direction(self: SocketType) Direction {
-//         return switch (self) {
-//             .read => Direction.input,
-//             .write => Direction.output,
-//             .source => Direction.output,
-//             .sink => Direction.input,
-//         };
-//     }
-// };
-
-// pub fn SocketConnection(comptime TItem: type) type {
-//     return struct {
-//         item: TItem,
-//         socket_idx: usize,
-//     };
-// }
+pub fn SocketConnection(comptime TItem: type) type {
+    return struct {
+        item: TItem,
+        socket_idx: usize,
+    };
+}
 
 pub const SocketDesc = struct {
     name: []const u8,
@@ -59,29 +30,7 @@ pub const SocketDesc = struct {
     format: gpu.TextureFormat,
     roi: ?ROI = null,
 
-    private: Private = .{},
-
-    const Private = struct {
-        // for output sockets of modules
-        connector_handle: ?pipeline.ConnectorHandle = null,
-
-        // FOR GRAPH TRAVERSAL
-        // for input sockets of modules
-        connected_to_module: ?Socket.SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModulesName()
-
-        // for input sockets of nodes
-        connected_to_node: ?Socket.SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
-
-        // for output sockets of modules
-        associated_with_node: ?Socket.SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
-        // for input sockets of nodes
-        associated_with_module: ?Socket.SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
-
-        // offset in the upload or download staging buffer
-        // for source or sink sockets only
-        staging_offset: ?usize = null,
-        staging_ptr: ?*anyopaque = null,
-    };
+    private: Socket.PrivateMembers = .{},
 };
 
 pub const Sockets = [MAX_SOCKETS]?SocketDesc;

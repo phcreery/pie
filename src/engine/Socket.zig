@@ -4,30 +4,29 @@ const gpu = @import("gpu.zig");
 pub const ROI = @import("ROI.zig");
 const pipeline = @import("pipeline.zig");
 
-name: []const u8,
-type: SocketType,
-format: gpu.TextureFormat,
-roi: ?ROI = null,
+pub const PrivateMembers = struct {
+    // FOR PIPELINE OPERATION
 
-// for output sockets of modules
-connector_handle: ?pipeline.ConnectorHandle = null,
+    // for output sockets of modules
+    connector_handle: ?pipeline.ConnectorHandle = null,
 
-// FOR GRAPH TRAVERSAL
-// for input sockets of modules
-connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModulesName()
+    // FOR GRAPH TRAVERSAL
+    // for input sockets of modules
+    connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModulesName()
 
-// for input sockets of nodes
-connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
+    // for input sockets of nodes
+    connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
 
-// for output sockets of modules
-associated_with_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
-// for input sockets of nodes
-associated_with_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
+    // for output sockets of modules
+    associated_with_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
+    // for input sockets of nodes
+    associated_with_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
 
-// offset in the upload or download staging buffer
-// for source or sink sockets only
-staging_offset: ?usize = null,
-staging_ptr: ?*anyopaque = null,
+    // offset in the upload or download staging buffer
+    // for source or sink sockets only
+    staging_offset: ?usize = null,
+    staging_ptr: ?*anyopaque = null,
+};
 
 pub fn SocketConnection(comptime TItem: type) type {
     return struct {

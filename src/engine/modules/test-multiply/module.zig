@@ -72,7 +72,7 @@ const shader_code: []const u8 =
 // ;
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_desc: api.NodeDesc = .{
+    const node = try pipe.addNode(mod, .{
         .type = .compute,
         .shader = shader_code,
         .name = "multiply",
@@ -93,8 +93,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             };
             break :init s;
         },
-    };
-    const node = try pipe.addNode(mod, node_desc);
+    });
     try pipe.copyConnector(mod, "input", node, "input");
     try pipe.copyConnector(mod, "output", node, "output");
 }

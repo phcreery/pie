@@ -40,7 +40,7 @@ pub fn writeSink(
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "input");
-    const node_desc: api.NodeDesc = .{
+    const node = try pipe.addNode(mod, .{
         .type = .sink,
         .name = "Sink",
         .run_size = null,
@@ -49,7 +49,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             s[0] = same_as_mod_output_sock.*;
             break :init s;
         },
-    };
-    const node = try pipe.addNode(mod, node_desc);
+    });
     try pipe.copyConnector(mod, "input", node, "input");
 }
