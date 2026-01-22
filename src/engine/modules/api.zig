@@ -107,10 +107,10 @@ pub fn getModule(pipe: *Pipeline, mod_handle: ModuleHandle) !*Module {
 
 pub fn getModSocket(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !*SocketDesc {
     const mod = try pipe.module_pool.getPtr(mod_handle);
-    return mod.getSocketPtr(socket_name).?;
+    return mod.getSocketPtr(socket_name);
 }
 
 pub fn getSocketIndex(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !usize {
     const mod = try pipe.module_pool.getPtr(mod_handle);
-    return mod.getSocketIndex(socket_name).?;
+    return mod.getSocketIndex(socket_name);
 }

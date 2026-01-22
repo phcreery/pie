@@ -190,8 +190,8 @@ pub const Pipeline = struct {
         var dst_mod_ptr = self.module_pool.getPtr(dst_mod) catch unreachable;
 
         slog.debug("Connecting module {s} socket {s} to module {s} socket {s}", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
-        const dst_socket_idx = dst_mod_ptr.getSocketIndex(dst_mod_socket_name) orelse unreachable;
-        const src_socket_idx = src_mod_ptr.getSocketIndex(src_mod_socket_name) orelse unreachable;
+        const dst_socket_idx = try dst_mod_ptr.getSocketIndex(dst_mod_socket_name);
+        const src_socket_idx = try src_mod_ptr.getSocketIndex(src_mod_socket_name);
 
         dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = .{
             .item = src_mod,
@@ -212,8 +212,8 @@ pub const Pipeline = struct {
         var dst_node_ptr = self.node_pool.getPtr(dst_node) catch unreachable;
 
         slog.debug("Connecting node {s} socket {s} to node {s} socket {s}", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
-        const dst_socket_idx = dst_node_ptr.getSocketIndex(dst_node_socket_name) orelse unreachable;
-        const src_socket_idx = src_node_ptr.getSocketIndex(src_node_socket_name) orelse unreachable;
+        const dst_socket_idx = try dst_node_ptr.getSocketIndex(dst_node_socket_name);
+        const src_socket_idx = try src_node_ptr.getSocketIndex(src_node_socket_name);
 
         dst_node_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_node = .{
             .item = src_node,
@@ -235,8 +235,8 @@ pub const Pipeline = struct {
         var mod = self.module_pool.getPtr(mod_handle) catch unreachable;
         var node = self.node_pool.getPtr(node_handle) catch unreachable;
 
-        const mod_socket_idx = mod.getSocketIndex(mod_socket_name) orelse unreachable;
-        const node_socket_idx = node.getSocketIndex(node_socket_name) orelse unreachable;
+        const mod_socket_idx = try mod.getSocketIndex(mod_socket_name);
+        const node_socket_idx = try node.getSocketIndex(node_socket_name);
 
         node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
 
@@ -265,7 +265,7 @@ pub const Pipeline = struct {
 
     pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: Param.ParamValue) !void {
         const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
-        const param = mod.getParamPtr(param_name) orelse unreachable;
+        const param = try mod.getParamPtr(param_name);
         try param.value.set(value);
     }
 
@@ -417,19 +417,19 @@ pub const Pipeline = struct {
         while (mod_pool_handles.next()) |module_handle| {
             var module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.desc.type == .source) {
-                const input_socket = module.getSocketPtr("input");
+                const input_socket = module.getSocketPtr("input") catch null;
                 if (input_socket != null) {
                     slog.err("Source module {s} has an input socket defined", .{module.desc.name});
                     return error.ModuleSourceHasInputSocket;
                 }
             }
             if (module.desc.type == .compute) {
-                const input_socket = module.getSocketPtr("input");
+                const input_socket = module.getSocketPtr("input") catch null;
                 if (input_socket == null) {
                     slog.err("Compute module {s} has no input socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingInputSocket;
                 }
-                const output_socket = module.getSocketPtr("output");
+                const output_socket = module.getSocketPtr("output") catch null;
                 if (output_socket == null) {
                     slog.err("Compute module {s} has no output socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingOutputSocket;
@@ -448,7 +448,7 @@ pub const Pipeline = struct {
             for (module.desc.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
-                        var this_sock = module.getSocketPtr(sock.name) orelse unreachable;
+                        var this_sock = try module.getSocketPtr(sock.name);
                         slog.debug("Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
                         if (this_sock.private.connector_handle == null) {
                             this_sock.private.connector_handle = try self.connector_pool.add(null);
@@ -518,7 +518,7 @@ pub const Pipeline = struct {
                     if (sock.type.direction() == .input) {
                         if (sock.private.connected_to_module) |connection| {
                             const connected_to_module = self.module_pool.getPtr(connection.item) catch unreachable;
-                            var socket_ptr = module.getSocketPtr(sock.name) orelse unreachable;
+                            var socket_ptr = try module.getSocketPtr(sock.name);
                             slog.debug("Setting ROI for module {s} socket {s} from connected module {s}", .{ module.desc.name, sock.name, connected_to_module.desc.name });
                             const connected_to_socket = connected_to_module.desc.sockets[connection.socket_idx] orelse unreachable;
                             socket_ptr.roi = connected_to_socket.roi;
@@ -542,8 +542,8 @@ pub const Pipeline = struct {
             } else {
                 // auto propagate roi from input to output
                 if (module.desc.type != .source and module.desc.type != .sink) {
-                    const input_socket = module.getSocketPtr("input") orelse return error.ModuleNoROIFnMissingInputSock;
-                    const output_socket = module.getSocketPtr("output") orelse return error.ModuleNoROIFnMissingOutputSock;
+                    const input_socket = try module.getSocketPtr("input");
+                    const output_socket = try module.getSocketPtr("output");
                     output_socket.roi = input_socket.roi;
                 }
             }
@@ -642,7 +642,7 @@ pub const Pipeline = struct {
             for (node.desc.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
-                        var this_sock = node.getSocketPtr(sock.name) orelse unreachable;
+                        var this_sock = try node.getSocketPtr(sock.name);
                         if (this_sock.private.connector_handle == null) {
                             this_sock.private.connector_handle = try self.connector_pool.add(null);
                             slog.debug("Created connector handle {any} for node {any} {s} output socket {s}", .{ this_sock.private.connector_handle.?, node_handle, node.desc.name, sock.name });
