@@ -35,7 +35,7 @@ pub fn deinit(self: *Self) void {
     }
 }
 
-pub fn getSocketIndex(node: *const Self, name: []const u8) ?usize {
+pub fn getSocketIndex(node: *const Self, name: []const u8) !usize {
     for (node.desc.sockets, 0..) |sock, idx| {
         if (sock) |s| {
             if (std.mem.eql(u8, s.name, name)) {
@@ -43,12 +43,12 @@ pub fn getSocketIndex(node: *const Self, name: []const u8) ?usize {
             }
         }
     }
-    return null;
+    return error.NodeSocketNotFound;
 }
-pub fn getSocketPtr(node: *Self, name: []const u8) ?*api.SocketDesc {
-    const idx = node.getSocketIndex(name) orelse return null;
+pub fn getSocketPtr(node: *Self, name: []const u8) !*api.SocketDesc {
+    const idx = try node.getSocketIndex(name);
     if (node.desc.sockets[idx]) |*sock| {
         return sock;
     }
-    return null;
+    return error.NodeSocketNotFound;
 }

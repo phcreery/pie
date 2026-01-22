@@ -30,7 +30,7 @@ pub fn init(desc: api.ModuleDesc) !Self {
 
 // HELPER FUNCTIONS
 
-pub fn getSocketIndex(mod: *const Self, name: []const u8) ?usize {
+pub fn getSocketIndex(mod: *const Self, name: []const u8) !usize {
     for (mod.desc.sockets, 0..) |sock, idx| {
         if (sock) |s| {
             if (std.mem.eql(u8, s.name, name)) {
@@ -38,15 +38,15 @@ pub fn getSocketIndex(mod: *const Self, name: []const u8) ?usize {
             }
         }
     }
-    return null;
+    return error.ModuleSocketNotFound;
 }
 
-pub fn getSocketPtr(mod: *Self, name: []const u8) ?*api.SocketDesc {
-    const idx = mod.getSocketIndex(name) orelse return null;
+pub fn getSocketPtr(mod: *Self, name: []const u8) !*api.SocketDesc {
+    const idx = try mod.getSocketIndex(name);
     if (mod.desc.sockets[idx]) |*sock| {
         return sock;
     }
-    return null;
+    return error.ModuleSocketNotFound;
 }
 
 pub fn getParamIndex(mod: *const Self, name: []const u8) ?usize {

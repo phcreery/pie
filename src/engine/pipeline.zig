@@ -190,13 +190,15 @@ pub const Pipeline = struct {
         var dst_mod_ptr = self.module_pool.getPtr(dst_mod) catch unreachable;
 
         slog.debug("Connecting module {s} socket {s} to module {s} socket {s}", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
-        const dst_socket_idx = dst_mod_ptr.getSocketIndex(dst_mod_socket_name) orelse unreachable;
-        const src_socket_idx = src_mod_ptr.getSocketIndex(src_mod_socket_name) orelse unreachable;
+        const dst_socket_idx = try dst_mod_ptr.getSocketIndex(dst_mod_socket_name);
+        // const src_socket_idx = src_mod_ptr.getSocketIndex(src_mod_socket_name) orelse unreachable;
+        const src_socket_ptr = try src_mod_ptr.getSocketPtr(src_mod_socket_name);
 
-        dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = .{
-            .item = src_mod,
-            .socket_idx = src_socket_idx,
-        };
+        // dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = .{
+        //     .item = src_mod,
+        //     .socket_idx = src_socket_idx,
+        // };
+        dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module_socket = src_socket_ptr;
         self.rerouted = true;
     }
 
@@ -212,13 +214,15 @@ pub const Pipeline = struct {
         var dst_node_ptr = self.node_pool.getPtr(dst_node) catch unreachable;
 
         slog.debug("Connecting node {s} socket {s} to node {s} socket {s}", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
-        const dst_socket_idx = dst_node_ptr.getSocketIndex(dst_node_socket_name) orelse unreachable;
-        const src_socket_idx = src_node_ptr.getSocketIndex(src_node_socket_name) orelse unreachable;
+        const dst_socket_idx = try dst_node_ptr.getSocketIndex(dst_node_socket_name);
+        // const src_socket_idx = try src_node_ptr.getSocketIndex(src_node_socket_name);
+        const src_socket_ptr = try src_node_ptr.getSocketPtr(src_node_socket_name);
 
-        dst_node_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_node = .{
-            .item = src_node,
-            .socket_idx = src_socket_idx,
-        };
+        // dst_node_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_node = .{
+        //     .item = src_node,
+        //     .socket_idx = src_socket_idx,
+        // };
+        dst_node_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_node_socket = src_socket_ptr;
         self.rerouted = true;
     }
 
@@ -235,25 +239,29 @@ pub const Pipeline = struct {
         var mod = self.module_pool.getPtr(mod_handle) catch unreachable;
         var node = self.node_pool.getPtr(node_handle) catch unreachable;
 
-        const mod_socket_idx = mod.getSocketIndex(mod_socket_name) orelse unreachable;
-        const node_socket_idx = node.getSocketIndex(node_socket_name) orelse unreachable;
+        const mod_socket_idx = try mod.getSocketIndex(mod_socket_name);
+        const mod_socket_ptr = try mod.getSocketPtr(mod_socket_name);
+        const node_socket_idx = try node.getSocketIndex(node_socket_name);
+        const node_socket_ptr = try node.getSocketPtr(node_socket_name);
 
         node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
 
         // for input sockets on nodes
         if (node.desc.sockets[node_socket_idx].?.type.direction() == .input) {
-            node.desc.sockets[node_socket_idx].?.private.associated_with_module = .{
-                .item = mod_handle,
-                .socket_idx = mod_socket_idx,
-            };
+            // node.desc.sockets[node_socket_idx].?.private.associated_with_module = .{
+            //     .item = mod_handle,
+            //     .socket_idx = mod_socket_idx,
+            // };
+            node.desc.sockets[node_socket_idx].?.private.associated_with_module_socket = mod_socket_ptr;
         }
 
         // for output sockets on modules
         if (mod.desc.sockets[mod_socket_idx].?.type.direction() == .output) {
-            mod.desc.sockets[mod_socket_idx].?.private.associated_with_node = .{
-                .item = node_handle,
-                .socket_idx = node_socket_idx,
-            };
+            // mod.desc.sockets[mod_socket_idx].?.private.associated_with_node = .{
+            //     .item = node_handle,
+            //     .socket_idx = node_socket_idx,
+            // };
+            mod.desc.sockets[mod_socket_idx].?.private.associated_with_node_socket = node_socket_ptr;
         }
         self.rerouted = true;
     }
@@ -417,23 +425,20 @@ pub const Pipeline = struct {
         while (mod_pool_handles.next()) |module_handle| {
             var module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.desc.type == .source) {
-                const input_socket = module.getSocketPtr("input");
-                if (input_socket != null) {
+                _ = module.getSocketPtr("input") catch {
                     slog.err("Source module {s} has an input socket defined", .{module.desc.name});
                     return error.ModuleSourceHasInputSocket;
-                }
+                };
             }
             if (module.desc.type == .compute) {
-                const input_socket = module.getSocketPtr("input");
-                if (input_socket == null) {
+                _ = module.getSocketPtr("input") catch {
                     slog.err("Compute module {s} has no input socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingInputSocket;
-                }
-                const output_socket = module.getSocketPtr("output");
-                if (output_socket == null) {
+                };
+                _ = module.getSocketPtr("output") catch {
                     slog.err("Compute module {s} has no output socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingOutputSocket;
-                }
+                };
             }
         }
     }
@@ -448,7 +453,7 @@ pub const Pipeline = struct {
             for (module.desc.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
-                        var this_sock = module.getSocketPtr(sock.name) orelse unreachable;
+                        var this_sock = try module.getSocketPtr(sock.name);
                         slog.debug("Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
                         if (this_sock.private.connector_handle == null) {
                             this_sock.private.connector_handle = try self.connector_pool.add(null);
@@ -1218,9 +1223,9 @@ pub fn buildGraph(
         for (dst_node.desc.sockets) |socket| {
             if (socket) |sock| {
                 // if (self.getConnectedNode(sock.*)) |src_node_handle_connection| {
-                const maybe_connected_to = if (comptime T == Node) sock.private.connected_to_node else if (comptime T == Module) sock.private.connected_to_module else unreachable;
+                const maybe_connected_to = if (comptime T == Node) sock.private.connected_to_node_socket else if (comptime T == Module) sock.private.connected_to_module_socket else unreachable;
                 const src_node_handle_connection = maybe_connected_to orelse continue;
-                const src_node_handle = src_node_handle_connection.item;
+                // const src_node_handle = src_node_handle_connection.item;
                 // connect
                 try graph.add(dst_node_handle);
                 try graph.add(src_node_handle);
