@@ -1,25 +1,27 @@
 const api = @import("../api.zig");
 
-pub const module: api.ModuleDesc = .{
-    .name = "test-i-1234",
-    .type = .source,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
-            .name = "output",
-            .type = .source,
-            .format = .rgba16float,
-            .roi = null,
-        };
-        break :init s;
-    },
-    .init = null,
-    .deinit = null,
-    .readSource = readSource,
-    .writeSink = null,
-    .createNodes = createNodes,
-    .modifyROIOut = modifyROIOut,
-};
+pub fn createModule(pipe: *api.Pipeline) !api.ModuleDesc {
+    return .{
+        .name = "test-i-1234",
+        .type = .source,
+        .sockets = init: {
+            var s: api.SocketHandles = @splat(null);
+            s[0] = try api.addSocket(pipe, .{
+                .name = "output",
+                .type = .source,
+                .format = .rgba16float,
+                .roi = null,
+            });
+            break :init s;
+        },
+        .init = null,
+        .deinit = null,
+        .readSource = readSource,
+        .writeSink = null,
+        .createNodes = createNodes,
+        .modifyROIOut = modifyROIOut,
+    };
+}
 
 const source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
 const roi: api.ROI = .{
@@ -51,7 +53,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             .name = "Source",
             .run_size = null,
             .sockets = init: {
-                var s: api.Sockets = @splat(null);
+                var s: api.SocketDescs = @splat(null);
                 s[0] = same_as_mod_output_sock.*;
                 break :init s;
             },

@@ -30,23 +30,28 @@ pub fn init(desc: api.ModuleDesc) !Self {
 
 // HELPER FUNCTIONS
 
-pub fn getSocketIndex(mod: *const Self, name: []const u8) ?usize {
-    for (mod.desc.sockets, 0..) |sock, idx| {
-        if (sock) |s| {
-            if (std.mem.eql(u8, s.name, name)) {
-                return idx;
+pub fn getSocketHandleNamed(mod: *Self, pipe: *pipeline.Pipeline, name: []const u8) !api.SocketHandle {
+    for (mod.desc.sockets) |sock| {
+        if (sock) |sock_handle| {
+            const socket = try pipe.socket_pool.getPtr(sock_handle);
+            if (std.mem.eql(u8, socket.desc.name, name)) {
+                return sock_handle;
             }
         }
     }
-    return null;
+    return error.ModuleSocketNotFound;
 }
 
-pub fn getSocketPtr(mod: *Self, name: []const u8) ?*api.SocketDesc {
-    const idx = mod.getSocketIndex(name) orelse return null;
-    if (mod.desc.sockets[idx]) |*sock| {
-        return sock;
+pub fn getSocketPtrNamed(mod: *Self, pipe: *pipeline.Pipeline, name: []const u8) !*api.Socket {
+    for (mod.desc.sockets) |sock| {
+        if (sock) |sock_handle| {
+            const socket = try pipe.socket_pool.getPtr(sock_handle);
+            if (std.mem.eql(u8, socket.desc.name, name)) {
+                return socket;
+            }
+        }
     }
-    return null;
+    return error.ModuleSocketNotFound;
 }
 
 pub fn getParamIndex(mod: *const Self, name: []const u8) ?usize {

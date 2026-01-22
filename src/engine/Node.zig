@@ -35,20 +35,26 @@ pub fn deinit(self: *Self) void {
     }
 }
 
-pub fn getSocketIndex(node: *const Self, name: []const u8) ?usize {
-    for (node.desc.sockets, 0..) |sock, idx| {
-        if (sock) |s| {
-            if (std.mem.eql(u8, s.name, name)) {
-                return idx;
+pub fn getSocketHandleNamed(node: *Self, pipe: *pipeline.Pipeline, name: []const u8) ?*api.SocketHandle {
+    for (node.desc.sockets) |maybe_sock_handle| {
+        if (maybe_sock_handle) |sock_handle| {
+            const socket = try pipe.socket_pool.getPtr(sock_handle);
+            if (std.mem.eql(u8, socket.name, name)) {
+                return sock_handle;
             }
         }
     }
     return null;
 }
-pub fn getSocketPtr(node: *Self, name: []const u8) ?*api.SocketDesc {
-    const idx = node.getSocketIndex(name) orelse return null;
-    if (node.desc.sockets[idx]) |*sock| {
-        return sock;
+
+pub fn getSocketPtrNamed(node: *Self, pipe: *pipeline.Pipeline, name: []const u8) ?*api.Socket {
+    for (node.desc.sockets) |maybe_sock_handle| {
+        if (maybe_sock_handle) |sock_handle| {
+            const socket = try pipe.socket_pool.getPtr(sock_handle);
+            if (std.mem.eql(u8, socket.name, name)) {
+                return socket;
+            }
+        }
     }
     return null;
 }

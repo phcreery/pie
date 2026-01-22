@@ -4,7 +4,7 @@ pub var module: api.ModuleDesc = .{
     .name = "test-nop",
     .type = .compute,
     .sockets = init: {
-        var s: api.Sockets = @splat(null);
+        var s: api.SocketDescs = @splat(null);
         s[0] = .{
             .name = "input",
             .type = .read,
@@ -46,7 +46,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .name = "nop",
         .run_size = mod_output_sock.roi,
         .sockets = init: {
-            var s: api.Sockets = @splat(null);
+            var s: api.SocketDescs = @splat(null);
             s[0] = .{
                 .name = "input",
                 .type = .read,

@@ -1,37 +1,39 @@
 const api = @import("../api.zig");
 
-pub var module: api.ModuleDesc = .{
-    .name = "test-multiply",
-    .type = .compute,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
-        p[0] = .{ .name = "multiplier", .value = .{ .f32 = 3.0 } }; // intentionally incorrectly set to 3.0
-        p[1] = .{ .name = "adder", .value = .{ .i32 = 3.0 } }; // intentionally incorrectly set to 3.0
-        break :init p;
-    },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
-            .name = "input",
-            .type = .read,
-            .format = .rgba16float,
-            .roi = null,
-        };
-        s[1] = .{
-            .name = "output",
-            .type = .write,
-            .format = .rgba16float,
-            .roi = null,
-        };
-        break :init s;
-    },
-    .init = null,
-    .deinit = null,
-    .readSource = null,
-    .writeSink = null,
-    .createNodes = createNodes,
-    .modifyROIOut = null,
-};
+pub fn createModule(pipe: *api.Pipeline) !api.ModuleDesc {
+    return .{
+        .name = "test-multiply",
+        .type = .compute,
+        .params = init: {
+            var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
+            p[0] = .{ .name = "multiplier", .value = .{ .f32 = 3.0 } }; // intentionally incorrectly set to 3.0
+            p[1] = .{ .name = "adder", .value = .{ .i32 = 3.0 } }; // intentionally incorrectly set to 3.0
+            break :init p;
+        },
+        .sockets = init: {
+            var s: api.SocketHandles = @splat(null);
+            s[0] = try api.addSocket(pipe, .{
+                .name = "input",
+                .type = .read,
+                .format = .rgba16float,
+                .roi = null,
+            });
+            s[1] = try api.addSocket(pipe, .{
+                .name = "output",
+                .type = .write,
+                .format = .rgba16float,
+                .roi = null,
+            });
+            break :init s;
+        },
+        .init = null,
+        .deinit = null,
+        .readSource = null,
+        .writeSink = null,
+        .createNodes = createNodes,
+        .modifyROIOut = null,
+    };
+}
 
 const shader_code: []const u8 =
     \\enable f16;
@@ -78,7 +80,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .name = "multiply",
         .run_size = mod_output_sock.roi,
         .sockets = init: {
-            var s: api.Sockets = @splat(null);
+            var s: api.SocketDescs = @splat(null);
             s[0] = .{
                 .name = "input",
                 .type = .read,
@@ -94,7 +96,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     };
-    const node = try pipe.addNode(mod, node_desc);
-    try pipe.copyConnector(mod, "input", node, "input");
-    try pipe.copyConnector(mod, "output", node, "output");
+    const node = try api.addNode(pipe, mod, node_desc);
+    try api.copyConnector(pipe, mod, "input", node, "input");
+    try api.copyConnector(pipe, mod, "output", node, "output");
 }

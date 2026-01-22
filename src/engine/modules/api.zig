@@ -11,47 +11,12 @@ pub const Param = @import("../Param.zig");
 pub const Pipeline = pipeline.Pipeline;
 pub const ModuleHandle = pipeline.ModuleHandle;
 pub const NodeHandle = pipeline.NodeHandle;
+pub const SocketHandle = pipeline.SocketHandle;
 
 pub const CFA = @import("./shared/CFA.zig");
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 pub const MAX_PARAMS_PER_MODULE = 16;
-
-// pub const Direction = enum {
-//     input,
-//     output,
-// };
-
-// pub const SocketType = enum {
-//     read,
-//     write,
-//     source,
-//     sink,
-
-//     pub fn toComputePipelineBindGroupLayoutEntryAccess(self: SocketType) gpu.BindGroupLayoutEntryAccess {
-//         return switch (self) {
-//             .read => gpu.BindGroupLayoutEntryAccess.read,
-//             .write => gpu.BindGroupLayoutEntryAccess.write,
-//             else => unreachable,
-//         };
-//     }
-
-//     pub fn direction(self: SocketType) Direction {
-//         return switch (self) {
-//             .read => Direction.input,
-//             .write => Direction.output,
-//             .source => Direction.output,
-//             .sink => Direction.input,
-//         };
-//     }
-// };
-
-// pub fn SocketConnection(comptime TItem: type) type {
-//     return struct {
-//         item: TItem,
-//         socket_idx: usize,
-//     };
-// }
 
 pub const SocketDesc = struct {
     name: []const u8,
@@ -59,32 +24,33 @@ pub const SocketDesc = struct {
     format: gpu.TextureFormat,
     roi: ?ROI = null,
 
-    private: Private = .{},
+    // private: Private = .{},
 
-    const Private = struct {
-        // for output sockets of modules
-        connector_handle: ?pipeline.ConnectorHandle = null,
+    // const Private = struct {
+    //     // for output sockets of modules
+    //     connector_handle: ?pipeline.ConnectorHandle = null,
 
-        // FOR GRAPH TRAVERSAL
-        // for input sockets of modules
-        connected_to_module: ?Socket.SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModulesName()
+    //     // FOR GRAPH TRAVERSAL
+    //     // for input sockets of modules
+    //     connected_to_module: ?Socket.SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModulesName()
 
-        // for input sockets of nodes
-        connected_to_node: ?Socket.SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
+    //     // for input sockets of nodes
+    //     connected_to_node: ?Socket.SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
 
-        // for output sockets of modules
-        associated_with_node: ?Socket.SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
-        // for input sockets of nodes
-        associated_with_module: ?Socket.SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
+    //     // for output sockets of modules
+    //     associated_with_node: ?Socket.SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
+    //     // for input sockets of nodes
+    //     associated_with_module: ?Socket.SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
 
-        // offset in the upload or download staging buffer
-        // for source or sink sockets only
-        staging_offset: ?usize = null,
-        staging_ptr: ?*anyopaque = null,
-    };
+    //     // offset in the upload or download staging buffer
+    //     // for source or sink sockets only
+    //     staging_offset: ?usize = null,
+    //     staging_ptr: ?*anyopaque = null,
+    // };
 };
 
-pub const Sockets = [MAX_SOCKETS]?SocketDesc;
+pub const SocketHandles = [MAX_SOCKETS]?SocketHandle;
+pub const SocketDescs = [MAX_SOCKETS]?SocketDesc;
 
 // Can we make NodeDesc a tagged union instead?
 pub const NodeType = enum {
@@ -100,7 +66,8 @@ pub const NodeDesc = struct {
     // shader: ?gpu.Shader = null,
     name: []const u8,
     run_size: ?ROI = null,
-    sockets: Sockets,
+    // sockets: SocketDescs,
+    sockets: SocketHandles,
 };
 
 pub const ModuleType = enum {
@@ -126,7 +93,8 @@ pub const ModuleDesc = struct {
 
     // The sockets describe the module's input and output interface
     // they can be null if the module has no input or output (sink or source only)
-    sockets: Sockets,
+    // sockets: SocketDescs,
+    sockets: SocketHandles,
 
     data: ?*anyopaque = null,
 
@@ -148,20 +116,30 @@ pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHan
     return pipe.addNode(mod, node_desc);
 }
 
-pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
-    return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
+pub fn addSocket(pipe: *Pipeline, socket_desc: SocketDesc) !SocketHandle {
+    return pipe.addSocket(socket_desc);
+}
+
+pub fn copyConnector(
+    pipe: *Pipeline,
+    mod: ModuleHandle,
+    mod_socket_name: []const u8,
+    node: NodeHandle,
+    node_socket_name: []const u8,
+) !void {
+    return pipe.copyConnector(
+        mod,
+        mod_socket_name,
+        node,
+        node_socket_name,
+    );
 }
 
 pub fn getModule(pipe: *Pipeline, mod_handle: ModuleHandle) !*Module {
     return pipe.module_pool.getPtr(mod_handle);
 }
 
-pub fn getModSocket(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !*SocketDesc {
+pub fn getModSocket(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !*SocketHandle {
     const mod = try pipe.module_pool.getPtr(mod_handle);
-    return mod.getSocketPtr(socket_name).?;
-}
-
-pub fn getSocketIndex(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !usize {
-    const mod = try pipe.module_pool.getPtr(mod_handle);
-    return mod.getSocketIndex(socket_name).?;
+    return mod.getSocketHandleNamed(pipe, socket_name);
 }

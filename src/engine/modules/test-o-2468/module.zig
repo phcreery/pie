@@ -1,26 +1,28 @@
 const api = @import("../api.zig");
 const std = @import("std");
 
-pub const module: api.ModuleDesc = .{
-    .name = "test-o-2468",
-    .type = .sink,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
-            .name = "input",
-            .type = .sink,
-            .format = .rgba16float,
-            .roi = null,
-        };
-        break :init s;
-    },
-    .init = null,
-    .deinit = null,
-    .readSource = null,
-    .writeSink = writeSink,
-    .createNodes = createNodes,
-    .modifyROIOut = null,
-};
+pub fn createModule(pipe: *api.Pipeline) !api.ModuleDesc {
+    return .{
+        .name = "test-o-2468",
+        .type = .sink,
+        .sockets = init: {
+            var s: api.SocketHandles = @splat(null);
+            s[0] = try api.addSocket(pipe, .{
+                .name = "input",
+                .type = .sink,
+                .format = .rgba16float,
+                .roi = null,
+            });
+            break :init s;
+        },
+        .init = null,
+        .deinit = null,
+        .readSource = null,
+        .writeSink = writeSink,
+        .createNodes = createNodes,
+        .modifyROIOut = null,
+    };
+}
 
 const expected = [_]f16{ 2.0, 4.0, 6.0, 8.0 };
 
@@ -45,7 +47,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .name = "Sink",
         .run_size = null,
         .sockets = init: {
-            var s: api.Sockets = @splat(null);
+            var s: api.SocketDescs = @splat(null);
             s[0] = same_as_mod_output_sock.*;
             break :init s;
         },
