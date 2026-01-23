@@ -54,6 +54,11 @@ test "simple test modules" {
     var gpu_instance = try gpu.GPU.init();
     defer gpu_instance.deinit();
 
+    var registry = try pie.engine.modules.Registry.init(allocator);
+    defer registry.deinit();
+
+    try pie.engine.modules.populateRegistry(&registry);
+
     const pipeline_config: pie.engine.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 1024,
         .download_buffer_size_bytes = 1024,
@@ -62,12 +67,19 @@ test "simple test modules" {
     var pipeline = Pipeline.init(allocator, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    const mod_test_i_1234 = try pipeline.addModule(pie.engine.modules.test_i_1234.module);
-    const mod_test_multiply = try pipeline.addModule(pie.engine.modules.test_multiply.module);
-    const mod_test_2nodes = try pipeline.addModule(pie.engine.modules.test_2nodes.module);
-    const mod_test_o_2468 = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
-    _ = try pipeline.addModule(pie.engine.modules.test_multiply.module); // dummy
-    const mod_test_nop = try pipeline.addModule(pie.engine.modules.test_nop.module);
+    // const mod_test_i_1234 = try pipeline.addModule(pie.engine.modules.test_i_1234.module);
+    // const mod_test_multiply = try pipeline.addModule(pie.engine.modules.test_multiply.module);
+    // const mod_test_2nodes = try pipeline.addModule(pie.engine.modules.test_2nodes.module);
+    // const mod_test_o_2468 = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
+    // _ = try pipeline.addModule(pie.engine.modules.test_multiply.module); // dummy
+    // const mod_test_nop = try pipeline.addModule(pie.engine.modules.test_nop.module);
+
+    const mod_test_i_1234 = try pipeline.addModule(registry.get("test-i-1234").?);
+    const mod_test_multiply = try pipeline.addModule(registry.get("test-multiply").?);
+    const mod_test_2nodes = try pipeline.addModule(registry.get("test-2nodes").?);
+    const mod_test_o_2468 = try pipeline.addModule(registry.get("test-o-2468").?);
+    _ = try pipeline.addModule(registry.get("test-multiply").?); // dummy
+    const mod_test_nop = try pipeline.addModule(registry.get("test-nop").?);
 
     pipeline.setModuleParam(mod_test_multiply, "multiplier", .{ .f32 = 2.0 }) catch unreachable;
     pipeline.setModuleParam(mod_test_multiply, "adder", .{ .i32 = 0 }) catch unreachable;
