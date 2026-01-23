@@ -193,7 +193,21 @@ pub const Pipeline = struct {
         const dst_socket_idx = try dst_mod_ptr.getSocketIndex(dst_mod_socket_name);
         const src_socket_idx = try src_mod_ptr.getSocketIndex(src_mod_socket_name);
 
-        dst_mod_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_module = .{
+        var dst_mod_socket = &(dst_mod_ptr.desc.sockets[dst_socket_idx] orelse {
+            slog.err("Destination module {s} socket {s} is null", .{ dst_mod_ptr.desc.name, dst_mod_socket_name });
+            return error.ModuleSocketNotFound;
+        });
+        const src_mod_socket = &(src_mod_ptr.desc.sockets[src_socket_idx] orelse {
+            slog.err("Source module {s} socket {s} is null", .{ src_mod_ptr.desc.name, src_mod_socket_name });
+            return error.ModuleSocketNotFound;
+        });
+
+        if (!Socket.areCompatible(src_mod_socket, dst_mod_socket)) {
+            slog.err("Incompatible module socket connection from {s}.{s} to {s}.{s}", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
+            return error.ModuleSocketConnectionIncompatible;
+        }
+
+        dst_mod_socket.private.connected_to_module = .{
             .item = src_mod,
             .socket_idx = src_socket_idx,
         };
@@ -215,7 +229,21 @@ pub const Pipeline = struct {
         const dst_socket_idx = try dst_node_ptr.getSocketIndex(dst_node_socket_name);
         const src_socket_idx = try src_node_ptr.getSocketIndex(src_node_socket_name);
 
-        dst_node_ptr.desc.sockets[dst_socket_idx].?.private.connected_to_node = .{
+        var dst_node_socket = &(dst_node_ptr.desc.sockets[dst_socket_idx] orelse {
+            slog.err("Destination node {s} socket {s} is null", .{ dst_node_ptr.desc.name, dst_node_socket_name });
+            return error.NodeSocketNotFound;
+        });
+        const src_node_socket = &(src_node_ptr.desc.sockets[src_socket_idx] orelse {
+            slog.err("Source node {s} socket {s} is null", .{ src_node_ptr.desc.name, src_node_socket_name });
+            return error.NodeSocketNotFound;
+        });
+
+        if (!Socket.areCompatible(src_node_socket, dst_node_socket)) {
+            slog.err("Incompatible node socket connection from {s}.{s} to {s}.{s}", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
+            return error.NodeSocketConnectionIncompatible;
+        }
+
+        dst_node_socket.private.connected_to_node = .{
             .item = src_node,
             .socket_idx = src_socket_idx,
         };
@@ -230,7 +258,6 @@ pub const Pipeline = struct {
         node_socket_name: []const u8,
     ) !void {
         slog.debug("Connecting module {any} socket {s} to node {any} socket {s}", .{ node_handle, mod_socket_name, node_handle, node_socket_name });
-        // TODO: some checks for socket compatibility
 
         var mod = self.module_pool.getPtr(mod_handle) catch unreachable;
         var node = self.node_pool.getPtr(node_handle) catch unreachable;
@@ -238,19 +265,34 @@ pub const Pipeline = struct {
         const mod_socket_idx = try mod.getSocketIndex(mod_socket_name);
         const node_socket_idx = try node.getSocketIndex(node_socket_name);
 
-        node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
+        const node_socket = &(node.desc.sockets[node_socket_idx] orelse {
+            slog.err("Destination node {s} socket {s} is null", .{ node.desc.name, node_socket_name });
+            return error.NodeSocketNotFound;
+        });
+        const mod_socket = &(mod.desc.sockets[mod_socket_idx] orelse {
+            slog.err("Source module {s} socket {s} is null", .{ mod.desc.name, mod_socket_name });
+            return error.ModuleSocketNotFound;
+        });
+        if (!Socket.areSimilar(mod_socket, node_socket)) {
+            slog.err("Incompatible socket connection from module {s}.{s} to node {s}.{s}", .{ mod.desc.name, mod_socket_name, node.desc.name, node_socket_name });
+            return error.ModuleNodeSocketConnectionIncompatible;
+        }
+
+        // perform copy
+        // node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
+        node_socket.* = mod_socket.*;
 
         // for input sockets on nodes
-        if (node.desc.sockets[node_socket_idx].?.type.direction() == .input) {
-            node.desc.sockets[node_socket_idx].?.private.associated_with_module = .{
+        if (node_socket.type.direction() == .input) {
+            node_socket.private.associated_with_module = .{
                 .item = mod_handle,
                 .socket_idx = mod_socket_idx,
             };
         }
 
         // for output sockets on modules
-        if (mod.desc.sockets[mod_socket_idx].?.type.direction() == .output) {
-            mod.desc.sockets[mod_socket_idx].?.private.associated_with_node = .{
+        if (mod_socket.type.direction() == .output) {
+            mod_socket.private.associated_with_node = .{
                 .item = node_handle,
                 .socket_idx = node_socket_idx,
             };

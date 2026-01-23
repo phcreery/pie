@@ -63,3 +63,39 @@ pub const SocketType = enum {
         };
     }
 };
+
+/// check if two socket descriptors are compatible for connection
+/// that is, if the output socket can be connected to the input socket
+pub fn areCompatible(output: *api.SocketDesc, input: *api.SocketDesc) bool {
+    if (output.type.direction() != .output) return false;
+    if (input.type.direction() != .input) return false;
+    if (output.format != input.format) return false;
+    // check that output ROI can satisfy input ROI
+    if (input.roi) |input_roi| {
+        if (output.roi) |output_roi| {
+            if (output_roi.w != input_roi.w) return false;
+            if (output_roi.h != input_roi.h) return false;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// check if two socket descriptors are similar
+/// that is, if they have the same type, format, and ROI
+/// used for copying socket descriptors between modules and nodes
+pub fn areSimilar(sock_a: *api.SocketDesc, sock_b: *api.SocketDesc) bool {
+    if (sock_a.type != sock_b.type) return false;
+    if (sock_a.format != sock_b.format) return false;
+    // check that ROI are the same
+    // if (sock_a.roi) |a_roi| {
+    //     if (sock_b.roi) |b_roi| {
+    //         if (a_roi.w != b_roi.w) return false;
+    //         if (a_roi.h != b_roi.h) return false;
+    //     } else {
+    //         return false;
+    //     }
+    // }
+    return true;
+}
