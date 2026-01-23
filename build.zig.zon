@@ -62,10 +62,10 @@
             .url = "git+https://github.com/floooh/dcimgui.git#581c2e909c899c21923c779d4c41ea56ab93bbb4",
             .hash = "cimgui-0.1.0-44ClkQ14kwAiwcr3ioDjxvPuiWQctWrt-tIFtsfP6xmU",
         },
-        .pretty = .{
-            .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
-            .hash = "pretty-0.10.6-Tm65r6lPAQCBxgwzehYPeqsCXQDT9kt2ktJuO-2tRfE6",
-        },
+        // .pretty = .{
+        //     .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
+        //     .hash = "pretty-0.10.6-Tm65r6lPAQCBxgwzehYPeqsCXQDT9kt2ktJuO-2tRfE6",
+        // },
         .zdt = .{
             .url = "git+https://github.com/FObersteiner/zdt#8b551a0a3e5ae64a32b5bad0e6a93119787b43af",
             .hash = "zdt-0.8.1-xr0_vAxUDwCJRDh9pcAS_mdZBIsvcGTtN-K8JJSWY4I6",
@@ -101,14 +101,14 @@
             .url = "git+https://github.com/zigimg/zigimg.git#f5783e87627cbd9e0b45fad112e9f73503914f36",
             .hash = "zigimg-0.1.0-8_eo2vBrFQBhsrLpexdcDQY-zrlzkyFZfKuYX-Nry6KN",
         },
-        .ztracy = .{
-            .url = "git+https://github.com/zig-gamedev/ztracy#3cc6a4a1502fdea2e4d3869099e39d9c5e8b98a5",
-            .hash = "ztracy-0.14.0-dev-zHJSq8SJGADr475eGiGJzmX_-P5sDoU564IQSVfZxmYC",
-        },
-        .zpool = .{
-            .url = "git+https://github.com/zig-gamedev/zpool/#2ebe5b065d19989a0c5b4f06227c524c8404c516",
-            .hash = "zpool-0.11.0-dev-bG692YNDAQAyX1pDZKrJrDmorwVqVNTZbbH-zpoDQO-N",
-        },
+        // .ztracy = .{
+        //     .url = "git+https://github.com/zig-gamedev/ztracy#3cc6a4a1502fdea2e4d3869099e39d9c5e8b98a5",
+        //     .hash = "ztracy-0.14.0-dev-zHJSq8SJGADr475eGiGJzmX_-P5sDoU564IQSVfZxmYC",
+        // },
+        // .zpool = .{
+        //     .url = "git+https://github.com/zig-gamedev/zpool/#2ebe5b065d19989a0c5b4f06227c524c8404c516",
+        //     .hash = "zpool-0.11.0-dev-bG692YNDAQAyX1pDZKrJrDmorwVqVNTZbbH-zpoDQO-N",
+        // },
         .termsize = .{
             .url = "https://github.com/djmattyg007/zig-termsize/archive/refs/heads/update-for-zig-0.15.tar.gz",
             .hash = "termsize-0.1.0-0mwB1lwVAADBgWi3-mt2GMuiw3tqmscsoVDh7Rzpxud6",

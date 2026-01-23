@@ -48,7 +48,6 @@ pub fn build(b: *Build) !void {
         .with_sokol_imgui = true,
     });
     const dep_cimgui = b.dependency("cimgui", opts);
-    const dep_pretty = b.dependency("pretty", opts);
     const dep_zdt = b.dependency("zdt", opts);
     const dep_libraw = b.dependency("libraw", opts);
     const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
@@ -61,10 +60,7 @@ pub fn build(b: *Build) !void {
     // const dep_zpool = b.dependency("zpool", opts);
     const termsize = b.dependency("termsize", opts);
     const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
-    const dep_zuballoc = b.dependency("zuballoc", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    const dep_zuballoc = b.dependency("zuballoc", opts);
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -89,7 +85,6 @@ pub fn build(b: *Build) !void {
         .imports = &.{
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
-            .{ .name = "pretty", .module = dep_pretty.module("pretty") },
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu", .module = dep_wgpu_native.module("wgpu") },
@@ -122,7 +117,6 @@ pub fn build(b: *Build) !void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "pie", .module = mod_main },
-            .{ .name = "pretty", .module = dep_pretty.module("pretty") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             // .{ .name = "ztracy", .module = dep_ztracy.module("root") },
