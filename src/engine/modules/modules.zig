@@ -1,3 +1,6 @@
+const std = @import("std");
+const api = @import("api.zig");
+
 pub const i_raw = @import("i-raw/module.zig");
 pub const format = @import("format/module.zig");
 pub const demosaic = @import("demosaic/module.zig");
@@ -10,8 +13,20 @@ pub const test_o_2468 = @import("test-o-2468/module.zig");
 pub const test_o_firstbytes = @import("test-o-firstbytes/module.zig");
 pub const test_nop = @import("test-nop/module.zig");
 
-const std = @import("std");
-const api = @import("api.zig");
+pub fn populateRegistry(registry: *Registry) !void {
+    // add built-in modules
+    try registry.addModule(i_raw.module);
+    try registry.addModule(format.module);
+    try registry.addModule(demosaic.module);
+    try registry.addModule(o_png.module);
+    // add test modules
+    try registry.addModule(test_multiply.module);
+    try registry.addModule(test_2nodes.module);
+    try registry.addModule(test_i_1234.module);
+    try registry.addModule(test_o_2468.module);
+    try registry.addModule(test_o_firstbytes.module);
+    try registry.addModule(test_nop.module);
+}
 
 pub const Registry = struct {
     map: std.StringHashMap(api.ModuleDesc),
@@ -35,18 +50,3 @@ pub const Registry = struct {
         return self.map.get(name).?;
     }
 };
-
-pub fn populateRegistry(registry: *Registry) !void {
-    // add built-in modules
-    try registry.addModule(i_raw.module);
-    try registry.addModule(format.module);
-    try registry.addModule(demosaic.module);
-    try registry.addModule(o_png.module);
-    // add test modules
-    try registry.addModule(test_multiply.module);
-    try registry.addModule(test_2nodes.module);
-    try registry.addModule(test_i_1234.module);
-    try registry.addModule(test_o_2468.module);
-    try registry.addModule(test_o_firstbytes.module);
-    try registry.addModule(test_nop.module);
-}

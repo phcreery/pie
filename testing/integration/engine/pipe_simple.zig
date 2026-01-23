@@ -67,13 +67,6 @@ test "simple test modules" {
     var pipeline = Pipeline.init(allocator, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    // const mod_test_i_1234 = try pipeline.addModule(pie.engine.modules.test_i_1234.module);
-    // const mod_test_multiply = try pipeline.addModule(pie.engine.modules.test_multiply.module);
-    // const mod_test_2nodes = try pipeline.addModule(pie.engine.modules.test_2nodes.module);
-    // const mod_test_o_2468 = try pipeline.addModule(pie.engine.modules.test_o_2468.module);
-    // _ = try pipeline.addModule(pie.engine.modules.test_multiply.module); // dummy
-    // const mod_test_nop = try pipeline.addModule(pie.engine.modules.test_nop.module);
-
     const mod_test_i_1234 = try pipeline.addModule(registry.get("test-i-1234").?);
     const mod_test_multiply = try pipeline.addModule(registry.get("test-multiply").?);
     const mod_test_2nodes = try pipeline.addModule(registry.get("test-2nodes").?);
