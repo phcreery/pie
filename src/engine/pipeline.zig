@@ -377,15 +377,13 @@ pub const Pipeline = struct {
 
             // ~TODO~: clean up unused modules - although modules are always kept and user added/removed...
             // ~TODO~: clean up unused nodes - although nodes are always re-created from modules...
-            // TODO: clean up unused connectors
             self.freeUnusedConnectors() catch unreachable;
             self.perf.timerLap("freeUnusedConnectors") catch unreachable;
 
+            self.printPipeToStdout();
             self.rerouted = false;
             self.dirty = true;
         }
-
-        self.printPipeToStdout();
 
         if (self.dirty) {
             self.runModulesUploadParams(arena) catch unreachable;
@@ -448,10 +446,10 @@ pub const Pipeline = struct {
     }
 
     pub fn printPipeToStdout(self: *Pipeline) void {
-        print.printModules(self);
-        print.printNodes(self);
-        print.printNodes2(self) catch unreachable;
-        print.printNodeExecutionOrder(self);
+        // print.printModules(self);
+        // print.printNodes(self);
+        print.printNodesGraph(self) catch unreachable;
+        // print.printNodeExecutionOrder(self);
     }
 
     fn runModulesPreCheck(self: *Pipeline) !void {

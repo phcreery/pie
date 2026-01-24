@@ -102,7 +102,7 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
     }
 }
 
-pub fn printNodes2(self: *pipeline.Pipeline) !void {
+pub fn printNodesGraph(self: *pipeline.Pipeline) !void {
     var stdout_buffer: [4096]u8 = undefined;
     var writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &writer.interface;

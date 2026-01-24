@@ -917,10 +917,10 @@ pub const GPU = struct {
         slog.info("Adapter limits:", .{});
         slog.info(" max_bind_groups: {d}", .{limits.max_bind_groups});
         slog.info(" max_bindings_per_bind_group: {d}", .{limits.max_bindings_per_bind_group});
-        slog.info(" max_texture_dimension_1d: {d}", .{limits.max_texture_dimension_1d});
+        // slog.info(" max_texture_dimension_1d: {d}", .{limits.max_texture_dimension_1d});
         slog.info(" max_texture_dimension_2d: {d}", .{limits.max_texture_dimension_2d});
-        slog.info(" max_texture_dimension_3d: {d}", .{limits.max_texture_dimension_3d});
-        slog.info(" max_texture_array_layers: {d}", .{limits.max_texture_array_layers});
+        // slog.info(" max_texture_dimension_3d: {d}", .{limits.max_texture_dimension_3d});
+        // slog.info(" max_texture_array_layers: {d}", .{limits.max_texture_array_layers});
         slog.info(" max_compute_invocations_per_workgroup: {d}", .{limits.max_compute_invocations_per_workgroup});
         slog.info(" max_compute_workgroup_size_x: {d}", .{limits.max_compute_workgroup_size_x});
         slog.info(" max_compute_workgroup_size_y: {d}", .{limits.max_compute_workgroup_size_y});
