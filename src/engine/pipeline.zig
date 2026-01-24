@@ -7,6 +7,7 @@ const Module = @import("Module.zig");
 const Node = @import("Node.zig");
 const Socket = @import("Socket.zig");
 const Param = @import("Param.zig");
+const ImgParam = @import("ImgParam.zig");
 const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const slog = std.log.scoped(.pipe);
@@ -542,6 +543,8 @@ pub const Pipeline = struct {
             var module = self.module_pool.getPtr(module_handle) catch unreachable;
             // create params buffer
             if (module.desc.params) |params| {
+                const img_param_buffer_handle = try self.param_buffer_pool.add(null);
+                module.img_param_handle = img_param_buffer_handle;
                 if (params.len == 0) continue;
                 const param_buffer_handle = try self.param_buffer_pool.add(null);
                 module.param_handle = param_buffer_handle;
@@ -596,26 +599,47 @@ pub const Pipeline = struct {
         // while (mod_pool_handles.next()) |module_handle| {
         for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            if (module.desc.type == .compute) {
+                if (module.enabled == false) continue;
 
-            var size_bytes: usize = 0;
-            if (module.desc.params) |params| {
-                for (params) |param| {
-                    if (param) |p| {
-                        // size_bytes += @sizeOf(p.value);
-                        size_bytes += p.value.size();
+                // PARAM BUFFER INIT
+
+                var size_bytes: usize = 0;
+                if (module.desc.params) |params| {
+                    for (params) |param| {
+                        if (param) |p| {
+                            // size_bytes += @sizeOf(p.value);
+                            size_bytes += p.value.size();
+                        }
                     }
                 }
-            }
 
-            const buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
-            // defer texture.deinit();
-            // store texture in connector pool
+                const param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
+                // defer texture.deinit();
+                // store texture in connector pool
 
-            // const param_handle = module.param_handle orelse return error.ModuleOutputSocketMissingConnectorHandle;
-            if (module.param_handle) |param_handle| {
-                const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
-                param_buffer.* = buffer;
-                module.param_size = size_bytes;
+                if (module.param_handle) |param_handle| {
+                    const mod_param_buffer = try self.param_buffer_pool.getPtr(param_handle);
+                    mod_param_buffer.* = param_buffer;
+                    module.param_size = size_bytes;
+                }
+
+                // IMG PARAM BUFFER INIT
+                size_bytes = 0;
+                // comptime loop over ImgParams fields
+                inline for (std.meta.fields(ImgParam.ImgParams)) |field| {
+                    size_bytes += ImgParam.size(field.type);
+                }
+                // print size
+                slog.info("Img Param bytes for module {s}: {d}", .{ module.desc.name, size_bytes });
+                const img_param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .uniform);
+                // defer texture.deinit();
+
+                if (module.img_param_handle) |img_param_handle| {
+                    const mod_img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
+                    mod_img_param_buffer.* = img_param_buffer;
+                    module.img_param_size = size_bytes;
+                }
             }
         }
     }
@@ -628,15 +652,29 @@ pub const Pipeline = struct {
                 var module = self.module_pool.getPtr(module_handle) catch unreachable;
                 if (module.desc.type == .compute) {
                     if (module.enabled == false) continue;
-                    const size_bytes = module.param_size orelse continue;
-                    slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
-                    const mapped_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
+                    {
+                        const size_bytes = module.param_size orelse continue;
+                        slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
+                        const mapped_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
-                    const param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
-                    const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_param_slice.ptr));
-                    module.mapped_param_slice_ptr = mapped_slice_ptr;
+                        const param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
+                        const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_param_slice.ptr));
+                        module.param_mapped_slice_ptr = mapped_slice_ptr;
 
-                    module.param_offset = param_offset;
+                        module.param_offset = param_offset;
+                    }
+                    {
+                        const size_bytes = module.img_param_size orelse continue;
+                        slog.debug("Allocating upload buffer for img params for size {d} bytes", .{size_bytes});
+                        const mapped_img_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
+
+                        const img_param_offset = @intFromPtr(mapped_img_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
+                        slog.info("Img param offset: {d}", .{img_param_offset});
+                        const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_img_param_slice.ptr));
+                        module.img_param_mapped_slice_ptr = mapped_slice_ptr;
+
+                        module.img_param_offset = img_param_offset;
+                    }
                 }
             }
         }
@@ -797,8 +835,16 @@ pub const Pipeline = struct {
                 if (mod.*.param_handle) |param_handle| {
                     const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
                     const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
-                    layout_group_0_binding[0] = .{ .buffer = .{} };
+                    layout_group_0_binding[0] = .{ .buffer = .{ .binding_type = .storage } };
                     bind_group_0_binds[0] = .{ .buffer = param_buf };
+                }
+
+                // img params are also on group 0
+                if (mod.*.img_param_handle) |img_param_handle| {
+                    const img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
+                    const img_param_buf = img_param_buffer.* orelse return error.ModuleImgParamBufferNotAllocated;
+                    layout_group_0_binding[1] = .{ .buffer = .{ .binding_type = .uniform } };
+                    bind_group_0_binds[1] = .{ .buffer = img_param_buf };
                 }
 
                 // all sockets are on group 1
@@ -948,7 +994,32 @@ pub const Pipeline = struct {
                     const printed = w.buffered();
                     slog.debug("{s}", .{printed});
 
-                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.mapped_param_slice_ptr));
+                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.param_mapped_slice_ptr));
+                    @memcpy(mapped_ptr, list.items);
+                }
+
+                if (module.img_param) |img_param| {
+                    slog.info("Uploading img params for module {s}:", .{module.desc.name});
+                    var list = try std.ArrayList(u8).initCapacity(arena, module.img_param_size orelse 0);
+                    defer list.deinit(arena);
+
+                    // serialize img params into byte array
+                    inline for (std.meta.fields(ImgParam.ImgParams)) |field| {
+                        const field_value_bytes = std.mem.asBytes(@constCast(&@field(img_param, field.name)));
+                        try list.appendSlice(arena, field_value_bytes);
+                    }
+                    slog.info("Uploading img params for module {s}, total size {d} bytes", .{ module.desc.name, list.items.len });
+                    // print list
+                    slog.info("Img Param bytes for module {s}:", .{module.desc.name});
+                    var buf: [100]u8 = undefined;
+                    var w: std.io.Writer = .fixed(&buf);
+                    for (list.items) |byte| {
+                        try w.print("{x:0>2} ", .{byte});
+                    }
+                    const printed = w.buffered();
+                    slog.info("{s}", .{printed});
+
+                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.img_param_mapped_slice_ptr));
                     @memcpy(mapped_ptr, list.items);
                 }
             }

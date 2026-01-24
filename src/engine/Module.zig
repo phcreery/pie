@@ -2,6 +2,7 @@ const std = @import("std");
 const api = @import("modules/api.zig");
 const pipeline = @import("pipeline.zig");
 const Param = @import("Param.zig");
+const ImgParam = @import("ImgParam.zig");
 const slog = std.log.scoped(.mod);
 
 desc: api.ModuleDesc,
@@ -10,14 +11,18 @@ enabled: bool,
 // for the buffer that will live on the gpu
 // the handle is needed for gpu pipeline bindings
 param_handle: ?pipeline.ParamBufferHandle = null,
-
 // the offset of this module's params in the staging/upload buffer
 // the slice is used for writing params to the staging buffer before uploading to gpu
-// mapped_param_buf_slice: ?[]u8 = null,
-mapped_param_slice_ptr: ?*anyopaque = null,
+param_mapped_slice_ptr: ?*anyopaque = null,
 // the offset and size is needed for enqueueBufToBuf
 param_offset: ?usize = null,
 param_size: ?usize = null,
+
+img_param: ?ImgParam.ImgParams = null,
+img_param_handle: ?pipeline.ParamBufferHandle = null,
+img_param_mapped_slice_ptr: ?*anyopaque = null,
+img_param_offset: ?usize = null,
+img_param_size: ?usize = null,
 
 const Self = @This();
 
@@ -25,6 +30,9 @@ pub fn init(desc: api.ModuleDesc) !Self {
     return Self{
         .desc = desc,
         .enabled = true,
+
+        // TESTING
+        .img_param = .{ .temp = 1.0 },
     };
 }
 

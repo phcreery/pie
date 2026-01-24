@@ -30,14 +30,15 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
 pub const MemoryType = enum {
     upload,
     download,
-    // uniform,
     storage,
+    uniform,
 
     pub fn toGPUBufferUsage(self: MemoryType) wgpu.BufferUsage {
         return switch (self) {
             .upload => wgpu.BufferUsages.copy_src | wgpu.BufferUsages.map_write,
             .download => wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.map_read,
             .storage => wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.storage,
+            .uniform => wgpu.BufferUsages.copy_dst | wgpu.BufferUsages.uniform,
             // else => unreachable,
         };
     }
@@ -47,6 +48,7 @@ pub const MemoryType = enum {
             .upload => wgpu.MapModes.write,
             .download => wgpu.MapModes.read,
             .storage => wgpu.MapModes.write,
+            .uniform => wgpu.MapModes.write,
             // else => unreachable,
         };
     }
@@ -628,8 +630,23 @@ pub const BindGroupLayoutTextureEntry = struct {
     access: BindGroupLayoutEntryAccess,
 };
 
+pub const BindGroupLayoutBufferEntryType = enum {
+    storage,
+    uniform,
+    // read_only_storage,
+
+    pub fn toWGPUBufferBindingType(self: BindGroupLayoutBufferEntryType) wgpu.BufferBindingType {
+        return switch (self) {
+            .storage => wgpu.BufferBindingType.storage,
+            .uniform => wgpu.BufferBindingType.uniform,
+            // .read_only_storage => wgpu.BufferBindingType.read_only_storage,
+        };
+    }
+};
+
 pub const BindGroupLayoutBufferEntry = struct {
     // size: u64,
+    binding_type: BindGroupLayoutBufferEntryType,
 };
 
 pub const BindGroupLayoutEntry = struct {
@@ -761,12 +778,14 @@ pub const ComputePipeline = struct {
                             wgpu_g0_bind_group_layout_entries[bind_number] = entry;
                         },
                     }
-                } else if (bgle.buffer) |_| {
+                } else if (bgle.buffer) |bgle_buffer| {
                     const entry = wgpu.BindGroupLayoutEntry{
                         .binding = @intCast(bind_number),
                         .visibility = wgpu.ShaderStages.compute,
                         .buffer = wgpu.BufferBindingLayout{
-                            .type = wgpu.BufferBindingType.storage,
+                            // .type = wgpu.BufferBindingType.storage,
+                            .type = bgle_buffer.binding_type.toWGPUBufferBindingType(),
+
                             // .has_dynamic_offset = @intFromBool(false),
                             // .min_binding_size = bge_buffer.size,
                         },
