@@ -72,15 +72,17 @@ test "simple test modules" {
     const mod_test_2nodes = try pipeline.addModule(registry.get("test-2nodes").?);
     const mod_test_o_2468 = try pipeline.addModule(registry.get("test-o-2468").?);
     _ = try pipeline.addModule(registry.get("test-multiply").?); // dummy
-    const mod_test_nop = try pipeline.addModule(registry.get("test-nop").?);
+    const mod_test_nop_1 = try pipeline.addModule(registry.get("test-nop").?);
+    const mod_test_nop_2 = try pipeline.addModule(registry.get("test-nop").?);
 
     pipeline.setModuleParam(mod_test_multiply, "multiplier", .{ .f32 = 2.0 }) catch unreachable;
     pipeline.setModuleParam(mod_test_multiply, "adder", .{ .i32 = 0 }) catch unreachable;
 
     pipeline.connectModulesName(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;
     pipeline.connectModulesName(mod_test_multiply, "output", mod_test_2nodes, "input") catch unreachable;
-    pipeline.connectModulesName(mod_test_2nodes, "output", mod_test_nop, "input") catch unreachable;
-    pipeline.connectModulesName(mod_test_nop, "output", mod_test_o_2468, "input") catch unreachable;
+    pipeline.connectModulesName(mod_test_2nodes, "output", mod_test_nop_1, "input") catch unreachable;
+    pipeline.connectModulesName(mod_test_nop_1, "output", mod_test_nop_2, "input") catch unreachable;
+    pipeline.connectModulesName(mod_test_nop_2, "output", mod_test_o_2468, "input") catch unreachable;
 
     try pipeline.run(aa);
     // pipeline.rerouted = true;
