@@ -167,14 +167,16 @@ pub const Pipeline = struct {
 
     pub fn addModule(self: *Pipeline, module_desc: api.ModuleDesc) !ModuleHandle {
         slog.debug("Adding module to pipeline: {s}", .{module_desc.name});
-        const module = try Module.init(module_desc);
+        var module = try Module.init(module_desc);
+        try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
         return try self.module_pool.add(module);
     }
 
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
         slog.debug("Adding node to pipeline: {s}", .{node_desc.name});
-        const node = try Node.init(self, mod_handle, node_desc);
+        var node = try Node.init(self, mod_handle, node_desc);
+        try self.initOutputConnectorHandles(&node);
         self.rerouted = true;
         return try self.node_pool.add(node);
     }
@@ -342,11 +344,8 @@ pub const Pipeline = struct {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
             self.runModulesPreCheck() catch unreachable;
 
-            self.runModulesCreateOutputConnectorHandles() catch unreachable;
-            self.perf.timerLap("runModulesCreateOutputConnectorHandles") catch unreachable;
             self.runModulesBuildExecutionOrder(arena) catch unreachable;
             self.perf.timerLap("runModulesBuildExecutionOrder") catch unreachable;
-
             self.runModulesInit() catch unreachable;
             self.perf.timerLap("runModulesInit") catch unreachable;
 
@@ -365,8 +364,6 @@ pub const Pipeline = struct {
             self.perf.timerLap("runNodesCompileShaders") catch unreachable;
 
             // Then run nodes
-            self.runNodesCreateOutputConnectorHandles() catch unreachable;
-            self.perf.timerLap("runNodesCreateOutputConnectorHandles") catch unreachable;
             self.runNodesBuildExecutionOrder(arena) catch unreachable;
             self.perf.timerLap("runNodesBuildExecutionOrder") catch unreachable;
             self.runNodesInitConnectorTextures() catch unreachable;
@@ -410,6 +407,56 @@ pub const Pipeline = struct {
     // ================================================
     // Private Pipeline functions
     // ================================================
+
+    /// initialize connector handles for output sockets
+    fn initOutputConnectorHandles(self: *Pipeline, item: anytype) !void {
+        // with type checking
+        // we could do duct typing here but this allows better lsp support
+        switch (comptime @TypeOf(item)) {
+            inline *Module => |_| {
+                var module = @as(*Module, item);
+                for (module.desc.sockets) |socket| {
+                    if (socket) |sock| {
+                        if (sock.type.direction() == .output) {
+                            var this_sock = try module.getSocketPtr(sock.name);
+                            if (this_sock.private.connector_handle == null) {
+                                this_sock.private.connector_handle = try self.connector_pool.add(null);
+                                slog.debug("Created connector handle {any} for {s} output socket {s}", .{ this_sock.private.connector_handle.?, module.desc.name, sock.name });
+                            }
+                        }
+                    }
+                }
+            },
+            inline *Node => |_| {
+                var node = @as(*Node, item);
+                for (node.desc.sockets) |socket| {
+                    if (socket) |sock| {
+                        if (sock.type.direction() == .output) {
+                            var this_sock = try node.getSocketPtr(sock.name);
+                            if (this_sock.private.connector_handle == null) {
+                                this_sock.private.connector_handle = try self.connector_pool.add(null);
+                                slog.debug("Created connector handle {any} for {s} output socket {s}", .{ this_sock.private.connector_handle.?, node.desc.name, sock.name });
+                            }
+                        }
+                    }
+                }
+            },
+            else => unreachable,
+        }
+
+        // with duck-typing
+        // for (item.desc.sockets) |socket| {
+        //     if (socket) |sock| {
+        //         if (sock.type.direction() == .output) {
+        //             var this_sock = try item.getSocketPtr(sock.name);
+        //             if (this_sock.private.connector_handle == null) {
+        //                 this_sock.private.connector_handle = try self.connector_pool.add(null);
+        //                 slog.debug("Created connector handle {any} for {s} output socket {s}", .{ this_sock.private.connector_handle.?, item.desc.name, sock.name });
+        //             }
+        //         }
+        //     }
+        // }
+    }
 
     /// pub for util printing purposes
     pub fn getNodeConnectorHandle(self: *Pipeline, socket: api.SocketDesc) ?ConnectorHandle {
@@ -474,27 +521,6 @@ pub const Pipeline = struct {
                 if (output_socket == null) {
                     slog.err("Compute module {s} has no output socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingOutputSocket;
-                }
-            }
-        }
-    }
-
-    /// configure connectors only for module output connectors
-    fn runModulesCreateOutputConnectorHandles(self: *Pipeline) !void {
-        // create connector handles for output sockets
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |module_handle| {
-            // for (self.module_execution_order.items) |module_handle| {
-            var module = self.module_pool.getPtr(module_handle) catch unreachable;
-            for (module.desc.sockets) |socket| {
-                if (socket) |sock| {
-                    if (sock.type.direction() == .output) {
-                        var this_sock = try module.getSocketPtr(sock.name);
-                        slog.debug("Creating connector handle for module {s} output socket {s}", .{ module.desc.name, sock.name });
-                        if (this_sock.private.connector_handle == null) {
-                            this_sock.private.connector_handle = try self.connector_pool.add(null);
-                        }
-                    }
                 }
             }
         }
@@ -705,28 +731,6 @@ pub const Pipeline = struct {
             var node = self.node_pool.getPtr(node_handle) catch unreachable;
             if (node.desc.shader) |shader| {
                 node.shader = try api.compileShader(self, shader);
-            }
-        }
-    }
-
-    /// configure connectors only for node output connectors
-    /// these are typically for connectors the exist between nodes of the same module
-    fn runNodesCreateOutputConnectorHandles(self: *Pipeline) !void {
-        // create connector handles for output sockets
-        var node_pool_handles = self.node_pool.liveHandles();
-        while (node_pool_handles.next()) |node_handle| {
-            // for (self.node_execution_order.items) |node_handle| {
-            var node = self.node_pool.getPtr(node_handle) catch unreachable;
-            for (node.desc.sockets) |socket| {
-                if (socket) |sock| {
-                    if (sock.type.direction() == .output) {
-                        var this_sock = try node.getSocketPtr(sock.name);
-                        if (this_sock.private.connector_handle == null) {
-                            this_sock.private.connector_handle = try self.connector_pool.add(null);
-                            slog.debug("Created connector handle {any} for node {any} {s} output socket {s}", .{ this_sock.private.connector_handle.?, node_handle, node.desc.name, sock.name });
-                        }
-                    }
-                }
             }
         }
     }
