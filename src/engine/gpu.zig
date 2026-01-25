@@ -1,6 +1,7 @@
 /// A lot of this is just a wrapper around wgpu to make it easier to use in the context of image processing.
 const std = @import("std");
 const wgpu = @import("wgpu");
+const gpu_data = @import("gpu_data.zig");
 const ROI = @import("ROI.zig");
 const zuballoc = @import("zuballoc");
 
@@ -19,6 +20,11 @@ pub const MAX_BINDINGS: usize = 8;
 pub const WORKGROUP_SIZE_X: u32 = 8;
 pub const WORKGROUP_SIZE_Y: u32 = 8;
 pub const WORKGROUP_SIZE_Z: u32 = 1;
+
+pub const layoutStruct = gpu_data.layoutStruct;
+pub const layoutTaggedUnion = gpu_data.layoutTaggedUnion;
+pub const ParamValueTag = gpu_data.ParamValueTag;
+pub const ParamValue = gpu_data.ParamValue;
 
 fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
     // slog.debug("buffer_map status={x:.8}\n", .{@intFromEnum(status)});

@@ -40,7 +40,9 @@ const shader_code: []const u8 =
     \\    adder:      i32,
     \\};
     \\struct ImgParams {
-    \\    temp: f32,
+    \\    float:  f32,
+    \\    v3:   vec3<f32>,
+    \\    m3x3: mat3x3<f32>,
     \\};
     \\@group(0) @binding(0) var<storage, read_write> params: Params;
     \\@group(0) @binding(1) var<uniform>         img_params: ImgParams;
@@ -50,8 +52,10 @@ const shader_code: []const u8 =
     \\fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     \\    let coords = vec2<i32>(global_id.xy);
     \\    var pixel = vec4<f32>(textureLoad(input, coords, 0));
-    \\    //pixel *= params.multiplier;
-    \\    pixel *= img_params.temp;
+    \\    pixel *= params.multiplier;
+    \\    //pixel *= img_params.float;
+    \\    //pixel *= img_params.v3.z;
+    \\    //pixel *= img_params.m3x3[2][2];
     \\    //pixel += f32(params.adder);
     \\    textureStore(output, coords, pixel);
     \\}

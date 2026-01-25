@@ -133,6 +133,8 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // THIS IS A WORKAROUND: for single channel read-write storage texture limitation
     roi = roi.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
+    // m.img_param.?.temp = @as(f32, roi.w);
+
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;
 }

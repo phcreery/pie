@@ -26,10 +26,12 @@ pub fn main() !void {
 
 test {
     // _ = @import("engine/gpu.zig");
+    _ = @import("engine/gpu_data.zig");
     // _ = @import("engine/modules/shared/CFA.zig");
     // _ = @import("engine/modules/i-raw/i-raw.zig");
     // _ = @import("engine/zig-graph/graph.zig");
     // _ = @import("engine/zig-graph/print.zig");
     // _ = @import("engine/pool_hash_map.zig");
-    _ = @import("engine/Param.zig");
+    // _ = @import("engine/Param.zig");
+    // _ = @import("engine/ImgParam.zig");
 }
