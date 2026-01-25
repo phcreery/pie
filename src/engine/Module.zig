@@ -32,7 +32,7 @@ pub fn init(desc: api.ModuleDesc) !Self {
         .enabled = true,
 
         // TESTING
-        .img_param = .{ .temp = 1.0 },
+        .img_param = .{ .temp = 2.0 },
     };
 }
 
