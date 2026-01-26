@@ -677,28 +677,19 @@ pub const Pipeline = struct {
                 var module = self.module_pool.getPtr(module_handle) catch unreachable;
                 if (module.desc.type == .compute) {
                     if (module.enabled == false) continue;
-                    {
-                        const size_bytes = module.param_size orelse continue;
+                    blk: {
+                        const size_bytes = module.param_size orelse break :blk;
                         slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
                         const mapped_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
-
-                        const param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
-                        const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_param_slice.ptr));
-                        module.param_mapped_slice_ptr = mapped_slice_ptr;
-
-                        module.param_offset = param_offset;
+                        module.param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
+                        module.param_mapped_slice_ptr = @ptrCast(@alignCast(mapped_param_slice.ptr));
                     }
-                    {
-                        const size_bytes = module.img_param_size orelse continue;
+                    blk: {
+                        const size_bytes = module.img_param_size orelse break :blk;
                         slog.debug("Allocating upload buffer for img params for size {d} bytes", .{size_bytes});
                         const mapped_img_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
-
-                        const img_param_offset = @intFromPtr(mapped_img_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
-                        slog.info("Img param offset: {d}", .{img_param_offset});
-                        const mapped_slice_ptr: *anyopaque = @ptrCast(@alignCast(mapped_img_param_slice.ptr));
-                        module.img_param_mapped_slice_ptr = mapped_slice_ptr;
-
-                        module.img_param_offset = img_param_offset;
+                        module.img_param_offset = @intFromPtr(mapped_img_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
+                        module.img_param_mapped_slice_ptr = @ptrCast(@alignCast(mapped_img_param_slice.ptr));
                     }
                 }
             }
@@ -895,8 +886,6 @@ pub const Pipeline = struct {
                 var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 bind_group[0] = bind_group_0_binds;
                 bind_group[1] = bind_group_1_binds;
-                // std.debug.print("Bind group 0 binds: {any}\n", .{bind_group[0]});
-                // std.debug.print("Bind group 1 binds: {any}\n", .{bind_group[1]});
 
                 const bindings = try gpu.Bindings.init(gpu_inst, &pipeline, bind_group);
                 // defer bindings.deinit();
@@ -917,7 +906,6 @@ pub const Pipeline = struct {
             slog.debug("First node: {s}", .{first_node_ptr.desc.name});
 
             // TODO: support multiple source uploads in the future
-            // TODO: find the correct input socket by type
             if (first_node_ptr.desc.sockets[0]) |*sock| {
                 if (sock.type == .source) {
                     const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
@@ -985,8 +973,6 @@ pub const Pipeline = struct {
                         }
                     }
                     const used_len = try gpu.layoutTaggedUnion(buf, tu[0..tu_len]);
-                    slog.info("Param bytes for module {s}, total size {d} bytes:", .{ module.desc.name, used_len });
-                    const bytes_buf = buf[0..used_len];
 
                     // slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.desc.name, list.items.len });
                     // // print hex array
@@ -1000,18 +986,18 @@ pub const Pipeline = struct {
                     // slog.debug("{s}", .{printed});
 
                     const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.param_mapped_slice_ptr));
-                    @memcpy(mapped_ptr, bytes_buf);
+                    @memcpy(mapped_ptr, buf[0..used_len]);
                 }
-                { // upload img params
-                    slog.info("Uploading img params for module {s}:", .{module.desc.name});
+
+                // upload img params
+                {
+                    slog.debug("Uploading img params for module {s}:", .{module.desc.name});
                     var buf = try arena.alloc(u8, 1024);
                     defer arena.free(buf);
                     const used_len = try gpu.layoutStruct(buf, module.img_param);
-                    slog.info("Img Param bytes for module {s}, total size {d} bytes:", .{ module.desc.name, used_len });
-                    const bytes_buf = buf[0..used_len];
 
                     const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.img_param_mapped_slice_ptr));
-                    @memcpy(mapped_ptr, bytes_buf);
+                    @memcpy(mapped_ptr, buf[0..used_len]);
                 }
             }
         }
@@ -1020,7 +1006,6 @@ pub const Pipeline = struct {
     }
 
     /// Calls module readSource() functions to upload source data to GPU
-    ///
     /// similar to vkdt dt_graph_run_nodes_upload()
     fn runNodesUploadSource(self: *Pipeline) !void {
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
