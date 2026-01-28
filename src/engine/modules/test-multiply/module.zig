@@ -40,9 +40,8 @@ const shader_code: []const u8 =
     \\    adder:      i32,
     \\};
     \\struct ImgParams {
-    \\    float:  f32,
-    \\    v3:   vec3<f32>,
-    \\    m3x3: mat3x3<f32>,
+    \\    white:  vec4<f32>,
+    \\    black:  vec4<f32>,
     \\};
     \\@group(0) @binding(0) var<storage, read_write> params: Params;
     \\@group(0) @binding(1) var<uniform>         img_params: ImgParams;

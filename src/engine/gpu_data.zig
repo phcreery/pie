@@ -53,6 +53,7 @@ pub fn size(t: type) usize {
         i32 => return 4,
         f32 => return 4,
         [3]f32 => return 12,
+        [4]f32 => return 16,
         [3][3]f32 => return 48,
         else => unreachable,
     }
@@ -63,6 +64,7 @@ pub fn alignment(t: type) usize {
         i32 => return 4,
         f32 => return 4,
         [3]f32 => return 16,
+        [4]f32 => return 16,
         [3][3]f32 => return 16,
         else => unreachable,
     }
@@ -79,6 +81,10 @@ pub fn writeBytes(buf: []u8, item: anytype) void {
             @memcpy(buf[0..bytes.len], bytes);
         },
         [3]f32 => {
+            const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];
+            @memcpy(buf[0..bytes.len], bytes);
+        },
+        [4]f32 => {
             const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];
             @memcpy(buf[0..bytes.len], bytes);
         },

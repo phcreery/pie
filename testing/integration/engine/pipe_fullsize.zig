@@ -7,6 +7,10 @@ const Pipeline = pie.engine.Pipeline;
 test "fullsize through pipeline" {
     const allocator = std.testing.allocator;
 
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
     const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
@@ -23,12 +27,13 @@ test "fullsize through pipeline" {
 
     const mod_i_raw = try pipeline.addModule(pie.engine.modules.i_raw.module);
     const mod_format = try pipeline.addModule(pie.engine.modules.format.module);
+    const mod_denoise = try pipeline.addModule(pie.engine.modules.denoise.module);
     const mod_demosaic = try pipeline.addModule(pie.engine.modules.demosaic.module);
-    // const mod_test_o_firstbytes = try pipeline.addModule(pie.engine.modules.test_o_firstbytes.module);
     const mod_o_png = try pipeline.addModule(pie.engine.modules.o_png.module);
 
-    pipeline.connectModulesName(mod_i_raw, "output", mod_format, "input") catch unreachable;
-    pipeline.connectModulesName(mod_format, "output", mod_demosaic, "input") catch unreachable;
-    pipeline.connectModulesName(mod_demosaic, "output", mod_o_png, "input") catch unreachable;
-    try pipeline.run();
+    try pipeline.connectModulesName(mod_i_raw, "output", mod_format, "input");
+    try pipeline.connectModulesName(mod_format, "output", mod_denoise, "input");
+    try pipeline.connectModulesName(mod_denoise, "output", mod_demosaic, "input");
+    try pipeline.connectModulesName(mod_demosaic, "output", mod_o_png, "input");
+    try pipeline.run(aa);
 }

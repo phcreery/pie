@@ -8,6 +8,8 @@ pub const RawImage = struct {
     height: usize,
     raw_image: []u16,
     max_value: u32,
+    black: u32,
+    white: u32,
     filters: api.CFA,
     libraw_rp: *libraw.libraw_data_t,
 
@@ -36,12 +38,16 @@ pub const RawImage = struct {
         const raw_image: []u16 = std.mem.span(libraw_rp.*.rawdata.raw_image);
         // const raw_pixel_count = @as(u32, img_width) * img_height;
         const max_value: u32 = libraw_rp.*.rawdata.color.maximum;
+        const black: u32 = libraw_rp.*.rawdata.color.black;
+        const white: u32 = max_value;
 
         return RawImage{
             .width = img_width,
             .height = img_height,
             .raw_image = raw_image,
             .max_value = max_value,
+            .black = black,
+            .white = white,
             .filters = try api.CFA.fromLibraw(&libraw_rp.*.rawdata.iparams.cdesc, libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
         };
@@ -133,7 +139,28 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // THIS IS A WORKAROUND: for single channel read-write storage texture limitation
     roi = roi.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
-    // m.img_param.?.temp = @as(f32, roi.w);
+    m.img_param = .{
+        .black = [4]f32{
+            @as(f32, @floatFromInt(raw_image.black)),
+            @as(f32, @floatFromInt(raw_image.black)),
+            @as(f32, @floatFromInt(raw_image.black)),
+            @as(f32, @floatFromInt(raw_image.black)),
+        },
+        .white = [4]f32{
+            @as(f32, @floatFromInt(raw_image.white)),
+            @as(f32, @floatFromInt(raw_image.white)),
+            @as(f32, @floatFromInt(raw_image.white)),
+            @as(f32, @floatFromInt(raw_image.white)),
+        },
+    };
+    std.debug.print("i-raw module: black={},{},{} white={},{},{}\n", .{
+        m.img_param.?.black[0],
+        m.img_param.?.black[1],
+        m.img_param.?.black[2],
+        m.img_param.?.white[0],
+        m.img_param.?.white[1],
+        m.img_param.?.white[2],
+    });
 
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;

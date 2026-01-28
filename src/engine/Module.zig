@@ -18,7 +18,7 @@ param_mapped_slice_ptr: ?*anyopaque = null,
 param_offset: ?usize = null,
 param_size: ?usize = null,
 
-img_param: ImgParam.ImgParams = .{},
+img_param: ?ImgParam.ImgParams = null,
 img_param_handle: ?pipeline.ParamBufferHandle = null,
 img_param_mapped_slice_ptr: ?*anyopaque = null,
 img_param_offset: ?usize = null,

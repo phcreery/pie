@@ -32,12 +32,9 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     socket.roi = roi;
 
     var m = try api.getModule(pipe, mod);
-    m.img_param.float = @as(f32, 2);
-    m.img_param.vec3 = .{ 1.0, 2.0, 3.0 };
-    m.img_param.mat3x3 = .{
-        .{ 1.0, 0.0, 0.0 },
-        .{ 0.0, 2.0, 0.0 },
-        .{ 0.0, 0.0, 3.0 },
+    m.img_param = .{
+        .white = .{ 1.0, 2.0, 3.0, 4.0 },
+        .black = .{ 1.0, 2.0, 3.0, 4.0 },
     };
 }
 

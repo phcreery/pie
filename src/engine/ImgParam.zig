@@ -9,16 +9,16 @@ const slog = std.log.scoped(.imgparam);
 // see: https://github.com/hanatos/vkdt/blob/master/src/pipe/module.h#L52
 
 pub const ImgParams = struct {
-    float: f32 = 1.0,
-    vec3: [3]f32 = .{ 1.0, 2.0, 3.0 },
-    mat3x3: [3][3]f32 = .{
-        .{ 1.0, 0.0, 0.0 },
-        .{ 0.0, 2.0, 0.0 },
-        .{ 0.0, 0.0, 3.0 },
-    },
+    // float: f32 = 1.0,
+    // vec3: [3]f32 = .{ 1.0, 2.0, 3.0 },
+    // mat3x3: [3][3]f32 = .{
+    //     .{ 1.0, 0.0, 0.0 },
+    //     .{ 0.0, 2.0, 0.0 },
+    //     .{ 0.0, 0.0, 3.0 },
+    // },
 
-    // black: [4]f32, // black point
-    // white: [4]f32, // clipping threshold
+    black: [4]f32, // black point
+    white: [4]f32, // clipping threshold
     // whitebalance: [4]f32, // camera white balance coefficients
     // cfa: CFA, // color filter array multipliers
 

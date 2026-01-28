@@ -568,12 +568,10 @@ pub const Pipeline = struct {
         for (self.module_execution_order.items) |module_handle| {
             var module = self.module_pool.getPtr(module_handle) catch unreachable;
             // create params buffer
+            module.img_param_handle = try self.param_buffer_pool.add(null);
             if (module.desc.params) |params| {
-                const img_param_buffer_handle = try self.param_buffer_pool.add(null);
-                module.img_param_handle = img_param_buffer_handle;
                 if (params.len == 0) continue;
-                const param_buffer_handle = try self.param_buffer_pool.add(null);
-                module.param_handle = param_buffer_handle;
+                module.param_handle = try self.param_buffer_pool.add(null);
             }
         }
     }
@@ -656,7 +654,10 @@ pub const Pipeline = struct {
                     }
                 }
                 { // IMG PARAM BUFFER INIT
-                    const size_bytes = try gpu.layoutStruct(null, module.img_param);
+                    var size_bytes: usize = 0;
+                    if (module.img_param) |img_param| {
+                        size_bytes = try gpu.layoutStruct(null, img_param);
+                    }
                     // slog.debug("Img Param bytes for module {s}: {d}", .{ module.desc.name, size_bytes });
                     const img_param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .uniform);
                     if (module.img_param_handle) |img_param_handle| {
@@ -820,25 +821,32 @@ pub const Pipeline = struct {
             const node = try self.node_pool.getPtr(node_handle);
 
             if (node.desc.type == .compute) {
-                // CREATE DESCRIPTIONS
-
-                // params are on group 0
+                // CREATE DESCRIPTIONS FOR BIND GROUP LAYOUTS AND BIND GROUPS
                 var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 const mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
+
+                // if we have params, they will be on group 0 binding 0
+                // and the img_params will be on group 0 binding 1
+                // else, if we dont have params, img_params will be on group 0 binding 0
+                var group_0_bind_number: usize = 0;
+
+                // params are on group 0
                 if (mod.*.param_handle) |param_handle| {
                     const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
                     const param_buf = param_buffer.* orelse return error.ModuleParamBufferNotAllocated;
-                    layout_group_0_binding[0] = .{ .buffer = .{ .binding_type = .storage } };
-                    bind_group_0_binds[0] = .{ .buffer = param_buf };
+                    layout_group_0_binding[group_0_bind_number] = .{ .buffer = .{ .binding_type = .storage } };
+                    bind_group_0_binds[group_0_bind_number] = .{ .buffer = param_buf };
+                    group_0_bind_number += 1;
                 }
 
                 // img params are also on group 0
                 if (mod.*.img_param_handle) |img_param_handle| {
                     const img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
                     const img_param_buf = img_param_buffer.* orelse return error.ModuleImgParamBufferNotAllocated;
-                    layout_group_0_binding[1] = .{ .buffer = .{ .binding_type = .uniform } };
-                    bind_group_0_binds[1] = .{ .buffer = img_param_buf };
+                    layout_group_0_binding[group_0_bind_number] = .{ .buffer = .{ .binding_type = .uniform } };
+                    bind_group_0_binds[group_0_bind_number] = .{ .buffer = img_param_buf };
+                    group_0_bind_number += 1;
                 }
 
                 // all sockets are on group 1
@@ -985,18 +993,20 @@ pub const Pipeline = struct {
                     // const printed = w.buffered();
                     // slog.debug("{s}", .{printed});
 
-                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.param_mapped_slice_ptr));
+                    const param_mapped_slice_ptr = module.param_mapped_slice_ptr orelse return error.ModuleMissingParamMappedSlicePtr;
+                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(param_mapped_slice_ptr));
                     @memcpy(mapped_ptr, buf[0..used_len]);
                 }
 
                 // upload img params
-                {
+                if (module.img_param) |img_param| {
                     slog.debug("Uploading img params for module {s}:", .{module.desc.name});
                     var buf = try arena.alloc(u8, 1024);
                     defer arena.free(buf);
-                    const used_len = try gpu.layoutStruct(buf, module.img_param);
+                    const used_len = try gpu.layoutStruct(buf, img_param);
 
-                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(module.img_param_mapped_slice_ptr));
+                    const img_param_mapped_slice_ptr = module.img_param_mapped_slice_ptr orelse return error.ModuleMissingImgParamMappedSlicePtr;
+                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(img_param_mapped_slice_ptr));
                     @memcpy(mapped_ptr, buf[0..used_len]);
                 }
             }
@@ -1067,7 +1077,7 @@ pub const Pipeline = struct {
                         var img_param_buf = img_param_buffer.* orelse return error.ModuleMissingImgParamBuffer;
                         const img_param_offset = mod.*.img_param_offset orelse return error.ModuleMissingImgParamBufferOffset;
                         const img_param_size_bytes = mod.*.img_param_size orelse return error.ModuleImgParamBufferSizeNotSet;
-                        slog.debug("Enqueueing img param buffer at offset {d}", .{img_param_offset});
+                        slog.info("Enqueueing img param buffer at offset {d}", .{img_param_offset});
                         encoder.enqueueBufToBuf(&upload_buffer, img_param_offset, &img_param_buf, 0, img_param_size_bytes) catch unreachable;
                     }
                     var compute_pipeline = node.compute_pipeline orelse return error.NodeMissingShader;

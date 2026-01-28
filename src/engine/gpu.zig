@@ -96,7 +96,7 @@ pub const Buffer = struct {
         // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
-        slog.debug("Creating Buffer with upload buffer size {B:.4}", .{buffer_size_bytes});
+        slog.info("Creating Buffer with size {B:.4}", .{buffer_size_bytes});
         const buffer = gpu.device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("buffer"),
             .usage = memory_type.toGPUBufferUsage(),
@@ -748,13 +748,13 @@ pub const ComputePipeline = struct {
         var wgpu_bind_group_layouts: [MAX_BIND_GROUPS]?*wgpu.BindGroupLayout = @splat(null);
 
         var bind_group_layout_count: u32 = 0;
-        for (bind_group_layout_entries, 0..) |bind_group_layout, bind_group_layout_number| {
-            const bgl = bind_group_layout orelse continue;
+        bgle_blk: for (bind_group_layout_entries, 0..) |bind_group_layout, bind_group_layout_number| {
+            const bgl = bind_group_layout orelse break :bgle_blk;
             var wgpu_g0_bind_group_layout_entries: [MAX_BINDINGS]wgpu.BindGroupLayoutEntry = undefined;
 
             var bind_count: u32 = 0;
-            for (bgl, 0..) |bind_group_layout_entry, bind_number| {
-                const bgle = bind_group_layout_entry orelse continue;
+            bgl_blk: for (bgl, 0..) |bind_group_layout_entry, bind_number| {
+                const bgle = bind_group_layout_entry orelse break :bgl_blk;
 
                 if (bgle.texture) |bgle_texture| {
                     switch (bgle_texture.access) {
