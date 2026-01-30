@@ -172,16 +172,24 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             @as(f32, @floatFromInt(raw_image.white)),
             @as(f32, @floatFromInt(raw_image.white)),
         },
-        .whitebalance = raw_image.wb_coeff,
+        .white_balance = raw_image.wb_coeff,
         .cam_to_rec2020 = cam_to_rec2020,
     };
-    std.debug.print("i-raw module: black={},{},{} white={},{},{}\n", .{
+    std.debug.print("i-raw module: black={},{},{},{} white={},{},{},{}\n", .{
         m.img_param.?.black[0],
         m.img_param.?.black[1],
         m.img_param.?.black[2],
+        m.img_param.?.black[3],
         m.img_param.?.white[0],
         m.img_param.?.white[1],
         m.img_param.?.white[2],
+        m.img_param.?.white[3],
+    });
+    std.debug.print("i-raw module: wb={},{},{},{}\n", .{
+        m.img_param.?.white_balance[0],
+        m.img_param.?.white_balance[1],
+        m.img_param.?.white_balance[2],
+        m.img_param.?.white_balance[3],
     });
 
     var socket = try api.getModSocket(pipe, mod, "output");
