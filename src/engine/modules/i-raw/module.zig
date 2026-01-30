@@ -7,9 +7,10 @@ pub const RawImage = struct {
     width: usize,
     height: usize,
     raw_image: []u16,
-    max_value: u32,
-    black: u32,
+    cblack: [4]u32,
     white: u32,
+    wb_coeff: [4]f32,
+    cam_xyz: [3][3]f32,
     filters: api.CFA,
     libraw_rp: *libraw.libraw_data_t,
 
@@ -36,18 +37,24 @@ pub const RawImage = struct {
         const img_width: u16 = libraw_rp.*.sizes.width;
         const img_height: u16 = libraw_rp.*.sizes.height;
         const raw_image: []u16 = std.mem.span(libraw_rp.*.rawdata.raw_image);
-        // const raw_pixel_count = @as(u32, img_width) * img_height;
-        const max_value: u32 = libraw_rp.*.rawdata.color.maximum;
-        const black: u32 = libraw_rp.*.rawdata.color.black;
-        const white: u32 = max_value;
+        const white: u32 = libraw_rp.*.rawdata.color.maximum;
+        const cblack: [4]u32 = libraw_rp.*.rawdata.color.cblack[0..4].*; // TODO: xtans uses more than 4
+        const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.cam_mul; // or pre_mul??
+        const cam_xyz_all: [4][3]f32 = libraw_rp.*.rawdata.color.cam_xyz;
+        // drop last row
+        var cam_xyz: [3][3]f32 = undefined;
+        for (cam_xyz_all[0..3], 0..) |row, i| {
+            cam_xyz[i] = row;
+        }
 
         return RawImage{
             .width = img_width,
             .height = img_height,
             .raw_image = raw_image,
-            .max_value = max_value,
-            .black = black,
+            .cblack = cblack,
             .white = white,
+            .wb_coeff = wb_coeff,
+            .cam_xyz = cam_xyz,
             .filters = try api.CFA.fromLibraw(&libraw_rp.*.rawdata.iparams.cdesc, libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
         };
@@ -139,12 +146,25 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // THIS IS A WORKAROUND: for single channel read-write storage texture limitation
     roi = roi.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
+    // const float xyz_to_rec2020[] = {
+    //     1.7166511880, -0.3556707838, -0.2533662814,
+    //     -0.6666843518,  1.6164812366,  0.0157685458,
+    //     0.0176398574, -0.0427706133,  0.9421031212
+    // };
+    const xyz_to_rec2020: [3][3]f32 = .{
+        .{ 1.7166511880, -0.3556707838, -0.2533662814 },
+        .{ -0.6666843518, 1.6164812366, 0.0157685458 },
+        .{ 0.0176398574, -0.0427706133, 0.9421031212 },
+    };
+    var cam_to_rec2020: [3][3]f32 = undefined;
+    api.mat3x3Mul(&cam_to_rec2020, xyz_to_rec2020, raw_image.cam_xyz);
+
     m.img_param = .{
         .black = [4]f32{
-            @as(f32, @floatFromInt(raw_image.black)),
-            @as(f32, @floatFromInt(raw_image.black)),
-            @as(f32, @floatFromInt(raw_image.black)),
-            @as(f32, @floatFromInt(raw_image.black)),
+            @as(f32, @floatFromInt(raw_image.cblack[0])),
+            @as(f32, @floatFromInt(raw_image.cblack[1])),
+            @as(f32, @floatFromInt(raw_image.cblack[2])),
+            @as(f32, @floatFromInt(raw_image.cblack[3])),
         },
         .white = [4]f32{
             @as(f32, @floatFromInt(raw_image.white)),
@@ -152,6 +172,8 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             @as(f32, @floatFromInt(raw_image.white)),
             @as(f32, @floatFromInt(raw_image.white)),
         },
+        .whitebalance = raw_image.wb_coeff,
+        .cam_to_rec2020 = cam_to_rec2020,
     };
     std.debug.print("i-raw module: black={},{},{} white={},{},{}\n", .{
         m.img_param.?.black[0],

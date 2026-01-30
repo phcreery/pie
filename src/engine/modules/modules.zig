@@ -3,8 +3,9 @@ const api = @import("api.zig");
 
 pub const i_raw = @import("i-raw/module.zig");
 pub const format = @import("format/module.zig");
-pub const demosaic = @import("demosaic/module.zig");
 pub const denoise = @import("denoise/module.zig");
+pub const demosaic = @import("demosaic/module.zig");
+pub const color = @import("color/module.zig");
 pub const o_png = @import("o-png/module.zig");
 
 pub const test_multiply = @import("test-multiply/module.zig");
@@ -18,7 +19,9 @@ pub fn populateRegistry(registry: *Registry) !void {
     // add built-in modules
     try registry.add(i_raw.module);
     try registry.add(format.module);
+    try registry.add(denoise.module);
     try registry.add(demosaic.module);
+    try registry.add(color.module);
     try registry.add(o_png.module);
     // add test modules
     try registry.add(test_multiply.module);

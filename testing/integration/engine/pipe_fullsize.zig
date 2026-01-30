@@ -29,11 +29,13 @@ test "fullsize through pipeline" {
     const mod_format = try pipeline.addModule(pie.engine.modules.format.module);
     const mod_denoise = try pipeline.addModule(pie.engine.modules.denoise.module);
     const mod_demosaic = try pipeline.addModule(pie.engine.modules.demosaic.module);
+    const mod_color = try pipeline.addModule(pie.engine.modules.color.module);
     const mod_o_png = try pipeline.addModule(pie.engine.modules.o_png.module);
 
     try pipeline.connectModulesName(mod_i_raw, "output", mod_format, "input");
     try pipeline.connectModulesName(mod_format, "output", mod_denoise, "input");
     try pipeline.connectModulesName(mod_denoise, "output", mod_demosaic, "input");
-    try pipeline.connectModulesName(mod_demosaic, "output", mod_o_png, "input");
+    try pipeline.connectModulesName(mod_demosaic, "output", mod_color, "input");
+    try pipeline.connectModulesName(mod_color, "output", mod_o_png, "input");
     try pipeline.run(aa);
 }

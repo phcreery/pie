@@ -893,14 +893,14 @@ pub const GPU = struct {
         var info: wgpu.AdapterInfo = undefined;
         const status = adapter.getInfo(&info);
         if (status != .success) {
-            slog.debug("Failed to get adapter info", .{});
+            slog.err("Failed to get adapter info", .{});
             return error.AdapterInfo;
         } else {
             const name = info.device.toSlice();
             if (name) |value| {
-                slog.debug("Using adapter: {s} (backend={s}, type={s})", .{ value, @tagName(info.backend_type), @tagName(info.adapter_type) });
+                slog.info("Using adapter: {s} (backend={s}, type={s})", .{ value, @tagName(info.backend_type), @tagName(info.adapter_type) });
             } else {
-                slog.debug("Failed to get adapter name", .{});
+                slog.err("Failed to get adapter name", .{});
             }
         }
 

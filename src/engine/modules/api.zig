@@ -114,3 +114,14 @@ pub fn getSocketIndex(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []
     const mod = try pipe.module_pool.getPtr(mod_handle);
     return mod.getSocketIndex(socket_name);
 }
+
+pub fn mat3x3Mul(C: anytype, A: anytype, B: anytype) void {
+    const N = A.len;
+    for (0..N) |i| {
+        for (0..N) |j| {
+            for (0..N) |k| {
+                C[i][j] += A[i][k] * B[k][j];
+            }
+        }
+    }
+}
