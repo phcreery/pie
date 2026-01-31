@@ -30,9 +30,6 @@ pub fn init(desc: api.ModuleDesc) !Self {
     return Self{
         .desc = desc,
         .enabled = true,
-
-        // TESTING
-        // .img_param = .{ .temp = 2.0 },
     };
 }
 
