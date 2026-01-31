@@ -1,6 +1,6 @@
 const api = @import("../api.zig");
 
-pub var module: api.ModuleDesc = .{
+pub var desc: api.ModuleDesc = .{
     .name = "denoise",
     .type = .compute,
     .sockets = init: {

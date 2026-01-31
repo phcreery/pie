@@ -1077,7 +1077,7 @@ pub const Pipeline = struct {
                         var img_param_buf = img_param_buffer.* orelse return error.ModuleMissingImgParamBuffer;
                         const img_param_offset = mod.*.img_param_offset orelse return error.ModuleMissingImgParamBufferOffset;
                         const img_param_size_bytes = mod.*.img_param_size orelse return error.ModuleImgParamBufferSizeNotSet;
-                        slog.info("Enqueueing img param buffer at offset {d}", .{img_param_offset});
+                        slog.debug("Enqueueing img param buffer at offset {d}", .{img_param_offset});
                         encoder.enqueueBufToBuf(&upload_buffer, img_param_offset, &img_param_buf, 0, img_param_size_bytes) catch unreachable;
                     }
                     var compute_pipeline = node.compute_pipeline orelse return error.NodeMissingShader;

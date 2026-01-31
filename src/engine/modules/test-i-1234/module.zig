@@ -1,6 +1,6 @@
 const api = @import("../api.zig");
 
-pub const module: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "test-i-1234",
     .type = .source,
     .sockets = init: {

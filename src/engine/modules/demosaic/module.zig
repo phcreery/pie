@@ -1,7 +1,7 @@
 const api = @import("../api.zig");
 const std = @import("std");
 
-pub var module: api.ModuleDesc = .{
+pub var desc: api.ModuleDesc = .{
     .name = "demosaic",
     .type = .compute,
     .sockets = init: {

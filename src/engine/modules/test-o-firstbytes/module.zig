@@ -1,7 +1,7 @@
 const api = @import("../api.zig");
 const std = @import("std");
 
-pub const module: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "test-o-2468",
     .type = .sink,
     .sockets = init: {

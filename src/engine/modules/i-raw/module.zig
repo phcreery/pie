@@ -89,7 +89,7 @@ test "open raw image" {
     }, raw_image.filters.pattern);
 }
 
-pub var module: api.ModuleDesc = .{
+pub var desc: api.ModuleDesc = .{
     .name = "i-raw",
     .type = .source,
     // .params = init: {

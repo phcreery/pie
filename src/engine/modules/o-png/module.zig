@@ -2,7 +2,7 @@ const api = @import("../api.zig");
 const std = @import("std");
 const zigimg = @import("zigimg");
 
-pub const module: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "o-png",
     .type = .sink,
     .sockets = init: {
