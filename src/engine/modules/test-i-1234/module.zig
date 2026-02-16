@@ -35,6 +35,12 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     m.img_param = .{
         .white = .{ 1.0, 2.0, 3.0, 4.0 },
         .black = .{ 1.0, 2.0, 3.0, 4.0 },
+        .white_balance = .{ 1.0, 1.0, 1.0, 1.0 },
+        .cam_to_rec2020 = .{
+            .{ 1.0, 0.0, 0.0 },
+            .{ 0.0, 1.0, 0.0 },
+            .{ 0.0, 0.0, 1.0 },
+        },
     };
 }
 

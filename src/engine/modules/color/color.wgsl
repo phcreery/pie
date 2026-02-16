@@ -26,6 +26,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         img_params.white_balance.g,
         img_params.white_balance.b
     );
+    var wb_rec2020 = img_params.cam_to_rec2020 * wb;
     // for(var j: i32 = 0; j < 3; j = j + 1) {
     //     for(var i: i32 = 0; i < 3; i = i + 1) {
     //         w0[j] += img_params.cam_to_rec2020[i][j] / wb[i];
@@ -35,10 +36,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // wb[0] = wb[0] / w0[1];
     // wb[1] = 1.0;
     // wb[2] = wb[2] / w0[1];
+    // wb_rec2020 = vec3<f32>(
+    //     wb_rec2020.r / wb_rec2020.g,
+    //     1.0,
+    //     wb_rec2020.b / wb_rec2020.g
+    // );
     rgb_rec2020 = vec3<f32>(
-        rgb_rec2020.r * wb[0],
-        rgb_rec2020.g * wb[1],
-        rgb_rec2020.b * wb[2]
+        rgb_rec2020.r * wb_rec2020[0],
+        rgb_rec2020.g * wb_rec2020[1],
+        rgb_rec2020.b * wb_rec2020[2]
     );
 
 
