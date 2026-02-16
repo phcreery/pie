@@ -7,6 +7,7 @@ pub const denoise = @import("denoise/module.zig");
 pub const demosaic = @import("demosaic/module.zig");
 pub const color = @import("color/module.zig");
 pub const o_png = @import("o-png/module.zig");
+pub const o_ppm = @import("o-ppm/module.zig");
 
 pub const test_multiply = @import("test-multiply/module.zig");
 pub const test_2nodes = @import("test-2nodes/module.zig");
@@ -23,6 +24,8 @@ pub fn populateRegistry(registry: *Registry) !void {
     try registry.add(demosaic.desc);
     try registry.add(color.desc);
     try registry.add(o_png.desc);
+    try registry.add(o_ppm.desc);
+
     // add test modules
     try registry.add(test_multiply.desc);
     try registry.add(test_2nodes.desc);

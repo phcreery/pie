@@ -120,7 +120,6 @@ pub fn build(b: *Build) !void {
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             // .{ .name = "ztracy", .module = dep_ztracy.module("root") },
-            // .{ .name = "zpool", .module = dep_zpool.module("root") },
             .{ .name = "zbench", .module = dep_zbench.module("zbench") },
         },
     });

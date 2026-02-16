@@ -13,8 +13,11 @@ test {
     // _ = @import("engine/gpu_fullsize_DSC_6765.zig");
 
     // PIPELINE
-    _ = @import("engine/pipe_simple.zig");
+    // _ = @import("engine/pipe_simple.zig");
     // _ = @import("engine/pipe_fullsize.zig");
+
+    // TARGETS
+    _ = @import("targets/dcraw/target_rawlib_dcraw.zig");
 
     // MISC
     // _ = @import("misc/zpool.zig");

@@ -8,6 +8,7 @@
         "comptime",
         "DEBAYER",
         "deinit",
+        "denoise",
         "errdefer",
         "isize",
         "libraw",
@@ -24,6 +25,7 @@
         "wgpu",
         "WGSL",
         "workgroups",
+        "zigimg",
         "ztracy"
     ]
 }
