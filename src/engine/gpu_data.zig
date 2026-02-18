@@ -148,6 +148,50 @@ pub fn layoutStruct(maybe_buf: ?[]u8, s: anytype) !usize {
     return i;
 }
 
+test "layoutStruct" {
+    const allocator = std.testing.allocator;
+    var buf = try allocator.alloc(u8, 1024);
+    defer allocator.free(buf);
+    const S = struct {
+        float: f32 = 3.14,
+        vec3: [3]f32 = .{ 1.0, 2.0, 3.0 },
+        mat3x3: [3][3]f32 = .{
+            .{ 1.0, 0.0, 0.0 },
+            .{ 0.0, 1.0, 0.0 },
+            .{ 0.0, 0.0, 1.0 },
+        },
+    };
+    const used_len = try layoutStruct(buf, S{});
+    const bytes_buf = buf[0..used_len];
+
+    std.debug.print("Used length: {d}\n", .{bytes_buf.len});
+    // print bytes
+    for (bytes_buf, 0..) |b, idx| {
+        std.debug.print("{x:0>2} ", .{b});
+        if ((idx + 1) % 4 == 0) {
+            std.debug.print(" ", .{});
+        }
+        if ((idx + 1) % 16 == 0) {
+            std.debug.print("\n", .{});
+        }
+    }
+    std.debug.print("\n", .{});
+
+    try std.testing.expectEqual(80, bytes_buf.len);
+
+    const expect_float: f32 = 3.14;
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_float)[0..], bytes_buf[0..4]);
+
+    const expect_vec3: [3]f32 = .{ 1.0, 2.0, 3.0 };
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_vec3)[0..12], bytes_buf[16..28]);
+
+    const expect_mat3x3_r1: [3]f32 = .{ 1.0, 0.0, 0.0 };
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r1)[0..12], bytes_buf[32..44]);
+
+    const expect_mat3x3_r2: [3]f32 = .{ 0.0, 1.0, 0.0 };
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r2)[0..12], bytes_buf[48..60]);
+}
+
 // =================
 // Structured as Tagged Union for dynamic data
 // =================
@@ -250,50 +294,6 @@ pub fn layoutTaggedUnion(maybe_buf: ?[]u8, tu: []ParamValue) !usize {
 
     // return len
     return i;
-}
-
-test "layoutStruct" {
-    const allocator = std.testing.allocator;
-    var buf = try allocator.alloc(u8, 1024);
-    defer allocator.free(buf);
-    const S = struct {
-        float: f32 = 3.14,
-        vec3: [3]f32 = .{ 1.0, 2.0, 3.0 },
-        mat3x3: [3][3]f32 = .{
-            .{ 1.0, 0.0, 0.0 },
-            .{ 0.0, 1.0, 0.0 },
-            .{ 0.0, 0.0, 1.0 },
-        },
-    };
-    const used_len = try layoutStruct(buf, S{});
-    const bytes_buf = buf[0..used_len];
-
-    std.debug.print("Used length: {d}\n", .{bytes_buf.len});
-    // print bytes
-    for (bytes_buf, 0..) |b, idx| {
-        std.debug.print("{x:0>2} ", .{b});
-        if ((idx + 1) % 4 == 0) {
-            std.debug.print(" ", .{});
-        }
-        if ((idx + 1) % 16 == 0) {
-            std.debug.print("\n", .{});
-        }
-    }
-    std.debug.print("\n", .{});
-
-    try std.testing.expectEqual(80, bytes_buf.len);
-
-    const expect_float: f32 = 3.14;
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_float)[0..], bytes_buf[0..4]);
-
-    const expect_vec3: [3]f32 = .{ 1.0, 2.0, 3.0 };
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_vec3)[0..12], bytes_buf[16..28]);
-
-    const expect_mat3x3_r1: [3]f32 = .{ 1.0, 0.0, 0.0 };
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r1)[0..12], bytes_buf[32..44]);
-
-    const expect_mat3x3_r2: [3]f32 = .{ 0.0, 1.0, 0.0 };
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r2)[0..12], bytes_buf[48..60]);
 }
 
 test "layoutTaggedUnion" {

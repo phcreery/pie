@@ -24,6 +24,8 @@ pub const ConnectorHandle = ConnectorPool.Handle;
 pub const ParamBufferPool = HashMapPool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
+pub const ParamPool = std.heap.MemoryPoolExtra(*Param, .{});
+
 pub const PipelineConfig = struct {
     upload_buffer_size_bytes: ?usize = null,
     download_buffer_size_bytes: ?usize = null,
@@ -556,7 +558,7 @@ pub const Pipeline = struct {
 
     fn runModulesInit(self: *Pipeline) !void {
         for (self.module_execution_order.items) |module_handle| {
-            const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            const module = try self.module_pool.getPtr(module_handle);
             if (module.desc.init) |initFn| {
                 try initFn(self.allocator, self, module_handle);
             }
@@ -566,7 +568,7 @@ pub const Pipeline = struct {
     /// configure connectors only for module output connectors
     fn runModulesCreateParamBufferHandles(self: *Pipeline) !void {
         for (self.module_execution_order.items) |module_handle| {
-            var module = self.module_pool.getPtr(module_handle) catch unreachable;
+            var module = try self.module_pool.getPtr(module_handle);
             // create params buffer
             module.img_param_handle = try self.param_buffer_pool.add(null);
             if (module.desc.params) |params| {
@@ -581,7 +583,7 @@ pub const Pipeline = struct {
     /// we also propagate img_param down the pipeline here
     fn runModulesModifyROIOut(self: *Pipeline) !void {
         for (self.module_execution_order.items) |module_handle| {
-            const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            const module = try self.module_pool.getPtr(module_handle);
             // set roi in based on connected module roi out
             for (module.desc.sockets) |socket| {
                 if (socket) |sock| {

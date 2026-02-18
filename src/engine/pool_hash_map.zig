@@ -129,9 +129,9 @@ test "PoolList simple test" {
     const handle2 = try pool.add(Element{ .value = 100 });
     const handle3 = try pool.add(Element{ .value = 200 });
 
-    const val1 = pool.get(handle1) orelse unreachable;
-    const val2 = pool.get(handle2) orelse unreachable;
-    const val3 = pool.get(handle3) orelse unreachable;
+    const val1 = try pool.get(handle1);
+    const val2 = try pool.get(handle2);
+    const val3 = try pool.get(handle3);
 
     try std.testing.expectEqual(val1.value, 42);
     try std.testing.expectEqual(val2.value, 100);
@@ -144,29 +144,29 @@ test "PoolList simple test" {
     try std.testing.expect(pool.len() == 3);
 
     // ITERATE
-    var list = std.ArrayList(i32).initCapacity(allocator, 0) catch unreachable;
+    var list = try std.ArrayList(i32).initCapacity(allocator, 0);
     defer list.deinit(allocator);
     var iter = pool.iterator();
     while (iter.next()) |handle| {
-        const el = pool.get(handle) orelse unreachable;
-        list.append(allocator, el.value) catch unreachable;
+        const el = try pool.get(handle);
+        try list.append(allocator, el.value);
     }
-    _ = std.mem.indexOfScalar(i32, list.items, 42) orelse unreachable;
-    _ = std.mem.indexOfScalar(i32, list.items, 100) orelse unreachable;
-    _ = std.mem.indexOfScalar(i32, list.items, 200) orelse unreachable;
+    _ = try std.mem.indexOfScalar(i32, list.items, 42);
+    _ = try std.mem.indexOfScalar(i32, list.items, 100);
+    _ = try std.mem.indexOfScalar(i32, list.items, 200);
 
     // REMOVE
     pool.remove(handle2);
     try std.testing.expect(pool.len() == 2);
 
     // ITERATE AGAIN
-    var list2 = std.ArrayList(i32).initCapacity(allocator, 0) catch unreachable;
+    var list2 = try std.ArrayList(i32).initCapacity(allocator, 0);
     defer list2.deinit(allocator);
     var iter2 = pool.iterator();
     while (iter2.next()) |handle| {
-        const el = pool.get(handle) orelse unreachable;
-        list2.append(allocator, el.value) catch unreachable;
+        const el = try pool.get(handle);
+        try list2.append(allocator, el.value);
     }
-    _ = std.mem.indexOfScalar(i32, list2.items, 42) orelse unreachable;
-    _ = std.mem.indexOfScalar(i32, list2.items, 200) orelse unreachable;
+    _ = try std.mem.indexOfScalar(i32, list2.items, 42);
+    _ = try std.mem.indexOfScalar(i32, list2.items, 200);
 }

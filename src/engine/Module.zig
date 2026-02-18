@@ -8,6 +8,7 @@ const slog = std.log.scoped(.mod);
 desc: api.ModuleDesc,
 enabled: bool,
 
+// params is in the desc field
 // for the buffer that will live on the gpu
 // the handle is needed for gpu pipeline bindings
 param_handle: ?pipeline.ParamBufferHandle = null,

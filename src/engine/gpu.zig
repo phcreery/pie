@@ -683,7 +683,7 @@ pub const Shader = struct {
         shader_source: []const u8,
         opts: CompileShaderOpts,
     ) !Shader {
-        slog.debug("Compiling shader {s}", .{opts.name});
+        slog.info("Compiling shader {s}", .{opts.name});
 
         const descriptor = switch (opts.type) {
             .wgsl => wgpu.shaderModuleWGSLDescriptor(.{

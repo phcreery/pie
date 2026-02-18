@@ -50,7 +50,7 @@ test "targeting dcraw basic processing" {
 
     // DCRAW
     const input_filename = "testing/images/DSC_6765.NEF";
-    const target_filename = "testing/integration/targets/dcraw/target.ppm";
+    const target_filename = "testing/integration/targets/001_DSC_6765/target.ppm";
     const file = try std.fs.cwd().openFile(input_filename, .{});
     try libraw_dcraw_process(allocator, file, target_filename);
 
