@@ -192,143 +192,143 @@ test "layoutStruct" {
     try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r2)[0..12], bytes_buf[48..60]);
 }
 
-// =================
-// Structured as Tagged Union for dynamic data
-// =================
+// // =================
+// // Structured as Tagged Union for dynamic data
+// // =================
 
-pub const ParamValueTag = enum {
-    i32,
-    f32,
-};
-pub const ParamValue = union(ParamValueTag) {
-    i32: i32,
-    f32: f32,
+// pub const ParamValueTag = enum {
+//     i32,
+//     f32,
+// };
+// pub const ParamValue = union(ParamValueTag) {
+//     i32: i32,
+//     f32: f32,
 
-    pub fn size_(self: ParamValue) usize {
-        return switch (self) {
-            .i32 => size(i32),
-            .f32 => size(f32),
-        };
-    }
+//     pub fn size_(self: ParamValue) usize {
+//         return switch (self) {
+//             .i32 => size(i32),
+//             .f32 => size(f32),
+//         };
+//     }
 
-    pub fn alignment_(self: ParamValue) usize {
-        return switch (self) {
-            .i32 => alignment(i32),
-            .f32 => alignment(f32),
-        };
-    }
+//     pub fn alignment_(self: ParamValue) usize {
+//         return switch (self) {
+//             .i32 => alignment(i32),
+//             .f32 => alignment(f32),
+//         };
+//     }
 
-    // pub fn asBytes(self: *const ParamValue) []u8 {
-    //     return switch (self.*) {
-    //         // .i32 => @ptrCast(@alignCast(@constCast(&self.i32))), // or std.mem.asBytes()
-    //         .i32 => std.mem.asBytes(@constCast(&self.i32)),
-    //         .f32 => std.mem.asBytes(@constCast(&self.f32)),
-    //     };
-    // }
-    pub fn writeBytes(self: ParamValue, buf: []u8) void {
-        switch (self) {
-            .i32 => {
-                const bytes = std.mem.asBytes(@constCast(&self.i32))[0..size(i32)];
-                @memcpy(buf[0..bytes.len], bytes);
-            },
-            .f32 => {
-                const bytes = std.mem.asBytes(@constCast(&self.f32))[0..size(f32)];
-                @memcpy(buf[0..bytes.len], bytes);
-            },
-        }
-    }
-    pub fn set(self: *ParamValue, value: ParamValue) !void {
-        if (std.meta.activeTag(self.*) != std.meta.activeTag(value)) {
-            return error.ParamTypeMismatch;
-        }
-        switch (value) {
-            .i32 => {
-                self.* = .{ .i32 = value.i32 };
-            },
-            .f32 => {
-                self.* = .{ .f32 = value.f32 };
-            },
-        }
-    }
-};
+//     // pub fn asBytes(self: *const ParamValue) []u8 {
+//     //     return switch (self.*) {
+//     //         // .i32 => @ptrCast(@alignCast(@constCast(&self.i32))), // or std.mem.asBytes()
+//     //         .i32 => std.mem.asBytes(@constCast(&self.i32)),
+//     //         .f32 => std.mem.asBytes(@constCast(&self.f32)),
+//     //     };
+//     // }
+//     pub fn writeBytes(self: ParamValue, buf: []u8) void {
+//         switch (self) {
+//             .i32 => {
+//                 const bytes = std.mem.asBytes(@constCast(&self.i32))[0..size(i32)];
+//                 @memcpy(buf[0..bytes.len], bytes);
+//             },
+//             .f32 => {
+//                 const bytes = std.mem.asBytes(@constCast(&self.f32))[0..size(f32)];
+//                 @memcpy(buf[0..bytes.len], bytes);
+//             },
+//         }
+//     }
+//     pub fn set(self: *ParamValue, value: ParamValue) !void {
+//         if (std.meta.activeTag(self.*) != std.meta.activeTag(value)) {
+//             return error.ParamTypeMismatch;
+//         }
+//         switch (value) {
+//             .i32 => {
+//                 self.* = .{ .i32 = value.i32 };
+//             },
+//             .f32 => {
+//                 self.* = .{ .f32 = value.f32 };
+//             },
+//         }
+//     }
+// };
 
-// Params
-pub fn layoutTaggedUnion(maybe_buf: ?[]u8, tu: []ParamValue) !usize {
-    var i: usize = 0;
+// // Params
+// pub fn layoutTaggedUnion(maybe_buf: ?[]u8, tu: []ParamValue) !usize {
+//     var i: usize = 0;
 
-    for (tu) |param| {
-        const param_align = param.alignment_();
-        const param_size = param.size_();
+//     for (tu) |param| {
+//         const param_align = param.alignment_();
+//         const param_size = param.size_();
 
-        // align i to param_align
-        const align_offset = @mod(i, param_align);
-        if (align_offset != 0) {
-            i += param_align - align_offset;
-        }
+//         // align i to param_align
+//         const align_offset = @mod(i, param_align);
+//         if (align_offset != 0) {
+//             i += param_align - align_offset;
+//         }
 
-        if (maybe_buf) |buf| {
-            param.writeBytes(buf[i..]);
-        }
+//         if (maybe_buf) |buf| {
+//             param.writeBytes(buf[i..]);
+//         }
 
-        // print
-        // std.debug.print(
-        //     "Param: offset {d}, size {d}, align {d}\n",
-        //     .{ i, param_size, param_align },
-        // );
+//         // print
+//         // std.debug.print(
+//         //     "Param: offset {d}, size {d}, align {d}\n",
+//         //     .{ i, param_size, param_align },
+//         // );
 
-        i += param_size;
-    }
+//         i += param_size;
+//     }
 
-    // round up i to alignment of largest param
-    var struct_alignment: usize = 0;
-    for (tu) |param| {
-        const param_align = param.alignment_();
-        if (param_align > struct_alignment) {
-            struct_alignment = param_align;
-        }
-    }
-    const align_offset = @mod(i, struct_alignment);
-    if (align_offset != 0) {
-        i += struct_alignment - align_offset;
-    }
+//     // round up i to alignment of largest param
+//     var struct_alignment: usize = 0;
+//     for (tu) |param| {
+//         const param_align = param.alignment_();
+//         if (param_align > struct_alignment) {
+//             struct_alignment = param_align;
+//         }
+//     }
+//     const align_offset = @mod(i, struct_alignment);
+//     if (align_offset != 0) {
+//         i += struct_alignment - align_offset;
+//     }
 
-    // return len
-    return i;
-}
+//     // return len
+//     return i;
+// }
 
-test "layoutTaggedUnion" {
-    const allocator = std.testing.allocator;
-    var buf = try allocator.alloc(u8, 1024);
-    defer allocator.free(buf);
-    var tu = [_]ParamValue{
-        .{ .f32 = 3.14 },
-        .{ .i32 = 42 },
-        .{ .f32 = 2.718 },
-    };
-    const used_len = try layoutTaggedUnion(buf, tu[0..]);
-    const bytes_buf = buf[0..used_len];
+// test "layoutTaggedUnion" {
+//     const allocator = std.testing.allocator;
+//     var buf = try allocator.alloc(u8, 1024);
+//     defer allocator.free(buf);
+//     var tu = [_]ParamValue{
+//         .{ .f32 = 3.14 },
+//         .{ .i32 = 42 },
+//         .{ .f32 = 2.718 },
+//     };
+//     const used_len = try layoutTaggedUnion(buf, tu[0..]);
+//     const bytes_buf = buf[0..used_len];
 
-    std.debug.print("Used length: {d}\n", .{bytes_buf.len});
-    // print bytes
-    for (bytes_buf, 0..) |b, idx| {
-        std.debug.print("{x:0>2} ", .{b});
-        if ((idx + 1) % 4 == 0) {
-            std.debug.print(" ", .{});
-        }
-        if ((idx + 1) % 16 == 0) {
-            std.debug.print("\n", .{});
-        }
-    }
-    std.debug.print("\n", .{});
+//     std.debug.print("Used length: {d}\n", .{bytes_buf.len});
+//     // print bytes
+//     for (bytes_buf, 0..) |b, idx| {
+//         std.debug.print("{x:0>2} ", .{b});
+//         if ((idx + 1) % 4 == 0) {
+//             std.debug.print(" ", .{});
+//         }
+//         if ((idx + 1) % 16 == 0) {
+//             std.debug.print("\n", .{});
+//         }
+//     }
+//     std.debug.print("\n", .{});
 
-    try std.testing.expectEqual(12, bytes_buf.len);
+//     try std.testing.expectEqual(12, bytes_buf.len);
 
-    const expect_f32_1: f32 = 3.14;
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_f32_1)[0..4], bytes_buf[0..4]);
+//     const expect_f32_1: f32 = 3.14;
+//     try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_f32_1)[0..4], bytes_buf[0..4]);
 
-    const expect_i32: i32 = 42;
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_i32)[0..4], bytes_buf[4..8]);
+//     const expect_i32: i32 = 42;
+//     try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_i32)[0..4], bytes_buf[4..8]);
 
-    const expect_f32_2: f32 = 2.718;
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_f32_2)[0..4], bytes_buf[8..12]);
-}
+//     const expect_f32_2: f32 = 2.718;
+//     try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_f32_2)[0..4], bytes_buf[8..12]);
+// }

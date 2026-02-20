@@ -26,12 +26,39 @@ pub fn main() !void {
 
 test {
     // _ = @import("engine/gpu.zig");
-    _ = @import("engine/gpu_data.zig");
+    // _ = @import("engine/gpu_data.zig");
     // _ = @import("engine/modules/shared/CFA.zig");
     // _ = @import("engine/modules/i-raw/i-raw.zig");
     // _ = @import("engine/zig-graph/graph.zig");
     // _ = @import("engine/zig-graph/print.zig");
     // _ = @import("engine/pool_hash_map.zig");
-    // _ = @import("engine/Param.zig");
+    _ = @import("engine/Param.zig");
     // _ = @import("engine/ImgParam.zig");
 }
+
+// test "anon union" {
+//     const ParamValueTag = enum {
+//         i32,
+//         f32,
+//     };
+//     // const ParamValue = union(ParamValueTag) {
+//     //     i32: i32,
+//     //     f32: f32,
+//     // };
+//     const S = struct {
+//         name: []const u8,
+//         // value: ParamValue,
+//         union(ParamValueTag) {
+//             i32: i32,
+//             f32: f32,
+//         },
+//         len: i32,
+//     };
+
+//     const s: S = .{
+//         .name = "a",
+//         .value = .{ .f32 = 1 },
+//         .len = 1,
+//     };
+//     std.debug.print("{any}", .{s});
+// }
