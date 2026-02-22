@@ -58,6 +58,12 @@ pub const ModuleType = enum {
     sink,
 };
 
+pub const ParamDesc = struct {
+    name: []const u8,
+    len: u32,
+    typ: Param.ParamValueTag,
+};
+
 /// Module structure
 ///
 /// A module can have multiple nodes.
@@ -71,7 +77,9 @@ pub const ModuleType = enum {
 pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
-    params: ?[MAX_PARAMS_PER_MODULE]?Param = null,
+    // params: ?[MAX_PARAMS_PER_MODULE]?Param = null,
+    // params: ?anytype = null,
+    params: [MAX_PARAMS_PER_MODULE]?ParamDesc = @splat(null),
 
     // The sockets describe the module's input and output interface
     // they can be null if the module has no input or output (sink or source only)
@@ -81,6 +89,7 @@ pub const ModuleDesc = struct {
 
     init: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     deinit: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) void = null,
+    initParams: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     createNodes: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
     writeSink: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
@@ -95,6 +104,11 @@ pub fn compileShader(pipe: *Pipeline, shader_code: []const u8) !gpu.Shader {
 
 pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
     return pipe.addNode(mod, node_desc);
+}
+
+pub fn initParam(pipe: *Pipeline, desc: ParamDesc, value: anytype) !Param {
+    const param = try Param.init(pipe.allocator, desc, value);
+    return param;
 }
 
 pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {

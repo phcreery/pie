@@ -64,7 +64,7 @@ test "simple test modules" {
         .download_buffer_size_bytes = 1024,
     };
 
-    var pipeline = Pipeline.init(allocator, &gpu_instance, pipeline_config) catch unreachable;
+    var pipeline = try Pipeline.init(allocator, &gpu_instance, pipeline_config);
     defer pipeline.deinit();
 
     const mod_test_i_1234 = try pipeline.addModule(registry.get("test-i-1234").?);
@@ -75,7 +75,7 @@ test "simple test modules" {
     // const mod_test_nop_1 = try pipeline.addModule(registry.get("test-nop").?);
     // const mod_test_nop_2 = try pipeline.addModule(registry.get("test-nop").?);
 
-    pipeline.setModuleParam(mod_test_multiply, "multiplier", .{ .f32 = 2.0 }) catch unreachable;
+    try pipeline.setModuleParam(mod_test_multiply, "multiplier", @as(f32, 2.0));
     // pipeline.setModuleParam(mod_test_multiply, "adder", .{ .i32 = 0 }) catch unreachable;
 
     // pipeline.connectModulesName(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;

@@ -18,21 +18,21 @@ pub const test_nop = @import("test-nop/module.zig");
 
 pub fn populateRegistry(registry: *Registry) !void {
     // add built-in modules
-    try registry.add(i_raw.desc);
-    try registry.add(format.desc);
-    try registry.add(denoise.desc);
-    try registry.add(demosaic.desc);
-    try registry.add(color.desc);
-    try registry.add(o_png.desc);
-    try registry.add(o_ppm.desc);
+    // try registry.add(i_raw.desc);
+    // try registry.add(format.desc);
+    // try registry.add(denoise.desc);
+    // try registry.add(demosaic.desc);
+    // try registry.add(color.desc);
+    // try registry.add(o_png.desc);
+    // try registry.add(o_ppm.desc);
 
     // add test modules
     try registry.add(test_multiply.desc);
-    try registry.add(test_2nodes.desc);
+    // try registry.add(test_2nodes.desc);
     try registry.add(test_i_1234.desc);
     try registry.add(test_o_2468.desc);
-    try registry.add(test_o_firstbytes.desc);
-    try registry.add(test_nop.desc);
+    // try registry.add(test_o_firstbytes.desc);
+    // try registry.add(test_nop.desc);
 }
 
 pub const Registry = struct {

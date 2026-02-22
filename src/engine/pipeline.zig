@@ -145,10 +145,11 @@ pub const Pipeline = struct {
 
     pub fn deinit(self: *Pipeline) void {
         slog.debug("De-initializing Pipeline", .{});
-        // the pool deinit will take care of deallocating the textures
         self.runModulesDeinit();
-        self.module_pool.deinit();
+        self.deinitParams();
+        // the pool deinit will take care of deallocating the textures
         self.module_execution_order.deinit(self.allocator);
+        self.module_pool.deinit();
         self.node_execution_order.deinit(self.allocator);
         self.node_pool.deinit();
         self.connector_pool.deinit();
@@ -172,7 +173,9 @@ pub const Pipeline = struct {
         var module = try Module.init(module_desc);
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
-        return try self.module_pool.add(module);
+        const module_handle = try self.module_pool.add(module);
+        try self.initParams(module_handle);
+        return module_handle;
     }
 
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
@@ -310,10 +313,10 @@ pub const Pipeline = struct {
         return mod.getParamPtr(param_name);
     }
 
-    pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: Param.ParamValue) !void {
+    pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
         const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
         const param = try mod.getParamPtr(param_name);
-        try param.value.set(value);
+        try param.set(value);
     }
 
     pub fn run(self: *Pipeline, arena: std.mem.Allocator) !void {
@@ -355,6 +358,8 @@ pub const Pipeline = struct {
             self.perf.timerLap("runModulesCreateParamBufferHandles") catch unreachable;
             self.runModulesModifyROIOut() catch unreachable;
             self.perf.timerLap("runModulesModifyROIOut") catch unreachable;
+            // self.runModulesInitParams() catch unreachable;
+            // self.perf.timerLap("runModulesInitParams") catch unreachable;
             self.runModulesInitParamBuffers() catch unreachable;
             self.perf.timerLap("runModulesInitParamBuffers") catch unreachable;
             self.runModulesAllocateUploadBufferForParams() catch unreachable;
@@ -458,6 +463,13 @@ pub const Pipeline = struct {
         //         }
         //     }
         // }
+    }
+
+    fn initParams(self: *Pipeline, module_handle: ModuleHandle) !void {
+        const module = try self.module_pool.getPtr(module_handle);
+        if (module.desc.initParams) |initParamsFn| {
+            try initParamsFn(self, module_handle);
+        }
     }
 
     /// pub for util printing purposes
@@ -571,10 +583,8 @@ pub const Pipeline = struct {
             var module = try self.module_pool.getPtr(module_handle);
             // create params buffer
             module.img_param_handle = try self.param_buffer_pool.add(null);
-            if (module.desc.params) |params| {
-                if (params.len == 0) continue;
-                module.param_handle = try self.param_buffer_pool.add(null);
-            }
+            if (module.params.len == 0) continue;
+            module.param_handle = try self.param_buffer_pool.add(null);
         }
     }
 
@@ -633,19 +643,15 @@ pub const Pipeline = struct {
                 if (module.enabled == false) continue;
                 { // PARAM BUFFER INIT
                     var size_bytes: usize = 0;
-                    if (module.desc.params) |params| {
-                        // extract just ParamValue from params
-                        var tu: [16]gpu.ParamValue = undefined;
-                        var tu_len: usize = 0;
-                        for (params, 0..) |param, idx| {
-                            if (param) |p| {
-                                tu[idx] = p.value;
-                                tu_len += 1;
-                            }
+                    var tu: [16]Param = undefined;
+                    var tu_len: usize = 0;
+                    for (module.params, 0..) |param, idx| {
+                        if (param) |p| {
+                            tu[idx] = p;
+                            tu_len += 1;
                         }
-                        size_bytes = try gpu.layoutTaggedUnion(null, tu[0..tu_len]);
                     }
-                    // slog.debug("Param bytes for module {s}: {d}", .{ module.desc
+                    size_bytes = try Param.layoutTaggedUnion(null, tu[0..tu_len]);
                     const param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
                     // defer texture.deinit();
                     // store texture in connector pool
@@ -970,19 +976,22 @@ pub const Pipeline = struct {
                 if (module.enabled == false) continue;
 
                 // upload params
-                if (module.desc.params) |params| {
+                // if (module.params) |params| {
+                params: {
+                    if (module.param_size == 0) break :params;
                     var buf = try arena.alloc(u8, 1024);
                     defer arena.free(buf);
                     // extract just ParamValue from params
-                    var tu: [16]gpu.ParamValue = undefined;
+                    var tu: [16]Param = undefined;
                     var tu_len: usize = 0;
-                    for (params, 0..) |param, idx| {
+                    for (module.params, 0..) |param, idx| {
                         if (param) |p| {
-                            tu[idx] = p.value;
+                            tu[idx] = p;
                             tu_len += 1;
                         }
                     }
-                    const used_len = try gpu.layoutTaggedUnion(buf, tu[0..tu_len]);
+                    // if (tu_len == 0) break :params;
+                    const used_len = try Param.layoutTaggedUnion(buf, tu[0..tu_len]);
 
                     // slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.desc.name, list.items.len });
                     // // print hex array
@@ -1204,6 +1213,19 @@ pub const Pipeline = struct {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.desc.deinit) |deinitFn| {
                 deinitFn(self.allocator, self, module_handle);
+            }
+        }
+    }
+
+    fn deinitParams(self: *Pipeline) void {
+        var module_pool_handles = self.module_pool.liveHandles();
+        while (module_pool_handles.next()) |module_handle| {
+            var module = self.module_pool.getPtr(module_handle) catch unreachable;
+            for (&module.params) |*maybe_param_ptr| {
+                var maybe_param = maybe_param_ptr.*;
+                if (maybe_param) |*param| {
+                    param.deinit(self.allocator);
+                }
             }
         }
     }

@@ -36,29 +36,25 @@ test {
     // _ = @import("engine/ImgParam.zig");
 }
 
-// test "anon union" {
-//     const ParamValueTag = enum {
-//         i32,
-//         f32,
-//     };
-//     // const ParamValue = union(ParamValueTag) {
-//     //     i32: i32,
-//     //     f32: f32,
-//     // };
-//     const S = struct {
-//         name: []const u8,
-//         // value: ParamValue,
-//         union(ParamValueTag) {
-//             i32: i32,
-//             f32: f32,
-//         },
-//         len: i32,
+// test "anon struct param" {
+//     const params = &.{
+//         .{ .name = "float", .value = @as(f32, 3.14) },
+//         .{ .name = "vec3", .value = [3]f32{ 1.0, 2.0, 3.0 } },
+//         .{ .name = "mat3x3", .value = [3][3]f32{
+//             .{ 1.0, 0.0, 0.0 },
+//             .{ 0.0, 1.0, 0.0 },
+//             .{ 0.0, 0.0, 1.0 },
+//         } },
 //     };
 
-//     const s: S = .{
+//     const Desc = struct {
+//         name: []const u8,
+//         params: *anyopaque,
+//     };
+
+//     const s: Desc = .{
 //         .name = "a",
-//         .value = .{ .f32 = 1 },
-//         .len = 1,
+//         .params = @ptrCast(@constCast(params)),
 //     };
 //     std.debug.print("{any}", .{s});
 // }

@@ -8,7 +8,7 @@ const slog = std.log.scoped(.mod);
 desc: api.ModuleDesc,
 enabled: bool,
 
-// params is in the desc field
+params: [api.MAX_PARAMS_PER_MODULE]?Param = @splat(null),
 // for the buffer that will live on the gpu
 // the handle is needed for gpu pipeline bindings
 param_handle: ?pipeline.ParamBufferHandle = null,
@@ -56,24 +56,24 @@ pub fn getSocketPtr(mod: *Self, name: []const u8) !*api.SocketDesc {
 }
 
 pub fn getParamIndex(mod: *const Self, name: []const u8) !usize {
-    if (mod.desc.params) |params| {
-        for (params, 0..) |param, idx| {
-            if (param) |p| {
-                if (std.mem.eql(u8, p.name, name)) {
-                    return idx;
-                }
+    // if (mod.desc.params) |params| {
+    for (mod.desc.params, 0..) |param, idx| {
+        if (param) |p| {
+            if (std.mem.eql(u8, p.name, name)) {
+                return idx;
             }
         }
     }
+    // }
     return error.ModuleParamNotFound;
 }
 
 pub fn getParamPtr(mod: *Self, name: []const u8) !*Param {
     const idx = try mod.getParamIndex(name);
-    if (mod.desc.params) |*params| {
-        if (params[idx]) |*param| {
-            return param;
-        }
+    // if (mod.desc.params) |*params| {
+    if (mod.params[idx]) |*param| {
+        return param;
     }
+    // }
     return error.ModuleParamNotFound;
 }

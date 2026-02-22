@@ -6,21 +6,121 @@ const gpu_data = @import("gpu_data.zig");
 const pipeline = @import("pipeline.zig");
 const slog = std.log.scoped(.param);
 
-pub fn Param(T: type) type {
-    return struct {
-        name: []const u8,
-        value: T,
+// =================
+// Structured as Tagged Union for dynamic data
+// =================
+
+pub const ParamValueTag = enum {
+    i32,
+    // vec2_f32,
+    f32,
+    str,
+};
+
+const Self = @This();
+
+desc: api.ParamDesc,
+bytes: []u8, // we will store the value as bytes, and interpret it based on the type
+
+pub fn init(allocator: std.mem.Allocator, desc: api.ParamDesc, value: anytype) !Self {
+    const val_as_bytes = std.mem.asBytes(&value);
+    if (val_as_bytes.len > size_cpu(desc.len, desc.typ)) {
+        std.debug.print("Value as bytes length {d} exceeds expected size {d} (type {s} * len {d})\n", .{
+            val_as_bytes.len,
+            size_cpu(desc.len, desc.typ),
+            @tagName(desc.typ),
+            desc.len,
+        });
+        return error.InvalidLengthTypeForParamValue;
+    }
+
+    const bytes = try allocator.alloc(u8, size_cpu(desc.len, desc.typ));
+    // std.debug.print("Allocated {d} bytes at {*} for param value with length {d}\n", .{ ptr.len, ptr, val_as_bytes.len });
+    @memcpy(bytes[0..val_as_bytes.len], val_as_bytes);
+
+    const self = Self{
+        // .name = name,
+        // .len = len,
+        // .typ = typ,
+        .desc = desc,
+        .bytes = bytes, // store the pointer to the allocated space
+    };
+    return self;
+}
+pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+    allocator.free(self.bytes);
+}
+
+pub fn set(self: *Self, value: anytype) !void {
+    const val_as_bytes = std.mem.asBytes(&value);
+    @memcpy(self.bytes, val_as_bytes);
+}
+pub fn get(self: Self, T: type) T {
+    // return std.mem.bytesToValue(T, self.bytes); // this does not return, *T, thather T
+    return @ptrCast(@alignCast(@constCast(self.bytes.ptr)));
+}
+
+pub fn size_cpu(len: u32, typ: ParamValueTag) usize {
+    return switch (typ) {
+        .i32 => @sizeOf(i32) * len,
+        .f32 => @sizeOf(f32) * len,
+        .str => @sizeOf(u8) * len,
+        // else => unreachable,
     };
 }
 
-// ImgParams
-pub fn layoutParams(maybe_buf: ?[]u8, params: []Param) !usize {
-    var i: usize = 0;
-    var struct_alignment: usize = 0;
+// ================
+// GPU related functions, which will be used to write the param data to a GPU buffer
+// ================
 
-    for (params) |param| {
-        const param_align = gpu_data.alignment(@TypeOf(param.value));
-        const param_size = gpu_data.size(@TypeOf(param.value));
+pub fn size(self: Self) usize {
+    return switch (self.desc.typ) {
+        .i32 => switch (self.desc.len) {
+            1 => gpu_data.size(i32),
+            // 2 => gpu_data.size([2]i32)
+            else => unreachable,
+        },
+        .f32 => switch (self.desc.len) {
+            1 => gpu_data.size(f32),
+            else => unreachable,
+        },
+        else => unreachable,
+    };
+}
+
+pub fn alignment(self: Self) usize {
+    return switch (self.desc.typ) {
+        .i32 => switch (self.desc.len) {
+            1 => gpu_data.alignment(i32),
+            else => unreachable,
+        },
+        .f32 => switch (self.desc.len) {
+            1 => gpu_data.alignment(f32),
+            else => unreachable,
+        },
+        else => unreachable,
+    };
+}
+
+pub fn writeBytes(self: Self, buf: []u8) void {
+    switch (self.desc.typ) {
+        .i32 => {
+            @memcpy(buf[0..self.bytes.len], self.bytes);
+        },
+        .f32 => {
+            @memcpy(buf[0..self.bytes.len], self.bytes);
+        },
+        // writing strings to gpu are not supported
+        else => unreachable,
+    }
+}
+
+pub fn layoutTaggedUnion(maybe_buf: ?[]u8, tu: []Self) !usize {
+    var i: usize = 0;
+
+    for (tu) |param| {
+        const param_align = param.alignment();
+        const param_size = param.size();
 
         // align i to param_align
         const align_offset = @mod(i, param_align);
@@ -35,81 +135,14 @@ pub fn layoutParams(maybe_buf: ?[]u8, params: []Param) !usize {
         i += param_size;
     }
 
-    // inline for (std.meta.fields(@TypeOf(p))) |field| {
-    for (params) |param| {
-        const field_align = gpu_data.alignment(param.type);
-        if (field_align > struct_alignment) {
-            struct_alignment = field_align;
-        }
-    }
-
-    // loop through fields of s
-    inline for (std.meta.fields(@TypeOf(params))) |field| {
-        const field_align = gpu_data.alignment(field.type);
-        const field_size = gpu_data.size(field.type);
-
-        // align i to field_align
-        const align_offset = @mod(i, field_align);
-        if (align_offset != 0) {
-            i += field_align - align_offset;
-        }
-
-        const field_value = @field(params, field.name);
-        if (maybe_buf) |buf| {
-            gpu_data.writeBytes(buf[i..], field_value);
-        }
-
-        // print
-        // std.debug.print(
-        //     "Field {s}: offset {d}, size {d}, align {d}\n",
-        //     .{ field.name, i, field_size, field_align },
-        // );
-
-        i += field_size;
-    }
-
-    // round up i to alignment of struct_alignment
-    const align_offset = @mod(i, struct_alignment);
-    if (align_offset != 0) {
-        i += struct_alignment - align_offset;
-    }
-
-    // return len
-    return i;
-}
-
-// params is an array of .{ .name: []const u8, .value: T }
-pub fn layoutAnonArrParams(maybe_buf: ?[]u8, params: anytype) !usize {
-    var i: usize = 0;
+    // round up i to alignment of largest param
     var struct_alignment: usize = 0;
-
-    inline for (params) |param| {
-        // @compileLog(@TypeOf(param.value));
-        const param_align = gpu_data.alignment(@TypeOf(param.value));
-        const param_size = gpu_data.size(@TypeOf(param.value));
-
-        // align i to param_align
-        const align_offset = @mod(i, param_align);
-        if (align_offset != 0) {
-            i += param_align - align_offset;
-        }
-
-        if (maybe_buf) |buf| {
-            gpu_data.writeBytes(buf[i..], param.value);
-        }
-
-        i += param_size;
-    }
-
-    // inline for (std.meta.fields(@TypeOf(p))) |field| {
-    inline for (params) |param| {
-        const field_align = gpu_data.alignment(@TypeOf(param.value));
-        if (field_align > struct_alignment) {
-            struct_alignment = field_align;
+    for (tu) |param| {
+        const param_align = param.alignment();
+        if (param_align > struct_alignment) {
+            struct_alignment = param_align;
         }
     }
-
-    // round up i to alignment of struct_alignment
     const align_offset = @mod(i, struct_alignment);
     if (align_offset != 0) {
         i += struct_alignment - align_offset;
@@ -119,37 +152,19 @@ pub fn layoutAnonArrParams(maybe_buf: ?[]u8, params: anytype) !usize {
     return i;
 }
 
-// test "Param module init" {
-//     const p = Param(f32){ .name = "a", .value = 3.14 };
-
-//     try std.testing.expect(p.value == 3.14);
-// }
-
-test "anon arra params" {
-    // layoutAnonArrParams
-
+test "layoutTaggedUnion" {
     const allocator = std.testing.allocator;
     var buf = try allocator.alloc(u8, 1024);
     defer allocator.free(buf);
-    // const S = struct {
-    //     float: f32 = 3.14,
-    //     vec3: [3]f32 = .{ 1.0, 2.0, 3.0 },
-    //     mat3x3: [3][3]f32 = .{
-    //         .{ 1.0, 0.0, 0.0 },
-    //         .{ 0.0, 1.0, 0.0 },
-    //         .{ 0.0, 0.0, 1.0 },
-    //     },
-    // };
-    const params = .{
-        .{ .name = "float", .value = @as(f32, 3.14) },
-        .{ .name = "vec3", .value = [3]f32{ 1.0, 2.0, 3.0 } },
-        .{ .name = "mat3x3", .value = [3][3]f32{
-            .{ 1.0, 0.0, 0.0 },
-            .{ 0.0, 1.0, 0.0 },
-            .{ 0.0, 0.0, 1.0 },
-        } },
+
+    var tu = [_]Self{
+        try Self.init(allocator, .{ .name = "a", .len = 1, .typ = .f32 }, @as(f32, 3.14)),
+        try Self.init(allocator, .{ .name = "b", .len = 1, .typ = .i32 }, @as(i32, 42)),
+        try Self.init(allocator, .{ .name = "c", .len = 1, .typ = .f32 }, @as(f32, 2.718)),
     };
-    const used_len = try layoutAnonArrParams(buf, params);
+    defer for (&tu) |*param| param.deinit(allocator);
+
+    const used_len = try layoutTaggedUnion(buf, tu[0..]);
     const bytes_buf = buf[0..used_len];
 
     std.debug.print("Used length: {d}\n", .{bytes_buf.len});
@@ -165,17 +180,96 @@ test "anon arra params" {
     }
     std.debug.print("\n", .{});
 
-    try std.testing.expectEqual(80, bytes_buf.len);
+    try std.testing.expectEqual(12, bytes_buf.len);
 
-    const expect_float: f32 = 3.14;
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_float)[0..], bytes_buf[0..4]);
+    const expect_f32_1: f32 = 3.14;
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_f32_1)[0..4], bytes_buf[0..4]);
 
-    const expect_vec3: [3]f32 = .{ 1.0, 2.0, 3.0 };
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_vec3)[0..12], bytes_buf[16..28]);
+    const expect_i32: i32 = 42;
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_i32)[0..4], bytes_buf[4..8]);
 
-    const expect_mat3x3_r1: [3]f32 = .{ 1.0, 0.0, 0.0 };
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r1)[0..12], bytes_buf[32..44]);
+    const expect_f32_2: f32 = 2.718;
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_f32_2)[0..4], bytes_buf[8..12]);
+}
 
-    const expect_mat3x3_r2: [3]f32 = .{ 0.0, 1.0, 0.0 };
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r2)[0..12], bytes_buf[48..60]);
+test "layoutTaggedUnion null arr" {
+    const allocator = std.testing.allocator;
+    var buf = try allocator.alloc(u8, 1024);
+    defer allocator.free(buf);
+
+    const tua = [4]?Self{
+        try Self.init(allocator, .{ .name = "a", .len = 1, .typ = .f32 }, @as(f32, 3.14)),
+        try Self.init(allocator, .{ .name = "b", .len = 1, .typ = .i32 }, @as(i32, 42)),
+        try Self.init(allocator, .{ .name = "c", .len = 1, .typ = .f32 }, @as(f32, 2.718)),
+        null,
+    };
+    defer for (&tua) |*maybe_param_ptr| {
+        var maybe_param = maybe_param_ptr.*;
+        if (maybe_param) |*param| {
+            param.deinit(allocator);
+        }
+    };
+
+    var tu: [16]Self = undefined;
+    var len: u32 = 0;
+    for (tua, 0..) |maybe_p, i| {
+        if (maybe_p) |p| {
+            tu[i] = p;
+            len = len + 1;
+        }
+    }
+
+    const used_len = try layoutTaggedUnion(buf, tu[0..len]);
+    const bytes_buf = buf[0..used_len];
+    try std.testing.expectEqual(12, bytes_buf.len);
+}
+
+test "Param f32 get/set" {
+    const allocator = std.testing.allocator;
+    const Param = @This();
+    var param = try Param.init(
+        allocator,
+        .{ .name = "test_param", .len = 1, .typ = .f32 },
+        @as(f32, 3.14),
+    );
+    defer param.deinit(allocator);
+
+    const val = param.get(*f32);
+    try std.testing.expect(val.* == @as(f32, 3.14));
+
+    try param.set(@as(f32, 2.718));
+    const val2 = param.get(*f32);
+    try std.testing.expect(val2.* == @as(f32, 2.718));
+}
+
+test "Param [2]f32 get/set" {
+    const allocator = std.testing.allocator;
+    const Param = @This();
+    var param = try Param.init(
+        allocator,
+        .{ .name = "test_param", .len = 2, .typ = .f32 },
+        @as([2]f32, .{ 3.14, 2.718 }),
+    );
+    defer param.deinit(allocator);
+
+    const val = param.get(*[2]f32);
+    try std.testing.expectEqual(val.*, @as([2]f32, .{ 3.14, 2.718 }));
+
+    try param.set(@as([2]f32, .{ 2.718, 1.618 }));
+    const val2 = param.get(*[2]f32);
+    try std.testing.expectEqual(val2.*, @as([2]f32, .{ 2.718, 1.618 }));
+}
+
+test "Param module init string" {
+    const allocator = std.testing.allocator;
+    const Param = @This();
+    var param = try Param.init(
+        allocator,
+        .{ .name = "test_param", .len = 256, .typ = .str },
+        @as([]const u8, "asdf"),
+    );
+    defer param.deinit(allocator);
+
+    const val = param.get(*[]const u8);
+    try std.testing.expectEqualStrings("asdf", val.*);
 }
