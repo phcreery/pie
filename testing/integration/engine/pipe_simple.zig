@@ -76,7 +76,7 @@ test "simple test modules" {
     // const mod_test_nop_2 = try pipeline.addModule(registry.get("test-nop").?);
 
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", @as(f32, 2.0));
-    // pipeline.setModuleParam(mod_test_multiply, "adder", .{ .i32 = 0 }) catch unreachable;
+    // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0));
 
     // pipeline.connectModulesName(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;
     // pipeline.connectModulesName(mod_test_multiply, "output", mod_test_2nodes, "input") catch unreachable;

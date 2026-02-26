@@ -64,11 +64,12 @@ pub const ParamDesc = struct {
     typ: Param.ParamValueTag,
 };
 
+// pub const ParamsDesc = [MAX_PARAMS_PER_MODULE]?ParamDesc;
+
 /// Module structure
 ///
 /// A module can have multiple nodes.
 ///
-/// For now, we assume a module has a single input and a single output.
 /// They can have source and sink connectors as well, but the module must have
 /// respective read_source and write_sink functions to handle them.
 ///
@@ -77,8 +78,6 @@ pub const ParamDesc = struct {
 pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
-    // params: ?[MAX_PARAMS_PER_MODULE]?Param = null,
-    // params: ?anytype = null,
     params: [MAX_PARAMS_PER_MODULE]?ParamDesc = @splat(null),
 
     // The sockets describe the module's input and output interface
@@ -87,13 +86,14 @@ pub const ModuleDesc = struct {
 
     data: ?*anyopaque = null,
 
+    // https://github.com/hanatos/vkdt/blob/1921eabfa2c87b90042dee676d5d3e34d8cbd5e1/src/pipe/global.c#L106
+    initParams: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     init: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     deinit: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) void = null,
-    initParams: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
+    modifyROIOut: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     createNodes: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
     writeSink: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
-    modifyROIOut: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
 };
 
 /// PIPELINE HELPERS
@@ -109,6 +109,21 @@ pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHan
 pub fn initParam(pipe: *Pipeline, desc: ParamDesc, value: anytype) !Param {
     const param = try Param.init(pipe.allocator, desc, value);
     return param;
+}
+
+pub fn initParamNamed(pipe: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
+    const mod = try pipe.module_pool.getPtr(mod_handle);
+    const idx = try mod.getParamIndex(param_name);
+    const desc = mod.desc.params[idx].?; // TODO: handle null case better
+    const param = try Param.init(pipe.allocator, desc, value);
+    mod.params[idx] = param;
+}
+
+pub fn getParam(pipe: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type) !T {
+    const mod = try pipe.module_pool.getPtr(mod_handle);
+    const idx = try mod.getParamIndex(param_name);
+    const param = mod.params[idx].?; // TODO: handle null case better
+    return param.get(T);
 }
 
 pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {

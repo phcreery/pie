@@ -4,7 +4,7 @@ Peyton's Image Editor
 
 heavily inspired by [vkdt](https://github.com/hanatos/vkdt)
 
-> NOTE: this is under heavy development and experimentation. It is mostly a personal project. The git history is inconsistent because of this as well as using it as a sync between computers.
+> NOTE: this is under heavy development and experimentation. It is mostly a personal project to learn about zig, webgpu, and image processing. The git history is inconsistent because of this as well as using it as a sync between computers.
 
 ## Development
 

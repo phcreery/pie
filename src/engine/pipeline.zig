@@ -24,8 +24,6 @@ pub const ConnectorHandle = ConnectorPool.Handle;
 pub const ParamBufferPool = HashMapPool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
-pub const ParamPool = std.heap.MemoryPoolExtra(*Param, .{});
-
 pub const PipelineConfig = struct {
     upload_buffer_size_bytes: ?usize = null,
     download_buffer_size_bytes: ?usize = null,
@@ -287,7 +285,6 @@ pub const Pipeline = struct {
         }
 
         // perform copy
-        // node.desc.sockets[node_socket_idx] = mod.desc.sockets[mod_socket_idx];
         node_socket.* = mod_socket.*;
 
         // for input sockets on nodes
@@ -380,8 +377,6 @@ pub const Pipeline = struct {
             self.runNodesCreateBindings() catch unreachable;
             self.perf.timerLap("runNodesCreateBindings") catch unreachable;
 
-            // ~TODO~: clean up unused modules - although modules are always kept and user added/removed...
-            // ~TODO~: clean up unused nodes - although nodes are always re-created from modules...
             self.freeUnusedConnectors() catch unreachable;
             self.perf.timerLap("freeUnusedConnectors") catch unreachable;
 
@@ -583,7 +578,17 @@ pub const Pipeline = struct {
             var module = try self.module_pool.getPtr(module_handle);
             // create params buffer
             module.img_param_handle = try self.param_buffer_pool.add(null);
-            if (module.params.len == 0) continue;
+
+            // if (module.params.len == 0) continue;
+            var params_len: usize = 0;
+            for (module.params) |param| {
+                if (param != null) {
+                    params_len += 1;
+                } else {
+                    break;
+                }
+            }
+            if (params_len == 0) continue;
             module.param_handle = try self.param_buffer_pool.add(null);
         }
     }
@@ -615,15 +620,6 @@ pub const Pipeline = struct {
             // modify roi out
             if (module.desc.modifyROIOut) |modifyROIOutFn| {
                 try modifyROIOutFn(self, module_handle);
-
-                // THIS IS A WORKAROUND: for single channel read-write storage texture limitation
-                // if we are a source module, and we source rggb data, pack it into quarter width 4-channel texture
-                // if (module.desc.type == .source) {
-                //     const output_socket = module.getSocketPtr("output") orelse return error.SourceModuleOfRGGBMissingOutputSock;
-                //     if (output_socket.format == .rggb16float or output_socket.format == .rggb16uint) {
-                //         output_socket.roi = output_socket.roi.?.div(4, 1);
-                //     }
-                // }
             } else {
                 // auto propagate roi from input to output
                 if (module.desc.type != .source and module.desc.type != .sink) {
@@ -641,9 +637,9 @@ pub const Pipeline = struct {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
             if (module.desc.type == .compute) {
                 if (module.enabled == false) continue;
-                { // PARAM BUFFER INIT
+                params: { // PARAM BUFFER INIT
                     var size_bytes: usize = 0;
-                    var tu: [16]Param = undefined;
+                    var tu: [api.MAX_PARAMS_PER_MODULE]Param = undefined;
                     var tu_len: usize = 0;
                     for (module.params, 0..) |param, idx| {
                         if (param) |p| {
@@ -651,6 +647,8 @@ pub const Pipeline = struct {
                             tu_len += 1;
                         }
                     }
+                    if (tu_len == 0) break :params;
+                    std.debug.print("Param tagged union for module {s}: {any}\n", .{ module.desc.name, tu[0..tu_len] });
                     size_bytes = try Param.layoutTaggedUnion(null, tu[0..tu_len]);
                     const param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
                     // defer texture.deinit();
@@ -666,7 +664,6 @@ pub const Pipeline = struct {
                     if (module.img_param) |img_param| {
                         size_bytes = try gpu.layoutStruct(null, img_param);
                     }
-                    // slog.debug("Img Param bytes for module {s}: {d}", .{ module.desc.name, size_bytes });
                     const img_param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .uniform);
                     if (module.img_param_handle) |img_param_handle| {
                         const mod_img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
@@ -976,13 +973,12 @@ pub const Pipeline = struct {
                 if (module.enabled == false) continue;
 
                 // upload params
-                // if (module.params) |params| {
                 params: {
-                    if (module.param_size == 0) break :params;
+                    if (module.param_size == 0 or module.param_size == null) break :params;
                     var buf = try arena.alloc(u8, 1024);
                     defer arena.free(buf);
                     // extract just ParamValue from params
-                    var tu: [16]Param = undefined;
+                    var tu: [api.MAX_PARAMS_PER_MODULE]Param = undefined;
                     var tu_len: usize = 0;
                     for (module.params, 0..) |param, idx| {
                         if (param) |p| {
@@ -994,7 +990,6 @@ pub const Pipeline = struct {
                     const used_len = try Param.layoutTaggedUnion(buf, tu[0..tu_len]);
 
                     // slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.desc.name, list.items.len });
-                    // // print hex array
                     // slog.debug("Param bytes for module {s}:", .{module.desc.name});
                     // var buf: [100]u8 = undefined;
                     // var w: std.io.Writer = .fixed(&buf);

@@ -56,7 +56,6 @@ pub fn getSocketPtr(mod: *Self, name: []const u8) !*api.SocketDesc {
 }
 
 pub fn getParamIndex(mod: *const Self, name: []const u8) !usize {
-    // if (mod.desc.params) |params| {
     for (mod.desc.params, 0..) |param, idx| {
         if (param) |p| {
             if (std.mem.eql(u8, p.name, name)) {
@@ -64,16 +63,13 @@ pub fn getParamIndex(mod: *const Self, name: []const u8) !usize {
             }
         }
     }
-    // }
     return error.ModuleParamNotFound;
 }
 
 pub fn getParamPtr(mod: *Self, name: []const u8) !*Param {
     const idx = try mod.getParamIndex(name);
-    // if (mod.desc.params) |*params| {
     if (mod.params[idx]) |*param| {
         return param;
     }
-    // }
     return error.ModuleParamNotFound;
 }

@@ -1,18 +1,13 @@
 const api = @import("../api.zig");
+const std = @import("std");
 
 pub var desc: api.ModuleDesc = .{
     .name = "test-multiply",
     .type = .compute,
-    // .params = init: {
-    //     var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
-    //     p[0] = .{ .name = "multiplier", .value = .{ .f32 = 3.0 } }; // intentionally incorrectly set to 3.0
-    //     p[1] = .{ .name = "adder", .value = .{ .i32 = 3.0 } }; // intentionally incorrectly set to 3.0
-    //     break :init p;
-    // },
     .params = init: {
         var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "multiplier", .len = 1, .typ = .f32 }; // intentionally incorrectly set to 3.0
-        p[1] = .{ .name = "adder", .len = 1, .typ = .f32 }; //f intentionally incorrectly set to 3
+        p[0] = .{ .name = "multiplier", .len = 1, .typ = .f32 };
+        p[1] = .{ .name = "adder", .len = 1, .typ = .f32 };
         break :init p;
     },
     .sockets = init: {
@@ -86,15 +81,23 @@ const shader_code: []const u8 =
 //     \\}
 // ;
 
+// pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+//     var m = try api.getModule(pipe, mod);
+//     m.params[0] = try initParam(pipe, m.desc.params[0].?, @as(f32, 3.0));
+//     m.params[1] = try initParam(pipe, m.desc.params[1].?, @as(f32, 3.0));
+// }
 pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    var m = try api.getModule(pipe, mod);
-    var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
-    p[0] = try api.initParam(pipe, m.desc.params[0].?, 3.0);
-    p[1] = try api.initParam(pipe, m.desc.params[1].?, 3.0);
-    m.params = p;
+    // intentially setting to some arbitrary value
+    try api.initParamNamed(pipe, mod, "multiplier", @as(f32, 3.0));
+    try api.initParamNamed(pipe, mod, "adder", @as(f32, 3.0));
 }
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+    const multiplier = try api.getParam(pipe, mod, "multiplier", f32);
+    const adder = try api.getParam(pipe, mod, "adder", f32);
+    std.debug.print("Multiplier param value: {d}\n", .{multiplier});
+    std.debug.print("Adder param value: {d}\n", .{adder});
+
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node = try pipe.addNode(mod, .{
         .type = .compute,

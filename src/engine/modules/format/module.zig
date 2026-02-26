@@ -28,6 +28,7 @@ const shader_code: []const u8 =
     \\    black:  vec4<f32>,
     \\    white:  vec4<f32>,
     \\};
+    \\@group(0) @binding(0) var<uniform> img_params: ImgParams;
     \\@group(1) @binding(0) var input:  texture_2d<u32>;
     \\@group(1) @binding(1) var output: texture_storage_2d<rgba16float, write>;
     \\@compute @workgroup_size(8, 8, 1)

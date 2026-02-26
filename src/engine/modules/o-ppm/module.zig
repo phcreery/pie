@@ -5,6 +5,11 @@ const zigimg = @import("zigimg");
 pub const desc: api.ModuleDesc = .{
     .name = "o-ppm",
     .type = .sink,
+    .params = init: {
+        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
+        p[0] = .{ .name = "filename", .len = 256, .typ = .str };
+        break :init p;
+    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{
@@ -15,16 +20,23 @@ pub const desc: api.ModuleDesc = .{
         };
         break :init s;
     },
-    .writeSink = writeSink,
+    .initParams = initParams,
     .createNodes = createNodes,
+    .writeSink = writeSink,
 };
+
+pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+    try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "output.ppm"));
+}
 
 pub fn writeSink(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     const socket = try api.getModSocket(pipe, mod, "input");
 
-    const sock = try api.getModSocket(pipe, mod, "input");
+    const filename = try api.getParam(pipe, mod, "filename", []const u8);
+    std.log.info("Filename param value: {s}", .{filename});
+
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
-    const download_buffer_slice = download_buffer_ptr[0..(sock.roi.?.w * sock.roi.?.h * sock.format.nchannels())];
+    const download_buffer_slice = download_buffer_ptr[0..(socket.roi.?.w * socket.roi.?.h * socket.format.nchannels())];
 
     // EXPORT PPM
     {
@@ -43,7 +55,7 @@ pub fn writeSink(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Mod
         try zig_image.convert(allocator, .rgb24);
 
         var write_buffer2: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-        try zig_image.writeToFilePath(allocator, "testing/images/DSC_6765_debayered.ppm", write_buffer2[0..], .{ .ppm = .{} });
+        try zig_image.writeToFilePath(allocator, filename, write_buffer2[0..], .{ .ppm = .{} });
     }
 }
 

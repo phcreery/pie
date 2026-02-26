@@ -594,6 +594,10 @@ pub const Bindings = struct {
                     };
                     wgpu_bind_group_entries[bind_group_entry_number] = entry;
                 } else if (bge.buffer) |buffer| {
+                    if (buffer.buffer_size == 0) {
+                        slog.err("Buffer size is 0, cannot bind bind group {d} entry {d} to pipeline", .{ bind_group_number, bind_group_entry_number });
+                        return error.InvalidInput;
+                    }
                     const entry = wgpu.BindGroupEntry{
                         .binding = @intCast(bind_group_entry_number),
                         .buffer = buffer.buffer,

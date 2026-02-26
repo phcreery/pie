@@ -48,9 +48,10 @@ fn libraw_dcraw_process(allocator: std.mem.Allocator, file: std.fs.File, target_
 test "targeting dcraw basic processing" {
     const allocator = std.testing.allocator;
 
-    // DCRAW
     const input_filename = "testing/images/DSC_6765.NEF";
     const target_filename = "testing/integration/targets/001_DSC_6765/target.ppm";
+    const output_filename = "testing/integration/targets/001_DSC_6765/output.ppm";
+
     const file = try std.fs.cwd().openFile(input_filename, .{});
     try libraw_dcraw_process(allocator, file, target_filename);
 
@@ -78,6 +79,9 @@ test "targeting dcraw basic processing" {
     const mod_demosaic = try pipeline.addModule(pie.engine.modules.demosaic.desc);
     const mod_color = try pipeline.addModule(pie.engine.modules.color.desc);
     const mod_o_ppm = try pipeline.addModule(pie.engine.modules.o_ppm.desc);
+
+    try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
+    try pipeline.setModuleParam(mod_o_ppm, "filename", @as([]const u8, output_filename));
 
     try pipeline.connectModulesName(mod_i_raw, "output", mod_format, "input");
     try pipeline.connectModulesName(mod_format, "output", mod_denoise, "input");

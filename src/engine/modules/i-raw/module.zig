@@ -92,11 +92,11 @@ test "open raw image" {
 pub var desc: api.ModuleDesc = .{
     .name = "i-raw",
     .type = .source,
-    // .params = init: {
-    //     var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
-    //     p[0] = .{ .name = "filename", .value = .{ .str = "DSC_6765.NEF" } };
-    //     break :init p;
-    // },
+    .params = init: {
+        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
+        p[0] = .{ .name = "filename", .len = 256, .typ = .str };
+        break :init p;
+    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{
@@ -107,11 +107,12 @@ pub var desc: api.ModuleDesc = .{
         };
         break :init s;
     },
+    .initParams = initParams,
     .init = init,
     .deinit = deinit,
-    .readSource = readSource,
-    .createNodes = createNodes,
     .modifyROIOut = modifyROIOut,
+    .createNodes = createNodes,
+    .readSource = readSource,
 };
 
 pub fn init(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod_handle: api.ModuleHandle) !void {
@@ -132,6 +133,10 @@ pub fn deinit(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Module
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
     raw_image.deinit();
     allocator.destroy(raw_image);
+}
+
+pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+    try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "input.raw"));
 }
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {

@@ -23,7 +23,11 @@ desc: api.ParamDesc,
 bytes: []u8, // we will store the value as bytes, and interpret it based on the type
 
 pub fn init(allocator: std.mem.Allocator, desc: api.ParamDesc, value: anytype) !Self {
-    const val_as_bytes = std.mem.asBytes(&value);
+    const val_as_bytes = switch (@typeInfo(@TypeOf(value))) {
+        .pointer => std.mem.sliceAsBytes(value),
+        else => std.mem.asBytes(&value),
+    };
+
     if (val_as_bytes.len > size_cpu(desc.len, desc.typ)) {
         std.debug.print("Value as bytes length {d} exceeds expected size {d} (type {s} * len {d})\n", .{
             val_as_bytes.len,
@@ -35,13 +39,12 @@ pub fn init(allocator: std.mem.Allocator, desc: api.ParamDesc, value: anytype) !
     }
 
     const bytes = try allocator.alloc(u8, size_cpu(desc.len, desc.typ));
-    // std.debug.print("Allocated {d} bytes at {*} for param value with length {d}\n", .{ ptr.len, ptr, val_as_bytes.len });
+    @memset(bytes, 0); // zero out the bytes to avoid uninitialized data issues
+
+    // std.debug.print("Initializing param {s} with value of type {s} at {*} {d}\n", .{ desc.name, @tagName(desc.typ), bytes, val_as_bytes.len });
     @memcpy(bytes[0..val_as_bytes.len], val_as_bytes);
 
     const self = Self{
-        // .name = name,
-        // .len = len,
-        // .typ = typ,
         .desc = desc,
         .bytes = bytes, // store the pointer to the allocated space
     };
@@ -52,12 +55,43 @@ pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
 }
 
 pub fn set(self: *Self, value: anytype) !void {
-    const val_as_bytes = std.mem.asBytes(&value);
-    @memcpy(self.bytes, val_as_bytes);
+    switch (@typeInfo(@TypeOf(value))) {
+        // some checks for slices
+        .pointer => {
+            const slice_info = @typeInfo(@TypeOf(value)).pointer;
+            if (value.len > self.desc.len) {
+                std.debug.print("Value slice length {d} exceeds expected length {d} for param {s}\n", .{
+                    value.len,
+                    self.desc.len,
+                    self.desc.name,
+                });
+                return error.InvalidLengthTypeForParamValue;
+            }
+            if (slice_info.child != u8) {
+                std.debug.print("Expected array of u8 for param {s}, but got array of {s}\n", .{
+                    self.desc.name,
+                    @typeName(slice_info.child),
+                });
+                return error.InvalidTypeForParamValue;
+            }
+        },
+        else => {},
+    }
+
+    // convert value to bytes
+    const val_as_bytes = switch (@typeInfo(@TypeOf(value))) {
+        .pointer => std.mem.sliceAsBytes(value),
+        else => std.mem.asBytes(&value),
+    };
+    // copy bytes to self.bytes
+    @memcpy(self.bytes[0..val_as_bytes.len], val_as_bytes);
 }
+
 pub fn get(self: Self, T: type) T {
-    // return std.mem.bytesToValue(T, self.bytes); // this does not return, *T, thather T
-    return @ptrCast(@alignCast(@constCast(self.bytes.ptr)));
+    return switch (@typeInfo(T)) {
+        .pointer => std.mem.sliceTo(std.mem.bytesAsSlice(u8, self.bytes), 0),
+        else => std.mem.bytesToValue(T, self.bytes),
+    };
 }
 
 pub fn size_cpu(len: u32, typ: ParamValueTag) usize {
@@ -117,6 +151,9 @@ pub fn writeBytes(self: Self, buf: []u8) void {
 
 pub fn layoutTaggedUnion(maybe_buf: ?[]u8, tu: []Self) !usize {
     var i: usize = 0;
+    if (tu.len == 0) {
+        return 0;
+    }
 
     for (tu) |param| {
         const param_align = param.alignment();
@@ -234,12 +271,12 @@ test "Param f32 get/set" {
     );
     defer param.deinit(allocator);
 
-    const val = param.get(*f32);
-    try std.testing.expect(val.* == @as(f32, 3.14));
+    const val = param.get(f32);
+    try std.testing.expect(val == @as(f32, 3.14));
 
     try param.set(@as(f32, 2.718));
-    const val2 = param.get(*f32);
-    try std.testing.expect(val2.* == @as(f32, 2.718));
+    const val2 = param.get(f32);
+    try std.testing.expect(val2 == @as(f32, 2.718));
 }
 
 test "Param [2]f32 get/set" {
@@ -252,12 +289,16 @@ test "Param [2]f32 get/set" {
     );
     defer param.deinit(allocator);
 
-    const val = param.get(*[2]f32);
-    try std.testing.expectEqual(val.*, @as([2]f32, .{ 3.14, 2.718 }));
+    const val = param.get([2]f32);
+    try std.testing.expectEqual(val, @as([2]f32, .{ 3.14, 2.718 }));
 
     try param.set(@as([2]f32, .{ 2.718, 1.618 }));
-    const val2 = param.get(*[2]f32);
-    try std.testing.expectEqual(val2.*, @as([2]f32, .{ 2.718, 1.618 }));
+    const val2 = param.get([2]f32);
+    try std.testing.expectEqual(val2, @as([2]f32, .{ 2.718, 1.618 }));
+
+    try param.set(@as([2]f32, .{ 1.0, 2.0 }));
+    const val3 = param.get([2]f32);
+    try std.testing.expectEqual(val3, @as([2]f32, .{ 1.0, 2.0 }));
 }
 
 test "Param module init string" {
@@ -270,6 +311,11 @@ test "Param module init string" {
     );
     defer param.deinit(allocator);
 
-    const val = param.get(*[]const u8);
-    try std.testing.expectEqualStrings("asdf", val.*);
+    const val = param.get([]const u8);
+    try std.testing.expectEqualStrings(@as([]const u8, "asdf"), val);
+
+    try param.set(@as([]const u8, "qwer"));
+
+    const val2 = param.get([]const u8);
+    try std.testing.expectEqualStrings(@as([]const u8, "qwer"), val2);
 }
