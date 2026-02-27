@@ -1,6 +1,7 @@
 const api = @import("../api.zig");
 const std = @import("std");
 const zigimg = @import("zigimg");
+const slog = std.log.scoped(.@"o-ppm");
 
 pub const desc: api.ModuleDesc = .{
     .name = "o-ppm",
@@ -33,7 +34,7 @@ pub fn writeSink(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Mod
     const socket = try api.getModSocket(pipe, mod, "input");
 
     const filename = try api.getParam(pipe, mod, "filename", []const u8);
-    std.log.info("Filename param value: {s}", .{filename});
+    slog.info("Filename param value: {s}", .{filename});
 
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
     const download_buffer_slice = download_buffer_ptr[0..(socket.roi.?.w * socket.roi.?.h * socket.format.nchannels())];

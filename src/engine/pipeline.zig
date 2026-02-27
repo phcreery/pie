@@ -1447,9 +1447,14 @@ pub const PerfMetrics = struct {
         }
     }
 
+    fn printReportPrintFn(comptime fmt: []const u8, args: anytype) void {
+        std.debug.print(fmt ++ "\n", args);
+    }
+
     fn printReport(self: *PerfMetrics) void {
         // const printFn = std.debug.print;
-        const printFn = slog.info;
+        // const printFn = slog.info;
+        const printFn = printReportPrintFn;
 
         var total_time_ns: f64 = 0;
 

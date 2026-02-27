@@ -1,5 +1,6 @@
 const std = @import("std");
 const libraw = @import("libraw");
+const slog = std.log.scoped(.@"i-raw");
 
 const api = @import("../api.zig");
 
@@ -119,7 +120,10 @@ pub fn init(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod_handle: api.M
     var raw_image = try allocator.create(RawImage);
     errdefer raw_image.deinit();
 
-    const file = try std.fs.cwd().openFile("testing/images/DSC_6765.NEF", .{});
+    const filename = try api.getParam(pipe, mod_handle, "filename", []const u8);
+    slog.info("i-raw Filename param value: {s}", .{filename});
+
+    const file = try std.fs.cwd().openFile(filename, .{});
     raw_image.* = try RawImage.read(allocator, file);
     errdefer raw_image.deinit();
 

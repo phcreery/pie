@@ -6,7 +6,10 @@ const zigimg = @import("zigimg");
 const gpu = pie.engine.gpu;
 const Pipeline = pie.engine.Pipeline;
 
-fn libraw_dcraw_process(allocator: std.mem.Allocator, file: std.fs.File, target_filename: []const u8) !void {
+fn libraw_dcraw_process(allocator: std.mem.Allocator, input_filename: []const u8, target_filename: []const u8) !void {
+    std.log.info("DCRAW processing...", .{});
+
+    const file = try std.fs.cwd().openFile(input_filename, .{});
     const file_info = try file.stat();
 
     // create buffer and read entire file into it
@@ -52,8 +55,7 @@ test "targeting dcraw basic processing" {
     const target_filename = "testing/integration/targets/001_DSC_6765/target.ppm";
     const output_filename = "testing/integration/targets/001_DSC_6765/output.ppm";
 
-    const file = try std.fs.cwd().openFile(input_filename, .{});
-    try libraw_dcraw_process(allocator, file, target_filename);
+    try libraw_dcraw_process(allocator, input_filename, target_filename);
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
