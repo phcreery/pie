@@ -211,8 +211,8 @@ pub const Pipeline = struct {
         dst_mod_socket_name: []const u8,
     ) !void {
         // slog.debug("Connecting module {any} socket {s} to module {any} socket {s}", .{ src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name });
-        var src_mod_ptr = self.module_pool.getPtr(src_mod) catch unreachable;
-        var dst_mod_ptr = self.module_pool.getPtr(dst_mod) catch unreachable;
+        var src_mod_ptr = try self.module_pool.getPtr(src_mod);
+        var dst_mod_ptr = try self.module_pool.getPtr(dst_mod);
 
         slog.debug("Connecting module {s} socket {s} to module {s} socket {s}", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
         const dst_socket_idx = try dst_mod_ptr.getSocketIndex(dst_mod_socket_name);
@@ -247,8 +247,8 @@ pub const Pipeline = struct {
         dst_node_socket_name: []const u8,
     ) !void {
         slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node, src_node_socket_name, dst_node, dst_node_socket_name });
-        var src_node_ptr = self.node_pool.getPtr(src_node) catch unreachable;
-        var dst_node_ptr = self.node_pool.getPtr(dst_node) catch unreachable;
+        var src_node_ptr = try self.node_pool.getPtr(src_node);
+        var dst_node_ptr = try self.node_pool.getPtr(dst_node);
 
         slog.debug("Connecting node {s} socket {s} to node {s} socket {s}", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
         const dst_socket_idx = try dst_node_ptr.getSocketIndex(dst_node_socket_name);
@@ -284,8 +284,8 @@ pub const Pipeline = struct {
     ) !void {
         slog.debug("Connecting module {any} socket {s} to node {any} socket {s}", .{ node_handle, mod_socket_name, node_handle, node_socket_name });
 
-        var mod = self.module_pool.getPtr(mod_handle) catch unreachable;
-        var node = self.node_pool.getPtr(node_handle) catch unreachable;
+        var mod = try self.module_pool.getPtr(mod_handle);
+        var node = try self.node_pool.getPtr(node_handle);
 
         const mod_socket_idx = try mod.getSocketIndex(mod_socket_name);
         const node_socket_idx = try node.getSocketIndex(node_socket_name);
@@ -325,12 +325,12 @@ pub const Pipeline = struct {
     }
 
     pub fn getModuleParamPtr(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8) ?*api.Param {
-        const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
+        const mod = self.module_pool.getPtr(mod_handle) orelse return null;
         return mod.getParamPtr(param_name);
     }
 
     pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
-        const mod = self.module_pool.getPtr(mod_handle) catch unreachable;
+        const mod = try self.module_pool.getPtr(mod_handle);
         const param = try mod.getParamPtr(param_name);
         try param.set(value);
     }
