@@ -200,10 +200,10 @@ pub const Pipeline = struct {
     ) !void {
         const src_mod = self.module_name_map.get(src_mod_name) orelse return error.ModuleNotFound;
         const dst_mod = self.module_name_map.get(dst_mod_name) orelse return error.ModuleNotFound;
-        return try self.connectModuleHandlesBySocketName(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+        return try self.connectModuleSocketsByHanldeName(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
     }
 
-    pub fn connectModuleHandlesBySocketName(
+    pub fn connectModuleSocketsByHanldeName(
         self: *Pipeline,
         src_mod: ModuleHandle,
         src_mod_socket_name: []const u8,

@@ -12,7 +12,7 @@ pub const PrivateMembers = struct {
 
     // FOR GRAPH TRAVERSAL
     // for input sockets of modules
-    connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModuleHandlesBySocketName()
+    connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModuleSocketsByHanldeName()
 
     // for input sockets of nodes
     connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()

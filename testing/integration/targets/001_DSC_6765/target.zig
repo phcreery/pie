@@ -88,11 +88,11 @@ test "targeting dcraw basic processing" {
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_o_ppm, "filename", @as([]const u8, output_filename));
 
-    // try pipeline.connectModuleHandlesBySocketName(mod_i_raw, "output", mod_format, "input");
-    // try pipeline.connectModuleHandlesBySocketName(mod_format, "output", mod_denoise, "input");
-    // try pipeline.connectModuleHandlesBySocketName(mod_denoise, "output", mod_demosaic, "input");
-    // try pipeline.connectModuleHandlesBySocketName(mod_demosaic, "output", mod_color, "input");
-    // try pipeline.connectModuleHandlesBySocketName(mod_color, "output", mod_o_ppm, "input");
+    // try pipeline.connectModuleSocketsByHanldeName(mod_i_raw, "output", mod_format, "input");
+    // try pipeline.connectModuleSocketsByHanldeName(mod_format, "output", mod_denoise, "input");
+    // try pipeline.connectModuleSocketsByHanldeName(mod_denoise, "output", mod_demosaic, "input");
+    // try pipeline.connectModuleSocketsByHanldeName(mod_demosaic, "output", mod_color, "input");
+    // try pipeline.connectModuleSocketsByHanldeName(mod_color, "output", mod_o_ppm, "input");
     try pipeline.connectModuleSocketsByNameName("i-raw", "output", "format", "input");
     try pipeline.connectModuleSocketsByNameName("format", "output", "denoise", "input");
     try pipeline.connectModuleSocketsByNameName("denoise", "output", "demosaic", "input");
