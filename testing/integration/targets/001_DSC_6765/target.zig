@@ -93,10 +93,10 @@ test "targeting dcraw basic processing" {
     // try pipeline.connectModuleHandlesBySocketName(mod_denoise, "output", mod_demosaic, "input");
     // try pipeline.connectModuleHandlesBySocketName(mod_demosaic, "output", mod_color, "input");
     // try pipeline.connectModuleHandlesBySocketName(mod_color, "output", mod_o_ppm, "input");
-    try pipeline.connectModuleNamesBySocketName("i-raw", "output", "format", "input");
-    try pipeline.connectModuleNamesBySocketName("format", "output", "denoise", "input");
-    try pipeline.connectModuleNamesBySocketName("denoise", "output", "demosaic", "input");
-    try pipeline.connectModuleNamesBySocketName("demosaic", "output", "color", "input");
-    try pipeline.connectModuleNamesBySocketName("color", "output", "o-ppm", "input");
+    try pipeline.connectModuleSocketsByNameName("i-raw", "output", "format", "input");
+    try pipeline.connectModuleSocketsByNameName("format", "output", "denoise", "input");
+    try pipeline.connectModuleSocketsByNameName("denoise", "output", "demosaic", "input");
+    try pipeline.connectModuleSocketsByNameName("demosaic", "output", "color", "input");
+    try pipeline.connectModuleSocketsByNameName("color", "output", "o-ppm", "input");
     try pipeline.run(arena);
 }

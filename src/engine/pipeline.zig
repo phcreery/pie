@@ -191,7 +191,7 @@ pub const Pipeline = struct {
         return try self.node_pool.add(node);
     }
 
-    pub fn connectModuleNamesBySocketName(
+    pub fn connectModuleSocketsByNameName(
         self: *Pipeline,
         src_mod_name: []const u8,
         src_mod_socket_name: []const u8,
