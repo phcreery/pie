@@ -18,13 +18,13 @@ pub const test_nop = @import("test-nop/module.zig");
 
 pub fn populateRegistry(registry: *Registry) !void {
     // add built-in modules
-    // try registry.add(i_raw.desc);
-    // try registry.add(format.desc);
-    // try registry.add(denoise.desc);
-    // try registry.add(demosaic.desc);
-    // try registry.add(color.desc);
-    // try registry.add(o_png.desc);
-    // try registry.add(o_ppm.desc);
+    try registry.add(i_raw.desc);
+    try registry.add(format.desc);
+    try registry.add(denoise.desc);
+    try registry.add(demosaic.desc);
+    try registry.add(color.desc);
+    try registry.add(o_png.desc);
+    try registry.add(o_ppm.desc);
 
     // add test modules
     try registry.add(test_multiply.desc);
@@ -41,9 +41,11 @@ pub const Registry = struct {
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator) !Self {
-        return .{
+        var reg: Self = .{
             .map = std.StringHashMap(api.ModuleDesc).init(allocator),
         };
+        try populateRegistry(&reg);
+        return reg;
     }
     pub fn deinit(self: *Self) void {
         self.map.deinit();

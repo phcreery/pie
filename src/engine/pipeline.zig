@@ -56,6 +56,7 @@ pub const Pipeline = struct {
     download_fba: ?gpu.Buffer.Allocator,
 
     module_pool: ModulePool,
+    module_name_map: std.StringHashMap(ModuleHandle),
     module_execution_order: std.ArrayList(ModuleHandle),
 
     node_pool: NodePool,
@@ -102,6 +103,9 @@ pub const Pipeline = struct {
         var module_pool = ModulePool.init(allocator);
         errdefer module_pool.deinit();
 
+        var module_name_map = std.StringHashMap(ModuleHandle).init(allocator);
+        errdefer module_name_map.deinit();
+
         var module_execution_order = std.ArrayList(ModuleHandle).initCapacity(allocator, 2) catch unreachable;
         errdefer module_execution_order.deinit(allocator);
 
@@ -128,6 +132,7 @@ pub const Pipeline = struct {
             .download_fba = download_fba,
 
             .module_pool = module_pool,
+            .module_name_map = module_name_map,
             .module_execution_order = module_execution_order,
 
             .node_pool = node_pool,
@@ -147,6 +152,7 @@ pub const Pipeline = struct {
         self.deinitParams();
         // the pool deinit will take care of deallocating the textures
         self.module_execution_order.deinit(self.allocator);
+        self.module_name_map.deinit();
         self.module_pool.deinit();
         self.node_execution_order.deinit(self.allocator);
         self.node_pool.deinit();
@@ -172,6 +178,7 @@ pub const Pipeline = struct {
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
         const module_handle = try self.module_pool.add(module);
+        try self.module_name_map.put(module.desc.name, module_handle);
         try self.initParams(module_handle);
         return module_handle;
     }
@@ -184,7 +191,19 @@ pub const Pipeline = struct {
         return try self.node_pool.add(node);
     }
 
-    pub fn connectModulesName(
+    pub fn connectModuleNamesBySocketName(
+        self: *Pipeline,
+        src_mod_name: []const u8,
+        src_mod_socket_name: []const u8,
+        dst_mod_name: []const u8,
+        dst_mod_socket_name: []const u8,
+    ) !void {
+        const src_mod = self.module_name_map.get(src_mod_name) orelse return error.ModuleNotFound;
+        const dst_mod = self.module_name_map.get(dst_mod_name) orelse return error.ModuleNotFound;
+        return try self.connectModuleHandlesBySocketName(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+    }
+
+    pub fn connectModuleHandlesBySocketName(
         self: *Pipeline,
         src_mod: ModuleHandle,
         src_mod_socket_name: []const u8,

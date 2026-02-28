@@ -68,27 +68,35 @@ test "targeting dcraw basic processing" {
     defer gpu_instance.deinit();
 
     const pipeline_config: pie.engine.pipeline.PipelineConfig = .{
-        .upload_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
-        .download_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
+        .upload_buffer_size_bytes = 75e6,
+        .download_buffer_size_bytes = 75e6,
     };
+
+    var modules = try pie.engine.modules.Registry.init(allocator);
+    defer modules.deinit();
 
     var pipeline = Pipeline.init(allocator, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    const mod_i_raw = try pipeline.addModule(pie.engine.modules.i_raw.desc);
-    const mod_format = try pipeline.addModule(pie.engine.modules.format.desc);
-    const mod_denoise = try pipeline.addModule(pie.engine.modules.denoise.desc);
-    const mod_demosaic = try pipeline.addModule(pie.engine.modules.demosaic.desc);
-    const mod_color = try pipeline.addModule(pie.engine.modules.color.desc);
-    const mod_o_ppm = try pipeline.addModule(pie.engine.modules.o_ppm.desc);
+    const mod_i_raw = try pipeline.addModule(modules.get("i-raw").?);
+    _ = try pipeline.addModule(modules.get("format").?);
+    _ = try pipeline.addModule(modules.get("denoise").?);
+    _ = try pipeline.addModule(modules.get("demosaic").?);
+    _ = try pipeline.addModule(modules.get("color").?);
+    const mod_o_ppm = try pipeline.addModule(modules.get("o-ppm").?);
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_o_ppm, "filename", @as([]const u8, output_filename));
 
-    try pipeline.connectModulesName(mod_i_raw, "output", mod_format, "input");
-    try pipeline.connectModulesName(mod_format, "output", mod_denoise, "input");
-    try pipeline.connectModulesName(mod_denoise, "output", mod_demosaic, "input");
-    try pipeline.connectModulesName(mod_demosaic, "output", mod_color, "input");
-    try pipeline.connectModulesName(mod_color, "output", mod_o_ppm, "input");
+    // try pipeline.connectModuleHandlesBySocketName(mod_i_raw, "output", mod_format, "input");
+    // try pipeline.connectModuleHandlesBySocketName(mod_format, "output", mod_denoise, "input");
+    // try pipeline.connectModuleHandlesBySocketName(mod_denoise, "output", mod_demosaic, "input");
+    // try pipeline.connectModuleHandlesBySocketName(mod_demosaic, "output", mod_color, "input");
+    // try pipeline.connectModuleHandlesBySocketName(mod_color, "output", mod_o_ppm, "input");
+    try pipeline.connectModuleNamesBySocketName("i-raw", "output", "format", "input");
+    try pipeline.connectModuleNamesBySocketName("format", "output", "denoise", "input");
+    try pipeline.connectModuleNamesBySocketName("denoise", "output", "demosaic", "input");
+    try pipeline.connectModuleNamesBySocketName("demosaic", "output", "color", "input");
+    try pipeline.connectModuleNamesBySocketName("color", "output", "o-ppm", "input");
     try pipeline.run(arena);
 }
