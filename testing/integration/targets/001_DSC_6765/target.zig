@@ -57,9 +57,9 @@ test "targeting dcraw basic processing" {
 
     try libraw_dcraw_process(allocator, input_filename, target_filename);
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
+    var arena_instance = std.heap.ArenaAllocator.init(allocator);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
 
     const cout = pie.cli.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
@@ -90,5 +90,5 @@ test "targeting dcraw basic processing" {
     try pipeline.connectModulesName(mod_denoise, "output", mod_demosaic, "input");
     try pipeline.connectModulesName(mod_demosaic, "output", mod_color, "input");
     try pipeline.connectModulesName(mod_color, "output", mod_o_ppm, "input");
-    try pipeline.run(aa);
+    try pipeline.run(arena);
 }

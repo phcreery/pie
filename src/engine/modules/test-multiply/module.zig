@@ -81,11 +81,6 @@ const shader_code: []const u8 =
 //     \\}
 // ;
 
-// pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-//     var m = try api.getModule(pipe, mod);
-//     m.params[0] = try initParam(pipe, m.desc.params[0].?, @as(f32, 3.0));
-//     m.params[1] = try initParam(pipe, m.desc.params[1].?, @as(f32, 3.0));
-// }
 pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // intentially setting to some arbitrary value
     try api.initParamNamed(pipe, mod, "multiplier", @as(f32, 3.0));
