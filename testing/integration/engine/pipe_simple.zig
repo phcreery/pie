@@ -78,14 +78,14 @@ test "simple test modules" {
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", @as(f32, 2.0));
     // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0));
 
-    // pipeline.connectModuleSocketsByHanldeName(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;
-    // pipeline.connectModuleSocketsByHanldeName(mod_test_multiply, "output", mod_test_2nodes, "input") catch unreachable;
-    // pipeline.connectModuleSocketsByHanldeName(mod_test_2nodes, "output", mod_test_nop_1, "input") catch unreachable;
-    // pipeline.connectModuleSocketsByHanldeName(mod_test_nop_1, "output", mod_test_nop_2, "input") catch unreachable;
-    // pipeline.connectModuleSocketsByHanldeName(mod_test_nop_2, "output", mod_test_o_2468, "input") catch unreachable;
+    // pipeline.connectModuleSocketsByHandleName(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;
+    // pipeline.connectModuleSocketsByHandleName(mod_test_multiply, "output", mod_test_2nodes, "input") catch unreachable;
+    // pipeline.connectModuleSocketsByHandleName(mod_test_2nodes, "output", mod_test_nop_1, "input") catch unreachable;
+    // pipeline.connectModuleSocketsByHandleName(mod_test_nop_1, "output", mod_test_nop_2, "input") catch unreachable;
+    // pipeline.connectModuleSocketsByHandleName(mod_test_nop_2, "output", mod_test_o_2468, "input") catch unreachable;
 
-    try pipeline.connectModuleSocketsByHanldeName(mod_test_i_1234, "output", mod_test_multiply, "input");
-    try pipeline.connectModuleSocketsByHanldeName(mod_test_multiply, "output", mod_test_o_2468, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_test_i_1234, "output", mod_test_multiply, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_test_multiply, "output", mod_test_o_2468, "input");
 
     try pipeline.run(aa);
     // pipeline.rerouted = true;

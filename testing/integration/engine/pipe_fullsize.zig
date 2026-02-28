@@ -32,10 +32,10 @@ test "fullsize through pipeline" {
     const mod_color = try pipeline.addModule(pie.engine.modules.color.desc);
     const mod_o_png = try pipeline.addModule(pie.engine.modules.o_png.desc);
 
-    try pipeline.connectModuleSocketsByHanldeName(mod_i_raw, "output", mod_format, "input");
-    try pipeline.connectModuleSocketsByHanldeName(mod_format, "output", mod_denoise, "input");
-    try pipeline.connectModuleSocketsByHanldeName(mod_denoise, "output", mod_demosaic, "input");
-    try pipeline.connectModuleSocketsByHanldeName(mod_demosaic, "output", mod_color, "input");
-    try pipeline.connectModuleSocketsByHanldeName(mod_color, "output", mod_o_png, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_i_raw, "output", mod_format, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_format, "output", mod_denoise, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_demosaic, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_demosaic, "output", mod_color, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_o_png, "input");
     try pipeline.run(aa);
 }
