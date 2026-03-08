@@ -48,8 +48,14 @@ const slog = std.log.scoped(.gpu);
 
 // **where justPastLastMember = OffsetOfMember(S,N) + SizeOfMember(S,N)
 
-pub fn size(t: type) usize {
-    switch (t) {
+pub fn size(T: type) usize {
+    // if t is enum, we need to get the size of the underlying type (e.g. i32)
+    // std.builtin.Type
+    if (@typeInfo(T) == .@"enum") {
+        const underlying = @typeInfo(T).@"enum".tag_type;
+        return size(underlying);
+    }
+    switch (T) {
         i32 => return 4,
         f32 => return 4,
         [3]f32 => return 12,
@@ -59,8 +65,13 @@ pub fn size(t: type) usize {
     }
 }
 
-pub fn alignment(t: type) usize {
-    switch (t) {
+pub fn alignment(T: type) usize {
+    // if t is enum, we need to get the alignment of the underlying type (e.g. i32)
+    if (@typeInfo(T) == .@"enum") {
+        const underlying = @typeInfo(T).@"enum".tag_type;
+        return alignment(underlying);
+    }
+    switch (T) {
         i32 => return 4,
         f32 => return 4,
         [3]f32 => return 16,
@@ -71,6 +82,12 @@ pub fn alignment(t: type) usize {
 }
 
 pub fn writeBytes(buf: []u8, item: anytype) void {
+    // if t is enum, we need to get the alignment of the underlying value (e.g. i32)
+    if (@typeInfo(@TypeOf(item)) == .@"enum") {
+        const underlying = @intFromEnum(item);
+        writeBytes(buf, underlying);
+        return;
+    }
     switch (@TypeOf(item)) {
         f32 => {
             const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];

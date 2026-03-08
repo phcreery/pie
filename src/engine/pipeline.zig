@@ -391,8 +391,8 @@ pub const Pipeline = struct {
             self.perf.timerLap("runNodesBuildExecutionOrder") catch unreachable;
             self.runNodesInitConnectorTextures() catch unreachable;
             self.perf.timerLap("runNodesInitConnectorTextures") catch unreachable;
-            self.runNodesAllocateUploadBufferForTextures() catch unreachable;
-            self.perf.timerLap("runNodesAllocateUploadBufferForTextures") catch unreachable;
+            self.runNodesAllocateStagingBuffersForTextures() catch unreachable;
+            self.perf.timerLap("runNodesAllocateStagingBuffersForTextures") catch unreachable;
             self.runNodesCreateBindings() catch unreachable;
             self.perf.timerLap("runNodesCreateBindings") catch unreachable;
 
@@ -522,8 +522,8 @@ pub const Pipeline = struct {
     }
 
     pub fn printPipeToStdout(self: *Pipeline) void {
-        // print.printModules(self);
-        // print.printNodes(self);
+        print.printModules(self);
+        print.printNodes(self);
         print.printNodesGraph(self) catch unreachable;
         // print.printNodeExecutionOrder(self);
     }
@@ -926,7 +926,7 @@ pub const Pipeline = struct {
         }
     }
 
-    fn runNodesAllocateUploadBufferForTextures(self: *Pipeline) !void {
+    fn runNodesAllocateStagingBuffersForTextures(self: *Pipeline) !void {
         if (self.upload_fba) |*upload_fba| {
             var upload_allocator = upload_fba.allocator();
 
@@ -940,8 +940,16 @@ pub const Pipeline = struct {
             // TODO: support multiple source uploads in the future
             if (first_node_ptr.desc.sockets[0]) |*sock| {
                 if (sock.type == .source) {
-                    const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
+                    // typically...
+                    // const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
+                    // but I think the stride is aligned to COPY_BYTES_PER_ROW_ALIGNMENT
+                    // need to review if this is needed. it initially seemed to work without it
+                    const bytes_per_row = sock.roi.?.w * sock.format.bpp();
+                    const aligned_bytes_per_row = ((bytes_per_row + gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
+                    const size_bytes = aligned_bytes_per_row * sock.roi.?.h;
+
                     slog.debug("Allocating upload buffer for textures for size {d} bytes", .{size_bytes});
+                    slog.debug("Source socket ROI w: {d} h: {d}", .{ sock.roi.?.w, sock.roi.?.h });
                     const mapped_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
                     const upload_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(upload_fba.ptr);
@@ -965,8 +973,15 @@ pub const Pipeline = struct {
 
             if (last_node_ptr.desc.sockets[0]) |*sock| {
                 if (sock.type == .sink) {
-                    const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
+                    // typically...
+                    // const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
+                    // but I think the stride is aligned to COPY_BYTES_PER_ROW_ALIGNMENT
+                    // need to review if this is needed. it initially seemed to work without it
+                    const bytes_per_row = sock.roi.?.w * sock.format.bpp();
+                    const aligned_bytes_per_row = ((bytes_per_row + gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
+                    const size_bytes = aligned_bytes_per_row * sock.roi.?.h;
                     slog.debug("Allocating download buffer at for size {d} bytes", .{size_bytes});
+                    slog.debug("Sink socket ROI w: {d} h: {d}", .{ sock.roi.?.w, sock.roi.?.h });
                     const mapped_slice = try download_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
                     const download_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(download_fba.ptr);
@@ -1155,7 +1170,34 @@ pub const Pipeline = struct {
                 if (last_node_mod.desc.writeSink) |writeSinkFn| {
                     slog.debug("Downloading sink data for last node", .{});
                     const mapped_ptr = sock.*.private.staging_ptr orelse unreachable;
-                    try writeSinkFn(self.allocator, self, last_node.mod, mapped_ptr);
+
+                    // we are going to help out the module author by removing the padding bytes if they exist since wgpu
+                    // requires bytes per row to be aligned to 256 bytes, but this is not ideal since it requires an extra
+                    // copy and extra memory allocation. in the future, we should consider allowing users to handle the
+                    // padding themselves in their writeSink function by providing them with the aligned bytes per row and
+                    // the total size of the mapped buffer.
+                    const mapped_trimmed = try self.allocator.alloc(u8, sock.roi.?.w * sock.roi.?.h * sock.format.bpp());
+                    defer self.allocator.free(mapped_trimmed);
+                    {
+                        // wgpu requires bytes per row to be aligned to 256 bytes, so we need to remove the padding bytes if they exist
+                        const bytes_per_row = sock.roi.?.w * sock.format.bpp();
+                        const aligned_bytes_per_row = ((bytes_per_row + api.gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / api.gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * api.gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
+
+                        const aligned_size_bytes = aligned_bytes_per_row * sock.roi.?.h;
+                        const download_buffer_padded_ptr: [*]u8 = @ptrCast(@alignCast(mapped_ptr));
+                        const download_buffer_padded_slice = download_buffer_padded_ptr[0..aligned_size_bytes];
+
+                        // copy each row of the byte array with the aligned bytes per row to the output slice
+                        for (0..sock.roi.?.h) |row| {
+                            const src_start = row * aligned_bytes_per_row;
+                            const src_end = src_start + bytes_per_row;
+                            const dst_start = row * bytes_per_row;
+                            const dst_end = dst_start + bytes_per_row;
+                            @memcpy(mapped_trimmed[dst_start..dst_end], download_buffer_padded_slice[src_start..src_end]);
+                        }
+                    }
+
+                    try writeSinkFn(self.allocator, self, last_node.mod, mapped_trimmed.ptr);
                 } else {
                     slog.err("Sink node has no writeSink function defined", .{});
                     return error.NodeMissingWriteSinkFunction;

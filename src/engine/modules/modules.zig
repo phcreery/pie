@@ -5,6 +5,7 @@ pub const i_raw = @import("i-raw/module.zig");
 pub const format = @import("format/module.zig");
 pub const denoise = @import("denoise/module.zig");
 pub const demosaic = @import("demosaic/module.zig");
+pub const crop = @import("crop/module.zig");
 pub const color = @import("color/module.zig");
 pub const o_png = @import("o-png/module.zig");
 pub const o_ppm = @import("o-ppm/module.zig");
@@ -15,6 +16,7 @@ pub const test_i_1234 = @import("test-i-1234/module.zig");
 pub const test_o_2468 = @import("test-o-2468/module.zig");
 pub const test_o_firstbytes = @import("test-o-firstbytes/module.zig");
 pub const test_nop = @import("test-nop/module.zig");
+pub const test_text = @import("test-text/module.zig");
 
 pub fn populateRegistry(registry: *Registry) !void {
     // add built-in modules
@@ -22,6 +24,7 @@ pub fn populateRegistry(registry: *Registry) !void {
     try registry.add(format.desc);
     try registry.add(denoise.desc);
     try registry.add(demosaic.desc);
+    try registry.add(crop.desc);
     try registry.add(color.desc);
     try registry.add(o_png.desc);
     try registry.add(o_ppm.desc);
@@ -32,7 +35,8 @@ pub fn populateRegistry(registry: *Registry) !void {
     try registry.add(test_i_1234.desc);
     try registry.add(test_o_2468.desc);
     // try registry.add(test_o_firstbytes.desc);
-    // try registry.add(test_nop.desc);
+    try registry.add(test_nop.desc);
+    try registry.add(test_text.desc);
 }
 
 pub const Registry = struct {

@@ -82,6 +82,19 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     var cam_to_rec2020: [3][3]f32 = undefined;
     api.mat3x3Mul(&cam_to_rec2020, xyz_to_rec2020, raw_image.cam_xyz);
 
+    // const orientation = @as(api.ImgParam.Orientation, @enumFromInt(raw_image.orientation));
+    const orientation: api.ImgParam.Orientation = switch (raw_image.orientation) {
+        1 => .normal,
+        3 => .rotate180,
+        5 => .rotate270CW,
+        6 => .rotate90CW,
+        8 => .rotate270CW,
+        else => blk: {
+            slog.warn("Unknown orientation value {d}, defaulting to normal", .{raw_image.orientation});
+            break :blk .normal;
+        },
+    };
+
     m.img_param = .{
         .black = [4]f32{
             @as(f32, @floatFromInt(raw_image.cblack[0])),
@@ -96,6 +109,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             @as(f32, @floatFromInt(raw_image.white)),
         },
         .white_balance = raw_image.wb_coeff,
+        .orientation = orientation,
         .cam_to_rec2020 = cam_to_rec2020,
     };
     std.debug.print("i-raw module: black={},{},{},{} white={},{},{},{}\n", .{

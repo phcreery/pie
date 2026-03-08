@@ -7,6 +7,17 @@ const gpu = pie.engine.gpu;
 const Pipeline = pie.engine.Pipeline;
 
 fn libraw_dcraw_process(allocator: std.mem.Allocator, input_filename: []const u8, target_filename: []const u8) !void {
+
+    // first check if target_filename already exists, if so, skip processing
+    if (std.fs.cwd().openFile(target_filename, .{})) |_| {
+        std.log.info("Target file {s} already exists, skipping DCRAW processing", .{target_filename});
+        return;
+    } else |err| {
+        if (err != std.fs.File.OpenError.FileNotFound) {
+            return err;
+        }
+    }
+
     std.log.info("DCRAW processing...", .{});
 
     const file = try std.fs.cwd().openFile(input_filename, .{});
@@ -79,24 +90,24 @@ test "targeting dcraw basic processing" {
     defer pipeline.deinit();
 
     const mod_i_raw = try pipeline.addModule(modules.get("i-raw").?);
-    _ = try pipeline.addModule(modules.get("format").?);
-    _ = try pipeline.addModule(modules.get("denoise").?);
-    _ = try pipeline.addModule(modules.get("demosaic").?);
-    _ = try pipeline.addModule(modules.get("color").?);
+    const mod_format = try pipeline.addModule(modules.get("format").?);
+    const mod_denoise = try pipeline.addModule(modules.get("denoise").?);
+    const mod_demosaic = try pipeline.addModule(modules.get("demosaic").?);
+    const mod_crop = try pipeline.addModule(modules.get("crop").?);
+    const mod_color = try pipeline.addModule(modules.get("color").?);
+    const mod_test_text = try pipeline.addModule(modules.get("test-text").?);
     const mod_o_ppm = try pipeline.addModule(modules.get("o-ppm").?);
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_o_ppm, "filename", @as([]const u8, output_filename));
 
-    // try pipeline.connectModuleSocketsByHandleName(mod_i_raw, "output", mod_format, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_format, "output", mod_denoise, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_demosaic, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_demosaic, "output", mod_color, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_o_ppm, "input");
-    try pipeline.connectModuleSocketsByNameName("i-raw", "output", "format", "input");
-    try pipeline.connectModuleSocketsByNameName("format", "output", "denoise", "input");
-    try pipeline.connectModuleSocketsByNameName("denoise", "output", "demosaic", "input");
-    try pipeline.connectModuleSocketsByNameName("demosaic", "output", "color", "input");
-    try pipeline.connectModuleSocketsByNameName("color", "output", "o-ppm", "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_i_raw, "output", mod_format, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_format, "output", mod_denoise, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_demosaic, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_demosaic, "output", mod_crop, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_crop, "output", mod_color, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_test_text, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_test_text, "output", mod_o_ppm, "input");
+
     try pipeline.run(arena);
 }

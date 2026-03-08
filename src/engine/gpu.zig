@@ -11,7 +11,7 @@ const slog = std.log.scoped(.gpu);
 // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
 // const COPY_BUFFER_ALIGNMENT: u64 = 4; //
 pub const COPY_BUFFER_ALIGNMENT: std.mem.Alignment = .@"8";
-const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
+pub const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
 pub const MAX_BIND_GROUPS: usize = 4;
 pub const MAX_BINDINGS: usize = 8;
@@ -323,9 +323,8 @@ pub const Encoder = struct {
     pub fn enqueueBufToTex(self: *Self, memory: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
         slog.debug("Writing GPU buffer to Shader Buffer", .{});
 
-        // check bytes_per_row is a multiple of 256
         const bytes_per_row = roi.w * texture.format.bpp();
-        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
+        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of COPY_BYTES_PER_ROW_ALIGNMENT
 
         // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
         // CPU to the input buffer on the GPU.
@@ -354,13 +353,8 @@ pub const Encoder = struct {
     pub fn enqueueTexToBuf(self: *Self, buffer: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
         slog.debug("Reading GPU buffer from Shader Buffer", .{});
 
-        // check bytes_per_row is a multiple of 256
         const bytes_per_row = roi.w * texture.format.bpp();
-        // if (bytes_per_row % 256 != 0) {
-        //     slog.err("bytes_per_row must be a multiple of 256, got {d}", .{bytes_per_row});
-        //     return error.InvalidInput;
-        // }
-        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of 256
+        const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of COPY_BYTES_PER_ROW_ALIGNMENT
 
         // We add a copy operation to the encoder. This will copy the data from the output buffer on the
         // GPU to the download buffer on the CPU.

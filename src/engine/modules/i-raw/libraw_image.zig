@@ -6,6 +6,7 @@ pub const RawImage = struct {
     width: usize,
     height: usize,
     raw_image: []u16,
+    orientation: i32,
     cblack: [4]u32,
     white: u32,
     wb_coeff: [4]f32,
@@ -45,11 +46,14 @@ pub const RawImage = struct {
         for (cam_xyz_all[0..3], 0..) |row, i| {
             cam_xyz[i] = row;
         }
+        const flip = libraw_rp.*.rawdata.sizes.flip;
 
         return RawImage{
             .width = img_width,
             .height = img_height,
             .raw_image = raw_image,
+            // .orientation = orientation,
+            .orientation = flip,
             .cblack = cblack,
             .white = white,
             .wb_coeff = wb_coeff,

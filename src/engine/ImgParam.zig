@@ -8,10 +8,19 @@ const slog = std.log.scoped(.imgparam);
 
 // see: https://github.com/hanatos/vkdt/blob/master/src/pipe/module.h#L52
 
+pub const Orientation = enum(i32) {
+    normal = 1,
+    rotate180 = 3,
+    rotate90CW = 6,
+    rotate270CW = 8,
+};
+
 pub const ImgParams = struct {
     black: [4]f32, // black point
     white: [4]f32, // clipping threshold
     white_balance: [4]f32, // camera white balance coefficients
+    // orientation from image metadata (EXIF-style): 1 = normal, 3 = 180, 6 = 90 CW, 8 = 270 CW
+    orientation: Orientation,
     // cfa: CFA, // color filter array multipliers
     cam_to_rec2020: [3][3]f32, // color space conversion matrix
 };
