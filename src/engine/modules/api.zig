@@ -128,6 +128,10 @@ pub fn getParam(pipe: *Pipeline, mod_handle: ModuleHandle, param_name: []const u
     return param.get(T);
 }
 
+pub fn setParam(pipe: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
+    try pipe.setModuleParam(mod_handle, param_name, value);
+}
+
 pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
     return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
 }
