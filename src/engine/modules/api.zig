@@ -66,8 +66,6 @@ pub const ParamDesc = struct {
     typ: Param.ParamValueTag,
 };
 
-// pub const ParamsDesc = [MAX_PARAMS_PER_MODULE]?ParamDesc;
-
 /// Module structure
 ///
 /// A module can have multiple nodes.

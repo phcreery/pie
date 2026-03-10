@@ -60,11 +60,7 @@ pub const MemoryType = enum {
     }
 };
 
-/// Dead simple GPU allocator using an upload and download buffer
-/// for staging data to/from the GPU.
-/// This is not optimal, but it works for now. Only one allocation at a time.
-/// Future work could include a more complex allocator with multiple buffers
-/// useful for multiple simultaneous operations.
+/// GPU allocator using an upload and download buffer for staging data to/from the GPU.
 /// GPU must outlive Buffer
 pub const Buffer = struct {
     gpu: *GPU,
@@ -356,10 +352,6 @@ pub const Encoder = struct {
         const bytes_per_row = roi.w * texture.format.bpp();
         const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of COPY_BYTES_PER_ROW_ALIGNMENT
 
-        // We add a copy operation to the encoder. This will copy the data from the output buffer on the
-        // GPU to the download buffer on the CPU.
-        // self.encoder.copyBufferToBuffer(self.buffer[self.dst_index], 0, self.download_buffer, 0, self.buffer[self.dst_index].getSize());
-        // const copy_size = self.textures[self.dst_index].getWidth() * self.textures[self.dst_index].getHeight() * 4; // width * height * RGBA
         const copy_size = wgpu.Extent3D{
             .width = roi.w,
             .height = roi.h,

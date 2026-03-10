@@ -16,38 +16,17 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let px = textureLoad(input, coords, 0);
     let rgb_cam = vec3<f32>(px.r, px.g, px.b);
 
-    // decode_color()
-    // var rgb_rec2020 = img_params.cam_to_rec2020 * rgb_cam;
-    var rgb_rec2020 = rgb_cam;
-
-    // init new wb var
-    var w0 = vec3<f32>(0.0, 0.0, 0.0);
-    var wb = vec3<f32>(
+    let wb = vec3<f32>(
         img_params.white_balance.r,
         img_params.white_balance.g,
         img_params.white_balance.b
     );
-    var wb_rec2020 = img_params.cam_to_rec2020 * wb;
-    // for(var j: i32 = 0; j < 3; j = j + 1) {
-    //     for(var i: i32 = 0; i < 3; i = i + 1) {
-    //         w0[j] += img_params.cam_to_rec2020[i][j] / wb[i];
-    //     }
-    // }
-    // w0[0] /= w0[1]; w0[2] /= w0[1]; w0[1] = 1.0f;
-    // wb[0] = wb[0] / w0[1];
-    // wb[1] = 1.0;
-    // wb[2] = wb[2] / w0[1];
-    // wb_rec2020 = vec3<f32>(
-    //     wb_rec2020.r / wb_rec2020.g,
-    //     1.0,
-    //     wb_rec2020.b / wb_rec2020.g
-    // );
-    rgb_rec2020 = vec3<f32>(
-        rgb_rec2020.r * wb_rec2020[0],
-        rgb_rec2020.g * wb_rec2020[1],
-        rgb_rec2020.b * wb_rec2020[2]
-    );
-
+    let wb_max = max(max(wb.r, wb.g), wb.b);
+    let wb_normalized = wb / vec3<f32>(wb_max, wb_max, wb_max);
+    var rgb_cam_wb = rgb_cam * wb_normalized;
+    
+    // skipping camera to rec2020 conversion for now, as it is not always necessary and can be expensive. We can add it back in later if needed.
+    var rgb_rec2020 = rgb_cam_wb;
 
     let out_px = vec4<f32>(rgb_rec2020, px.a);
     textureStore(output, coords, out_px);

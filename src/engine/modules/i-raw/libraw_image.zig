@@ -7,6 +7,7 @@ pub const RawImage = struct {
     height: usize,
     raw_image: []u16,
     orientation: i32,
+    user_flip: i32,
     cblack: [4]u32,
     white: u32,
     wb_coeff: [4]f32,
@@ -39,7 +40,9 @@ pub const RawImage = struct {
         const raw_image: []u16 = std.mem.span(libraw_rp.*.rawdata.raw_image);
         const white: u32 = libraw_rp.*.rawdata.color.maximum;
         const cblack: [4]u32 = libraw_rp.*.rawdata.color.cblack[0..4].*; // TODO: xtans uses more than 4
-        const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.cam_mul; // or pre_mul??
+        // const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.cam_mul;
+        const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.pre_mul;
+        // const wb_coeff: [4]f32 = libraw_rp.*.params.user_mul; // or cam_mul??
         const cam_xyz_all: [4][3]f32 = libraw_rp.*.rawdata.color.cam_xyz;
         // drop last row
         var cam_xyz: [3][3]f32 = undefined;
@@ -47,13 +50,14 @@ pub const RawImage = struct {
             cam_xyz[i] = row;
         }
         const flip = libraw_rp.*.rawdata.sizes.flip;
+        const user_flip = libraw_rp.*.params.user_flip;
 
         return RawImage{
             .width = img_width,
             .height = img_height,
             .raw_image = raw_image,
-            // .orientation = orientation,
             .orientation = flip,
+            .user_flip = user_flip,
             .cblack = cblack,
             .white = white,
             .wb_coeff = wb_coeff,

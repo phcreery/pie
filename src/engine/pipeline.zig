@@ -522,8 +522,8 @@ pub const Pipeline = struct {
     }
 
     pub fn printPipeToStdout(self: *Pipeline) void {
-        print.printModules(self);
-        print.printNodes(self);
+        // print.printModules(self);
+        // print.printNodes(self);
         print.printNodesGraph(self) catch unreachable;
         // print.printNodeExecutionOrder(self);
     }
@@ -667,7 +667,6 @@ pub const Pipeline = struct {
                         }
                     }
                     if (tu_len == 0) break :params;
-                    std.debug.print("Param tagged union for module {s}: {any}\n", .{ module.desc.name, tu[0..tu_len] });
                     size_bytes = try Param.layoutTaggedUnion(null, tu[0..tu_len]);
                     const param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
                     // defer texture.deinit();

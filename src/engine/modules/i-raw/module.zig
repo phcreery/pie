@@ -69,31 +69,48 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // THIS IS A WORKAROUND: for single channel read-write storage texture limitation
     roi = roi.div(4, 1); // we have 1/4 width input (packed RG/GB)
 
-    // const float xyz_to_rec2020[] = {
-    //     1.7166511880, -0.3556707838, -0.2533662814,
-    //     -0.6666843518,  1.6164812366,  0.0157685458,
-    //     0.0176398574, -0.0427706133,  0.9421031212
+    // XYZ D65 to Rec709
+    // #define matrix_xyz_to_rec709 makemat(3.24096994190452348, -1.53738317757009435, -0.498610760293003552, -0.969243636280879506, 1.87596750150771996, 0.0415550574071755843, 0.0556300796969936354, -0.20397695888897649, 1.05697151424287816)
+    const xyz_to_rec709: [3][3]f32 = .{
+        .{ 3.24096994190452348, -1.53738317757009435, -0.498610760293003552 },
+        .{ -0.969243636280879506, 1.87596750150771996, 0.0415550574071755843 },
+        .{ 0.0556300796969936354, -0.20397695888897649, 1.05697151424287816 },
+    };
+    // const xyz_to_rec2020: [3][3]f32 = .{
+    //     .{ 1.7166511880, -0.3556707838, -0.2533662814 },
+    //     .{ -0.6666843518, 1.6164812366, 0.0157685458 },
+    //     .{ 0.0176398574, -0.0427706133, 0.9421031212 },
     // };
-    const xyz_to_rec2020: [3][3]f32 = .{
-        .{ 1.7166511880, -0.3556707838, -0.2533662814 },
-        .{ -0.6666843518, 1.6164812366, 0.0157685458 },
-        .{ 0.0176398574, -0.0427706133, 0.9421031212 },
-    };
     var cam_to_rec2020: [3][3]f32 = undefined;
-    api.mat3x3Mul(&cam_to_rec2020, xyz_to_rec2020, raw_image.cam_xyz);
+    // api.mat3x3Mul(&cam_to_rec2020, xyz_to_rec2020, raw_image.cam_xyz);
+    api.mat3x3Mul(&cam_to_rec2020, xyz_to_rec709, raw_image.cam_xyz);
 
-    // const orientation = @as(api.ImgParam.Orientation, @enumFromInt(raw_image.orientation));
-    const orientation: api.ImgParam.Orientation = switch (raw_image.orientation) {
-        1 => .normal,
-        3 => .rotate180,
-        5 => .rotate270CW,
-        6 => .rotate90CW,
-        8 => .rotate270CW,
-        else => blk: {
-            slog.warn("Unknown orientation value {d}, defaulting to normal", .{raw_image.orientation});
-            break :blk .normal;
-        },
-    };
+    var orientation: api.ImgParam.Orientation = .normal;
+    if (raw_image.user_flip != -1) {
+        orientation = switch (raw_image.user_flip) {
+            1 => .normal,
+            3 => .rotate180,
+            5 => .rotate270CW,
+            6 => .rotate90CW,
+            8 => .rotate270CW,
+            else => blk: {
+                slog.warn("Unknown orientation value {d}, defaulting to normal", .{raw_image.orientation});
+                break :blk .normal;
+            },
+        };
+    } else {
+        orientation = switch (raw_image.orientation) {
+            1 => .normal,
+            3 => .rotate180,
+            5 => .rotate270CW,
+            6 => .rotate90CW,
+            8 => .rotate270CW,
+            else => blk: {
+                slog.warn("Unknown orientation value {d}, defaulting to normal", .{raw_image.orientation});
+                break :blk .normal;
+            },
+        };
+    }
 
     m.img_param = .{
         .black = [4]f32{
