@@ -22,5 +22,6 @@ pub const ImgParams = struct {
     // orientation from image metadata (EXIF-style): 1 = normal, 3 = 180, 6 = 90 CW, 8 = 270 CW
     orientation: Orientation,
     // cfa: CFA, // color filter array multipliers
-    cam_to_rec2020: [3][3]f32, // color space conversion matrix
+    // cam_to_rec2020: [3][3]f32, // color space conversion matrix
+    cam_to_srgb: [3][3]f32, // color space conversion matrix
 };

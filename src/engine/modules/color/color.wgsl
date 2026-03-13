@@ -4,7 +4,8 @@ struct ImgParams {
     white:          vec4<f32>,
     white_balance:  vec4<f32>,
     orientation:    i32,
-    cam_to_rec2020: mat3x3<f32>,
+    // cam_to_rec2020: mat3x3<f32>,
+    cam_to_srgb:    mat3x3<f32>,
 };
 
 @group(0) @binding(0) var<uniform>  img_params: ImgParams;
@@ -21,12 +22,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         img_params.white_balance.g,
         img_params.white_balance.b
     );
-    let wb_max = max(max(wb.r, wb.g), wb.b);
-    let wb_normalized = wb / vec3<f32>(wb_max, wb_max, wb_max);
-    var rgb_cam_wb = rgb_cam * wb_normalized;
+    var rgb_cam_wb = rgb_cam * wb;
     
-    // skipping camera to rec2020 conversion for now, as it is not always necessary and can be expensive. We can add it back in later if needed.
-    var rgb_rec2020 = rgb_cam_wb;
+    var rgb_rec2020 = vec3<f32>(
+        img_params.cam_to_srgb[0][0] * rgb_cam_wb.r + img_params.cam_to_srgb[0][1] * rgb_cam_wb.g + img_params.cam_to_srgb[0][2] * rgb_cam_wb.b,
+        img_params.cam_to_srgb[1][0] * rgb_cam_wb.r + img_params.cam_to_srgb[1][1] * rgb_cam_wb.g + img_params.cam_to_srgb[1][2] * rgb_cam_wb.b,
+        img_params.cam_to_srgb[2][0] * rgb_cam_wb.r + img_params.cam_to_srgb[2][1] * rgb_cam_wb.g + img_params.cam_to_srgb[2][2] * rgb_cam_wb.b
+    );
 
     let out_px = vec4<f32>(rgb_rec2020, px.a);
     textureStore(output, coords, out_px);

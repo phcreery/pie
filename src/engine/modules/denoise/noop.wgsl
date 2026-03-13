@@ -13,12 +13,12 @@ struct ImgParams {
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var coords = vec2<i32>(global_id.xy);
-    // let px = textureLoad(input, coords, 0);
-    // let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a));
-    // let r = max(0, (pxf.r - img_params.black.r) / (img_params.white.r - img_params.black.r));
-    // let g = max(0, (pxf.g - img_params.black.g) / (img_params.white.g - img_params.black.g));
-    // let b = max(0, (pxf.b - img_params.black.b) / (img_params.white.b - img_params.black.b));
-    // let g2 = max(0, (pxf.a - img_params.black.a) / (img_params.white.a - img_params.black.a));
+    let px = textureLoad(input, coords, 0);
+    let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a));
+    let r = max(0, (pxf.r - img_params.black.r) / (img_params.white.r - img_params.black.r));
+    let g = max(0, (pxf.g - img_params.black.g) / (img_params.white.g - img_params.black.g));
+    let b = max(0, (pxf.b - img_params.black.b) / (img_params.white.b - img_params.black.b));
+    let g2 = max(0, (pxf.a - img_params.black.a) / (img_params.white.a - img_params.black.a));
 
     // oh yea, we hove to do a workaround for the rggb packed layout
     // INPUT
@@ -51,15 +51,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // }
 
     // actually, lets just average the black levels and the white levels and use that for all channels, since we are not doing a real denoise and just want to test the pipeline
-    let px = textureLoad(input, coords, 0);
-    let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a));
-    let black_avg = (img_params.black.r + img_params.black.g + img_params.black.b + img_params.black.a) / 4.0;
-    let white_avg = (img_params.white.r + img_params.white.g + img_params.white.b + img_params.white.a) / 4.0;
-    let r = max(0, (pxf.r - black_avg) / (white_avg - black_avg));
-    let g = max(0, (pxf.g - black_avg) / (white_avg - black_avg));
-    let b = max(0, (pxf.b - black_avg) / (white_avg - black_avg));
-    let g2 = max(0, (pxf.a - black_avg) / (white_avg - black_avg));
-    let values = vec4<f32>(r, g, b, g2);
+    // let px = textureLoad(input, coords, 0);
+    // let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a));
+    // let black_avg = (img_params.black.r + img_params.black.g + img_params.black.b + img_params.black.a) / 4.0;
+    // let white_avg = (img_params.white.r + img_params.white.g + img_params.white.b + img_params.white.a) / 4.0;
+    // let r = max(0, (pxf.r - black_avg) / (white_avg - black_avg));
+    // let g = max(0, (pxf.g - black_avg) / (white_avg - black_avg));
+    // let b = max(0, (pxf.b - black_avg) / (white_avg - black_avg));
+    // let g2 = max(0, (pxf.a - black_avg) / (white_avg - black_avg));
 
+    let values = vec4<f32>(r, g, b, g2);
     textureStore(output, coords, values);
 }

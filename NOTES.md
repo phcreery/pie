@@ -1,4 +1,12 @@
 
+## Raw Processing Notes:
+
+- https://rcsumner.net/raw_guide/RAWguide.pdf
+- https://www.odelama.com/photo/Developing-a-RAW-Photo-by-hand/
+- https://www.odelama.com/photo/Developing-a-RAW-Photo-by-hand/Developing-a-RAW-Photo-by-hand_Part-2/
+- https://www.strollswithmydog.com/raw-data-physical-units/
+- https://www.strollswithmydog.com/linear-color-transforms/
+
 ## Zig notes
 
 - Image Loaders

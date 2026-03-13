@@ -11,7 +11,8 @@ pub const RawImage = struct {
     cblack: [4]u32,
     white: u32,
     wb_coeff: [4]f32,
-    cam_xyz: [3][3]f32,
+    cam_to_srgb: [3][3]f32,
+    // cam_xyz: [3][3]f32,
     filters: api.CFA,
     libraw_rp: *libraw.libraw_data_t,
 
@@ -40,9 +41,26 @@ pub const RawImage = struct {
         const raw_image: []u16 = std.mem.span(libraw_rp.*.rawdata.raw_image);
         const white: u32 = libraw_rp.*.rawdata.color.maximum;
         const cblack: [4]u32 = libraw_rp.*.rawdata.color.cblack[0..4].*; // TODO: xtans uses more than 4
-        // const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.cam_mul;
-        const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.pre_mul;
-        // const wb_coeff: [4]f32 = libraw_rp.*.params.user_mul; // or cam_mul??
+        const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.cam_mul;
+        // const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.pre_mul;
+
+        // print both cam_mul and pre_mul for debugging
+        std.debug.print("cam_mul: {d}, {d}, {d}, {d}\n", .{
+            libraw_rp.*.rawdata.color.cam_mul[0],
+            libraw_rp.*.rawdata.color.cam_mul[1],
+            libraw_rp.*.rawdata.color.cam_mul[2],
+            libraw_rp.*.rawdata.color.cam_mul[3],
+        });
+
+        const cam_to_rgb_all = libraw_rp.*.rawdata.color.rgb_cam;
+        // drop last col
+        var cam_to_srgb: [3][3]f32 = undefined;
+        for (cam_to_rgb_all[0..3], 0..) |row, i| {
+            for (row[0..3], 0..) |val, j| {
+                cam_to_srgb[i][j] = val;
+            }
+        }
+
         const cam_xyz_all: [4][3]f32 = libraw_rp.*.rawdata.color.cam_xyz;
         // drop last row
         var cam_xyz: [3][3]f32 = undefined;
@@ -61,7 +79,8 @@ pub const RawImage = struct {
             .cblack = cblack,
             .white = white,
             .wb_coeff = wb_coeff,
-            .cam_xyz = cam_xyz,
+            .cam_to_srgb = cam_to_srgb,
+            // .cam_xyz = cam_xyz,
             .filters = try api.CFA.fromLibraw(&libraw_rp.*.rawdata.iparams.cdesc, libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
         };

@@ -20,6 +20,7 @@
         "rggb",
         "rois",
         "sokol",
+        "srgb",
         "Texel",
         "usize",
         "wgpu",
