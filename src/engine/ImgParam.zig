@@ -24,4 +24,34 @@ pub const ImgParams = struct {
     // cfa: CFA, // color filter array multipliers
     // cam_to_rec2020: [3][3]f32, // color space conversion matrix
     cam_to_srgb: [3][3]f32, // color space conversion matrix
+
+    pub fn print(
+        self: *ImgParams,
+        writer: *std.Io.Writer,
+    ) !void {
+        try writer.print("ImgParams: orientation={d}\n", .{self.orientation});
+        try writer.print("black: {d}, {d}, {d}, {d}\n", .{
+            self.black[0],
+            self.black[1],
+            self.black[2],
+            self.black[3],
+        });
+        try writer.print("white: {d}, {d}, {d}, {d}\n", .{
+            self.white[0],
+            self.white[1],
+            self.white[2],
+            self.white[3],
+        });
+        try writer.print("white_balance: {d}, {d}, {d}, {d}\n", .{
+            self.white_balance[0],
+            self.white_balance[1],
+            self.white_balance[2],
+            self.white_balance[3],
+        });
+        try writer.print("cam_to_srgb:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
+            self.cam_to_srgb[0][0], self.cam_to_srgb[0][1], self.cam_to_srgb[0][2],
+            self.cam_to_srgb[1][0], self.cam_to_srgb[1][1], self.cam_to_srgb[1][2],
+            self.cam_to_srgb[2][0], self.cam_to_srgb[2][1], self.cam_to_srgb[2][2],
+        });
+    }
 };

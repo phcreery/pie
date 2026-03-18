@@ -92,7 +92,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // cam_t_rgb * wb
     // where cam_to_rgb is nxn [3][3]f32 and wb is nx1 [3]f32
     var wb_srgb: [3]f32 = undefined;
-    for (raw_image.wb_coeff[0..3], 0..) |wb_val, i| {
+    for (raw_image.white_balance[0..3], 0..) |wb_val, i| {
         var sum: f32 = 0.0;
         for (raw_image.cam_to_srgb[i][0..3]) |cam_to_rgb_val| {
             sum += cam_to_rgb_val / wb_val;
@@ -147,41 +147,34 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         };
     }
 
+    const wb_srgb_vec4 = [4]f32{ wb_srgb[0], wb_srgb[1], wb_srgb[2], 1.0 };
+
     m.img_param = .{
         .black = [4]f32{
-            @as(f32, @floatFromInt(raw_image.cblack[0])),
-            @as(f32, @floatFromInt(raw_image.cblack[1])),
-            @as(f32, @floatFromInt(raw_image.cblack[2])),
-            @as(f32, @floatFromInt(raw_image.cblack[3])),
+            @as(f32, @floatFromInt(raw_image.black[0])),
+            @as(f32, @floatFromInt(raw_image.black[1])),
+            @as(f32, @floatFromInt(raw_image.black[2])),
+            @as(f32, @floatFromInt(raw_image.black[3])),
         },
         .white = [4]f32{
-            @as(f32, @floatFromInt(raw_image.white)),
-            @as(f32, @floatFromInt(raw_image.white)),
-            @as(f32, @floatFromInt(raw_image.white)),
-            @as(f32, @floatFromInt(raw_image.white)),
+            @as(f32, @floatFromInt(raw_image.white[0])),
+            @as(f32, @floatFromInt(raw_image.white[1])),
+            @as(f32, @floatFromInt(raw_image.white[2])),
+            @as(f32, @floatFromInt(raw_image.white[3])),
         },
-        .white_balance = raw_image.wb_coeff,
+        .white_balance = wb_srgb_vec4,
         // .white_balance = wb_srgb_vec4,
         .orientation = orientation,
         // .cam_to_rec2020 = cam_to_rec2020,
         .cam_to_srgb = raw_image.cam_to_srgb,
     };
-    std.debug.print("i-raw module: black={},{},{},{} white={},{},{},{}\n", .{
-        m.img_param.?.black[0],
-        m.img_param.?.black[1],
-        m.img_param.?.black[2],
-        m.img_param.?.black[3],
-        m.img_param.?.white[0],
-        m.img_param.?.white[1],
-        m.img_param.?.white[2],
-        m.img_param.?.white[3],
-    });
-    std.debug.print("i-raw module: wb={},{},{},{}\n", .{
-        m.img_param.?.white_balance[0],
-        m.img_param.?.white_balance[1],
-        m.img_param.?.white_balance[2],
-        m.img_param.?.white_balance[3],
-    });
+
+    var stdout_buffer: [4096]u8 = undefined;
+    var writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &writer.interface;
+    try raw_image.print(stdout);
+    try m.img_param.?.print(stdout);
+    try stdout.flush(); // Don't forget to flush!
 
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;

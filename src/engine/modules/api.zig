@@ -1,6 +1,7 @@
 /// API definitions for engine pipeline modules and nodes
 const std = @import("std");
-pub const gpu = @import("../gpu.zig");
+pub const gpu = @import("../gpu.zig"); // TODO: we shouldn't need to expose this
+pub const math = @import("../math/root.zig");
 
 pub const ROI = @import("../ROI.zig");
 pub const pipeline = @import("../pipeline.zig");

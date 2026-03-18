@@ -81,7 +81,17 @@ fn number_to_digits(value: f32) -> array<u32, max_number_length> {
 struct Params {
     value: f32,
 };
-@group(0) @binding(0) var<storage, read_write>  params: Params;
+struct ImgParams {
+    black:          vec4<f32>,
+    white:          vec4<f32>,
+    white_balance:  vec4<f32>,
+    orientation:    i32,
+    // cam_to_rec2020: mat3x3<f32>,
+    cam_to_srgb:    mat3x3<f32>,
+};
+
+@group(0) @binding(0) var<storage, read_write>  params:     Params;
+@group(0) @binding(1) var<uniform>              img_params: ImgParams;
 @group(1) @binding(0) var                       input:      texture_2d<f32>;
 @group(1) @binding(1) var                       output:     texture_storage_2d<rgba16float, write>;
 
@@ -89,9 +99,32 @@ struct Params {
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var coords = vec2<i32>(global_id.xy);
 
-    if is_in_number(vec2<f32>(coords), number_to_digits(params.value), vec2(10, 200), 10.0) {
-        textureStore(output, coords, vec4<f32>(1.0, 0.0, 0.0, 1.0));
-        return;
+    // if is_in_number(vec2<f32>(coords), number_to_digits(params.value), vec2(10, 200), 10.0) {
+    //     textureStore(output, coords, vec4<f32>(1.0, 0.0, 0.0, 1.0));
+    //     return;
+    // }
+
+
+    // print the cam_to_srgb matrix
+    var offset = vec2<u32>(10, 10);
+    for (var i: u32 = 0; i < 3; i = i + 1) {
+        for (var j: u32 = 0; j < 3; j = j + 1) {
+            let value = img_params.cam_to_srgb[i][j];
+            if is_in_number(vec2<f32>(coords), number_to_digits(abs(value) * 1000.0), vec2(offset.x + (j * 200), offset.y + (i * 100)), 10.0) {
+                textureStore(output, coords, vec4<f32>(1.0, 0.0, 0.0, 1.0));
+                return;
+            }
+        }
+    }
+
+    // print the white balance coefficients
+    offset = vec2<u32>(10, 350);
+    for (var i: u32 = 0; i < 3; i = i + 1) {
+        let value = img_params.white_balance[i];
+        if is_in_number(vec2<f32>(coords), number_to_digits(abs(value) * 1000.0), vec2(offset.x + (i * 200), offset.y + 400), 10.0) {
+            textureStore(output, coords, vec4<f32>(1.0, 0.0, 0.0, 1.0));
+            return;
+        }
     }
 
     let px = textureLoad(input, coords, 0);

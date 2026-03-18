@@ -7,6 +7,8 @@
 - https://www.strollswithmydog.com/raw-data-physical-units/
 - https://www.strollswithmydog.com/linear-color-transforms/
 
+- https://www.dxomark.com/Cameras/Nikon/D7100---Measurements
+
 ## Zig notes
 
 - Image Loaders

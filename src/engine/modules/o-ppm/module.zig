@@ -46,6 +46,9 @@ pub fn writeSink(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Mod
         defer allocator.free(output_slice);
         for (download_buffer_slice, 0..) |value, i| {
             output_slice[i] = @as(f32, value);
+            // currently, value is in [0, 1] range, so we need to convert to [0, 255] range and clamp
+            // const v = @as(f32, value) * 255.0;
+            // output_slice[i] = if (v < 0.0) 0.0 else if (v > 255.0) 255.0 else v;
         }
 
         const byte_array2 = std.mem.sliceAsBytes(output_slice);

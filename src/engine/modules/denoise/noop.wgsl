@@ -15,6 +15,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var coords = vec2<i32>(global_id.xy);
     let px = textureLoad(input, coords, 0);
     let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a));
+
+    // NOTE: white balance should be applied before interpolation (half and bilinear demosaics could handle non-balanced data, but others are not).
     let r = max(0, (pxf.r - img_params.black.r) / (img_params.white.r - img_params.black.r));
     let g = max(0, (pxf.g - img_params.black.g) / (img_params.white.g - img_params.black.g));
     let b = max(0, (pxf.b - img_params.black.b) / (img_params.white.b - img_params.black.b));

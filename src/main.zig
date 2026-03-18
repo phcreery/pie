@@ -35,26 +35,3 @@ test {
     _ = @import("engine/Param.zig");
     // _ = @import("engine/ImgParam.zig");
 }
-
-// test "anon struct param" {
-//     const params = &.{
-//         .{ .name = "float", .value = @as(f32, 3.14) },
-//         .{ .name = "vec3", .value = [3]f32{ 1.0, 2.0, 3.0 } },
-//         .{ .name = "mat3x3", .value = [3][3]f32{
-//             .{ 1.0, 0.0, 0.0 },
-//             .{ 0.0, 1.0, 0.0 },
-//             .{ 0.0, 0.0, 1.0 },
-//         } },
-//     };
-
-//     const Desc = struct {
-//         name: []const u8,
-//         params: *anyopaque,
-//     };
-
-//     const s: Desc = .{
-//         .name = "a",
-//         .params = @ptrCast(@constCast(params)),
-//     };
-//     std.debug.print("{any}", .{s});
-// }
