@@ -23,19 +23,19 @@ zig-cache/
 
 
 # images
-*.png
-*.jpg
-*.jpeg
-*.tiff
-*.bmp
-*.gif
-*.nef
-*.raw
-*.dng
-*.cr2
-*.cr3
-*.ppm
-*.tiff
+testing/**/*.png
+testing/**/*.jpg
+testing/**/*.jpeg
+testing/**/*.tiff
+testing/**/*.bmp
+testing/**/*.gif
+testing/**/*.nef
+testing/**/*.raw
+testing/**/*.dng
+testing/**/*.cr2
+testing/**/*.cr3
+testing/**/*.ppm
+testing/**/*.tiff
 
 # misc
 .DS_Store
