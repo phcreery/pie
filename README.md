@@ -6,6 +6,14 @@ heavily inspired by [vkdt](https://github.com/hanatos/vkdt)
 
 > NOTE: this is under heavy development and experimentation. It is mostly a personal project to learn about zig, webgpu, and image processing. The git history is inconsistent because of this as well as using it as a sync between computers.
 
+## Status
+
+A long way to go.
+
+![alt text](image.png)
+
+__Left: Output of dcraw from libraw, Right: output of pie basic pipeline. These should be a close as possible.__
+
 ## Development
 
 ```
