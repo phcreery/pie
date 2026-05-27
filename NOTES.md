@@ -11,6 +11,9 @@
 
 ## Zig notes
 
+- wgpu
+  - https://git.bouvais.lu/adrien/zig-wgpu
+
 - Image Loaders
 
   - LibRaw
