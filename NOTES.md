@@ -1,3 +1,7 @@
+## Color Notes
+
+- https://yuhaozhu.com/blog/cmf.html
+- https://medium.com/hipster-color-science/a-beginners-guide-to-colorimetry-401f1830b65a
 
 ## Raw Processing Notes:
 
@@ -9,16 +13,34 @@
 
 - https://www.dxomark.com/Cameras/Nikon/D7100---Measurements
 
+
+
 ## Zig notes
 
 - wgpu
   - https://git.bouvais.lu/adrien/zig-wgpu
 
+- UI
+
+  - https://codeberg.org/shahwali/knots
+
 - Image Loaders
 
-  - LibRaw
-  - rawloader
-  - rawspeed
+  - LibRaw [used by darktable]
+  - rawspeed [used by darktable]
+  - rawloader [used by vkdt]
+
+- wgpu Zig bindings
+
+  - https://codeberg.org/Silverclaw/zig-wgpu-native
+  - https://github.com/bronter/wgpu_native_zig
+    - https://github.com/carrot-sticks/wgpu_native_zig
+  - https://github.com/zig-gamedev/zgpu
+
+- Shader stuff
+  - https://codeberg.org/Games-by-Mason/mr_glsl
+  - https://codeberg.org/Mr_Nobody/HowToVulkan_zig
+  - https://codeberg.org/andrewkraevskii/howtovulkan-zig
 
 - Examples
 

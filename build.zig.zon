@@ -55,20 +55,16 @@
         //    .lazy = false,
         //},
         .sokol = .{
-            .url = "git+https://github.com/floooh/sokol-zig.git#64416d9093182728d5b7239d83adbec9d3e6282f",
-            .hash = "sokol-0.1.0-pb1HK1HTLQAsjVm5gHGpGI85Rwhwvu2KgCOTH-ZJ9sCS",
+            .url = "git+https://github.com/floooh/sokol-zig.git#f9b2aa8fc0b0e78c946299e7b418fd04a9ef3559",
+            .hash = "sokol-0.1.0-pb1HK4RrNwA1QTln_ZtLaEBne8Dn6zgZH4UVA45cGdnM",
         },
         .cimgui = .{
-            .url = "git+https://github.com/floooh/dcimgui.git#581c2e909c899c21923c779d4c41ea56ab93bbb4",
-            .hash = "cimgui-0.1.0-44ClkQ14kwAiwcr3ioDjxvPuiWQctWrt-tIFtsfP6xmU",
+            .url = "git+https://github.com/floooh/dcimgui.git#3c2b41a9333b1195e2c2f8ce6a2d3e50660a73bf",
+            .hash = "cimgui-0.1.0-44ClkR8dmgDqqnfloyLE1bUAtl4zSKTT1wxaHSEC0ikV",
         },
-        // .pretty = .{
-        //     .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
-        //     .hash = "pretty-0.10.6-Tm65r6lPAQCBxgwzehYPeqsCXQDT9kt2ktJuO-2tRfE6",
-        // },
         .zdt = .{
-            .url = "git+https://github.com/FObersteiner/zdt#8b551a0a3e5ae64a32b5bad0e6a93119787b43af",
-            .hash = "zdt-0.8.1-xr0_vAxUDwCJRDh9pcAS_mdZBIsvcGTtN-K8JJSWY4I6",
+            .url = "git+https://codeberg.org/FObersteiner/zdt.git#650f57f4749cf4ec0718f2ff81b229596201a894",
+            .hash = "zdt-0.9.4-xr0_vJTaEQAq-crEean1EPItDfn0wIBKqp2pkWhvUtbx",
         },
         // .shdc = .{
         //     .url = "git+https://github.com/floooh/sokol-tools-bin#a06f19929ff8f9824ec6dd87c21329b1f205809e",
@@ -86,20 +82,16 @@
         //     .path = "../LibRaw-zig",
         // },
         .libraw = .{
-            .url = "git+https://github.com/phcreery/LibRaw-zig#360c0bd5e5263cd9cc91d935398472c82f5bde1f",
-            .hash = "libraw-0.21.4-c166SaOCAABnwCAwPECgFypND-jT9Ws-iidaxsJC_N05",
+            .url = "git+https://github.com/phcreery/LibRaw-zig.git#d6a01722b2f702b1bd41811cc588b69c63210a63",
+            .hash = "libraw-0.21.4-c166SQR6AADQHFPUvMe5mMpjqLf6XAFFu5x9N1KjGSN8",
         },
-        // .wgpu_native_zig = .{
-        //     .url = "git+https://github.com/bronter/wgpu_native_zig#ed408d55240160b6fea9a51e317dc40851b48102",
-        //     .hash = "wgpu_native_zig-6.5.0-B9jeDFtzAwB1vPOiXTd2BqrP1j4phYk-oBbxbpLKY3xD",
-        // },
         .wgpu_native_zig = .{
-            .url = "git+https://github.com/carrot-sticks/wgpu_native_zig?ref=zig-v0.15.1#12533f6899dc8d8b7b159d47acfa4dd9cb766930",
-            .hash = "wgpu_native_zig-6.5.0-B9jeDGhzAwDKk_uGG5fG5vO7uzmzwj-EQ-DLrmR2wpdK",
+            .url = "git+https://github.com/snorm-dev/wgpu_native_zig.git#8aef4a9873637ba9444282f7a706eaa251f8d8e9",
+            .hash = "wgpu_native_zig-6.5.0-B9jeDCtzAwADQTiKl7pWvLrNC7pelV0GlH_ePoIse28g",
         },
         .zigimg = .{
-            .url = "git+https://github.com/zigimg/zigimg.git#f5783e87627cbd9e0b45fad112e9f73503914f36",
-            .hash = "zigimg-0.1.0-8_eo2vBrFQBhsrLpexdcDQY-zrlzkyFZfKuYX-Nry6KN",
+            .url = "git+https://github.com/zigimg/zigimg.git#4cab5a17d4c76584723576fcc11497293c25d092",
+            .hash = "zigimg-0.1.0-8_eo2sywFwArMrr5UlqjhhAMbRtpmC4mL5KbBmjrxFba",
         },
         // .ztracy = .{
         //     .url = "git+https://github.com/zig-gamedev/ztracy#3cc6a4a1502fdea2e4d3869099e39d9c5e8b98a5",
@@ -114,8 +106,8 @@
             .hash = "termsize-0.1.0-0mwB1lwVAADBgWi3-mt2GMuiw3tqmscsoVDh7Rzpxud6",
         },
         .zbench = .{
-            .url = "https://github.com/hendriknielaender/zbench/archive/3268a23da82231f1bd2c064de7fdf6fb7056126f.tar.gz",
-            .hash = "zbench-0.11.2-YTdc7zolAQDlBF9i0ywXIvDjafL3Kg27S-aFUq6dU5zy",
+            .url = "git+https://github.com/hendriknielaender/zbench#2a231fc165ab22e5ef0c2b7c8841ee86a445dffa",
+            .hash = "zbench-0.13.0-YTdc71ZAAQCUJ0w9jM6ZyLOBxDlGv2j3CqCEj49l-KcP",
         },
         .zuballoc = .{
             .url = "git+https://github.com/Justus2308/zuballoc.git#68eab414d6d3b1e9aa5ea31139e2e02827ab7350",
