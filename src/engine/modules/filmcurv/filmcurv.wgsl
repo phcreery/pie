@@ -1,13 +1,13 @@
 enable f16;
 
-const COLOURMODE_AGX: i32 = 4;
+const COLORMODE_AGX: i32 = 4;
 const EPSILON: f32 = 1e-7;
 
 struct Params {
     brightness: f32,
     contrast: f32,
     bias: f32,
-    colourmode: i32,
+    colormode: i32,
 };
 
 struct ImgParams {
@@ -157,7 +157,7 @@ fn apply_film_curve(rgb: vec3<f32>) -> vec3<f32> {
     let k = max(1e-4, params.contrast);
     let biased = max(rgb + vec3<f32>(params.bias), vec3<f32>(0.0));
 
-    if (params.colourmode == COLOURMODE_AGX) {
+    if (params.colormode == COLORMODE_AGX) {
         return agx_weibull(biased, il, k);
     }
     return weibull_cdf_vec3(biased, il, k);

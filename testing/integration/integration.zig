@@ -17,7 +17,8 @@ test {
     // _ = @import("engine/pipe_fullsize.zig");
 
     // TARGETS
-    _ = @import("targets/001_DSC_6765/target.zig");
+    // _ = @import("targets/001_DSC_6765/target.zig");
+    _ = @import("targets/targets.zig");
 
     // MISC
     // _ = @import("misc/zpool.zig");

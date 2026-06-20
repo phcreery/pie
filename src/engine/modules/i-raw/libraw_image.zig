@@ -35,7 +35,7 @@ pub const RawImage = struct {
         const black_corr: [4]u32 = libraw_rp.*.rawdata.color.cblack[0..4].*;
         const cam_mul: [4]f32 = libraw_rp.*.rawdata.color.cam_mul;
         const pre_mul: [4]f32 = libraw_rp.*.rawdata.color.pre_mul;
-        const white_signed: [4]i64 = libraw_rp.*.rawdata.color.linear_max;
+        const white_signed: [4]c_long = libraw_rp.*.rawdata.color.linear_max;
         const maximum: u32 = libraw_rp.*.rawdata.color.maximum;
         const data_maximum: u32 = libraw_rp.*.rawdata.color.data_maximum;
         const flip = libraw_rp.*.rawdata.sizes.flip;
@@ -45,9 +45,10 @@ pub const RawImage = struct {
         for (black_corr, 0..) |corr, i| black[i] = black_base + corr;
 
         var white: [4]u32 = undefined;
-        for (white_signed[0..4], 0..) |val, i| {
+        for (white_signed[0..4], 0..) |val_c, i| {
+            const val = @as(u32, @intCast(val_c));
             if (val > 0) {
-                white[i] = @as(u32, @intCast(val));
+                white[i] = val;
             } else if (maximum > 0) {
                 white[i] = maximum;
             } else if (data_maximum > 0) {
