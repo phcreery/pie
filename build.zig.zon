@@ -74,10 +74,6 @@
         //     .url = "git+https://github.com/emscripten-core/emsdk?ref=4.0.14#eff90ca04a3785f571a8095b3a42b63799cf384a",
         //     .hash = "N-V-__8AAMGsDwC6L1OfDgzRF1zFI2t-CaR0sVhEm8pmrpxm",
         // },
-        // .opencl = .{
-        //     .url = "git+https://github.com/Snektron/opencl-zig#a5807beb62c84e72c6a976b5a589c862e2c12f12",
-        //     .hash = "opencl-0.1.0-W4Df3TKTAAC8QuJaPvbD9Q1tlKv7qzH9LTI3qYnoeU0i",
-        // },
         // .libraw = .{
         //     .path = "../LibRaw-zig",
         // },
@@ -125,6 +121,6 @@
         "src",
         // For example...
         //"LICENSE",
-        //"README.md",
+        "README.md",
     },
 }

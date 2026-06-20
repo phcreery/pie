@@ -28,7 +28,7 @@ fn build(
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 1));
-    try pipeline.setModuleParam(mod_i_raw, "matrix_mode", @as(i32, 0));
+    try pipeline.setModuleParam(mod_i_raw, "matrix_mode", @as(i32, 1));
     try pipeline.setModuleParam(mod_filmcurv, "colormode", @as(i32, 1));
     try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 3.0));
     try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.2));

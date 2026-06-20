@@ -15,23 +15,6 @@ pub fn build(b: *Build) !void {
     const opts = .{ .target = target, .optimize = optimize };
 
     const opt_docking = b.option(bool, "docking", "Build with docking support") orelse false;
-    // const ztracy_options = .{
-    //     .enable_ztracy = b.option(
-    //         bool,
-    //         "enable_ztracy",
-    //         "Enable Tracy profile markers",
-    //     ) orelse false,
-    //     .enable_fibers = b.option(
-    //         bool,
-    //         "enable_fibers",
-    //         "Enable Tracy fiber support",
-    //     ) orelse false,
-    //     .on_demand = b.option(
-    //         bool,
-    //         "on_demand",
-    //         "Build tracy with TRACY_ON_DEMAND",
-    //     ) orelse false,
-    // };
 
     // Get the matching Zig module name, C header search path and C library for
     // vanilla imgui vs the imgui docking branch.
@@ -49,12 +32,6 @@ pub fn build(b: *Build) !void {
     const dep_libraw = b.dependency("libraw", opts);
     const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
     const dep_zigimg = b.dependency("zigimg", opts);
-    // const dep_ztracy = b.dependency("ztracy", .{
-    //     .enable_ztracy = ztracy_options.enable_ztracy,
-    //     .enable_fibers = ztracy_options.enable_fibers,
-    //     .on_demand = ztracy_options.on_demand,
-    // });
-    // const dep_zpool = b.dependency("zpool", opts);
     const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
     const dep_zuballoc = b.dependency("zuballoc", opts);
 
@@ -84,10 +61,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu", .module = dep_wgpu_native.module("wgpu") },
-            // .{ .name = "wgpu-c", .module = dep_wgpu_native.module("wgpu-c") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
-            // .{ .name = "ztracy", .module = dep_ztracy.module("root")  },
-            // .{ .name = "zpool", .module = dep_zpool.module("root")  },
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
@@ -114,18 +88,9 @@ pub fn build(b: *Build) !void {
             .{ .name = "pie", .module = mod_main },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
-            // .{ .name = "ztracy", .module = dep_ztracy.module("root") },
             .{ .name = "zbench", .module = dep_zbench.module("zbench") },
         },
     });
-
-    // const integration_exe = b.addExecutable(.{
-    //     .name = "integration exe",
-    //     .root_module = mod_integration,
-    // });
-    // integration_exe.linkLibrary(dep_ztracy.artifact("tracy"));
-    // const run_integration = b.addRunArtifact(integration_exe);
-    // integration_step.dependOn(&run_integration.step);
 
     // INTEGRATION TESTS
     const integration_test_step = b.step("integration", "Run integration tests");

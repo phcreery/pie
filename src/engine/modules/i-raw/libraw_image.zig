@@ -13,6 +13,7 @@ pub const RawImage = struct {
     cam_mul: [4]f32,
     pre_mul: [4]f32,
     rgb_cam: [3][4]f32,
+    cam_xyz_all: [4][3]f32,
     cam_xyz: [3][3]f32,
     filters: api.CFA,
     libraw_rp: *libraw.libraw_data_t,
@@ -62,7 +63,14 @@ pub const RawImage = struct {
 
         const cam_xyz_all: [4][3]f32 = libraw_rp.*.rawdata.color.cam_xyz;
         var cam_xyz: [3][3]f32 = undefined;
-        for (cam_xyz_all[0..3], 0..) |row, i| cam_xyz[i] = row;
+        //   LibRaw exposes cam_xyz as CAM<-XYZ with 4 camera rows: R, G1, B, G2.
+        // We collapse the two green rows into a single RGB-camera row so that the
+        // result is a 3x3 matrix compatible with the rest of the pipeline.
+        for (0..3) |j| {
+            cam_xyz[0][j] = cam_xyz_all[0][j];
+            cam_xyz[1][j] = cam_xyz_all[1][j] + cam_xyz_all[3][j];
+            cam_xyz[2][j] = cam_xyz_all[2][j];
+        }
 
         return .{
             .width = img_width,
@@ -75,6 +83,7 @@ pub const RawImage = struct {
             .cam_mul = cam_mul,
             .pre_mul = pre_mul,
             .rgb_cam = rgb_cam,
+            .cam_xyz_all = cam_xyz_all,
             .cam_xyz = cam_xyz,
             .filters = try api.CFA.fromLibraw(libraw_rp.*.rawdata.iparams.cdesc[0..], libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
@@ -91,11 +100,6 @@ pub const RawImage = struct {
             self.rgb_cam[0][0], self.rgb_cam[0][1], self.rgb_cam[0][2], self.rgb_cam[0][3],
             self.rgb_cam[1][0], self.rgb_cam[1][1], self.rgb_cam[1][2], self.rgb_cam[1][3],
             self.rgb_cam[2][0], self.rgb_cam[2][1], self.rgb_cam[2][2], self.rgb_cam[2][3],
-        });
-        try writer.print("cam_xyz:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
-            self.cam_xyz[0][0], self.cam_xyz[0][1], self.cam_xyz[0][2],
-            self.cam_xyz[1][0], self.cam_xyz[1][1], self.cam_xyz[1][2],
-            self.cam_xyz[2][0], self.cam_xyz[2][1], self.cam_xyz[2][2],
         });
     }
 

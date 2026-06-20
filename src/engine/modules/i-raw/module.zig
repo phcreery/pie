@@ -72,6 +72,7 @@ pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
 
 fn computeCamToSrgb(raw_image: *RawImage, matrix_mode: MatrixMode) [3][3]f32 {
     return switch (matrix_mode) {
+        // use the pre-calculated RGB camera matrix directly.
         .rgb_cam => .{
             .{
                 raw_image.rgb_cam[0][0],
@@ -89,17 +90,39 @@ fn computeCamToSrgb(raw_image: *RawImage, matrix_mode: MatrixMode) [3][3]f32 {
                 raw_image.rgb_cam[2][2],
             },
         },
+        // compute the RGB camera matrix from the cam_xyz matrix. allows us to use other color spaces
         .cam_xyz => blk: {
-            const xyz_to_srgb: [3][3]f32 = .{
+            const srgb_from_xyz: [3][3]f32 = .{
                 .{ 3.2409699, -1.5373832, -0.49861076 },
                 .{ -0.96924365, 1.8759675, 0.04155506 },
                 .{ 0.05563008, -0.20397696, 1.0569715 },
             };
-            var cam_to_srgb: [3][3]f32 = @splat(@splat(0.0));
-            api.mat3x3Mul(&cam_to_srgb, xyz_to_srgb, raw_image.cam_xyz);
-            break :blk cam_to_srgb;
+            const xyz_from_srgb = api.math.mat3.inv(f32, srgb_from_xyz);
+
+            //   raw_image.cam_xyz is CAM<-XYZ.
+            // Convert that into CAM<-sRGB first, normalize each camera row,
+            // then invert to obtain sRGB<-CAM.
+            //
+            // The row normalization is important here: for this camera it makes
+            // the cam_xyz-derived result line up almost exactly with LibRaw's
+            // rgb_cam matrix.
+            var cam_from_srgb: [3][3]f32 = @splat(@splat(0.0));
+            api.math.mat3x3Mul(&cam_from_srgb, raw_image.cam_xyz, xyz_from_srgb);
+            normalizeRows3x3(&cam_from_srgb);
+            break :blk api.math.mat3.inv(f32, cam_from_srgb);
         },
     };
+}
+
+fn normalizeRows3x3(m: *[3][3]f32) void {
+    for (m) |*row| {
+        const sum = row[0] + row[1] + row[2];
+        if (@abs(sum) > 1e-6) {
+            row[0] /= sum;
+            row[1] /= sum;
+            row[2] /= sum;
+        }
+    }
 }
 
 fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
@@ -138,24 +161,6 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     };
     const selected_wb = normalizeWhiteBalance(selected_wb_raw);
     const cam_to_srgb = computeCamToSrgb(raw_image, matrix_mode);
-
-    std.debug.print("i-raw module: wb_mode={s} matrix_mode={s}\n", .{ @tagName(wb_mode), @tagName(matrix_mode) });
-    std.debug.print("i-raw module: selected_wb_raw: {d}, {d}, {d}, {d}\n", .{
-        selected_wb_raw[0],
-        selected_wb_raw[1],
-        selected_wb_raw[2],
-        selected_wb_raw[3],
-    });
-    std.debug.print("i-raw module: selected_wb_normalized: {d}, {d}, {d}, {d}\n", .{
-        selected_wb[0],
-        selected_wb[1],
-        selected_wb[2],
-        selected_wb[3],
-    });
-    std.debug.print("i-raw module: cam_to_srgb:\n", .{});
-    for (cam_to_srgb) |row| {
-        std.debug.print("{d}, {d}, {d}\n", .{ row[0], row[1], row[2] });
-    }
 
     var orientation: api.ImgParam.Orientation = .normal;
     if (raw_image.user_flip != -1) {
