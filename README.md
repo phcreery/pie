@@ -12,7 +12,7 @@ A long way to go.
 
 ![alt text](image.png)
 
-__Left: Output of dcraw from libraw, Right: output of pie basic pipeline. These should be a close as possible.__
+**Left: Output of dcraw from libraw, Right: output of pie basic pipeline. These should be a close as possible.**
 
 ## Development
 
@@ -30,7 +30,7 @@ This may require changing the default allocator.
 
 ## Build Requirements
 
-zig 0.15.1
+zig 0.16.0
 
 ### Linux
 

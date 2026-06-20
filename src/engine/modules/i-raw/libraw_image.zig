@@ -40,7 +40,7 @@ pub const RawImage = struct {
         const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.cam_mul; // camera (as shot) white balance
         // const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.pre_mul; // idk what this is, some sources say this is wb?
         // const white2: [8][8]u16 = libraw_rp.*.rawdata.color.white; //  daylight white balance (calculated from Adobe camera matrix)
-        const white_signed: [4]i32 = libraw_rp.*.rawdata.color.linear_max; // vendor specified (if any) 'specular white'
+        const white_signed: [4]i64 = libraw_rp.*.rawdata.color.linear_max; // vendor specified (if any) 'specular white'
         // TODO: if white is all 0, use data max instead
         // const data_max: u32 = libraw_rp.*.rawdata.color.maximum; // guessed from format bit count
         // const data_max: u32 = libraw_rp.*.rawdata.color.data_maximum // real data maximum calculated on current frame data
