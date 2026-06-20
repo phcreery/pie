@@ -30,12 +30,19 @@ test "fullsize through pipeline" {
     const mod_denoise = try pipeline.addModule(pie.engine.modules.denoise.desc);
     const mod_demosaic = try pipeline.addModule(pie.engine.modules.demosaic.desc);
     const mod_color = try pipeline.addModule(pie.engine.modules.color.desc);
+    const mod_filmcurv = try pipeline.addModule(pie.engine.modules.filmcurv.desc);
     const mod_o_png = try pipeline.addModule(pie.engine.modules.o_png.desc);
+
+    try pipeline.setModuleParam(mod_filmcurv, "colourmode", @as(i32, 4));
+    try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 2.22));
+    try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.0));
+    try pipeline.setModuleParam(mod_filmcurv, "bias", @as(f32, 0.0));
 
     try pipeline.connectModuleSocketsByHandleName(mod_i_raw, "output", mod_format, "input");
     try pipeline.connectModuleSocketsByHandleName(mod_format, "output", mod_denoise, "input");
     try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_demosaic, "input");
     try pipeline.connectModuleSocketsByHandleName(mod_demosaic, "output", mod_color, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_o_png, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_filmcurv, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_o_png, "input");
     try pipeline.run(aa);
 }

@@ -36,20 +36,33 @@ pub const RawImage = struct {
         const img_width: u16 = libraw_rp.*.sizes.width;
         const img_height: u16 = libraw_rp.*.sizes.height;
         const raw_image: []u16 = std.mem.span(libraw_rp.*.rawdata.raw_image);
-        const black: [4]u32 = libraw_rp.*.rawdata.color.cblack[0..4].*; // TODO: xtrans uses more than 4
+        const black_base: u32 = libraw_rp.*.rawdata.color.black;
+        const black_corr: [4]u32 = libraw_rp.*.rawdata.color.cblack[0..4].*; // first 4 entries are per-channel corrections
         const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.cam_mul; // camera (as shot) white balance
         // const wb_coeff: [4]f32 = libraw_rp.*.rawdata.color.pre_mul; // idk what this is, some sources say this is wb?
         // const white2: [8][8]u16 = libraw_rp.*.rawdata.color.white; //  daylight white balance (calculated from Adobe camera matrix)
-        const white_signed: [4]i64 = libraw_rp.*.rawdata.color.linear_max; // vendor specified (if any) 'specular white'
-        // TODO: if white is all 0, use data max instead
-        // const data_max: u32 = libraw_rp.*.rawdata.color.maximum; // guessed from format bit count
-        // const data_max: u32 = libraw_rp.*.rawdata.color.data_maximum // real data maximum calculated on current frame data
+        const white_signed: [4]i64 = libraw_rp.*.rawdata.color.linear_max; // per-channel linear maxima from metadata, black not subtracted
+        const maximum: u32 = libraw_rp.*.rawdata.color.maximum; // format/camera maximum, may be adjusted by LibRaw in some paths
+        const data_maximum: u32 = libraw_rp.*.rawdata.color.data_maximum; // measured maximum, populated in later processing paths for some formats
         const flip = libraw_rp.*.rawdata.sizes.flip;
         const user_flip = libraw_rp.*.params.user_flip;
 
+        var black: [4]u32 = undefined;
+        for (black_corr, 0..) |corr, i| {
+            black[i] = black_base + corr;
+        }
+
         var white: [4]u32 = undefined;
         for (white_signed[0..4], 0..) |val, i| {
-            white[i] = @as(u32, @intCast(val));
+            if (val > 0) {
+                white[i] = @as(u32, @intCast(val));
+            } else if (maximum > 0) {
+                white[i] = maximum;
+            } else if (data_maximum > 0) {
+                white[i] = data_maximum;
+            } else {
+                white[i] = @as(u32, @intCast(libraw.libraw_get_color_maximum(libraw_rp)));
+            }
         }
 
         const rgb_to_cam_all = libraw_rp.*.rawdata.color.rgb_cam;

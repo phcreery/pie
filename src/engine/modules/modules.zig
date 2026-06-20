@@ -7,6 +7,7 @@ pub const denoise = @import("denoise/module.zig");
 pub const demosaic = @import("demosaic/module.zig");
 pub const crop = @import("crop/module.zig");
 pub const color = @import("color/module.zig");
+pub const filmcurv = @import("filmcurv/module.zig");
 pub const o_png = @import("o-png/module.zig");
 pub const o_ppm = @import("o-ppm/module.zig");
 
@@ -26,6 +27,7 @@ pub fn populateRegistry(registry: *Registry) !void {
     try registry.add(demosaic.desc);
     try registry.add(crop.desc);
     try registry.add(color.desc);
+    try registry.add(filmcurv.desc);
     try registry.add(o_png.desc);
     try registry.add(o_ppm.desc);
 
