@@ -12,7 +12,7 @@ const TextureFormat = pie.engine.gpu.TextureFormat;
 const Bindings = pie.engine.gpu.Bindings;
 
 test "simple compute double buffer test" {
-    var gpu = try GPU.init();
+    var gpu = try GPU.init(std.testing.io);
     defer gpu.deinit();
 
     var upload = try Buffer.init(&gpu, 100 * 4 * TextureFormat.rgba16float.bpp(), .upload);

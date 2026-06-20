@@ -33,7 +33,7 @@ fn runPipeBench(allocator: std.mem.Allocator, arena: std.mem.Allocator, pipeline
     try bench.addParam("Pipeline Benchmark", &PipeBench.init(pipeline, arena), .{});
 
     var buf: [1024]u8 = undefined;
-    var stdout = std.fs.File.stdout().writer(&buf);
+    var stdout = std.Io.File.stdout().writer(std.testing.io, &buf);
     const writer = &stdout.interface;
     try bench.run(writer);
     try writer.flush();
@@ -51,7 +51,7 @@ test "simple test modules" {
     const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
-    var gpu_instance = try gpu.GPU.init();
+    var gpu_instance = try gpu.GPU.init(std.testing.io);
     defer gpu_instance.deinit();
 
     var registry = try pie.engine.modules.Registry.init(allocator);
@@ -64,7 +64,7 @@ test "simple test modules" {
         .download_buffer_size_bytes = 1024,
     };
 
-    var pipeline = try Pipeline.init(allocator, &gpu_instance, pipeline_config);
+    var pipeline = try Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config);
     defer pipeline.deinit();
 
     const mod_test_i_1234 = try pipeline.addModule(registry.get("test-i-1234").?);

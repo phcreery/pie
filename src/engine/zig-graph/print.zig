@@ -211,7 +211,7 @@ test "graph printer" {
 
     // to print to stdout
     var stdout_buffer: [4096]u8 = undefined;
-    var writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var writer = std.Io.File.stdout().writer(std.testing.io, &stdout_buffer);
     const stdout = &writer.interface;
 
     // to print to allocating buffer
@@ -222,7 +222,7 @@ test "graph printer" {
     const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
-    const term_size = pie.cli.console.termsize.termSize(std.fs.File.stdout()) catch unreachable orelse pie.cli.console.termsize.TermSize{
+    const term_size = pie.cli.console.termSize(std.testing.io, std.Io.File.stdout()) catch unreachable orelse pie.cli.console.TermSize{
         .width = 80,
         .height = 24,
     };

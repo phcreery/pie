@@ -81,7 +81,7 @@ test "targeting dcraw basic processing" {
     var modules = try pie.engine.modules.Registry.init(allocator);
     defer modules.deinit();
 
-    var pipeline = Pipeline.init(allocator, &gpu_instance, pipeline_config) catch unreachable;
+    var pipeline = Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
     const mod_i_raw = try pipeline.addModule(modules.get("i-raw").?);

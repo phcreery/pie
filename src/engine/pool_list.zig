@@ -8,7 +8,7 @@ pub fn PoolList(comptime T: type, comptime ll_node_field: []const u8) type {
         @compileError("T must not have a field named " ++ ll_node_field);
     }
     return struct {
-        pool: std.heap.MemoryPoolExtra(T, .{}),
+        pool: std.heap.memory_pool.ExtraManaged(T, .{}),
         ll: std.DoublyLinkedList,
 
         const Handle = struct {
@@ -19,7 +19,7 @@ pub fn PoolList(comptime T: type, comptime ll_node_field: []const u8) type {
 
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{
-                .pool = std.heap.MemoryPoolExtra(T, .{}).init(allocator),
+                .pool = std.heap.memory_pool.ExtraManaged(T, .{}).init(allocator),
                 .ll = .{},
             };
         }

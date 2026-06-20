@@ -16,13 +16,9 @@ pub const RawImage = struct {
     filters: api.CFA,
     libraw_rp: *libraw.libraw_data_t,
 
-    pub fn read(allocator: std.mem.Allocator, file: std.fs.File) !RawImage {
-        const file_info = try file.stat();
-
-        // create buffer and read entire file into it
-        var buf: []u8 = try allocator.alloc(u8, file_info.size);
+    pub fn read(allocator: std.mem.Allocator, io: std.Io, file_path: []const u8) !RawImage {
+        const buf = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, allocator, .unlimited);
         defer allocator.free(buf);
-        _ = try file.read(buf[0..]);
 
         const libraw_rp = libraw.libraw_init(0);
 
@@ -85,7 +81,7 @@ pub const RawImage = struct {
             .white_balance = wb_coeff,
             .cam_to_srgb = cam_to_srgb,
             // .cam_to_xyz = cam_to_xyz,
-            .filters = try api.CFA.fromLibraw(&libraw_rp.*.rawdata.iparams.cdesc, libraw_rp.*.rawdata.iparams.filters),
+            .filters = try api.CFA.fromLibraw(libraw_rp.*.rawdata.iparams.cdesc[0..], libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
         };
     }
@@ -139,8 +135,8 @@ test "libraw version" {
 
 test "open raw image" {
     const allocator = std.testing.allocator;
-    const file = try std.fs.cwd().openFile("testing/images/DSC_6765.NEF", .{});
-    var raw_image = try RawImage.read(allocator, file);
+    const io = std.testing.io;
+    var raw_image = try RawImage.read(allocator, io, "testing/images/DSC_6765.NEF");
     defer raw_image.deinit();
     try std.testing.expect(raw_image.width == 6016);
     try std.testing.expect(raw_image.height == 4016);

@@ -15,7 +15,7 @@ const BindGroupEntry = pie.engine.gpu.BindGroupEntry;
 
 test "simple compute test" {
     // INIT
-    var gpu = try GPU.init();
+    var gpu = try GPU.init(std.testing.io);
     defer gpu.deinit();
 
     // these are intentionally over-provisioned to avoid OOM issues

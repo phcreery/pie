@@ -18,8 +18,9 @@ pub const desc: api.ModuleDesc = .{
     .createNodes = createNodes,
 };
 
-pub fn writeSink(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
+pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     _ = allocator;
+    _ = io;
     const sock = try api.getModSocket(pipe, mod, "input");
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
     const download_buffer_slice = download_buffer_ptr[0..(sock.roi.?.w * sock.roi.?.h * sock.format.nchannels())];

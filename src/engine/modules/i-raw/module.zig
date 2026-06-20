@@ -30,15 +30,14 @@ pub var desc: api.ModuleDesc = .{
     .readSource = readSource,
 };
 
-pub fn init(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod_handle: api.ModuleHandle) !void {
+pub fn init(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, mod_handle: api.ModuleHandle) !void {
     var raw_image = try allocator.create(RawImage);
     errdefer raw_image.deinit();
 
     const filename = try api.getParam(pipe, mod_handle, "filename", []const u8);
     slog.info("i-raw Filename param value: {s}", .{filename});
 
-    const file = try std.fs.cwd().openFile(filename, .{});
-    raw_image.* = try RawImage.read(allocator, file);
+    raw_image.* = try RawImage.read(allocator, io, filename);
     errdefer raw_image.deinit();
 
     var mod = try api.getModule(pipe, mod_handle);
@@ -170,7 +169,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     };
 
     var stdout_buffer: [4096]u8 = undefined;
-    var writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var writer = std.Io.File.stdout().writer(pipe.io, &stdout_buffer);
     const stdout = &writer.interface;
     try raw_image.print(stdout);
     try m.img_param.?.print(stdout);

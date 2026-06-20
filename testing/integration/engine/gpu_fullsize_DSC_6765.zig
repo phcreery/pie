@@ -30,11 +30,11 @@ test "load raw, demosaic, save" {
     //     return error.SkipZigTest;
     // }
     const allocator = std.testing.allocator;
+    const io = std.testing.io;
 
     // Read contents from file
     const file_name = "testing/images/DSC_6765.NEF";
-    const file = try std.fs.cwd().openFile(file_name, .{});
-    var pie_raw_image = try pie.engine.modules.i_raw.RawImage.read(allocator, file);
+    var pie_raw_image = try pie.engine.modules.i_raw.RawImage.read(allocator, io, file_name);
     defer pie_raw_image.deinit();
 
     // flattened u16 array of the 2d rggb array
@@ -107,7 +107,7 @@ test "load raw, demosaic, save" {
     roi_out_lower.x = 0;
     roi_out_lower.y = 0;
 
-    var gpu = try pie.engine.gpu.GPU.init();
+    var gpu = try pie.engine.gpu.GPU.init(io);
     defer gpu.deinit();
 
     // these are intentionally over-provisioned to avoid OOM issues
@@ -486,6 +486,6 @@ test "load raw, demosaic, save" {
 
         try zigimage2.convert(allocator, .rgba64);
         var write_buffer2: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-        try zigimage2.writeToFilePath(allocator, "testing/images/DSC_6765_debayered.png", write_buffer2[0..], .{ .png = .{} });
+        try zigimage2.writeToFilePath(allocator, io, "testing/images/DSC_6765_debayered.png", write_buffer2[0..], .{ .png = .{} });
     }
 }

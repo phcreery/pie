@@ -4,7 +4,7 @@ const std = @import("std");
 /// This allows for fast lookups and removals by handle.
 pub fn HashMapPool(comptime T: type) type {
     return struct {
-        pool: std.heap.MemoryPoolExtra(T, .{}),
+        pool: std.heap.memory_pool.ExtraManaged(T, .{}),
         hash_map: std.AutoHashMap(usize, *T),
         current_id: usize = 0,
 
@@ -18,7 +18,7 @@ pub fn HashMapPool(comptime T: type) type {
 
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{
-                .pool = std.heap.MemoryPoolExtra(T, .{}).init(allocator),
+                .pool = std.heap.memory_pool.ExtraManaged(T, .{}).init(allocator),
                 .hash_map = std.AutoHashMap(Key, *T).init(allocator),
             };
         }

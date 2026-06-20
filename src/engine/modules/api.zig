@@ -89,12 +89,12 @@ pub const ModuleDesc = struct {
 
     // https://github.com/hanatos/vkdt/blob/1921eabfa2c87b90042dee676d5d3e34d8cbd5e1/src/pipe/global.c#L106
     initParams: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
-    init: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
+    init: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     deinit: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) void = null,
     modifyROIOut: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     createNodes: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
-    writeSink: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
+    writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
 };
 
 /// PIPELINE HELPERS

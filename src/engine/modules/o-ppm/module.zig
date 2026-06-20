@@ -30,7 +30,7 @@ pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "output.ppm"));
 }
 
-pub fn writeSink(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
+pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     const socket = try api.getModSocket(pipe, mod, "input");
 
     const filename = try api.getParam(pipe, mod, "filename", []const u8);
@@ -59,7 +59,7 @@ pub fn writeSink(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Mod
         try zig_image.convert(allocator, .rgb24);
 
         var write_buffer2: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-        try zig_image.writeToFilePath(allocator, filename, write_buffer2[0..], .{ .ppm = .{} });
+        try zig_image.writeToFilePath(allocator, io, filename, write_buffer2[0..], .{ .ppm = .{} });
     }
 }
 

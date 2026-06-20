@@ -130,10 +130,10 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
 
 pub fn printNodesGraph(self: *pipeline.Pipeline) !void {
     var stdout_buffer: [4096]u8 = undefined;
-    var writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var writer = std.Io.File.stdout().writer(self.io, &stdout_buffer);
     const stdout = &writer.interface;
 
-    const term_size = console.termsize.termSize(std.fs.File.stdout()) catch unreachable orelse console.termsize.TermSize{
+    const term_size = console.termSize(self.io, std.Io.File.stdout()) catch unreachable orelse console.TermSize{
         .width = 80,
         .height = 24,
     };

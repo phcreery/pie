@@ -46,6 +46,7 @@ pub const PipelineConfig = struct {
 /// - Sink nodes must be last in execution order. TODO: make any sink node work
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     gpu: ?*gpu.GPU,
 
@@ -77,6 +78,7 @@ pub const Pipeline = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         gpu_instance: ?*gpu.GPU,
         config: PipelineConfig,
     ) !Pipeline {
@@ -123,6 +125,7 @@ pub const Pipeline = struct {
 
         return Pipeline{
             .allocator = allocator,
+            .io = io,
             .gpu = gpu_instance,
 
             .upload_buffer = upload_buffer,
@@ -142,7 +145,7 @@ pub const Pipeline = struct {
 
             .param_buffer_pool = param_buffer_pool,
 
-            .perf = try PerfMetrics.init(allocator),
+            .perf = try PerfMetrics.init(allocator, io),
         };
     }
 
@@ -586,7 +589,7 @@ pub const Pipeline = struct {
         for (self.module_execution_order.items) |module_handle| {
             const module = try self.module_pool.getPtr(module_handle);
             if (module.desc.init) |initFn| {
-                try initFn(self.allocator, self, module_handle);
+                try initFn(self.allocator, self.io, self, module_handle);
             }
         }
     }
@@ -1196,7 +1199,7 @@ pub const Pipeline = struct {
                         }
                     }
 
-                    try writeSinkFn(self.allocator, self, last_node.mod, mapped_trimmed.ptr);
+                    try writeSinkFn(self.allocator, self.io, self, last_node.mod, mapped_trimmed.ptr);
                 } else {
                     slog.err("Sink node has no writeSink function defined", .{});
                     return error.NodeMissingWriteSinkFunction;
@@ -1469,7 +1472,7 @@ pub const PerfMetrics = struct {
 
     fn timerLap(self: *PerfMetrics, name: []const u8) !void {
         const elapsed_ns = self.start_time.untilNow(self.io, .awake).toNanoseconds();
-        _ = try self.times.put(name, elapsed_ns);
+        _ = try self.times.put(name, @intCast(elapsed_ns));
         try self.time_keys.append(self.allocator, name);
         self.start_time = std.Io.Clock.awake.now(self.io);
     }
