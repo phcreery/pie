@@ -4,10 +4,37 @@ const std = @import("std");
 // Import necessary windows types, usually provided by the standard library
 const UINT = c_uint;
 const BOOL = c_int;
-
+const SHORT = c_short;
+const WORD = c_ushort;
+const TRUE = 1;
+const SMALL_RECT = extern struct {
+    Left: SHORT,
+    Top: SHORT,
+    Right: SHORT,
+    Bottom: SHORT,
+};
+pub const COORD = extern struct {
+    X: SHORT,
+    Y: SHORT,
+};
 // Externally bind the function from kernel32
 extern "kernel32" fn SetConsoleOutputCP(wCodePageID: UINT) callconv(.winapi) BOOL;
 extern "kernel32" fn GetConsoleOutputCP() callconv(.winapi) UINT;
+
+// GetConsoleScreenBufferInfo
+extern "kernel32" fn GetConsoleScreenBufferInfo(
+    hConsoleOutput: std.os.windows.HANDLE,
+    lpConsoleScreenBufferInfo: *CONSOLE_SCREEN_BUFFER_INFO,
+) callconv(.winapi) BOOL;
+
+// CONSOLE_SCREEN_BUFFER_INFO
+pub const CONSOLE_SCREEN_BUFFER_INFO = extern struct {
+    dwSize: COORD,
+    dwCursorPosition: COORD,
+    wAttributes: WORD,
+    srWindow: SMALL_RECT,
+    dwMaximumWindowSize: COORD,
+};
 
 /// UTF8ConsoleOutput sets the console output to UTF-8 on Windows
 /// and restores the original code page on deinit.
@@ -64,7 +91,19 @@ pub fn termSize(io: std.Io, file: std.Io.File) !?TermSize {
         return null;
     }
     return switch (builtin.os.tag) {
-        .windows => null,
+        .windows => blk: {
+            var buf: CONSOLE_SCREEN_BUFFER_INFO = undefined;
+            break :blk switch (GetConsoleScreenBufferInfo(
+                file.handle,
+                &buf,
+            )) {
+                TRUE => TermSize{
+                    .width = @intCast(buf.srWindow.Right - buf.srWindow.Left + 1),
+                    .height = @intCast(buf.srWindow.Bottom - buf.srWindow.Top + 1),
+                },
+                else => error.Unexpected,
+            };
+        },
         .linux, .macos => blk: {
             var buf: std.posix.winsize = undefined;
             break :blk switch (std.posix.errno(
