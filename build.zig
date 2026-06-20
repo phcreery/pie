@@ -1,9 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const Build = std.Build;
-const OptimizeMode = std.builtin.OptimizeMode;
-const ResolvedTarget = Build.ResolvedTarget;
-const Dependency = Build.Dependency;
 const sokol = @import("sokol");
 const cimgui = @import("cimgui");
 
@@ -58,12 +55,11 @@ pub fn build(b: *Build) !void {
     //     .on_demand = ztracy_options.on_demand,
     // });
     // const dep_zpool = b.dependency("zpool", opts);
-    const termsize = b.dependency("termsize", opts);
     const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
     const dep_zuballoc = b.dependency("zuballoc", opts);
 
     // inject the cimgui header search path into the sokol C library compile step
-    dep_sokol.artifact("sokol_clib").addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
+    dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
 
     // OPTIONS
     // see tigerbeetle for advanced build options handling
@@ -72,7 +68,7 @@ pub fn build(b: *Build) !void {
     mod_options.addOption(
         i64,
         "timestamp",
-        std.time.timestamp(),
+        std.Io.Timestamp.now(b.graph.io, std.Io.Clock.real).toMilliseconds(),
     );
     mod_options.addOption(bool, "docking", opt_docking);
 
@@ -92,7 +88,6 @@ pub fn build(b: *Build) !void {
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             // .{ .name = "ztracy", .module = dep_ztracy.module("root")  },
             // .{ .name = "zpool", .module = dep_zpool.module("root")  },
-            .{ .name = "termsize", .module = termsize.module("termsize") },
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
@@ -165,7 +160,7 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
         // so we need to add it manually here
         // https://github.com/ziglang/zig/blob/ddc815e3d88d32b8f3df0610ee59c8d34b8ff8eb/lib/std/zig/system/NativePaths.zig#L130
         const system_library_path: std.Build.LazyPath = .{ .cwd_relative = "C:\\Windows\\System32" };
-        exe.addLibraryPath(system_library_path);
+        exe.root_module.addLibraryPath(system_library_path);
     }
     b.installArtifact(exe);
     b.step("run", "Run pie").dependOn(&b.addRunArtifact(exe).step);
@@ -173,11 +168,12 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
 
 const BuildWasmOptions = struct {
     mod_main: *Build.Module,
-    dep_sokol: *Dependency,
-    dep_cimgui: *Dependency,
+    dep_sokol: *Build.Dependency,
+    dep_cimgui: *Build.Dependency,
     cimgui_clib_name: []const u8,
 };
 
+// https://github.com/floooh/sokol-zig-imgui-sample/blob/main/build.zig
 fn buildWasm(b: *Build, opts: BuildWasmOptions) !void {
     // build the main file into a library, this is because the WASM 'exe'
     // needs to be linked in a separate build step with the Emscripten linker
@@ -193,7 +189,7 @@ fn buildWasm(b: *Build, opts: BuildWasmOptions) !void {
     // the cimgui C library otherwise the C/C++ code won't find
     // C stdlib headers
     const emsdk_incl_path = dep_emsdk.path("upstream/emscripten/cache/sysroot/include");
-    opts.dep_cimgui.artifact(opts.cimgui_clib_name).addSystemIncludePath(emsdk_incl_path);
+    opts.dep_cimgui.artifact(opts.cimgui_clib_name).root_module.addSystemIncludePath(emsdk_incl_path);
 
     // all C libraries need to depend on the sokol library, when building for
     // WASM this makes sure that the Emscripten SDK has been setup before

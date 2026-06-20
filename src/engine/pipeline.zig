@@ -434,7 +434,7 @@ pub const Pipeline = struct {
         // with type checking
         // we could do duct typing here but this allows better lsp support
         switch (comptime @TypeOf(item)) {
-            inline *Module => |_| {
+            inline *Module => {
                 var module = @as(*Module, item);
                 for (module.desc.sockets) |socket| {
                     if (socket) |sock| {
@@ -448,7 +448,7 @@ pub const Pipeline = struct {
                     }
                 }
             },
-            inline *Node => |_| {
+            inline *Node => {
                 var node = @as(*Node, item);
                 for (node.desc.sockets) |socket| {
                     if (socket) |sock| {
@@ -1420,8 +1420,9 @@ pub fn buildGraph(
 
 pub const PerfMetrics = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
-    timer: std.time.Timer,
+    start_time: std.Io.Timestamp,
     time_keys: std.ArrayList([]const u8),
     times: std.StringHashMap(u64),
 
@@ -1436,10 +1437,12 @@ pub const PerfMetrics = struct {
 
     const Self = @This();
 
-    fn init(allocator: std.mem.Allocator) !PerfMetrics {
+    fn init(allocator: std.mem.Allocator, io: std.Io) !PerfMetrics {
         return PerfMetrics{
             .allocator = allocator,
-            .timer = undefined,
+            .io = io,
+            // .timer = undefined,
+            .start_time = .zero,
             .time_keys = try std.ArrayList([]const u8).initCapacity(allocator, 16),
             .times = std.StringHashMap(u64).init(allocator),
             .upload_buffer_size_bytes = null,
@@ -1459,17 +1462,16 @@ pub const PerfMetrics = struct {
 
     /// TIMER
     fn timerStart(self: *PerfMetrics) !void {
-        self.timer.reset();
         self.time_keys.clearAndFree(self.allocator);
         self.times.clearAndFree();
-        self.timer = try std.time.Timer.start();
+        self.start_time = std.Io.Clock.awake.now(self.io);
     }
 
     fn timerLap(self: *PerfMetrics, name: []const u8) !void {
-        const elapsed_ns = self.timer.lap();
+        const elapsed_ns = self.start_time.untilNow(self.io, .awake).toNanoseconds();
         _ = try self.times.put(name, elapsed_ns);
         try self.time_keys.append(self.allocator, name);
-        self.timer.reset();
+        self.start_time = std.Io.Clock.awake.now(self.io);
     }
 
     /// BUFFER

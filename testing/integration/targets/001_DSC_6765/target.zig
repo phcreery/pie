@@ -6,31 +6,25 @@ const zigimg = @import("zigimg");
 const gpu = pie.engine.gpu;
 const Pipeline = pie.engine.Pipeline;
 
-fn libraw_dcraw_process(allocator: std.mem.Allocator, input_filename: []const u8, target_filename: []const u8) !void {
+fn libraw_dcraw_process(allocator: std.mem.Allocator, io: std.Io, input_filename: []const u8, target_filename: []const u8) !void {
 
     // first check if target_filename already exists, if so, skip processing
-    if (std.fs.cwd().openFile(target_filename, .{})) |_| {
+    if (std.Io.Dir.cwd().openFile(io, target_filename, .{})) |_| {
         std.log.info("Target file {s} already exists, skipping DCRAW processing", .{target_filename});
         return;
     } else |err| {
-        if (err != std.fs.File.OpenError.FileNotFound) {
+        if (err != std.Io.File.OpenError.FileNotFound) {
             return err;
         }
     }
 
     std.log.info("DCRAW processing...", .{});
 
-    const file = try std.fs.cwd().openFile(input_filename, .{});
-    const file_info = try file.stat();
-
-    // create buffer and read entire file into it
-    var buf: []u8 = try allocator.alloc(u8, file_info.size);
-    defer allocator.free(buf);
-    _ = try file.read(buf[0..]);
+    const contents = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, input_filename, allocator, .unlimited);
 
     const libraw_rp = libraw.libraw_init(0);
 
-    const ret = libraw.libraw_open_buffer(libraw_rp, buf.ptr, buf.len);
+    const ret = libraw.libraw_open_buffer(libraw_rp, contents.ptr, contents.len);
     if (ret != libraw.LIBRAW_SUCCESS) {
         return error.OpenFailed;
     }
@@ -61,12 +55,13 @@ fn libraw_dcraw_process(allocator: std.mem.Allocator, input_filename: []const u8
 
 test "targeting dcraw basic processing" {
     const allocator = std.testing.allocator;
+    const io = std.testing.io;
 
     const input_filename = "testing/images/DSC_6765.NEF";
     const target_filename = "testing/integration/targets/001_DSC_6765/target.ppm";
     const output_filename = "testing/integration/targets/001_DSC_6765/output.ppm";
 
-    try libraw_dcraw_process(allocator, input_filename, target_filename);
+    try libraw_dcraw_process(allocator, io, input_filename, target_filename);
 
     var arena_instance = std.heap.ArenaAllocator.init(allocator);
     defer arena_instance.deinit();
@@ -75,7 +70,7 @@ test "targeting dcraw basic processing" {
     const cout = pie.cli.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
 
-    var gpu_instance = try gpu.GPU.init();
+    var gpu_instance = try gpu.GPU.init(io);
     defer gpu_instance.deinit();
 
     const pipeline_config: pie.engine.pipeline.PipelineConfig = .{

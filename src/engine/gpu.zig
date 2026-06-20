@@ -865,7 +865,7 @@ pub const GPU = struct {
 
     const Self = @This();
 
-    pub fn init() !Self {
+    pub fn init(io: std.Io) !Self {
         slog.debug("Initializing GPU", .{});
 
         const instance = wgpu.Instance.create(null).?;
@@ -873,7 +873,7 @@ pub const GPU = struct {
 
         const adapter_request = instance.requestAdapterSync(&wgpu.RequestAdapterOptions{
             .power_preference = .high_performance,
-        }, 0);
+        }, io, std.Io.Duration.fromMilliseconds(200));
         const adapter = switch (adapter_request.status) {
             .success => adapter_request.adapter.?,
             else => return error.NoAdapter,
@@ -915,7 +915,8 @@ pub const GPU = struct {
         const device_request = adapter.requestDeviceSync(
             instance,
             &device_descriptor,
-            0,
+            io,
+            std.Io.Duration.fromMilliseconds(200),
         );
         const device = switch (device_request.status) {
             .success => device_request.device.?,

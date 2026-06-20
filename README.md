@@ -17,7 +17,7 @@ __Left: Output of dcraw from libraw, Right: output of pie basic pipeline. These 
 ## Development
 
 ```
-zig build run -fincremental --watch
+zig build integration -fincremental --watch --error-style minimal_clear
 zig build test --watch
 zig build integration --watch
 ```
