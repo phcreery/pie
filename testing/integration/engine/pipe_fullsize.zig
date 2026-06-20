@@ -33,7 +33,10 @@ test "fullsize through pipeline" {
     const mod_filmcurv = try pipeline.addModule(pie.engine.modules.filmcurv.desc);
     const mod_o_png = try pipeline.addModule(pie.engine.modules.o_png.desc);
 
-    try pipeline.setModuleParam(mod_filmcurv, "colourmode", @as(i32, 4));
+    try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 1));
+    try pipeline.setModuleParam(mod_i_raw, "matrix_mode", @as(i32, 0));
+
+    try pipeline.setModuleParam(mod_filmcurv, "colourmode", @as(i32, 1));
     try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 2.22));
     try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.0));
     try pipeline.setModuleParam(mod_filmcurv, "bias", @as(f32, 0.0));

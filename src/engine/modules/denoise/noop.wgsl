@@ -12,60 +12,42 @@ struct ImgParams {
 @group(1) @binding(1) var           output: texture_storage_2d<rgba16float, write>;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    var coords = vec2<i32>(global_id.xy);
+    let coords = vec2<i32>(global_id.xy);
     let px = textureLoad(input, coords, 0);
     let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a));
 
-    // NOTE: white balance should be applied before interpolation (half and bilinear demosaics could handle non-balanced data, but others are not).
+    // NOTE: white balance should be applied before interpolation.
     let r_denom = max(1.0, img_params.white.r - img_params.black.r);
     let g_denom = max(1.0, img_params.white.g - img_params.black.g);
     let b_denom = max(1.0, img_params.white.b - img_params.black.b);
     let g2_denom = max(1.0, img_params.white.a - img_params.black.a);
-    let r = clamp((pxf.r - img_params.black.r) / r_denom, 0.0, 1.0);
-    let g = clamp((pxf.g - img_params.black.g) / g_denom, 0.0, 1.0);
-    let b = clamp((pxf.b - img_params.black.b) / b_denom, 0.0, 1.0);
-    let g2 = clamp((pxf.a - img_params.black.a) / g2_denom, 0.0, 1.0);
 
-    // oh yea, we hove to do a workaround for the rggb packed layout
-    // INPUT
-    // libraw outputs the raw data as a 1D buffer, but we interpret it as a 2D texture
-    // [ [(r g r g)] [ r g r g ] ...
-    //   [ g b g b ] [(g b g b)] ...
-    //   [ r g r g ] [ r g r g ] ...
-    //   [ g b g b ] [ g b g b ] ... ]
-    // DECODE
-    // var values: vec4<f32>;
-    // let is_even_y = (coords.y % 2) == 0;
-    // if (is_even_y) {
-    //     let rgrg = textureLoad(input, coords, 0);
-    //     // subtract black and scale by white
-    //     // R
-    //     values.x = max(0, (rgrg.x - img_params.black.r) / (img_params.white.r - img_params.black.r));
-    //     values.z = max(0, (rgrg.z - img_params.black.r) / (img_params.white.r - img_params.black.r));
-    //     // G1
-    //     values.y = max(0, (rgrg.y - img_params.black.g) / (img_params.white.g - img_params.black.g));
-    //     values.w = max(0, (rgrg.w - img_params.black.g) / (img_params.white.g - img_params.black.g));
-    // } else {
-    //     let gbgb = textureLoad(input, coords, 0);
-    //     // subtract black and scale by white
-    //     // G2
-    //     values.x = max(0, (gbgb.x - img_params.black.a) / (img_params.white.a - img_params.black.a));
-    //     values.z = max(0, (gbgb.z - img_params.black.a) / (img_params.white.a - img_params.black.a));
-    //     // B
-    //     values.y = max(0, (gbgb.y - img_params.black.b) / (img_params.white.b - img_params.black.b));
-    //     values.w = max(0, (gbgb.w - img_params.black.b) / (img_params.white.b - img_params.black.b));
-    // }
+    let wb_r = img_params.white_balance.r;
+    let wb_g1 = img_params.white_balance.g;
+    let wb_b = img_params.white_balance.b;
+    let wb_g2 = img_params.white_balance.a;
 
-    // actually, lets just average the black levels and the white levels and use that for all channels, since we are not doing a real denoise and just want to test the pipeline
-    // let px = textureLoad(input, coords, 0);
-    // let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a));
-    // let black_avg = (img_params.black.r + img_params.black.g + img_params.black.b + img_params.black.a) / 4.0;
-    // let white_avg = (img_params.white.r + img_params.white.g + img_params.white.b + img_params.white.a) / 4.0;
-    // let r = max(0, (pxf.r - black_avg) / (white_avg - black_avg));
-    // let g = max(0, (pxf.g - black_avg) / (white_avg - black_avg));
-    // let b = max(0, (pxf.b - black_avg) / (white_avg - black_avg));
-    // let g2 = max(0, (pxf.a - black_avg) / (white_avg - black_avg));
+    // Packed raw layout:
+    // even rows: [R, G1, R, G1]
+    // odd rows : [G2, B, G2, B]
+    let is_even_y = (coords.y % 2) == 0;
 
-    let values = vec4<f32>(r, g, b, g2);
+    var values: vec4<f32>;
+    if (is_even_y) {
+        values = vec4<f32>(
+            clamp(((pxf.r - img_params.black.r) / r_denom) * wb_r, 0.0, 1.0),
+            clamp(((pxf.g - img_params.black.g) / g_denom) * wb_g1, 0.0, 1.0),
+            clamp(((pxf.b - img_params.black.r) / r_denom) * wb_r, 0.0, 1.0),
+            clamp(((pxf.a - img_params.black.g) / g_denom) * wb_g1, 0.0, 1.0),
+        );
+    } else {
+        values = vec4<f32>(
+            clamp(((pxf.r - img_params.black.a) / g2_denom) * wb_g2, 0.0, 1.0),
+            clamp(((pxf.g - img_params.black.b) / b_denom) * wb_b, 0.0, 1.0),
+            clamp(((pxf.b - img_params.black.a) / g2_denom) * wb_g2, 0.0, 1.0),
+            clamp(((pxf.a - img_params.black.b) / b_denom) * wb_b, 0.0, 1.0),
+        );
+    }
+
     textureStore(output, coords, values);
 }

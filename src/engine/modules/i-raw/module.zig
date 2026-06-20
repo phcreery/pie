@@ -4,12 +4,24 @@ const RawImage = @import("libraw_image.zig").RawImage;
 
 const api = @import("../api.zig");
 
+const WbMode = enum(i32) {
+    cam_mul = 0,
+    pre_mul = 1,
+};
+
+const MatrixMode = enum(i32) {
+    rgb_cam = 0,
+    cam_xyz = 1,
+};
+
 pub var desc: api.ModuleDesc = .{
     .name = "i-raw",
     .type = .source,
     .params = init: {
         var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
         p[0] = .{ .name = "filename", .len = 256, .typ = .str };
+        p[1] = .{ .name = "wb_mode", .len = 1, .typ = .i32 };
+        p[2] = .{ .name = "matrix_mode", .len = 1, .typ = .i32 };
         break :init p;
     },
     .sockets = init: {
@@ -54,68 +66,94 @@ pub fn deinit(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Module
 
 pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "input.raw"));
+    try api.initParamNamed(pipe, mod, "wb_mode", @intFromEnum(WbMode.pre_mul));
+    try api.initParamNamed(pipe, mod, "matrix_mode", @intFromEnum(MatrixMode.rgb_cam));
+}
+
+fn computeCamToSrgb(raw_image: *RawImage, matrix_mode: MatrixMode) [3][3]f32 {
+    return switch (matrix_mode) {
+        .rgb_cam => .{
+            .{
+                raw_image.rgb_cam[0][0],
+                raw_image.rgb_cam[0][1] + raw_image.rgb_cam[0][3],
+                raw_image.rgb_cam[0][2],
+            },
+            .{
+                raw_image.rgb_cam[1][0],
+                raw_image.rgb_cam[1][1] + raw_image.rgb_cam[1][3],
+                raw_image.rgb_cam[1][2],
+            },
+            .{
+                raw_image.rgb_cam[2][0],
+                raw_image.rgb_cam[2][1] + raw_image.rgb_cam[2][3],
+                raw_image.rgb_cam[2][2],
+            },
+        },
+        .cam_xyz => blk: {
+            const xyz_to_srgb: [3][3]f32 = .{
+                .{ 3.2409699, -1.5373832, -0.49861076 },
+                .{ -0.96924365, 1.8759675, 0.04155506 },
+                .{ 0.05563008, -0.20397696, 1.0569715 },
+            };
+            var cam_to_srgb: [3][3]f32 = @splat(@splat(0.0));
+            api.mat3x3Mul(&cam_to_srgb, xyz_to_srgb, raw_image.cam_xyz);
+            break :blk cam_to_srgb;
+        },
+    };
+}
+
+fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
+    const green_ref = blk: {
+        if (wb[1] > 0.0) break :blk wb[1];
+        if (wb[3] > 0.0) break :blk wb[3];
+        break :blk 1.0;
+    };
+
+    var out = wb;
+    out[0] = if (wb[0] > 0.0) wb[0] / green_ref else 1.0;
+    out[1] = 1.0;
+    out[2] = if (wb[2] > 0.0) wb[2] / green_ref else 1.0;
+    // Treat the 4th slot as G2. If LibRaw leaves it unset/zero, use the same normalized gain as G1.
+    out[3] = 1.0;
+    return out;
 }
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
+    const wb_mode: WbMode = @enumFromInt(try api.getParam(pipe, mod, "wb_mode", i32));
+    const matrix_mode: MatrixMode = @enumFromInt(try api.getParam(pipe, mod, "matrix_mode", i32));
+
     var roi: api.ROI = .{
         .w = @intCast(raw_image.width),
         .h = @intCast(raw_image.height),
     };
 
-    // THIS IS A WORKAROUND: for single channel read-write storage texture limitation
-    roi = roi.div(4, 1); // we have 1/4 width input (packed RG/GB)
+    roi = roi.div(4, 1); // packed RG/GB workaround
 
-    // XYZ D65 to Rec709
-    // #define matrix_xyz_to_rec709 makemat(3.24096994190452348, -1.53738317757009435, -0.498610760293003552, -0.969243636280879506, 1.87596750150771996, 0.0415550574071755843, 0.0556300796969936354, -0.20397695888897649, 1.05697151424287816)
-    // const xyz_to_rec709: [3][3]f32 = .{
-    //     .{ 3.24096994190452348, -1.53738317757009435, -0.498610760293003552 },
-    //     .{ -0.969243636280879506, 1.87596750150771996, 0.0415550574071755843 },
-    //     .{ 0.0556300796969936354, -0.20397695888897649, 1.05697151424287816 },
-    // };
-    // XYZ D65 to Rec2020
-    // const xyz_to_rec2020: [3][3]f32 = .{
-    //     .{ 1.7166511880, -0.3556707838, -0.2533662814 },
-    //     .{ -0.6666843518, 1.6164812366, 0.0157685458 },
-    //     .{ 0.0176398574, -0.0427706133, 0.9421031212 },
-    // };
+    const selected_wb_raw = switch (wb_mode) {
+        .cam_mul => raw_image.cam_mul,
+        .pre_mul => raw_image.pre_mul,
+    };
+    const selected_wb = normalizeWhiteBalance(selected_wb_raw);
+    const cam_to_srgb = computeCamToSrgb(raw_image, matrix_mode);
 
-    // var cam_to_rec2020: [3][3]f32 = undefined;
-    // api.mat3x3Mul(&cam_to_rec2020, xyz_to_rec2020, raw_image.cam_xyz);
-    // api.mat3x3Mul(&cam_to_rec2020, xyz_to_rec709, raw_image.cam_xyz);
-
-    // multiply wb by cam_to_rgb to get the white balance coefficients in the sRGB space (this is a bit of a hack, ideally we should do this in the shader, but it requires an extra matrix multiplication there which is a bit expensive)
-    // perform matrix-vector multiplication
-    // cam_t_rgb * wb
-    // where cam_to_rgb is nxn [3][3]f32 and wb is nx1 [3]f32
-    var wb_srgb: [3]f32 = undefined;
-    for (raw_image.white_balance[0..3], 0..) |wb_val, i| {
-        var sum: f32 = 0.0;
-        for (raw_image.cam_to_srgb[i][0..3]) |cam_to_rgb_val| {
-            sum += cam_to_rgb_val / wb_val;
-        }
-        wb_srgb[i] = sum;
-    }
-
-    wb_srgb[0] /= wb_srgb[1];
-    wb_srgb[2] /= wb_srgb[1];
-    wb_srgb[1] = 1.0;
-
-    wb_srgb[0] = 1.0 / wb_srgb[0];
-    wb_srgb[1] = 1.0;
-    wb_srgb[2] = 1.0 / wb_srgb[2];
-
-    // add a zero to the end to make it a vec4 for the shader
-    // const wb_srgb_vec4 = [4]f32{ wb_srgb[0], wb_srgb[1], wb_srgb[2], 0.0 };
-
-    std.debug.print("i-raw module: wb_srgb:\n", .{});
-    std.debug.print("{d}, {d}, {d}\n", .{ wb_srgb[0], wb_srgb[1], wb_srgb[2] });
-
-    // print cam_to_rgb_val
+    std.debug.print("i-raw module: wb_mode={s} matrix_mode={s}\n", .{ @tagName(wb_mode), @tagName(matrix_mode) });
+    std.debug.print("i-raw module: selected_wb_raw: {d}, {d}, {d}, {d}\n", .{
+        selected_wb_raw[0],
+        selected_wb_raw[1],
+        selected_wb_raw[2],
+        selected_wb_raw[3],
+    });
+    std.debug.print("i-raw module: selected_wb_normalized: {d}, {d}, {d}, {d}\n", .{
+        selected_wb[0],
+        selected_wb[1],
+        selected_wb[2],
+        selected_wb[3],
+    });
     std.debug.print("i-raw module: cam_to_srgb:\n", .{});
-    for (raw_image.cam_to_srgb) |row| {
+    for (cam_to_srgb) |row| {
         std.debug.print("{d}, {d}, {d}\n", .{ row[0], row[1], row[2] });
     }
 
@@ -146,8 +184,6 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         };
     }
 
-    const wb_srgb_vec4 = [4]f32{ wb_srgb[0], wb_srgb[1], wb_srgb[2], 1.0 };
-
     m.img_param = .{
         .black = [4]f32{
             @as(f32, @floatFromInt(raw_image.black[0])),
@@ -161,11 +197,9 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             @as(f32, @floatFromInt(raw_image.white[2])),
             @as(f32, @floatFromInt(raw_image.white[3])),
         },
-        .white_balance = wb_srgb_vec4,
-        // .white_balance = wb_srgb_vec4,
+        .white_balance = selected_wb,
         .orientation = orientation,
-        // .cam_to_rec2020 = cam_to_rec2020,
-        .cam_to_srgb = raw_image.cam_to_srgb,
+        .cam_to_srgb = cam_to_srgb,
     };
 
     var stdout_buffer: [4096]u8 = undefined;
@@ -173,7 +207,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const stdout = &writer.interface;
     try raw_image.print(stdout);
     try m.img_param.?.print(stdout);
-    try stdout.flush(); // Don't forget to flush!
+    try stdout.flush();
 
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;

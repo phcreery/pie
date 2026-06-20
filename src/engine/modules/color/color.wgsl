@@ -18,21 +18,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let px = textureLoad(input, coords, 0);
     let rgb_cam = vec3<f32>(px.r, px.g, px.b);
 
-    // apply white balance (in the camera color space?) by multiplying the rgb values by the white balance coefficients
-    let wb = vec3<f32>(
-        img_params.white_balance.r,
-        img_params.white_balance.g,
-        img_params.white_balance.b
-    );
-    var rgb_cam_wb = rgb_cam * wb;
-    // skip wb for now
-    // var rgb_cam_wb = rgb_cam;
-    
+    // white balance is applied in the raw domain before demosaic (see denoise/noop.wgsl).
     // apply the cam_to_srgb matrix to convert from camera space to linear sRGB
     let rgb_srgb_linear = vec3<f32>(
-        img_params.cam_to_srgb[0][0] * rgb_cam_wb.r + img_params.cam_to_srgb[0][1] * rgb_cam_wb.g + img_params.cam_to_srgb[0][2] * rgb_cam_wb.b,
-        img_params.cam_to_srgb[1][0] * rgb_cam_wb.r + img_params.cam_to_srgb[1][1] * rgb_cam_wb.g + img_params.cam_to_srgb[1][2] * rgb_cam_wb.b,
-        img_params.cam_to_srgb[2][0] * rgb_cam_wb.r + img_params.cam_to_srgb[2][1] * rgb_cam_wb.g + img_params.cam_to_srgb[2][2] * rgb_cam_wb.b
+        img_params.cam_to_srgb[0][0] * rgb_cam.r + img_params.cam_to_srgb[0][1] * rgb_cam.g + img_params.cam_to_srgb[0][2] * rgb_cam.b,
+        img_params.cam_to_srgb[1][0] * rgb_cam.r + img_params.cam_to_srgb[1][1] * rgb_cam.g + img_params.cam_to_srgb[1][2] * rgb_cam.b,
+        img_params.cam_to_srgb[2][0] * rgb_cam.r + img_params.cam_to_srgb[2][1] * rgb_cam.g + img_params.cam_to_srgb[2][2] * rgb_cam.b
     );
 
     let out_px = vec4<f32>(rgb_srgb_linear, px.a);
