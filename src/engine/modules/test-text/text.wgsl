@@ -87,7 +87,7 @@ struct ImgParams {
     white_balance:  vec4<f32>,
     orientation:    i32,
     // cam_to_rec2020: mat3x3<f32>,
-    cam_to_srgb:    mat3x3<f32>,
+    srgb_from_cam:    mat3x3<f32>,
 };
 
 @group(0) @binding(0) var<storage, read_write>  params:     Params;
@@ -105,11 +105,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // }
 
 
-    // print the cam_to_srgb matrix
+    // print the srgb_from_cam matrix
     var offset = vec2<u32>(10, 10);
     for (var i: u32 = 0; i < 3; i = i + 1) {
         for (var j: u32 = 0; j < 3; j = j + 1) {
-            let value = img_params.cam_to_srgb[i][j];
+            let value = img_params.srgb_from_cam[i][j];
             if is_in_number(vec2<f32>(coords), number_to_digits(abs(value) * 1000.0), vec2(offset.x + (j * 200), offset.y + (i * 100)), 10.0) {
                 textureStore(output, coords, vec4<f32>(1.0, 0.0, 0.0, 1.0));
                 return;

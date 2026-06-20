@@ -12,7 +12,6 @@ pub const RawImage = struct {
     white: [4]u32,
     cam_mul: [4]f32,
     pre_mul: [4]f32,
-    rgb_cam: [3][4]f32,
     cam_xyz_all: [4][3]f32,
     cam_xyz: [3][3]f32,
     filters: api.CFA,
@@ -59,8 +58,6 @@ pub const RawImage = struct {
             }
         }
 
-        const rgb_cam = libraw_rp.*.rawdata.color.rgb_cam;
-
         const cam_xyz_all: [4][3]f32 = libraw_rp.*.rawdata.color.cam_xyz;
         var cam_xyz: [3][3]f32 = undefined;
         //   LibRaw exposes cam_xyz as CAM<-XYZ with 4 camera rows: R, G1, B, G2.
@@ -82,7 +79,6 @@ pub const RawImage = struct {
             .white = white,
             .cam_mul = cam_mul,
             .pre_mul = pre_mul,
-            .rgb_cam = rgb_cam,
             .cam_xyz_all = cam_xyz_all,
             .cam_xyz = cam_xyz,
             .filters = try api.CFA.fromLibraw(libraw_rp.*.rawdata.iparams.cdesc[0..], libraw_rp.*.rawdata.iparams.filters),
@@ -96,11 +92,6 @@ pub const RawImage = struct {
         try writer.print("white: {d}, {d}, {d}, {d}\n", .{ self.white[0], self.white[1], self.white[2], self.white[3] });
         try writer.print("cam_mul: {d}, {d}, {d}, {d}\n", .{ self.cam_mul[0], self.cam_mul[1], self.cam_mul[2], self.cam_mul[3] });
         try writer.print("pre_mul: {d}, {d}, {d}, {d}\n", .{ self.pre_mul[0], self.pre_mul[1], self.pre_mul[2], self.pre_mul[3] });
-        try writer.print("rgb_cam:\n{d} {d} {d} {d}\n{d} {d} {d} {d}\n{d} {d} {d} {d}\n", .{
-            self.rgb_cam[0][0], self.rgb_cam[0][1], self.rgb_cam[0][2], self.rgb_cam[0][3],
-            self.rgb_cam[1][0], self.rgb_cam[1][1], self.rgb_cam[1][2], self.rgb_cam[1][3],
-            self.rgb_cam[2][0], self.rgb_cam[2][1], self.rgb_cam[2][2], self.rgb_cam[2][3],
-        });
     }
 
     pub fn deinit(self: *RawImage) void {

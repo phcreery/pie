@@ -23,7 +23,7 @@ pub const ImgParams = struct {
     orientation: Orientation,
     // cfa: CFA, // color filter array multipliers
     // cam_to_rec2020: [3][3]f32, // color space conversion matrix
-    cam_to_srgb: [3][3]f32, // color space conversion matrix
+    srgb_from_cam: [3][3]f32, // color space conversion matrix
 
     pub fn print(
         self: *ImgParams,
@@ -48,10 +48,10 @@ pub const ImgParams = struct {
             self.white_balance[2],
             self.white_balance[3],
         });
-        try writer.print("cam_to_srgb:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
-            self.cam_to_srgb[0][0], self.cam_to_srgb[0][1], self.cam_to_srgb[0][2],
-            self.cam_to_srgb[1][0], self.cam_to_srgb[1][1], self.cam_to_srgb[1][2],
-            self.cam_to_srgb[2][0], self.cam_to_srgb[2][1], self.cam_to_srgb[2][2],
+        try writer.print("srgb_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
+            self.srgb_from_cam[0][0], self.srgb_from_cam[0][1], self.srgb_from_cam[0][2],
+            self.srgb_from_cam[1][0], self.srgb_from_cam[1][1], self.srgb_from_cam[1][2],
+            self.srgb_from_cam[2][0], self.srgb_from_cam[2][1], self.srgb_from_cam[2][2],
         });
     }
 };

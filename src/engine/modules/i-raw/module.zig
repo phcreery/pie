@@ -9,11 +9,6 @@ const WbMode = enum(i32) {
     pre_mul = 1,
 };
 
-const MatrixMode = enum(i32) {
-    rgb_cam = 0,
-    cam_xyz = 1,
-};
-
 pub var desc: api.ModuleDesc = .{
     .name = "i-raw",
     .type = .source,
@@ -67,51 +62,27 @@ pub fn deinit(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Module
 pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "input.raw"));
     try api.initParamNamed(pipe, mod, "wb_mode", @intFromEnum(WbMode.pre_mul));
-    try api.initParamNamed(pipe, mod, "matrix_mode", @intFromEnum(MatrixMode.rgb_cam));
 }
 
-fn computeCamToSrgb(raw_image: *RawImage, matrix_mode: MatrixMode) [3][3]f32 {
-    return switch (matrix_mode) {
-        // use the pre-calculated RGB camera matrix directly.
-        .rgb_cam => .{
-            .{
-                raw_image.rgb_cam[0][0],
-                raw_image.rgb_cam[0][1] + raw_image.rgb_cam[0][3],
-                raw_image.rgb_cam[0][2],
-            },
-            .{
-                raw_image.rgb_cam[1][0],
-                raw_image.rgb_cam[1][1] + raw_image.rgb_cam[1][3],
-                raw_image.rgb_cam[1][2],
-            },
-            .{
-                raw_image.rgb_cam[2][0],
-                raw_image.rgb_cam[2][1] + raw_image.rgb_cam[2][3],
-                raw_image.rgb_cam[2][2],
-            },
-        },
-        // compute the RGB camera matrix from the cam_xyz matrix. allows us to use other color spaces
-        .cam_xyz => blk: {
-            const srgb_from_xyz: [3][3]f32 = .{
-                .{ 3.2409699, -1.5373832, -0.49861076 },
-                .{ -0.96924365, 1.8759675, 0.04155506 },
-                .{ 0.05563008, -0.20397696, 1.0569715 },
-            };
-            const xyz_from_srgb = api.math.mat3.inv(f32, srgb_from_xyz);
-
-            //   raw_image.cam_xyz is CAM<-XYZ.
-            // Convert that into CAM<-sRGB first, normalize each camera row,
-            // then invert to obtain sRGB<-CAM.
-            //
-            // The row normalization is important here: for this camera it makes
-            // the cam_xyz-derived result line up almost exactly with LibRaw's
-            // rgb_cam matrix.
-            var cam_from_srgb: [3][3]f32 = @splat(@splat(0.0));
-            api.math.mat3x3Mul(&cam_from_srgb, raw_image.cam_xyz, xyz_from_srgb);
-            normalizeRows3x3(&cam_from_srgb);
-            break :blk api.math.mat3.inv(f32, cam_from_srgb);
-        },
+fn computeCamToSrgb(raw_image: *RawImage) [3][3]f32 {
+    const srgb_from_xyz: [3][3]f32 = .{
+        .{ 3.2409699, -1.5373832, -0.49861076 },
+        .{ -0.96924365, 1.8759675, 0.04155506 },
+        .{ 0.05563008, -0.20397696, 1.0569715 },
     };
+    const xyz_from_srgb = api.math.mat3.inv(f32, srgb_from_xyz);
+
+    //   raw_image.cam_xyz is CAM<-XYZ.
+    // Convert that into CAM<-sRGB first, normalize each camera row,
+    // then invert to obtain sRGB<-CAM.
+    //
+    // The row normalization is important here: for this camera it makes
+    // the cam_xyz-derived result line up almost exactly with LibRaw's
+    // rgb_cam matrix.
+    var cam_from_srgb: [3][3]f32 = @splat(@splat(0.0));
+    api.math.mat3x3Mul(&cam_from_srgb, raw_image.cam_xyz, xyz_from_srgb);
+    normalizeRows3x3(&cam_from_srgb);
+    return api.math.mat3.inv(f32, cam_from_srgb);
 }
 
 fn normalizeRows3x3(m: *[3][3]f32) void {
@@ -146,7 +117,6 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
     const wb_mode: WbMode = @enumFromInt(try api.getParam(pipe, mod, "wb_mode", i32));
-    const matrix_mode: MatrixMode = @enumFromInt(try api.getParam(pipe, mod, "matrix_mode", i32));
 
     var roi: api.ROI = .{
         .w = @intCast(raw_image.width),
@@ -160,7 +130,6 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .pre_mul => raw_image.pre_mul,
     };
     const selected_wb = normalizeWhiteBalance(selected_wb_raw);
-    const cam_to_srgb = computeCamToSrgb(raw_image, matrix_mode);
 
     var orientation: api.ImgParam.Orientation = .normal;
     if (raw_image.user_flip != -1) {
@@ -204,7 +173,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         },
         .white_balance = selected_wb,
         .orientation = orientation,
-        .cam_to_srgb = cam_to_srgb,
+        .srgb_from_cam = computeCamToSrgb(raw_image),
     };
 
     var stdout_buffer: [4096]u8 = undefined;

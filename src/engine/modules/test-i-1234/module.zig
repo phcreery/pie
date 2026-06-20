@@ -41,7 +41,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         //     .{ 0.0, 1.0, 0.0 },
         //     .{ 0.0, 0.0, 1.0 },
         // },
-        .cam_to_srgb = .{
+        .srgb_from_cam = .{
             .{ 1.0, 0.0, 0.0 },
             .{ 0.0, 1.0, 0.0 },
             .{ 0.0, 0.0, 1.0 },
