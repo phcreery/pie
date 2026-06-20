@@ -215,8 +215,8 @@ fn runPipelineToPpm(
     try pipeline.setModuleParam(mod_i_raw, "matrix_mode", @as(i32, 0));
     if (mod_filmcurv) |m| {
         try pipeline.setModuleParam(m, "colourmode", @as(i32, 1));
-        try pipeline.setModuleParam(m, "brightness", @as(f32, 2.8));
-        try pipeline.setModuleParam(m, "contrast", @as(f32, 1.1));
+        try pipeline.setModuleParam(m, "brightness", @as(f32, 3.0));
+        try pipeline.setModuleParam(m, "contrast", @as(f32, 1.2));
         try pipeline.setModuleParam(m, "bias", @as(f32, 0.0));
     }
     try pipeline.setModuleParam(mod_o_ppm, "filename", @as([]const u8, output_filename));
