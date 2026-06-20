@@ -366,41 +366,41 @@ pub const Pipeline = struct {
 
         if (self.rerouted) {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
-            self.runModulesPreCheck() catch unreachable;
+            try self.runModulesPreCheck();
 
-            self.runModulesBuildExecutionOrder(arena) catch unreachable;
-            self.perf.timerLap("runModulesBuildExecutionOrder") catch unreachable;
-            self.runModulesInit() catch unreachable;
-            self.perf.timerLap("runModulesInit") catch unreachable;
+            try self.runModulesBuildExecutionOrder(arena);
+            try self.perf.timerLap("runModulesBuildExecutionOrder");
+            try self.runModulesInit();
+            try self.perf.timerLap("runModulesInit");
 
-            self.runModulesCreateParamBufferHandles() catch unreachable;
-            self.perf.timerLap("runModulesCreateParamBufferHandles") catch unreachable;
-            self.runModulesModifyROIOut() catch unreachable;
-            self.perf.timerLap("runModulesModifyROIOut") catch unreachable;
-            // self.runModulesInitParams() catch unreachable;
-            // self.perf.timerLap("runModulesInitParams") catch unreachable;
-            self.runModulesInitParamBuffers() catch unreachable;
-            self.perf.timerLap("runModulesInitParamBuffers") catch unreachable;
-            self.runModulesAllocateUploadBufferForParams() catch unreachable;
-            self.perf.timerLap("runModulesAllocateUploadBufferForParams") catch unreachable;
+            try self.runModulesCreateParamBufferHandles();
+            try self.perf.timerLap("runModulesCreateParamBufferHandles");
+            try self.runModulesModifyROIOut();
+            try self.perf.timerLap("runModulesModifyROIOut");
+            // try self.runModulesInitParams();
+            // try self.perf.timerLap("runModulesInitParams");
+            try self.runModulesInitParamBuffers();
+            try self.perf.timerLap("runModulesInitParamBuffers");
+            try self.runModulesAllocateUploadBufferForParams();
+            try self.perf.timerLap("runModulesAllocateUploadBufferForParams");
 
-            self.runModulesReCreateNodes() catch unreachable;
-            self.perf.timerLap("runModulesCreateNodes") catch unreachable;
-            self.runNodesCompileShaders() catch unreachable;
-            self.perf.timerLap("runNodesCompileShaders") catch unreachable;
+            try self.runModulesReCreateNodes();
+            try self.perf.timerLap("runModulesCreateNodes");
+            try self.runNodesCompileShaders();
+            try self.perf.timerLap("runNodesCompileShaders");
 
             // Then run nodes
-            self.runNodesBuildExecutionOrder(arena) catch unreachable;
-            self.perf.timerLap("runNodesBuildExecutionOrder") catch unreachable;
-            self.runNodesInitConnectorTextures() catch unreachable;
-            self.perf.timerLap("runNodesInitConnectorTextures") catch unreachable;
-            self.runNodesAllocateStagingBuffersForTextures() catch unreachable;
-            self.perf.timerLap("runNodesAllocateStagingBuffersForTextures") catch unreachable;
-            self.runNodesCreateBindings() catch unreachable;
-            self.perf.timerLap("runNodesCreateBindings") catch unreachable;
+            try self.runNodesBuildExecutionOrder(arena);
+            try self.perf.timerLap("runNodesBuildExecutionOrder");
+            try self.runNodesInitConnectorTextures();
+            try self.perf.timerLap("runNodesInitConnectorTextures");
+            try self.runNodesAllocateStagingBuffersForTextures();
+            try self.perf.timerLap("runNodesAllocateStagingBuffersForTextures");
+            try self.runNodesCreateBindings();
+            try self.perf.timerLap("runNodesCreateBindings");
 
-            self.freeUnusedConnectors() catch unreachable;
-            self.perf.timerLap("freeUnusedConnectors") catch unreachable;
+            try self.freeUnusedConnectors();
+            try self.perf.timerLap("freeUnusedConnectors");
 
             self.printPipeToStdout();
             self.rerouted = false;
@@ -408,14 +408,14 @@ pub const Pipeline = struct {
         }
 
         if (self.dirty) {
-            self.runModulesUploadParams(arena) catch unreachable;
-            self.perf.timerLap("runModulesUploadParams") catch unreachable;
-            self.runNodesUploadSource() catch unreachable;
-            self.perf.timerLap("runNodesUploadSource") catch unreachable;
-            self.runNodes() catch unreachable;
-            self.perf.timerLap("runNodes") catch unreachable;
-            self.runNodesDownloadSink() catch unreachable;
-            self.perf.timerLap("runNodesDownloadSink") catch unreachable;
+            try self.runModulesUploadParams(arena);
+            try self.perf.timerLap("runModulesUploadParams");
+            try self.runNodesUploadSource();
+            try self.perf.timerLap("runNodesUploadSource");
+            try self.runNodes();
+            try self.perf.timerLap("runNodes");
+            try self.runNodesDownloadSink();
+            try self.perf.timerLap("runNodesDownloadSink");
 
             self.dirty = false;
         }
