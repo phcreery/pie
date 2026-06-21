@@ -36,7 +36,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .white = .{ 1.0, 2.0, 3.0, 4.0 },
         .black = .{ 1.0, 2.0, 3.0, 4.0 },
         .white_balance = .{ 1.0, 1.0, 1.0, 1.0 },
-        // .cam_to_rec2020 = .{
+        // .rec2020_from_cam = .{
         //     .{ 1.0, 0.0, 0.0 },
         //     .{ 0.0, 1.0, 0.0 },
         //     .{ 0.0, 0.0, 1.0 },
@@ -47,6 +47,11 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             .{ 0.0, 0.0, 1.0 },
         },
         .orientation = .normal,
+        .xyz_from_cam = .{
+            .{ 1.0, 0.0, 0.0 },
+            .{ 0.0, 1.0, 0.0 },
+            .{ 0.0, 0.0, 1.0 },
+        },
     };
 }
 

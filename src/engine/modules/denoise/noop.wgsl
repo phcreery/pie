@@ -4,7 +4,8 @@ struct ImgParams {
     white:  vec4<f32>,
     white_balance: vec4<f32>,
     orientation:    i32,
-    cam_to_rec2020: mat3x3<f32>,
+    srgb_from_cam:  mat3x3<f32>,
+    xyz_from_cam:   mat3x3<f32>,
 };
 
 @group(0) @binding(0) var<uniform>  img_params: ImgParams;

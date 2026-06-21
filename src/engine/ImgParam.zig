@@ -22,8 +22,9 @@ pub const ImgParams = struct {
     // orientation from image metadata (EXIF-style): 1 = normal, 3 = 180, 6 = 90 CW, 8 = 270 CW
     orientation: Orientation,
     // cfa: CFA, // color filter array multipliers
-    // cam_to_rec2020: [3][3]f32, // color space conversion matrix
-    srgb_from_cam: [3][3]f32, // color space conversion matrix
+    // rec2020_from_cam: [3][3]f32, // color space conversion matrix
+    srgb_from_cam: [3][3]f32, // sRGB <- camera color space conversion matrix (temporary for now)
+    xyz_from_cam: [3][3]f32, // XYZ <- camera color space conversion matrix
 
     pub fn print(
         self: *ImgParams,
@@ -53,6 +54,11 @@ pub const ImgParams = struct {
             self.srgb_from_cam[0][0], self.srgb_from_cam[0][1], self.srgb_from_cam[0][2],
             self.srgb_from_cam[1][0], self.srgb_from_cam[1][1], self.srgb_from_cam[1][2],
             self.srgb_from_cam[2][0], self.srgb_from_cam[2][1], self.srgb_from_cam[2][2],
+        });
+        try writer.print("xyz_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
+            self.xyz_from_cam[0][0], self.xyz_from_cam[0][1], self.xyz_from_cam[0][2],
+            self.xyz_from_cam[1][0], self.xyz_from_cam[1][1], self.xyz_from_cam[1][2],
+            self.xyz_from_cam[2][0], self.xyz_from_cam[2][1], self.xyz_from_cam[2][2],
         });
     }
 };

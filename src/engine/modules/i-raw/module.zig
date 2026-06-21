@@ -158,6 +158,10 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         };
     }
 
+    // LibRaw exposes cam_xyz as CAM<-XYZ. Store the actual inverse here so the
+    // ImgParam field name matches its contents: XYZ<-CAM.
+    const xyz_from_cam = api.math.mat3.inv(f32, raw_image.cam_xyz);
+
     m.img_param = .{
         .black = [4]f32{
             @as(f32, @floatFromInt(raw_image.black[0])),
@@ -174,6 +178,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .white_balance = selected_wb,
         .orientation = orientation,
         .srgb_from_cam = computeCamToSrgb(raw_image),
+        .xyz_from_cam = xyz_from_cam,
     };
 
     var stdout_buffer: [4096]u8 = undefined;
