@@ -29,7 +29,8 @@ pub const ImgParams = struct {
         self: *ImgParams,
         writer: *std.Io.Writer,
     ) !void {
-        try writer.print("ImgParams: orientation={d}\n", .{self.orientation});
+        try writer.print("ImgParams:\n", .{});
+        try writer.print("orientation={d}\n", .{self.orientation});
         try writer.print("black: {d}, {d}, {d}, {d}\n", .{
             self.black[0],
             self.black[1],

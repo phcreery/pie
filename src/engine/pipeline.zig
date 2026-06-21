@@ -534,7 +534,7 @@ pub const Pipeline = struct {
     fn runModulesPreCheck(self: *Pipeline) !void {
         var mod_pool_handles = self.module_pool.liveHandles();
         while (mod_pool_handles.next()) |module_handle| {
-            var module = self.module_pool.getPtr(module_handle) catch unreachable;
+            var module = try self.module_pool.getPtr(module_handle);
             if (module.desc.type == .source) {
                 const input_socket = module.getSocketPtr("input") catch null;
                 if (input_socket != null) {
@@ -566,7 +566,7 @@ pub const Pipeline = struct {
         const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle, std.hash_map.AutoContext(ModuleHandle));
         var module_graph = ModuleGraph.init(arena);
         defer module_graph.deinit();
-        buildGraph(Module, &self.module_pool, &module_graph) catch unreachable;
+        try buildGraph(Module, &self.module_pool, &module_graph);
         var iter = try module_graph.topSortIterator();
         defer iter.deinit();
         while (try iter.next()) |value| {
@@ -626,7 +626,7 @@ pub const Pipeline = struct {
                 if (socket) |sock| {
                     if (sock.type.direction() == .input) {
                         if (sock.private.connected_to_module) |connection| {
-                            const connected_to_module = self.module_pool.getPtr(connection.item) catch unreachable;
+                            const connected_to_module = try self.module_pool.getPtr(connection.item);
                             var socket_ptr = try module.getSocketPtr(sock.name);
                             slog.debug("Setting ROI for module {s} socket {s} from connected module {s}", .{ module.desc.name, sock.name, connected_to_module.desc.name });
                             const connected_to_socket = connected_to_module.desc.sockets[connection.socket_idx] orelse unreachable;
@@ -656,7 +656,7 @@ pub const Pipeline = struct {
     fn runModulesInitParamBuffers(self: *Pipeline) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.module_execution_order.items) |module_handle| {
-            const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            const module = try self.module_pool.getPtr(module_handle);
             if (module.desc.type == .compute) {
                 if (module.enabled == false) continue;
                 params: { // PARAM BUFFER INIT
@@ -701,7 +701,7 @@ pub const Pipeline = struct {
             var upload_allocator = upload_fba.allocator();
 
             for (self.module_execution_order.items) |module_handle| {
-                var module = self.module_pool.getPtr(module_handle) catch unreachable;
+                var module = try self.module_pool.getPtr(module_handle);
                 if (module.desc.type == .compute) {
                     if (module.enabled == false) continue;
                     blk: {
@@ -735,7 +735,7 @@ pub const Pipeline = struct {
         }
 
         for (self.module_execution_order.items) |module_handle| {
-            const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            const module = try self.module_pool.getPtr(module_handle);
             if (module.enabled == false) continue;
             if (module.desc.createNodes) |createNodesFn| {
                 try createNodesFn(self, module_handle);
@@ -745,9 +745,9 @@ pub const Pipeline = struct {
     fn runNodesCompileShaders(self: *Pipeline) !void {
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |node_handle| {
-            var node = self.node_pool.getPtr(node_handle) catch unreachable;
+            var node = try self.node_pool.getPtr(node_handle);
             if (node.desc.shader) |shader| {
-                node.shader = try api.compileShader(self, shader);
+                node.shader = try api.compileShader(self, shader, node.desc.temp_shader_language);
             }
         }
     }
@@ -777,7 +777,7 @@ pub const Pipeline = struct {
 
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |dst_node_handle| {
-            const dst_node = self.node_pool.getPtr(dst_node_handle) catch unreachable;
+            const dst_node = try self.node_pool.getPtr(dst_node_handle);
             for (&dst_node.desc.sockets) |*socket| {
                 if (socket.*) |*sock| {
                     if (self.getConnectedNode(sock.*)) |src_node_handle_connection| {
@@ -794,7 +794,7 @@ pub const Pipeline = struct {
         const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
         var node_graph = NodeGraph.init(arena);
         defer node_graph.deinit();
-        buildGraph(Node, &self.node_pool, &node_graph) catch unreachable;
+        try buildGraph(Node, &self.node_pool, &node_graph);
         var iter = try node_graph.topSortIterator();
         defer iter.deinit();
         while (try iter.next()) |value| {
@@ -850,7 +850,7 @@ pub const Pipeline = struct {
                 // CREATE DESCRIPTIONS FOR BIND GROUP LAYOUTS AND BIND GROUPS
                 var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
-                const mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
+                const mod = try self.module_pool.getPtr(node.*.mod);
 
                 // if we have params, they will be on group 0 binding 0
                 // and the img_params will be on group 0 binding 1
@@ -935,7 +935,7 @@ pub const Pipeline = struct {
             // we currently only support one upload in the entire pipeline
             // so we are going check if the first node has a source connector
             const first_node_handle = self.node_execution_order.items[0];
-            var first_node_ptr = self.node_pool.getPtr(first_node_handle) catch unreachable;
+            var first_node_ptr = try self.node_pool.getPtr(first_node_handle);
 
             slog.debug("First node: {s}", .{first_node_ptr.desc.name});
 
@@ -1004,7 +1004,7 @@ pub const Pipeline = struct {
         upload_buffer.map();
 
         for (self.module_execution_order.items) |module_handle| {
-            const module = self.module_pool.getPtr(module_handle) catch unreachable;
+            const module = try self.module_pool.getPtr(module_handle);
             if (module.desc.type == .compute) {
                 if (module.enabled == false) continue;
 
@@ -1067,18 +1067,18 @@ pub const Pipeline = struct {
         // we currently only support one upload in the entire pipeline
         // so we are going check if the first node has a source connector
         const first_node_handle = self.node_execution_order.items[0];
-        var first_node = self.node_pool.getPtr(first_node_handle) catch unreachable;
+        var first_node = try self.node_pool.getPtr(first_node_handle);
 
         // TODO: support multiple source uploads in the future
         // TODO: find the correct input socket by type
         if (first_node.desc.sockets[0]) |*sock| {
             if (sock.type == .source) {
-                const first_node_mod = self.module_pool.getPtr(first_node.*.mod) catch unreachable;
+                const first_node_mod = try self.module_pool.getPtr(first_node.*.mod);
                 if (first_node_mod.desc.readSource) |readSourceFn| {
                     slog.debug("Uploading source data for first node", .{});
                     const mapped_ptr = sock.*.private.staging_ptr orelse unreachable;
                     slog.debug("Calling readSource function for first node", .{});
-                    readSourceFn(self, first_node.*.mod, mapped_ptr) catch unreachable;
+                    try readSourceFn(self, first_node.*.mod, mapped_ptr);
                 } else {
                     slog.err("First node source module has no readSource function defined", .{});
                     return error.NodeMissingReadSourceFunction;
@@ -1102,25 +1102,25 @@ pub const Pipeline = struct {
 
         // enqueue each node in execution order
         for (self.node_execution_order.items) |node_handle| {
-            const node = self.node_pool.getPtr(node_handle) catch unreachable;
+            const node = try self.node_pool.getPtr(node_handle);
             switch (node.desc.type) {
                 .compute => {
-                    const mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
+                    const mod = try self.module_pool.getPtr(node.*.mod);
                     if (mod.*.param_handle) |param_handle| {
-                        const param_buffer = self.param_buffer_pool.getPtr(param_handle) catch unreachable;
+                        const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
                         var param_buf = param_buffer.* orelse return error.ModuleMissingParamBuffer;
                         const param_offset = mod.*.param_offset orelse return error.ModuleMissingParamBufferOffset;
                         const param_size_bytes = mod.*.param_size orelse return error.ModuleParamBufferSizeNotSet;
                         slog.debug("Enqueueing param buffer at offset {d}", .{param_offset});
-                        encoder.enqueueBufToBuf(&upload_buffer, param_offset, &param_buf, 0, param_size_bytes) catch unreachable;
+                        try encoder.enqueueBufToBuf(&upload_buffer, param_offset, &param_buf, 0, param_size_bytes);
                     }
                     if (mod.*.img_param_handle) |img_param_handle| {
-                        const img_param_buffer = self.param_buffer_pool.getPtr(img_param_handle) catch unreachable;
+                        const img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
                         var img_param_buf = img_param_buffer.* orelse return error.ModuleMissingImgParamBuffer;
                         const img_param_offset = mod.*.img_param_offset orelse return error.ModuleMissingImgParamBufferOffset;
                         const img_param_size_bytes = mod.*.img_param_size orelse return error.ModuleImgParamBufferSizeNotSet;
                         slog.debug("Enqueueing img param buffer at offset {d}", .{img_param_offset});
-                        encoder.enqueueBufToBuf(&upload_buffer, img_param_offset, &img_param_buf, 0, img_param_size_bytes) catch unreachable;
+                        try encoder.enqueueBufToBuf(&upload_buffer, img_param_offset, &img_param_buf, 0, img_param_size_bytes);
                     }
                     var compute_pipeline = node.compute_pipeline orelse return error.NodeMissingShader;
                     var bindings = node.bindings orelse return error.NodeMissingBindings;
@@ -1134,21 +1134,21 @@ pub const Pipeline = struct {
                 .source => {
                     slog.debug("Enqueueing source node {s} buffer to texture copy", .{node.desc.name});
                     const connector_handle = self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle;
-                    const connector = self.connector_pool.getPtr(connector_handle) catch unreachable;
+                    const connector = try self.connector_pool.getPtr(connector_handle);
                     var tex = connector.* orelse return error.PipelineMissingSourceNodeTexture;
                     const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
                     const roi = node.desc.sockets[0].?.roi orelse unreachable;
                     slog.debug("Source node staging offset: {d}", .{staging_offset});
-                    encoder.enqueueBufToTex(&upload_buffer, staging_offset, &tex, roi) catch unreachable;
+                    try encoder.enqueueBufToTex(&upload_buffer, staging_offset, &tex, roi);
                 },
                 .sink => {
                     slog.debug("Enqueueing sink node {s} texture to buffer copy", .{node.desc.name});
-                    const connector = self.connector_pool.getPtr(self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle) catch unreachable;
+                    const connector = try self.connector_pool.getPtr(self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle);
                     var tex = connector.* orelse return error.PipelineMissingSinkNodeTexture;
                     const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
                     slog.debug("Sink node staging offset: {d}", .{staging_offset});
                     const roi = node.desc.sockets[0].?.roi orelse unreachable;
-                    encoder.enqueueTexToBuf(&download_buffer, staging_offset, &tex, roi) catch unreachable;
+                    try encoder.enqueueTexToBuf(&download_buffer, staging_offset, &tex, roi);
                 },
             }
         }
@@ -1168,7 +1168,7 @@ pub const Pipeline = struct {
 
         if (last_node.desc.sockets[0]) |*sock| {
             if (sock.type == .sink) {
-                const last_node_mod = self.module_pool.getPtr(last_node.*.mod) catch unreachable;
+                const last_node_mod = try self.module_pool.getPtr(last_node.*.mod);
                 if (last_node_mod.desc.writeSink) |writeSinkFn| {
                     slog.debug("Downloading sink data for last node", .{});
                     const mapped_ptr = sock.*.private.staging_ptr orelse unreachable;
@@ -1222,7 +1222,7 @@ pub const Pipeline = struct {
             // check modules
             var mod_pool_handles = self.module_pool.liveHandles();
             while (mod_pool_handles.next()) |module_handle| {
-                const module = self.module_pool.getPtr(module_handle) catch unreachable;
+                const module = try self.module_pool.getPtr(module_handle);
                 for (module.desc.sockets) |socket| {
                     if (socket) |sock| {
                         if (sock.private.connector_handle) |h| {
@@ -1240,7 +1240,7 @@ pub const Pipeline = struct {
             if (!found) {
                 var node_pool_handles = self.node_pool.liveHandles();
                 while (node_pool_handles.next()) |node_handle| {
-                    const node = self.node_pool.getPtr(node_handle) catch unreachable;
+                    const node = try self.node_pool.getPtr(node_handle);
                     for (node.desc.sockets) |socket| {
                         if (socket) |sock| {
                             if (sock.private.connector_handle) |h| {
@@ -1313,7 +1313,7 @@ pub fn PooledDagDfsIterator(T: type) type {
             // Initialize stack with all nodes that have no dependencies (sink nodes)
             pool_handles = pool.liveHandles();
             while (pool_handles.next()) |node_handle| {
-                const node = pool.getPtr(node_handle) catch unreachable;
+                const node = try pool.getPtr(node_handle);
                 for (node.desc.sockets) |socket| {
                     if (socket) |sock| {
                         if (sock.type == .sink) {
@@ -1401,7 +1401,7 @@ pub fn buildGraph(
 
     var pool_handles = pool.liveHandles();
     while (pool_handles.next()) |dst_node_handle| {
-        const dst_node = pool.getPtr(dst_node_handle) catch unreachable;
+        const dst_node = try pool.getPtr(dst_node_handle);
         for (dst_node.desc.sockets) |socket| {
             if (socket) |sock| {
                 // if (self.getConnectedNode(sock.*)) |src_node_handle_connection| {
@@ -1411,7 +1411,7 @@ pub fn buildGraph(
                 // connect
                 try graph.add(dst_node_handle);
                 try graph.add(src_node_handle);
-                const src_node = pool.getPtr(src_node_handle) catch unreachable;
+                const src_node = try pool.getPtr(src_node_handle);
                 const src_node_sock = src_node.desc.sockets[src_node_handle_connection.socket_idx] orelse unreachable;
                 const connector_handle = src_node_sock.private.connector_handle orelse unreachable; // self.getNodeConnectorHandle(src_node_sock) ;
                 try graph.addEdge(src_node_handle, dst_node_handle, connector_handle);

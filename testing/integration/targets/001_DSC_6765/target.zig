@@ -24,13 +24,14 @@ fn build(
     const mod_color = try pipeline.addModule(modules.get("color").?);
     const mod_filmcurv = try pipeline.addModule(modules.get("filmcurv").?);
     // const mod_test_text = try pipeline.addModule(modules.get("test-text").?);
+    const mod_test_nop_glsl = try pipeline.addModule(modules.get("test-nop-glsl").?);
     const mod_o_ppm = try pipeline.addModule(modules.get("o-ppm").?);
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 1));
     try pipeline.setModuleParam(mod_filmcurv, "colormode", @as(i32, 1));
-    try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 3.0));
-    try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.2));
+    try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 3.6));
+    try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.4));
     try pipeline.setModuleParam(mod_filmcurv, "bias", @as(f32, 0.0));
     try pipeline.setModuleParam(mod_o_ppm, "filename", @as([]const u8, output_filename));
 
@@ -41,7 +42,8 @@ fn build(
     try pipeline.connectModuleSocketsByHandleName(mod_crop, "output", mod_color, "input");
     try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_filmcurv, "input");
     // try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_test_text, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_o_ppm, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_test_nop_glsl, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_o_ppm, "input");
 }
 
 pub const config: TargetConfig = .{

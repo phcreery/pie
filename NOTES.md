@@ -17,12 +17,13 @@
 
 ## Zig notes
 
-- wgpu
-  - https://git.bouvais.lu/adrien/zig-wgpu
+- gpu
+  - https://codeberg.org/Games-by-Mason/mr_gpu
 
 - UI
 
   - https://codeberg.org/shahwali/knots
+  - https://codeberg.org/Games-by-Mason/dear_imgui_zig
 
 - Image Loaders
 
@@ -32,12 +33,14 @@
 
 - wgpu Zig bindings
 
+  - https://git.bouvais.lu/adrien/zig-wgpu
   - https://codeberg.org/Silverclaw/zig-wgpu-native
   - https://github.com/bronter/wgpu_native_zig
     - https://github.com/carrot-sticks/wgpu_native_zig
   - https://github.com/zig-gamedev/zgpu
 
 - Shader stuff
+
   - https://codeberg.org/Games-by-Mason/mr_glsl
   - https://codeberg.org/Mr_Nobody/HowToVulkan_zig
   - https://codeberg.org/andrewkraevskii/howtovulkan-zig

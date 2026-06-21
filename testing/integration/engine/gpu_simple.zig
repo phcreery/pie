@@ -77,14 +77,13 @@ test "simple compute test" {
     // ALLOCATORS
     var upload_fba = try upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
-    // pre-allocate to induce a change in offset
+    // pre-allocate to intentionally induce a change in offset
     _ = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
 
     var download_fba = try download.fixedBufferAllocator();
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD
-    // const upload_buf = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.nchannels());
     const upload_buf = try upload_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
     const upload_offset = @intFromPtr(upload_buf.ptr) - @intFromPtr(upload_fba.ptr);
     std.log.info("Upload offset: {d}", .{upload_offset});

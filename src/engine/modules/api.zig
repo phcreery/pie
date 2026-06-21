@@ -50,6 +50,7 @@ pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
     shader: ?[]const u8 = null,
     // shader: ?gpu.Shader = null,
+    temp_shader_language: gpu.ShaderLanguage = .wgsl, // TODO: remove this once we have a proper shader compilation pipeline
     name: []const u8,
     run_size: ?ROI = null,
     sockets: Sockets,
@@ -98,9 +99,9 @@ pub const ModuleDesc = struct {
 };
 
 /// PIPELINE HELPERS
-pub fn compileShader(pipe: *Pipeline, shader_code: []const u8) !gpu.Shader {
+pub fn compileShader(pipe: *Pipeline, shader_code: []const u8, temp_shader_language: gpu.ShaderLanguage) !gpu.Shader {
     const gpu_inst = pipe.gpu orelse return error.GPUNotInitialized;
-    return gpu.Shader.compile(gpu_inst, shader_code, .{});
+    return gpu.Shader.compile(gpu_inst, shader_code, .{ .type = temp_shader_language });
 }
 
 pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {

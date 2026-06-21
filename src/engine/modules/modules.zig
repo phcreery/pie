@@ -1,44 +1,27 @@
 const std = @import("std");
 const api = @import("api.zig");
 
-pub const i_raw = @import("i-raw/module.zig");
-pub const format = @import("format/module.zig");
-pub const denoise = @import("denoise/module.zig");
-pub const demosaic = @import("demosaic/module.zig");
-pub const crop = @import("crop/module.zig");
-pub const color = @import("color/module.zig");
-pub const filmcurv = @import("filmcurv/module.zig");
-pub const o_png = @import("o-png/module.zig");
-pub const o_ppm = @import("o-ppm/module.zig");
-
-pub const test_multiply = @import("test-multiply/module.zig");
-pub const test_2nodes = @import("test-2nodes/module.zig");
-pub const test_i_1234 = @import("test-i-1234/module.zig");
-pub const test_o_2468 = @import("test-o-2468/module.zig");
-pub const test_o_firstbytes = @import("test-o-firstbytes/module.zig");
-pub const test_nop = @import("test-nop/module.zig");
-pub const test_text = @import("test-text/module.zig");
-
 pub fn populateRegistry(registry: *Registry) !void {
     // add built-in modules
-    try registry.add(i_raw.desc);
-    try registry.add(format.desc);
-    try registry.add(denoise.desc);
-    try registry.add(demosaic.desc);
-    try registry.add(crop.desc);
-    try registry.add(color.desc);
-    try registry.add(filmcurv.desc);
-    try registry.add(o_png.desc);
-    try registry.add(o_ppm.desc);
+    try registry.add(@import("i-raw/module.zig").desc);
+    try registry.add(@import("format/module.zig").desc);
+    try registry.add(@import("denoise/module.zig").desc);
+    try registry.add(@import("demosaic/module.zig").desc);
+    try registry.add(@import("crop/module.zig").desc);
+    try registry.add(@import("color/module.zig").desc);
+    try registry.add(@import("filmcurv/module.zig").desc);
+    try registry.add(@import("o-png/module.zig").desc);
+    try registry.add(@import("o-ppm/module.zig").desc);
 
     // add test modules
-    try registry.add(test_multiply.desc);
-    // try registry.add(test_2nodes.desc);
-    try registry.add(test_i_1234.desc);
-    try registry.add(test_o_2468.desc);
-    // try registry.add(test_o_firstbytes.desc);
-    try registry.add(test_nop.desc);
-    try registry.add(test_text.desc);
+    try registry.add(@import("test-multiply/module.zig").desc);
+    // try registry.add(@import("test-2nodes/module.zig").desc);
+    try registry.add(@import("test-i-1234/module.zig").desc);
+    try registry.add(@import("test-o-2468/module.zig").desc);
+    // try registry.add(@import("test-o-firstbytes/module.zig").desc);
+    try registry.add(@import("test-nop/module.zig").desc);
+    try registry.add(@import("test-nop-glsl/module.zig").desc);
+    try registry.add(@import("test-text/module.zig").desc);
 }
 
 pub const Registry = struct {

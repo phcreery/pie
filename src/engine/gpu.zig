@@ -9,7 +9,6 @@ const slog = std.log.scoped(.gpu);
 
 // Copy error Buffer offset 4 is not aligned to block size or `COPY_BUFFER_ALIGNMENT`
 // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
-// const COPY_BUFFER_ALIGNMENT: u64 = 4; //
 pub const COPY_BUFFER_ALIGNMENT: std.mem.Alignment = .@"8";
 pub const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
@@ -22,9 +21,6 @@ pub const WORKGROUP_SIZE_Y: u32 = 8;
 pub const WORKGROUP_SIZE_Z: u32 = 1;
 
 pub const layoutStruct = gpu_data.layoutStruct;
-// pub const layoutTaggedUnion = gpu_data.layoutTaggedUnion;
-// pub const ParamValueTag = gpu_data.ParamValueTag;
-// pub const ParamValue = gpu_data.ParamValue;
 
 fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
     // slog.debug("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
@@ -496,7 +492,6 @@ pub const Texture = struct {
     texture: *wgpu.Texture,
     format: TextureFormat,
     roi: ROI,
-    // name: []const u8,
 
     const Self = @This();
 
@@ -529,7 +524,6 @@ pub const Texture = struct {
             .texture = texture,
             .format = format,
             .roi = roi,
-            // .name = name,
         };
     }
 
@@ -537,11 +531,6 @@ pub const Texture = struct {
         self.texture.release();
     }
 };
-
-// pub const BindGroupEntryType = enum {
-//     buffer,
-//     texture,
-// };
 
 pub const BindGroupEntry = struct {
     texture: ?Texture = null,
@@ -641,7 +630,6 @@ pub const BindGroupLayoutBufferEntryType = enum {
 };
 
 pub const BindGroupLayoutBufferEntry = struct {
-    // size: u64,
     binding_type: BindGroupLayoutBufferEntryType,
 };
 
@@ -708,15 +696,12 @@ pub const ComputePipeline = struct {
     name: []const u8,
     wgpu_bind_group_layouts: [MAX_BIND_GROUPS]?*wgpu.BindGroupLayout,
     pipeline_layout: *wgpu.PipelineLayout,
-    // shader_module: *wgpu.ShaderModule,
-    // shader: *Shader,
     pipeline: *wgpu.ComputePipeline,
 
     const Self = @This();
 
     pub fn init(
         gpu: *GPU,
-        // shader_source: []const u8,
         shader: Shader,
         name: []const u8,
         bind_group_layout_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupLayoutEntry,
@@ -779,7 +764,6 @@ pub const ComputePipeline = struct {
                         .binding = @intCast(bind_number),
                         .visibility = wgpu.ShaderStages.compute,
                         .buffer = wgpu.BufferBindingLayout{
-                            // .type = wgpu.BufferBindingType.storage,
                             .type = bgle_buffer.binding_type.toWGPUBufferBindingType(),
 
                             // .has_dynamic_offset = @intFromBool(false),
@@ -791,7 +775,6 @@ pub const ComputePipeline = struct {
                 bind_count += 1;
             }
             const wgpu_bind_group_layout = gpu.device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
-                // .label = wgpu.StringView.fromSlice("Bind Group Layout for " ++ name),
                 .label = wgpu.StringView.fromSlice("Bind Group Layout"),
                 .entry_count = bind_count,
                 .entries = &wgpu_g0_bind_group_layout_entries,
@@ -811,7 +794,6 @@ pub const ComputePipeline = struct {
         }
         // The pipeline layout describes the bind groups that a pipeline expects
         const wgpu_pipeline_layout = gpu.device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
-            // .label = wgpu.StringView.fromSlice("Pipeline Layout for " ++ name),
             .label = wgpu.StringView.fromSlice("Pipeline Layout"),
             .bind_group_layout_count = bind_group_layout_count,
             .bind_group_layouts = &bind_group_layouts,
@@ -834,8 +816,6 @@ pub const ComputePipeline = struct {
         return ComputePipeline{
             .name = name,
             .wgpu_bind_group_layouts = wgpu_bind_group_layouts,
-            // .shader_module = shader_module,
-            // .shader = shader,
             .pipeline_layout = wgpu_pipeline_layout,
             .pipeline = pipeline,
         };
@@ -849,7 +829,6 @@ pub const ComputePipeline = struct {
             bgl.release();
         }
 
-        // self.shader_module.release();
         self.pipeline_layout.release();
         self.pipeline.release();
     }
