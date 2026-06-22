@@ -111,6 +111,7 @@ The current approach is a stable approximation suitable for editor controls, but
 - Adobe DNG Specification, Chapter 6: _Mapping Camera Color Space to CIE XYZ Space_
   - https://helpx.adobe.com/camera-raw/digital-negative.html
   - mirror PDF used during development: https://paulbourke.net/dataformats/dng/dng_spec_1_6_0_0.pdf
+  - https://helpx.adobe.com/content/dam/help/en/camera-raw/digital-negative/jcr_content/root/content/flex/items/position/position-par/download_section_733958301/download-1/DNG_Spec_1_7_1_0.pdf
 - Adobe DNG SDK `dng_temperature.cpp`
   - https://android.googlesource.com/platform/external/dng_sdk/+/de700ad461e35af50b28b861943a0b0753b10929/source/dng_temperature.cpp
   - notable details:
@@ -127,6 +128,7 @@ The current approach is a stable approximation suitable for editor controls, but
 
 - `u'v'` / temperature / tint discussion with DNG references
   - https://photo.stackexchange.com/questions/122251/how-do-color-values-change-mathematically-as-you-change-temperature-and-tint
+  - https://github.com/colour-science/colour-hdri/blob/develop/colour_hdri/models/dng.py
 
 ## Current implementation status
 

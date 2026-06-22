@@ -45,6 +45,9 @@
   - https://codeberg.org/Mr_Nobody/HowToVulkan_zig
   - https://codeberg.org/andrewkraevskii/howtovulkan-zig
 
+  - sokol: currently there's no way to get the data back to the CPU ... but we can create and injecting the storage buffer ourself
+    - https://github.com/floooh/sokol/issues/1246
+
 - Examples
 
   - https://github.com/riverwm/river/
