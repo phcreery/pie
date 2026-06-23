@@ -1,0 +1,245 @@
+[ExifTool]      ExifToolVersion                 : 13.44
+[File]          FileName                        : DSC_6765.NEF
+[File]          Directory                       : C:/Users/phcre/Documents/zig/pie/testing/images
+[File]          FileSize                        : 20 MB
+[File]          FileModifyDate                  : 2025:10:20 18:21:41-05:00
+[File]          FileAccessDate                  : 2026:06:22 19:54:16-05:00
+[File]          FileCreateDate                  : 2025:10:20 18:21:41-05:00
+[File]          FilePermissions                 : -rw-rw-rw-
+[File]          FileType                        : NEF
+[File]          FileTypeExtension               : nef
+[File]          MIMEType                        : image/x-nikon-nef
+[File]          ExifByteOrder                   : Little-endian (Intel, II)
+[EXIF]          SubfileType                     : Reduced-resolution image
+[EXIF]          ImageWidth                      : 160
+[EXIF]          ImageHeight                     : 120
+[EXIF]          BitsPerSample                   : 8 8 8
+[EXIF]          Compression                     : Uncompressed
+[EXIF]          PhotometricInterpretation       : RGB
+[EXIF]          Make                            : NIKON CORPORATION
+[EXIF]          Model                           : NIKON D3300
+[EXIF]          StripOffsets                    : 181248
+[EXIF]          Orientation                     : Rotate 270 CW
+[EXIF]          SamplesPerPixel                 : 3
+[EXIF]          RowsPerStrip                    : 120
+[EXIF]          StripByteCounts                 : 57600
+[EXIF]          XResolution                     : 300
+[EXIF]          YResolution                     : 300
+[EXIF]          PlanarConfiguration             : Chunky
+[EXIF]          ResolutionUnit                  : inches
+[EXIF]          Software                        : Ver.1.01
+[EXIF]          ModifyDate                      : 2017:08:27 01:12:10
+[EXIF]          SubfileType                     : Reduced-resolution image
+[EXIF]          Compression                     : JPEG (old-style)
+[EXIF]          XResolution                     : 300
+[EXIF]          YResolution                     : 300
+[EXIF]          ResolutionUnit                  : inches
+[EXIF]          JpgFromRawStart                 : 1163264
+[EXIF]          JpgFromRawLength                : 1980705
+[EXIF]          YCbCrPositioning                : Centered
+[EXIF]          SubfileType                     : Full-resolution image
+[EXIF]          ImageWidth                      : 6016
+[EXIF]          ImageHeight                     : 4016
+[EXIF]          BitsPerSample                   : 12
+[EXIF]          Compression                     : Nikon NEF Compressed
+[EXIF]          PhotometricInterpretation       : Color Filter Array
+[EXIF]          StripOffsets                    : 3144192
+[EXIF]          SamplesPerPixel                 : 1
+[EXIF]          RowsPerStrip                    : 4018
+[EXIF]          StripByteCounts                 : 16547916
+[EXIF]          XResolution                     : 300
+[EXIF]          YResolution                     : 300
+[EXIF]          PlanarConfiguration             : Chunky
+[EXIF]          ResolutionUnit                  : inches
+[EXIF]          CFARepeatPatternDim             : 2 2
+[EXIF]          CFAPattern2                     : 0 1 1 2
+[EXIF]          SensingMethod                   : One-chip color area
+[EXIF]          SubfileType                     : Reduced-resolution image
+[EXIF]          Compression                     : JPEG (old-style)
+[EXIF]          XResolution                     : 300
+[EXIF]          YResolution                     : 300
+[EXIF]          ResolutionUnit                  : inches
+[EXIF]          OtherImageStart                 : 239616
+[EXIF]          OtherImageLength                : 923554
+[EXIF]          YCbCrPositioning                : Centered
+[EXIF]          ReferenceBlackWhite             : 0 255 0 255 0 255
+[EXIF]          ExposureTime                    : 1/400
+[EXIF]          FNumber                         : 5.6
+[EXIF]          ExposureProgram                 : Manual
+[EXIF]          ISO                             : 100
+[EXIF]          SensitivityType                 : Recommended Exposure Index
+[EXIF]          DateTimeOriginal                : 2017:08:27 01:12:10
+[EXIF]          CreateDate                      : 2017:08:27 01:12:10
+[EXIF]          ExposureCompensation            : 0
+[EXIF]          MaxApertureValue                : 5.7
+[EXIF]          MeteringMode                    : Multi-segment
+[EXIF]          LightSource                     : Unknown
+[EXIF]          Flash                           : No Flash
+[EXIF]          FocalLength                     : 190.0 mm
+[EXIF]          UserComment                     : 
+[EXIF]          SubSecTime                      : 10
+[EXIF]          SubSecTimeOriginal              : 10
+[EXIF]          SubSecTimeDigitized             : 10
+[EXIF]          SensingMethod                   : One-chip color area
+[EXIF]          FileSource                      : Digital Camera
+[EXIF]          SceneType                       : Directly photographed
+[EXIF]          CFAPattern                      : [Red,Green][Green,Blue]
+[EXIF]          CustomRendered                  : Normal
+[EXIF]          ExposureMode                    : Manual
+[EXIF]          WhiteBalance                    : Auto
+[EXIF]          DigitalZoomRatio                : 1
+[EXIF]          FocalLengthIn35mmFormat         : 285 mm
+[EXIF]          SceneCaptureType                : Standard
+[EXIF]          GainControl                     : None
+[EXIF]          Contrast                        : Normal
+[EXIF]          Saturation                      : Normal
+[EXIF]          Sharpness                       : Normal
+[EXIF]          SubjectDistanceRange            : Unknown
+[EXIF]          GPSVersionID                    : 2.3.0.0
+[EXIF]          DateTimeOriginal                : 2017:08:27 01:12:10
+[EXIF]          TIFF-EPStandardID               : 1.0.0.0
+[EXIF]          JpgFromRaw                      : (Binary data 1980705 bytes, use -b option to extract)
+[EXIF]          OtherImage                      : (Binary data 923554 bytes, use -b option to extract)
+[EXIF]          ThumbnailTIFF                   : (Binary data 57816 bytes, use -b option to extract)
+[XMP]           Rating                          : 0
+[MakerNotes]    MakerNoteVersion                : 2.11
+[MakerNotes]    ISO                             : 100
+[MakerNotes]    Quality                         : RAW
+[MakerNotes]    WhiteBalance                    : Auto
+[MakerNotes]    FocusMode                       : AF-A
+[MakerNotes]    FlashSetting                    : 
+[MakerNotes]    FlashType                       : 
+[MakerNotes]    WhiteBalanceFineTune            : 0 0
+[MakerNotes]    WB_RBLevels                     : 1.90625 1.4921875 1 1
+[MakerNotes]    ProgramShift                    : 0
+[MakerNotes]    ExposureDifference              : 0
+[MakerNotes]    Compression                     : JPEG (old-style)
+[MakerNotes]    XResolution                     : 300
+[MakerNotes]    YResolution                     : 300
+[MakerNotes]    ResolutionUnit                  : inches
+[MakerNotes]    PreviewImageStart               : 27648
+[MakerNotes]    PreviewImageLength              : 152949
+[MakerNotes]    YCbCrPositioning                : Centered
+[MakerNotes]    FlashExposureComp               : 0
+[MakerNotes]    ISOSetting                      : 100
+[MakerNotes]    ExternalFlashExposureComp       : 0
+[MakerNotes]    FlashExposureBracketValue       : 0.0
+[MakerNotes]    ExposureBracketValue            : 0
+[MakerNotes]    CropHiSpeed                     : Off (6016x4016 cropped to 6016x4016 at pixel 0,0)
+[MakerNotes]    ExposureTuning                  : 0
+[MakerNotes]    SerialNumber                    : 3848035
+[MakerNotes]    ColorSpace                      : sRGB
+[MakerNotes]    VRInfoVersion                   : 0100
+[MakerNotes]    VibrationReduction              : On
+[MakerNotes]    VRMode                          : Normal
+[MakerNotes]    ActiveD-Lighting                : Auto
+[MakerNotes]    PictureControlVersion           : 0100
+[MakerNotes]    PictureControlName              : Standard
+[MakerNotes]    PictureControlBase              : Standard
+[MakerNotes]    PictureControlAdjust            : Default Settings
+[MakerNotes]    PictureControlQuickAdjust       : Normal
+[MakerNotes]    Sharpness                       : 3
+[MakerNotes]    Contrast                        : Normal
+[MakerNotes]    Brightness                      : Normal
+[MakerNotes]    Saturation                      : Normal
+[MakerNotes]    HueAdjustment                   : None
+[MakerNotes]    FilterEffect                    : n/a
+[MakerNotes]    ToningEffect                    : n/a
+[MakerNotes]    ToningSaturation                : n/a
+[MakerNotes]    TimeZone                        : -06:00
+[MakerNotes]    DaylightSavings                 : Yes
+[MakerNotes]    DateDisplayFormat               : D/M/Y
+[MakerNotes]    ISO                             : 100
+[MakerNotes]    ISOExpansion                    : Off
+[MakerNotes]    ISO2                            : 100
+[MakerNotes]    ISOExpansion2                   : Off
+[MakerNotes]    AutoDistortionControl           : On
+[MakerNotes]    BlackLevel                      : 600 600 600 600
+[MakerNotes]    LensType                        : G VR
+[MakerNotes]    Lens                            : 55-200mm f/4-5.6
+[MakerNotes]    FlashMode                       : Did Not Fire
+[MakerNotes]    ShootingMode                    : Continuous
+[MakerNotes]    LensFStops                      : 5.00
+[MakerNotes]    ContrastCurve                   : (Binary data 578 bytes, use -b option to extract)
+[MakerNotes]    ShotInfoVersion                 : 0230
+[MakerNotes]    FirmwareVersion                 : 1.01
+[MakerNotes]    NEFCompression                  : Lossy (type 2)
+[MakerNotes]    NoiseReduction                  : Off
+[MakerNotes]    NEFLinearizationTable           : (Binary data 624 bytes, use -b option to extract)
+[MakerNotes]    WB_RGGBLevels                   : 488 256 256 382
+[MakerNotes]    LensDataVersion                 : 0204
+[MakerNotes]    ExitPupilPosition               : 93.1 mm
+[MakerNotes]    AFAperture                      : 5.7
+[MakerNotes]    FocusPosition                   : 0x05
+[MakerNotes]    FocusDistance                   : 18.84 m
+[MakerNotes]    FocalLength                     : 190.3 mm
+[MakerNotes]    LensIDNumber                    : 167
+[MakerNotes]    LensFStops                      : 5.00
+[MakerNotes]    MinFocalLength                  : 55.0 mm
+[MakerNotes]    MaxFocalLength                  : 201.6 mm
+[MakerNotes]    MaxApertureAtMinFocal           : 4.0
+[MakerNotes]    MaxApertureAtMaxFocal           : 5.7
+[MakerNotes]    MCUVersion                      : 194
+[MakerNotes]    EffectiveMaxAperture            : 5.7
+[MakerNotes]    RawImageCenter                  : 3008 2008
+[MakerNotes]    DateStampMode                   : Off
+[MakerNotes]    RetouchHistory                  : None
+[MakerNotes]    ShutterCount                    : 11762
+[MakerNotes]    FlashInfoVersion                : 0106
+[MakerNotes]    FlashSource                     : None
+[MakerNotes]    ExternalFlashFirmware           : n/a
+[MakerNotes]    ExternalFlashFlags              : (none)
+[MakerNotes]    FlashCommanderMode              : Off
+[MakerNotes]    FlashControlMode                : Off
+[MakerNotes]    FlashGNDistance                 : 0
+[MakerNotes]    FlashColorFilter                : None
+[MakerNotes]    FlashGroupAControlMode          : Off
+[MakerNotes]    FlashGroupBControlMode          : Off
+[MakerNotes]    FlashGroupCControlMode          : Off
+[MakerNotes]    FlashCompensation               : 0
+[MakerNotes]    FlashGroupACompensation         : 0
+[MakerNotes]    FlashGroupBCompensation         : 0
+[MakerNotes]    FlashGroupCCompensation         : 0
+[MakerNotes]    VariProgram                     : 
+[MakerNotes]    MultiExposureVersion            : 0100
+[MakerNotes]    MultiExposureMode               : Off
+[MakerNotes]    MultiExposureShots              : 0
+[MakerNotes]    MultiExposureAutoGain           : Off
+[MakerNotes]    HighISONoiseReduction           : Normal
+[MakerNotes]    PowerUpTime                     : 2017:07:04 23:07:32
+[MakerNotes]    AFInfo2Version                  : 0100
+[MakerNotes]    AFDetectionMethod               : Phase Detect
+[MakerNotes]    AFAreaMode                      : Single Area
+[MakerNotes]    FocusPointSchema                : 11-point
+[MakerNotes]    PrimaryAFPoint                  : Center
+[MakerNotes]    AFPointsUsed                    : Center
+[MakerNotes]    FileInfoVersion                 : 0100
+[MakerNotes]    MemoryCardNumber                : 0
+[MakerNotes]    DirectoryNumber                 : 102
+[MakerNotes]    FileNumber                      : 6765
+[MakerNotes]    RetouchInfoVersion              : 0200
+[MakerNotes]    RetouchNEFProcessing            : Off
+[MakerNotes]    SilentPhotography               : Off
+[MakerNotes]    PreviewImage                    : (Binary data 152949 bytes, use -b option to extract)
+[Composite]     Aperture                        : 5.6
+[Composite]     BlueBalance                     : 1.492188
+[Composite]     CFAPattern                      : [Red,Green][Green,Blue]
+[Composite]     ImageSize                       : 6016x4016
+[Composite]     Megapixels                      : 24.2
+[Composite]     RedBalance                      : 1.90625
+[Composite]     ScaleFactor35efl                : 1.5
+[Composite]     ShutterSpeed                    : 1/400
+[Composite]     SubSecCreateDate                : 2017:08:27 01:12:10.10
+[Composite]     SubSecDateTimeOriginal          : 2017:08:27 01:12:10.10
+[Composite]     SubSecModifyDate                : 2017:08:27 01:12:10.10
+[Composite]     AutoFocus                       : On
+[Composite]     ContrastDetectAF                : Off
+[Composite]     LensID                          : AF-S DX Nikkor 55-200mm f/4-5.6G ED VR II
+[Composite]     LensSpec                        : 55-200mm f/4-5.6 G VR
+[Composite]     PhaseDetectAF                   : On (11-point)
+[Composite]     CircleOfConfusion               : 0.020 mm
+[Composite]     DOF                             : 2.19 m (17.80 - 19.99 m)
+[Composite]     FOV                             : 7.2 deg (2.36 m)
+[Composite]     FocalLength35efl                : 190.0 mm (35 mm equivalent: 285.0 mm)
+[Composite]     HyperfocalDistance              : 321.83 m
+[Composite]     LightValue                      : 13.6

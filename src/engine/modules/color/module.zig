@@ -31,7 +31,7 @@ pub var desc: api.ModuleDesc = .{
     .createNodes = createNodes,
 };
 
-const default_wb_temp: f32 = 5500.0;
+const default_wb_temp: f32 = 6500.0; // D65 daylight
 const default_wb_tint: f32 = 0.0;
 
 pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
@@ -124,7 +124,7 @@ fn locusNormalAtTemp(temp: f32) Uv {
 }
 
 /// Compute camera white-balance multipliers from CCT + tint.
-/// This is Adobe-style in spirit: temp moves along the daylight/Planckian locus,
+/// temp moves along the daylight/Planckian locus,
 /// tint moves approximately perpendicular to that locus in CIE 1976 u'v'.
 /// With only a single camera matrix available we cannot do full DNG-style dual-
 /// illuminant interpolation, but this is much closer than independent u'/v' shifts.

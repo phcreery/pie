@@ -219,6 +219,10 @@ fn libraw_dcraw_process(
     // }
 
     libraw_rp.*.params.half_size = 1;
+    libraw_rp.*.params.use_camera_wb = 1;
+    libraw_rp.*.params.use_camera_matrix = 1;
+    libraw_rp.*.params.use_auto_wb = 0;
+    // params.output_color=0 // 0 = sRGB, 1 = Adobe RGB, 2 = Wide Gamut RGB, 3 = ProPhoto RGB, 4 = XYZ, 5 = Raw
     const ret3 = libraw.libraw_dcraw_process(libraw_rp);
     if (ret3 != libraw.LIBRAW_SUCCESS) {
         return error.DcrawProcessFailed;
@@ -277,7 +281,7 @@ test "test targets" {
     const input_filename = config.input_filename;
     const output_filename = "testing/integration/targets/" ++ config.name ++ "/output.ppm";
 
-    try libraw_dcraw_process(allocator, io, input_filename, target_filename, false);
+    try libraw_dcraw_process(allocator, io, input_filename, target_filename, true);
 
     if (config.build) |build_fn| {
         try build_fn(allocator, io, &pipeline, &modules, input_filename, output_filename);

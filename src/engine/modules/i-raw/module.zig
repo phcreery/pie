@@ -5,8 +5,8 @@ const RawImage = @import("libraw_image.zig").RawImage;
 const api = @import("../api.zig");
 
 const WbMode = enum(i32) {
-    cam_mul = 0,
-    pre_mul = 1,
+    cam_mul = 0, // White balance coefficients (as shot). Either read from file or calculated.
+    pre_mul = 1, // White balance coefficients for daylight (daylight balance). Either read from file, or calculated on the basis of file data, or taken from hardcoded constants.
 };
 
 pub var desc: api.ModuleDesc = .{

@@ -41,6 +41,21 @@ pub const RawImage = struct {
         const flip = libraw_rp.*.rawdata.sizes.flip;
         const user_flip = libraw_rp.*.params.user_flip;
 
+        // 1 = Daylight, 2 = Fluorescent, 4 = Tungsten, 21 = D65
+        // const illuminant0 = libraw_rp.*.rawdata.color.dng_color[0].illuminant;
+        // const illuminant1 = libraw_rp.*.rawdata.color.dng_color[1].illuminant;
+
+        // print our illuminant info
+        // std.debug.print("libraw: illuminant0={d} illuminant1={d}\n", .{ illuminant0, illuminant1 });
+
+        // print libraw_rp.*.rawdata.color.dng_color
+        for (libraw_rp.*.rawdata.color.dng_color, 0..) |dng_color, i| {
+            std.debug.print("libraw: dng_color[{d}]: illuminant={d}\n", .{
+                i,
+                dng_color.illuminant,
+            });
+        }
+
         var black: [4]u32 = undefined;
         for (black_corr, 0..) |corr, i| black[i] = black_base + corr;
 
@@ -58,6 +73,10 @@ pub const RawImage = struct {
             }
         }
 
+        // imgdata.color.cam_xyz[] is exactly the same as Adobe DNG ColorMatrix2. It converts from XYZ to camera space.
+        // -- Alex Tutubalin @LibRaw LLC
+        // DNG ColorMatrix2 (illuminant = D65), ColorMatrix1 (illuminant A, ~2856K) are in imgdata.color.dng_color[0]. The daylight WB multipliers themselves are in pre_mul[4].
+        // daylight/D65 matrix
         const cam_xyz_all: [4][3]f32 = libraw_rp.*.rawdata.color.cam_xyz;
         var cam_xyz: [3][3]f32 = undefined;
         //   LibRaw exposes cam_xyz as CAM<-XYZ with 4 camera rows: R, G1, B, G2.
