@@ -65,7 +65,7 @@ pub const ModuleType = enum {
 pub const ParamDesc = struct {
     name: []const u8,
     len: u32,
-    typ: Param.ParamValueTag,
+    typ: Param.Type,
 };
 
 /// Module structure

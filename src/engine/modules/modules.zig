@@ -6,6 +6,7 @@ pub fn populateRegistry(registry: *Registry) !void {
     try registry.add(@import("i-raw/module.zig").desc);
     try registry.add(@import("format/module.zig").desc);
     try registry.add(@import("denoise/module.zig").desc);
+    try registry.add(@import("whitebalance/module.zig").desc);
     try registry.add(@import("demosaic/module.zig").desc);
     try registry.add(@import("crop/module.zig").desc);
     try registry.add(@import("color/module.zig").desc);

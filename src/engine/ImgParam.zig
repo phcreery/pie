@@ -18,13 +18,23 @@ pub const Orientation = enum(i32) {
 pub const ImgParams = struct {
     black: [4]f32, // black point
     white: [4]f32, // clipping threshold
-    white_balance: [4]f32, // camera white balance coefficients
+
+    // camera white balance coefficients
+    white_balance: [4]f32,
+
     // orientation from image metadata (EXIF-style): 1 = normal, 3 = 180, 6 = 90 CW, 8 = 270 CW
     orientation: Orientation,
-    // cfa: CFA, // color filter array multipliers
-    // rec2020_from_cam: [3][3]f32, // color space conversion matrix
-    srgb_from_cam: [3][3]f32, // sRGB <- camera color space conversion matrix (temporary for now)
-    xyz_from_cam: [3][3]f32, // XYZ <- camera color space conversion matrix
+
+    // color filter array multipliers
+    // cfa: CFA,
+
+    // rec2020_from_cam: [3][3]f32,
+
+    // sRGB <- camera color space conversion matrix (temporary for now)
+    srgb_from_cam: [3][3]f32,
+
+    // XYZ <- camera color space conversion matrix. XYZ is in D65 white point, linear. Similar to Adobe DNG ColorMatrix2, but with the two green channels collapsed into one.
+    xyz_d65_from_cam: [3][3]f32,
 
     pub fn print(
         self: *ImgParams,
@@ -55,10 +65,10 @@ pub const ImgParams = struct {
             self.srgb_from_cam[1][0], self.srgb_from_cam[1][1], self.srgb_from_cam[1][2],
             self.srgb_from_cam[2][0], self.srgb_from_cam[2][1], self.srgb_from_cam[2][2],
         });
-        try writer.print("xyz_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
-            self.xyz_from_cam[0][0], self.xyz_from_cam[0][1], self.xyz_from_cam[0][2],
-            self.xyz_from_cam[1][0], self.xyz_from_cam[1][1], self.xyz_from_cam[1][2],
-            self.xyz_from_cam[2][0], self.xyz_from_cam[2][1], self.xyz_from_cam[2][2],
+        try writer.print("xyz_d65_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
+            self.xyz_d65_from_cam[0][0], self.xyz_d65_from_cam[0][1], self.xyz_d65_from_cam[0][2],
+            self.xyz_d65_from_cam[1][0], self.xyz_d65_from_cam[1][1], self.xyz_d65_from_cam[1][2],
+            self.xyz_d65_from_cam[2][0], self.xyz_d65_from_cam[2][1], self.xyz_d65_from_cam[2][2],
         });
     }
 };

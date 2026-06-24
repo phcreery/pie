@@ -202,6 +202,7 @@ fn libraw_dcraw_process(
     std.log.info("DCRAW processing...", .{});
 
     const contents = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, input_filename, allocator, .unlimited);
+    defer allocator.free(contents);
 
     const libraw_rp = libraw.libraw_init(0);
 
@@ -281,7 +282,7 @@ test "test targets" {
     const input_filename = config.input_filename;
     const output_filename = "testing/integration/targets/" ++ config.name ++ "/output.ppm";
 
-    try libraw_dcraw_process(allocator, io, input_filename, target_filename, true);
+    try libraw_dcraw_process(allocator, io, input_filename, target_filename, false);
 
     if (config.build) |build_fn| {
         try build_fn(allocator, io, &pipeline, &modules, input_filename, output_filename);

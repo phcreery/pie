@@ -47,7 +47,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             .{ 0.0, 0.0, 1.0 },
         },
         .orientation = .normal,
-        .xyz_from_cam = .{
+        .xyz_d65_from_cam = .{
             .{ 1.0, 0.0, 0.0 },
             .{ 0.0, 1.0, 0.0 },
             .{ 0.0, 0.0, 1.0 },

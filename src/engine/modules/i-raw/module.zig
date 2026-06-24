@@ -81,19 +81,7 @@ fn computeCamToSrgb(raw_image: *RawImage) [3][3]f32 {
     // rgb_cam matrix.
     var cam_from_srgb: [3][3]f32 = @splat(@splat(0.0));
     api.math.mat3x3Mul(&cam_from_srgb, raw_image.cam_xyz, xyz_from_srgb);
-    normalizeRows3x3(&cam_from_srgb);
     return api.math.mat3.inv(f32, cam_from_srgb);
-}
-
-fn normalizeRows3x3(m: *[3][3]f32) void {
-    for (m) |*row| {
-        const sum = row[0] + row[1] + row[2];
-        if (@abs(sum) > 1e-6) {
-            row[0] /= sum;
-            row[1] /= sum;
-            row[2] /= sum;
-        }
-    }
 }
 
 fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
@@ -160,7 +148,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
 
     // LibRaw exposes cam_xyz as CAM<-XYZ. Store the actual inverse here so the
     // ImgParam field name matches its contents: XYZ<-CAM.
-    const xyz_from_cam = api.math.mat3.inv(f32, raw_image.cam_xyz);
+    const xyz_d65_from_cam = api.math.mat3.inv(f32, raw_image.cam_xyz);
 
     m.img_param = .{
         .black = [4]f32{
@@ -178,7 +166,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .white_balance = selected_wb,
         .orientation = orientation,
         .srgb_from_cam = computeCamToSrgb(raw_image),
-        .xyz_from_cam = xyz_from_cam,
+        .xyz_d65_from_cam = xyz_d65_from_cam,
     };
 
     var stdout_buffer: [4096]u8 = undefined;

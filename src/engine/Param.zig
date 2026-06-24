@@ -10,9 +10,8 @@ const slog = std.log.scoped(.param);
 // Structured as Tagged Union for dynamic data
 // =================
 
-pub const ParamValueTag = enum {
+pub const Type = enum {
     i32,
-    // vec2_f32,
     f32,
     str,
 };
@@ -94,7 +93,7 @@ pub fn get(self: Self, T: type) T {
     };
 }
 
-pub fn size_cpu(len: u32, typ: ParamValueTag) usize {
+pub fn size_cpu(len: u32, typ: Type) usize {
     return switch (typ) {
         .i32 => @sizeOf(i32) * len,
         .f32 => @sizeOf(f32) * len,
@@ -116,6 +115,7 @@ pub fn size(self: Self) usize {
         },
         .f32 => switch (self.desc.len) {
             1 => gpu_data.size(f32),
+            4 => gpu_data.size([4]f32),
             else => unreachable,
         },
         else => unreachable,
@@ -130,6 +130,7 @@ pub fn alignment(self: Self) usize {
         },
         .f32 => switch (self.desc.len) {
             1 => gpu_data.alignment(f32),
+            4 => gpu_data.alignment([4]f32),
             else => unreachable,
         },
         else => unreachable,

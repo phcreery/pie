@@ -1,7 +1,7 @@
 const api = @import("../api.zig");
 
 pub var desc: api.ModuleDesc = .{
-    .name = "denoise",
+    .name = "whitebalance",
     .type = .compute,
     .sockets = init: {
         var s: api.Sockets = @splat(null);
@@ -24,10 +24,10 @@ pub var desc: api.ModuleDesc = .{
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_interpolation = try pipe.addNode(mod, .{
+    const node_whitebalance = try pipe.addNode(mod, .{
         .type = .compute,
-        .shader = @embedFile("./interpolation.wgsl"),
-        .name = "interpolation",
+        .shader = @embedFile("./whitebalance.wgsl"),
+        .name = "whitebalance",
         .run_size = mod_output_sock.roi.?,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
@@ -46,6 +46,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try pipe.copyConnector(mod, "input", node_interpolation, "input");
-    try pipe.copyConnector(mod, "output", node_interpolation, "output");
+    try pipe.copyConnector(mod, "input", node_whitebalance, "input");
+    try pipe.copyConnector(mod, "output", node_whitebalance, "output");
 }
