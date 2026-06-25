@@ -31,6 +31,7 @@ fn build(
     const mod_color = try pipeline.addModule(modules.get("color").?);
     const mod_filmcurv = try pipeline.addModule(modules.get("filmcurv").?);
     const mod_test_nop_glsl = try pipeline.addModule(modules.get("test-nop-glsl").?);
+    const mod_test_nop_zig = try pipeline.addModule(modules.get("test-nop-zig").?);
     const mod_o_ppm = try pipeline.addModule(modules.get("o-ppm").?);
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
@@ -52,5 +53,6 @@ fn build(
     try pipeline.connectModuleSocketsByHandleName(mod_crop, "output", mod_color, "input");
     try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_filmcurv, "input");
     try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_test_nop_glsl, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_o_ppm, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_test_nop_zig, "output", mod_o_ppm, "input");
 }

@@ -43,7 +43,7 @@ pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // 1.90625, 1, 1.4921875    cam_mul
     // 0.8191, 1, 1.3340, 1.0   hardcoded from 1/(rec2020_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
     // 0.70393723, 1, 1.3611937 hardcoded from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
-    try api.initParamNamed(pipe, mod, "wb_coeff", [4]f32{ 1.170393723, 1, 1.3611937, 1.0 });
+    try api.initParamNamed(pipe, mod, "wb_coeff", [4]f32{ 0.70393723, 1, 1.3611937, 1.0 });
 }
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {

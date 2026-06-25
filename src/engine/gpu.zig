@@ -642,7 +642,7 @@ pub const BindGroupLayoutEntry = struct {
 
 pub const ShaderLanguage = enum {
     wgsl,
-    // spirv,
+    spirv,
     glsl,
 };
 
@@ -668,15 +668,15 @@ pub const Shader = struct {
                 .label = opts.name,
                 .code = shader_source,
             }),
-            // .spirv => wgpu.shaderModuleSPIRVDescriptor(.{
-            //     .label = opts.name,
-            //     .code = shader_source,
-            //     .code_size = @as(usize, shader_source.len) / @sizeOf(u32), // need to test
-            // }),
+            .spirv => wgpu.shaderModuleSPIRVDescriptor(.{
+                .label = opts.name,
+                .code = shader_source,
+                .code_size = @as(usize, shader_source.len) / @sizeOf(u32), // need to test
+            }),
             .glsl => wgpu.shaderModuleGLSLDescriptor(.{
                 .label = opts.name,
                 .code = shader_source,
-                .stage = @as(wgpu.ShaderStage, 0x0000000000000004), //wgpu.ShaderStage.compute, // needed for GLSL
+                .stage = @as(wgpu.ShaderStage, 0x0000000000000004), // wgpu.ShaderStage.compute, // needed for GLSL
             }),
         };
 

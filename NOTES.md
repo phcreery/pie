@@ -1,9 +1,9 @@
-## Color Notes
+## Color
 
 - https://yuhaozhu.com/blog/cmf.html
 - https://medium.com/hipster-color-science/a-beginners-guide-to-colorimetry-401f1830b65a
 
-## Raw Processing Notes:
+## Raw Processing
 
 - https://rcsumner.net/raw_guide/RAWguide.pdf
 - https://www.odelama.com/photo/Developing-a-RAW-Photo-by-hand/
@@ -13,9 +13,11 @@
 
 - https://www.dxomark.com/Cameras/Nikon/D7100---Measurements
 
+## Gpu
 
+- https://mbty.fr/blog/gpu/compute
 
-## Zig notes
+## Zig
 
 - gpu
   - https://codeberg.org/Games-by-Mason/mr_gpu
@@ -44,6 +46,14 @@
   - https://codeberg.org/Games-by-Mason/mr_glsl
   - https://codeberg.org/Mr_Nobody/HowToVulkan_zig
   - https://codeberg.org/andrewkraevskii/howtovulkan-zig
+
+- Zig spirv backend
+
+  - https://alichraghi.github.io/blog/zig-gpu/
+  - https://gist.github.com/alichraghi/cc4b1db0a0a556de4f85cf06f0e7a400
+  - https://github.com/snektron/shallenge/
+  - https://codeberg.org/shahwali/knots/src/branch/main/src/gpu/backend/vulkan/shaders
+  - https://github.com/q-uint/molten-zig
 
   - sokol: currently there's no way to get the data back to the CPU ... but we can create and injecting the storage buffer ourself
     - https://github.com/floooh/sokol/issues/1246

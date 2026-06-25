@@ -30,28 +30,6 @@ fn mul3x3Rows(m: mat3x3<f32>, v: vec3<f32>) -> vec3<f32> {
     );
 }
 
-
-// glsl
-// vec3 // return adapted rec2020
-// cat16(vec3 rec2020_d65, vec3 rec2020_src, vec3 rec2020_dst)
-// {
-//   // these are the CAT16 M^{-1} and M matrices.
-//   // we use the standalone adaptation as proposed in
-//   // Smet and Ma, "Some concerns regarding the CAT16 chromatic adaptation transform",
-//   // Color Res Appl. 2020;45:172–177.
-//   // these are XYZ to cone-like
-//   const mat3 M16i = matrix_cat16_Mi;
-//   const mat3 M16  = matrix_cat16_M;
-//   const mat3 rec2020_to_xyz = matrix_rec2020_to_xyz;
-//   const mat3 xyz_to_rec2020 = matrix_xyz_to_rec2020;
-
-//   const vec3 cl_src = M16 * rec2020_to_xyz * rec2020_src;
-//   const vec3 cl_dst = M16 * rec2020_to_xyz * rec2020_dst;
-//   vec3 cl = M16 * rec2020_to_xyz * rec2020_d65;
-//   cl *= cl_dst / cl_src;
-//   return xyz_to_rec2020 * M16i * cl;
-// }
-
 // chromatic adaptation transform matrices, CAT16 M and inverse
 // Smet and Ma, "Some concerns regarding the CAT16 chromatic adaptation transform",
 // Color Res Appl. 2020;45:172–177.
@@ -124,8 +102,10 @@ fn cat16(rec2020_d65: vec3<f32>, rec2020_src: vec3<f32>, rec2020_dst: vec3<f32>)
 
 fn decode_colour(rgb_cam: vec3<f32>) -> vec3<f32> {
     // decode the camera-space color to linear sRGB
-    return mul3x3Rows(img_params.srgb_from_cam, rgb_cam);
-    // return img_params.srgb_from_cam * rgb_cam;
+    // return mul3x3Rows(img_params.srgb_from_cam, rgb_cam);
+
+    // becasue wgsl mat3x3 layout is column-major, we need to transpose
+    return transpose(img_params.srgb_from_cam) * rgb_cam;
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -142,7 +122,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // hmm, vkdt's call cat16(w0, vec3(1.0), params.mul.rgb) with mul=1/w0 DOES produce approximately white (within 1.5% — the small error is because 1/w0 is only approximately the right value due to the
     // g-normalization and the fact that cone-space scaling isn't exactly the same as RGB-space inversion).
     rgb_srgb_linear = cat16(rgb_srgb_linear, vec3f(1.0), params.wb_coeff.rgb);
-    // rgb_srgb_linear = cat16(rgb_srgb_linear, vec3f(1.0), vec3f( 1.90625, 1.0, 1.4921875));
 
     let out_px = vec4<f32>(rgb_srgb_linear, px.a);
     textureStore(output, coords, out_px);
