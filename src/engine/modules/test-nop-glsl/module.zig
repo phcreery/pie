@@ -27,18 +27,6 @@ pub var desc: api.ModuleDesc = .{
     .modifyROIOut = null,
 };
 
-// const shader_code: []const u8 =
-//     \\enable f16;
-//     \\@group(1) @binding(0) var input  : texture_2d<f32>;
-//     \\@group(1) @binding(1) var output : texture_storage_2d<rgba16float, write>;
-//     \\@compute @workgroup_size(8, 8, 1)
-//     \\fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-//     \\    let coords = vec2<i32>(global_id.xy);
-//     \\    var pixel = vec4<f32>(textureLoad(input, coords, 0));
-//     \\    textureStore(output, coords, pixel);
-//     \\}
-// ;
-
 // In GLSL, this input must be a texture-only binding, not a combined sampler.
 // The engine binds socket 0 as a texture view with no sampler object.
 const shader_code: []const u8 =

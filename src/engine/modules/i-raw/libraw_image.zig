@@ -41,20 +41,18 @@ pub const RawImage = struct {
         const flip = libraw_rp.*.rawdata.sizes.flip;
         const user_flip = libraw_rp.*.params.user_flip;
 
-        // 1 = Daylight, 2 = Fluorescent, 4 = Tungsten, 21 = D65
+        // 1 = Daylight, 2 = Fluorescent, 4 = Tungsten, 21 = D65 i think
         // const illuminant0 = libraw_rp.*.rawdata.color.dng_color[0].illuminant;
         // const illuminant1 = libraw_rp.*.rawdata.color.dng_color[1].illuminant;
 
         // print our illuminant info
         // std.debug.print("libraw: illuminant0={d} illuminant1={d}\n", .{ illuminant0, illuminant1 });
-
-        // print libraw_rp.*.rawdata.color.dng_color
-        for (libraw_rp.*.rawdata.color.dng_color, 0..) |dng_color, i| {
-            std.debug.print("libraw: dng_color[{d}]: illuminant={d}\n", .{
-                i,
-                dng_color.illuminant,
-            });
-        }
+        // for (libraw_rp.*.rawdata.color.dng_color, 0..) |dng_color, i| {
+        //     std.debug.print("libraw: dng_color[{d}]: illuminant={d}\n", .{
+        //         i,
+        //         dng_color.illuminant,
+        //     });
+        // }
 
         var black: [4]u32 = undefined;
         for (black_corr, 0..) |corr, i| black[i] = black_base + corr;

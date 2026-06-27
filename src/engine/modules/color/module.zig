@@ -9,7 +9,7 @@ pub var desc: api.ModuleDesc = .{
         var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
         p[0] = .{ .name = "wb_temp", .len = 1, .typ = .f32 };
         p[1] = .{ .name = "wb_tint", .len = 1, .typ = .f32 };
-        p[2] = .{ .name = "wb_coeff", .len = 4, .typ = .f32 };
+        p[2] = .{ .name = "wb_coeff", .len = 3, .typ = .f32 };
         break :init p;
     },
     .sockets = init: {
@@ -35,6 +35,7 @@ pub var desc: api.ModuleDesc = .{
 
 const default_wb_temp: f32 = 6500.0; // D65 daylight
 const default_wb_tint: f32 = 0.0;
+const default_wb_coeff: [3]f32 = .{ 1.0, 1.0, 1.0 }; // hardcoded from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
 
 pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "wb_temp", default_wb_temp);
@@ -43,7 +44,8 @@ pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // 1.90625, 1, 1.4921875    cam_mul
     // 0.8191, 1, 1.3340, 1.0   hardcoded from 1/(rec2020_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
     // 0.70393723, 1, 1.3611937 hardcoded from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
-    try api.initParamNamed(pipe, mod, "wb_coeff", [4]f32{ 0.70393723, 1, 1.3611937, 1.0 });
+    // try api.initParamNamed(pipe, mod, "wb_coeff", [3]f32{ 0.70393723, 1, 1.3611937 });
+    try api.initParamNamed(pipe, mod, "wb_coeff", default_wb_coeff);
 }
 
 pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
@@ -56,9 +58,9 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     // camera-space correction before camera->sRGB conversion.
     const wb_temp = try api.getParam(pipe, mod, "wb_temp", f32);
     const wb_tint = try api.getParam(pipe, mod, "wb_tint", f32);
-    const wb_coeff = try api.getParam(pipe, mod, "wb_coeff", [4]f32);
+    const wb_coeff = try api.getParam(pipe, mod, "wb_coeff", [3]f32);
     std.debug.print("color module: wb_temp={d:.0} wb_tint={d:.1}\n", .{ wb_temp, wb_tint });
-    std.debug.print("color module: wb_coeff=({d:.4}, {d:.4}, {d:.4}, {d:.4})\n", .{ wb_coeff[0], wb_coeff[1], wb_coeff[2], wb_coeff[3] });
+    std.debug.print("color module: wb_coeff=({d:.4}, {d:.4}, {d:.4})\n", .{ wb_coeff[0], wb_coeff[1], wb_coeff[2] });
 
     // If we have xyz_d65_from_cam from the upstream module, just print the relative
     // correction that the shader will apply. We do not modify img_param.white_balance

@@ -98,7 +98,10 @@ pub const ModuleDesc = struct {
     writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
 };
 
-/// PIPELINE HELPERS
+// ================
+// PIPELINE HELPERS
+// ================
+
 pub fn compileShader(pipe: *Pipeline, shader_code: []const u8, temp_shader_language: gpu.ShaderLanguage) !gpu.Shader {
     const gpu_inst = pipe.gpu orelse return error.GPUNotInitialized;
     return gpu.Shader.compile(gpu_inst, shader_code, .{ .type = temp_shader_language });

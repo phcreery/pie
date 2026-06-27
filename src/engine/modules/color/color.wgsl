@@ -3,7 +3,7 @@ enable f16;
 struct Params {
     wb_temp: f32,
     wb_tint: f32,
-    wb_coeff: vec4<f32>,
+    wb_coeff: vec3<f32>,
 };
 
 struct ImgParams {
@@ -64,12 +64,12 @@ fn cat16(rec2020_d65: vec3<f32>, rec2020_src: vec3<f32>, rec2020_dst: vec3<f32>)
         vec3<f32>( 0.38752654,  0.62144744, -0.00897398),
         vec3<f32>(-0.01584150, -0.03412294,  1.04996444)
     ));
-    // let rec2020_to_xyz = (mat3x3<f32>(
+    // let rec2020_to_xyz = transpose(mat3x3<f32>(
     //     vec3<f32>(0.636958048301290991, 0.144616903586208406, 0.168880975164172054),
     //     vec3<f32>(0.26270021201126692, 0.677998071518871148, 0.0593017164698619384),
     //     vec3<f32>(4.9999999999999999e-17, 0.0280726930490874452, 1.06098505771079066)
     // ));
-    // let xyz_to_rec2020 = (mat3x3<f32>(
+    // let xyz_to_rec2020 = transpose(mat3x3<f32>(
     //     vec3<f32>(1.71665119, -0.35567078, -0.25336628),
     //     vec3<f32>(-0.66668435,  1.61648124,  0.01576855),
     //     vec3<f32>(0.01763986, -0.04277061, 0.94210312)
@@ -91,7 +91,7 @@ fn cat16(rec2020_d65: vec3<f32>, rec2020_src: vec3<f32>, rec2020_dst: vec3<f32>)
     // cl *= cl_dst / cl_src;
     // return xyz_to_rec2020 * M16i * cl;
 
-    // because were actually in srgb 
+    // well ... because were actually in srgb 
     let cl_src = M16 * rec709_to_xyz * rec2020_src;
     let cl_dst = M16 * rec709_to_xyz * rec2020_dst;
     var cl = M16 * rec709_to_xyz * rec2020_d65;

@@ -75,10 +75,6 @@ fn computeCamToSrgb(raw_image: *RawImage) [3][3]f32 {
     //   raw_image.cam_xyz is CAM<-XYZ.
     // Convert that into CAM<-sRGB first, normalize each camera row,
     // then invert to obtain sRGB<-CAM.
-    //
-    // The row normalization is important here: for this camera it makes
-    // the cam_xyz-derived result line up almost exactly with LibRaw's
-    // rgb_cam matrix.
     var cam_from_srgb: [3][3]f32 = @splat(@splat(0.0));
     api.math.mat3x3Mul(&cam_from_srgb, raw_image.cam_xyz, xyz_from_srgb);
     return api.math.mat3.inv(f32, cam_from_srgb);
@@ -172,7 +168,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     var stdout_buffer: [4096]u8 = undefined;
     var writer = std.Io.File.stdout().writer(pipe.io, &stdout_buffer);
     const stdout = &writer.interface;
-    try raw_image.print(stdout);
+    // try raw_image.print(stdout);
     try m.img_param.?.print(stdout);
     try stdout.flush();
 

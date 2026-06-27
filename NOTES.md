@@ -13,6 +13,16 @@
 
 - https://www.dxomark.com/Cameras/Nikon/D7100---Measurements
 
+- WB/CCT/CAT
+  - https://www.energy.gov/cmei/ssl/articles/modifications-robertson-method-calculating-correlated-color-temperature-improve
+  - https://jo.dreggn.org/vkdt/src/pipe/modules/colour/readme.html
+  - https://photo.stackexchange.com/questions/122251/how-do-color-values-change-mathematically-as-you-change-temperature-and-tint
+  - https://colour-hdri.readthedocs.io/en/v0.1.2/colour_hdri.models.dng.html
+  - https://github.com/colour-science/colour-hdri/blob/master/colour_hdri/examples/examples_adobe_dng_sdk_colour_processing.ipynb
+  - https://discuss.pixls.us/t/confused-about-d50-d65-and-cct-in-white-balance-and-color-calibration-modules/37293/10
+  - https://ansel.photos/en/resources/white-balances/#fnref:2
+  - https://jackchou00.com/en/posts/cat16-reversibility/
+
 ## Gpu
 
 - https://mbty.fr/blog/gpu/compute
@@ -54,6 +64,7 @@
   - https://github.com/snektron/shallenge/
   - https://codeberg.org/shahwali/knots/src/branch/main/src/gpu/backend/vulkan/shaders
   - https://github.com/q-uint/molten-zig
+  - https://codeberg.org/7Games/zig-sdl3/src/branch/master-gpu/gpu_examples/shaders/zig
 
   - sokol: currently there's no way to get the data back to the CPU ... but we can create and injecting the storage buffer ourself
     - https://github.com/floooh/sokol/issues/1246

@@ -31,13 +31,14 @@ fn build(
     const mod_color = try pipeline.addModule(modules.get("color").?);
     const mod_filmcurv = try pipeline.addModule(modules.get("filmcurv").?);
     const mod_test_nop_glsl = try pipeline.addModule(modules.get("test-nop-glsl").?);
-    const mod_test_nop_zig = try pipeline.addModule(modules.get("test-nop-zig").?);
+    // const mod_test_nop_zig = try pipeline.addModule(modules.get("test-nop-zig").?);
     const mod_o_ppm = try pipeline.addModule(modules.get("o-ppm").?);
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 0));
-    try pipeline.setModuleParam(mod_color, "wb_temp", @as(f32, 6500.0));
+    // try pipeline.setModuleParam(mod_color, "wb_temp", @as(f32, 6500.0));
     try pipeline.setModuleParam(mod_color, "wb_tint", @as(f32, 0.0));
+    try pipeline.setModuleParam(mod_color, "wb_coeff", [3]f32{ 0.70393723, 1, 1.3611937 }); // from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
     try pipeline.setModuleParam(mod_filmcurv, "colormode", @as(i32, 1));
     try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 3.8));
     try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.3));
@@ -53,6 +54,7 @@ fn build(
     try pipeline.connectModuleSocketsByHandleName(mod_crop, "output", mod_color, "input");
     try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_filmcurv, "input");
     try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_test_nop_glsl, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_test_nop_zig, "output", mod_o_ppm, "input");
+    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
+    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_zig, "output", mod_o_ppm, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_o_ppm, "input");
 }

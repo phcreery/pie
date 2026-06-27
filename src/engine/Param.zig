@@ -115,6 +115,7 @@ pub fn size(self: Self) usize {
         },
         .f32 => switch (self.desc.len) {
             1 => gpu_data.size(f32),
+            3 => gpu_data.size([3]f32),
             4 => gpu_data.size([4]f32),
             else => unreachable,
         },
@@ -130,6 +131,7 @@ pub fn alignment(self: Self) usize {
         },
         .f32 => switch (self.desc.len) {
             1 => gpu_data.alignment(f32),
+            3 => gpu_data.alignment([3]f32),
             4 => gpu_data.alignment([4]f32),
             else => unreachable,
         },

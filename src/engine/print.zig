@@ -172,22 +172,22 @@ pub fn printNodeExecutionOrder(self: *pipeline.Pipeline) void {
 }
 
 fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaque) []u8 {
-    // var self: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
-    // const conn = self.connector_pool.getPtr(edge) catch unreachable;
-    // const res = std.fmt.bufPrint(buf, "{s}", .{conn.*.texture.?.name}) catch "<error>";
-    _ = user_data;
-    const res = std.fmt.bufPrint(buf, "(id: {any})", .{edge.id}) catch "<error>";
+    // _ = user_data;
+    var pipe: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
+    const conn = pipe.connector_pool.getPtr(edge) catch unreachable;
+    const res = std.fmt.bufPrint(buf, "({any}) {s} {d}x{d}", .{ edge.id, @tagName(conn.*.?.format), conn.*.?.roi.w, conn.*.?.roi.h }) catch "<error>";
+    // const res = std.fmt.bufPrint(buf, "(id: {any})", .{edge.id}) catch "<error>";
     return @constCast(res);
 }
 
 fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []u8 {
     var self: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
     const node = self.node_pool.getPtr(vert) catch unreachable;
-    var enabled_srt = "[ ]";
+    var enabled_str = "[ ]";
     const node_mod = self.module_pool.getPtr(node.*.mod) catch unreachable;
     if (node_mod.enabled) {
-        enabled_srt = "[x]";
+        enabled_str = "[x]";
     }
-    const res = std.fmt.bufPrint(buf, "{s} (id: {any}) {s} > {s}", .{ enabled_srt, vert.id, node_mod.desc.name, node.desc.name }) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} ({any}) {s}: {s} > {s}", .{ enabled_str, vert.id, @tagName(node_mod.desc.type), node_mod.desc.name, node.desc.name }) catch "<error>";
     return @constCast(res);
 }

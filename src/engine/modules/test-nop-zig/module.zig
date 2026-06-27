@@ -1,7 +1,8 @@
 const api = @import("../api.zig");
+const std = @import("std");
 
 pub var desc: api.ModuleDesc = .{
-    .name = "test-nop-glsl",
+    .name = "test-nop-zig",
     .type = .compute,
     .sockets = init: {
         var s: api.Sockets = @splat(null);
@@ -27,33 +28,15 @@ pub var desc: api.ModuleDesc = .{
     .modifyROIOut = null,
 };
 
-// const shader_code: []const u8 =
-//     \\enable f16;
-//     \\@group(1) @binding(0) var input  : texture_2d<f32>;
-//     \\@group(1) @binding(1) var output : texture_storage_2d<rgba16float, write>;
-//     \\@compute @workgroup_size(8, 8, 1)
-//     \\fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-//     \\    let coords = vec2<i32>(global_id.xy);
-//     \\    var pixel = vec4<f32>(textureLoad(input, coords, 0));
-//     \\    textureStore(output, coords, pixel);
-//     \\}
-// ;
-
-// In GLSL, this input must be a texture-only binding, not a combined sampler.
-// The engine binds socket 0 as a texture view with no sampler object.
-// const shader_code: []const u8 =
-//     \\#version 450
-//     \\layout(set = 1, binding = 0) uniform texture2D input;
-//     \\layout(set = 1, binding = 1, rgba16f) uniform writeonly image2D output;
-//     \\layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-//     \\void main() {
-//     \\    ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
-//     \\    vec4 pixel = texelFetch(input, coords, 0);
-//     \\    imageStore(output, coords, pixel);
-//     \\}
-// ;
-
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+
+    // const compute_spv = @embedFile("./compute.spv");
+    // std.debug.print("compute.spv size: {any}\n", .{compute_spv.len});
+    // std.debug.print("compute.spv first 16 bytes: ", .{});
+    // for (compute_spv[0..8]) |b| {
+    //     std.debug.print("{x} ", .{b});
+    // }
+
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .compute,

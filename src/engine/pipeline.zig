@@ -746,6 +746,10 @@ pub const Pipeline = struct {
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |node_handle| {
             var node = try self.node_pool.getPtr(node_handle);
+            if (node.shader) |_| {
+                slog.debug("Node {s} already has a compiled shader, skipping compilation", .{node.desc.name});
+                continue;
+            }
             if (node.desc.shader) |shader| {
                 node.shader = try api.compileShader(self, shader, node.desc.temp_shader_language);
             }

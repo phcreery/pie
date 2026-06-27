@@ -670,8 +670,8 @@ pub const Shader = struct {
             }),
             .spirv => wgpu.shaderModuleSPIRVDescriptor(.{
                 .label = opts.name,
-                .code = shader_source,
-                .code_size = @as(usize, shader_source.len) / @sizeOf(u32), // need to test
+                .code = @ptrCast(@alignCast(shader_source.ptr)),
+                .code_size = @as(u32, @intCast(shader_source.len)), // need to test
             }),
             .glsl => wgpu.shaderModuleGLSLDescriptor(.{
                 .label = opts.name,
