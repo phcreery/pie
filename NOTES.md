@@ -33,32 +33,29 @@
   - https://codeberg.org/Games-by-Mason/mr_gpu
 
 - UI
-
   - https://codeberg.org/shahwali/knots
   - https://codeberg.org/Games-by-Mason/dear_imgui_zig
+  - as of 08-Sep-2025, sokol allows for webgou on native
 
 - Image Loaders
-
   - LibRaw [used by darktable]
   - rawspeed [used by darktable]
   - rawloader [used by vkdt]
 
 - wgpu Zig bindings
-
   - https://git.bouvais.lu/adrien/zig-wgpu
   - https://codeberg.org/Silverclaw/zig-wgpu-native
   - https://github.com/bronter/wgpu_native_zig
     - https://github.com/carrot-sticks/wgpu_native_zig
   - https://github.com/zig-gamedev/zgpu
+    - https://github.com/zig-gamedev/zig-gamedev/
 
 - Shader stuff
-
   - https://codeberg.org/Games-by-Mason/mr_glsl
   - https://codeberg.org/Mr_Nobody/HowToVulkan_zig
   - https://codeberg.org/andrewkraevskii/howtovulkan-zig
 
 - Zig spirv backend
-
   - https://alichraghi.github.io/blog/zig-gpu/
   - https://gist.github.com/alichraghi/cc4b1db0a0a556de4f85cf06f0e7a400
   - https://github.com/snektron/shallenge/
@@ -68,9 +65,9 @@
 
   - sokol: currently there's no way to get the data back to the CPU ... but we can create and injecting the storage buffer ourself
     - https://github.com/floooh/sokol/issues/1246
+    - https://github.com/floooh/sokol/pull/1326
 
 - Examples
-
   - https://github.com/riverwm/river/
     - files are structs
     - one global allocator, similar to C

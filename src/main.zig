@@ -1,7 +1,7 @@
 const std = @import("std");
 
 // APP
-pub const app = @import("ui/app.zig");
+pub const app = @import("gui/app.zig");
 pub const cli = @import("cli/cli.zig");
 
 // EXPORTS

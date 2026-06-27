@@ -3,111 +3,46 @@ const use_docking = @import("build_options").docking;
 const ig = if (use_docking) @import("cimgui_docking") else @import("cimgui");
 const sokol = @import("sokol");
 const sg = sokol.gfx;
-const pretty = @import("pretty");
-const util = @import("../mem.zig");
 const builtin = @import("builtin");
-
 const build = @import("build_options");
 const zdt = @import("zdt");
-const Datetime = zdt.Datetime;
 const libraw = @import("libraw");
 
+const util = @import("../mem.zig");
+
+const Renderable = struct {
+    render: *const fn (allocator: std.mem.Allocator, io: std.Io) void,
+};
+
 pub const WindowManager = struct {
-    windows: std.ArrayList(IIgWindow),
+    about_window: *About,
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator) Self {
-        var windows = std.ArrayList(IIgWindow).initCapacity(allocator, 20) catch unreachable;
-
-        const about = &About.init(allocator);
-        const window = IIgWindow.from(about);
-        windows.append(window) catch unreachable;
+        // const about_window = &About.init(allocator);
+        const about = allocator.create(About) catch unreachable;
+        errdefer allocator.destroy(about);
+        about.* = About.init(allocator);
 
         return .{
-            // .allocator = allocator,
-            .windows = windows,
+            .about_window = about,
         };
     }
 
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-        for (self.windows.items) |window| {
-            window.destroy(self.allocator);
-        }
-        self.windows.deinit();
+        self.about_window.deinit(allocator);
         allocator.destroy(self);
     }
 
     pub fn render(self: *Self) void {
-        std.debug.print("WindowManager.render self\n", .{});
-        // pretty.print(util.allocator, self, .{}) catch unreachable;
-
         const open = &true;
         ig.igShowMetricsWindow(@ptrCast(@constCast(open)));
-        for (self.windows.items) |window| {
-            window.render();
-        }
-    }
-
-    pub fn add(self: *Self, window: IIgWindow) void {
-        self.windows.append(window) catch unreachable;
-    }
-};
-
-// https://www.openmymind.net/Zig-Interfaces/
-// https://medium.com/@jerrythomas_in/exploring-compile-time-interfaces-in-zig-5c1a1a9e59fd
-/// IIgWindow is an interface for rendering an ImGui window.
-/// It is recommended to use a heap allocated struct as the context.
-pub const IIgWindow = struct {
-    ptr: *anyopaque,
-    impl: Interface,
-
-    pub const Interface = struct {
-        renderFn: *const fn (ptr: *anyopaque) void,
-        deinitFn: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator) void,
-    };
-
-    pub fn render(self: IIgWindow) void {
-        // std.debug.print("IIgWindow.render self\n", .{});
-        // pretty.print(util.allocator, self, .{}) catch unreachable;
-        return self.impl.renderFn(self.ptr);
-    }
-
-    pub fn deinit(self: IIgWindow, allocator: std.mem.Allocator) void {
-        return self.impl.deinitFn(self.ptr, allocator);
-    }
-
-    // This is new
-    pub fn from(ptr: anytype) IIgWindow {
-        const T = @TypeOf(ptr);
-        const ptr_info = @typeInfo(T);
-
-        if (ptr_info != .pointer) @compileError("ptr must be a pointer");
-        if (ptr_info.pointer.size != .one) @compileError("ptr must be a single item pointer");
-
-        const gen = struct {
-            pub fn render(pointer: *anyopaque) void {
-                const self: T = @ptrCast(@alignCast(pointer));
-                std.debug.print("IIgWindow.from.render self\n", .{});
-                // pretty.print(util.allocator, self, .{}) catch unreachable;
-
-                return ptr_info.pointer.child.render(self);
-            }
-            pub fn deinit(pointer: *anyopaque, allocator: std.mem.Allocator) void {
-                const self: T = @ptrCast(@alignCast(pointer));
-                return ptr_info.pointer.child.deinit(self, allocator);
-            }
-        };
-
-        return .{
-            .ptr = ptr,
-            .impl = .{ .renderFn = gen.render, .deinitFn = gen.deinit },
-        };
+        self.about_window.render();
     }
 };
 
 pub const About = struct {
-    allocator: std.mem.Allocator,
     is_open: bool,
     init_pos: ig.ImVec2,
     init_size: ig.ImVec2,
@@ -118,7 +53,6 @@ pub const About = struct {
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator) Self {
-        // https://ziggit.dev/t/equivalent-of-cs-date-and-time-macros/2076/2
         const now = zdt.Datetime.fromUnix(build.timestamp, zdt.Duration.Resolution.second, null) catch unreachable;
         const build_date_buf = allocator.alloc(u8, 64) catch unreachable;
         errdefer allocator.free(build_date_buf);
@@ -131,10 +65,9 @@ pub const About = struct {
         const build_date = w.buffered(); // or build_date_buf[0..];
 
         return .{
-            .allocator = allocator,
             .is_open = true,
-            .init_pos = ig.ImVec2{ .x = 10, .y = 10 },
-            .init_size = ig.ImVec2{ .x = 300, .y = 400 },
+            .init_pos = .{ .x = 10, .y = 10 },
+            .init_size = .{ .x = 300, .y = 400 },
             .cimgui_version = cimgui_version,
             .libraw_version = libraw_version,
             .build_date = build_date,
@@ -159,10 +92,15 @@ pub const About = struct {
             .METAL_MACOS => "Metal macOS",
             .METAL_SIMULATOR => "Metal Simulator",
             .WGPU => "WebGPU",
+            .VULKAN => "Vulkan",
             .DUMMY => "Dummy",
         };
 
-        ig.igSetNextWindowPosEx(self.init_pos, ig.ImGuiCond_Once, ig.ImVec2{ .x = 0, .y = 0 });
+        ig.igSetNextWindowPosEx(
+            self.init_pos,
+            ig.ImGuiCond_Once,
+            .{ .x = 0, .y = 0 },
+        );
         ig.igSetNextWindowSize(self.init_size, ig.ImGuiCond_Once);
         // ig.igSetNextWindowCollapsed(true, ig.ImGuiCond_Once);
 
@@ -186,13 +124,6 @@ pub const About = struct {
         // ig.igText(std.fmt("LibRaw version: {}", self.libraw_version));
         const libraw_version_text = std.fmt.bufPrintZ(&text_buf, "LibRaw version: {s}", .{self.libraw_version}) catch unreachable;
         ig.igText(libraw_version_text.ptr);
-
-        // for backend in state.center_image_pixpipe.backends {
-        //     ig.igText(std.fmt("Backend: {} {}", backend.name, backend.version));
-        //     if (backend is cl.BackendCL) {
-        //         ig.igText(std.fmt(" - {}", backend.device.*));
-        //     }
-        // }
 
         ig.igText("");
         ig.igText("Main Thread:");

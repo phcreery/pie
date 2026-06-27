@@ -6,7 +6,6 @@ const sapp = sokol.app;
 const sglue = sokol.glue;
 const simgui = sokol.imgui;
 const std = @import("std");
-const pretty = @import("pretty");
 const util = @import("../mem.zig");
 const builtin = @import("builtin");
 
@@ -14,33 +13,16 @@ const window = @import("window.zig");
 
 const AppState = struct {
     pass_action: sg.PassAction = .{},
-    // windows: *ui.WindowManager,
-    window: window.IIgWindow,
+    window: window.WindowManager,
 
     const Self = @This();
 
     fn init(allocator: std.mem.Allocator) AppState {
-        // std.debug.print("AppState.init windows\n", .{});
-        // pretty.print(util.gpa, windows, .{}) catch unreachable;
-
-        const about = allocator.create(window.About) catch unreachable;
-        // const about = window.About.init(allocator);
-        errdefer allocator.destroy(about);
-        about.* = window.About.init(allocator);
-
-        std.debug.print("WindowManager.init about\n", .{});
-        // pretty.print(util.allocator, about, .{}) catch unreachable;
-
-        const about_window = window.IIgWindow.from(about);
-        // const window = allocator.create(ui.IIgWindow) catch unreachable;
-        // window.* = ui.IIgWindow.from(about);
-        std.debug.print("WindowManager.init window\n", .{});
-        // pretty.print(util.allocator, about_window, .{}) catch unreachable;
+        const windowmgr = window.WindowManager.init(allocator);
 
         return .{
             .pass_action = .{},
-            // .windows = windows,
-            .window = about_window,
+            .window = windowmgr,
         };
     }
 
@@ -49,7 +31,6 @@ const AppState = struct {
     }
 
     pub fn destroy(self: *Self, allocator: std.mem.Allocator) void {
-        // Free the resources
         self.window.deinit(allocator);
         self.deinit();
         allocator.destroy(self);
@@ -77,7 +58,6 @@ export fn init(ptr: ?*anyopaque) void {
     };
 }
 
-// export fn frame() void {
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
 
@@ -89,21 +69,20 @@ export fn frame(ptr: ?*anyopaque) void {
         .dpi_scale = sapp.dpiScale(),
     });
 
-    //=== UI CODE STARTS HERE
+    // === UI CODE STARTS HERE
+
     ig.igSetNextWindowPos(.{ .x = 10, .y = 10 }, ig.ImGuiCond_Once);
     ig.igSetNextWindowSize(.{ .x = 400, .y = 100 }, ig.ImGuiCond_Once);
     _ = ig.igBegin("Hello Dear ImGui!", 0, ig.ImGuiWindowFlags_None);
     _ = ig.igColorEdit3("Background", &state.pass_action.colors[0].clear_value.r, ig.ImGuiColorEditFlags_None);
     ig.igEnd();
 
-    std.debug.print("frame state\n", .{});
-    // std.debug.print("{}\n", .{state});
-    pretty.print(util.allocator, state, .{}) catch unreachable;
+    // std.debug.print("frame state\n", .{});
+    // std.debug.print("{any}\n", .{state});
 
-    // state.windows.render();
     state.window.render();
 
-    //=== UI CODE ENDS HERE
+    // === UI CODE ENDS HERE
 
     // call simgui.render() inside a sokol-gfx pass
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
