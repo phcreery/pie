@@ -172,11 +172,14 @@ pub fn printNodeExecutionOrder(self: *pipeline.Pipeline) void {
 }
 
 fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaque) []u8 {
-    // _ = user_data;
     var pipe: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
     const conn = pipe.connector_pool.getPtr(edge) catch unreachable;
-    const res = std.fmt.bufPrint(buf, "({any}) {s} {d}x{d}", .{ edge.id, @tagName(conn.*.?.format), conn.*.?.roi.w, conn.*.?.roi.h }) catch "<error>";
-    // const res = std.fmt.bufPrint(buf, "(id: {any})", .{edge.id}) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "({any}) {s} {d}x{d}", .{
+        edge.id,
+        @tagName(conn.*.?.format),
+        conn.*.?.roi.h,
+        conn.*.?.roi.w,
+    }) catch "<error>";
     return @constCast(res);
 }
 

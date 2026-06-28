@@ -56,6 +56,37 @@
             .url = "git+https://github.com/Justus2308/zuballoc.git#68eab414d6d3b1e9aa5ea31139e2e02827ab7350",
             .hash = "zuballoc-0.1.0-uXtpGsOiAAAc_AqFTLo7DCd5JGjKVkICl84jw1vf6xfH",
         },
+
+        // Dawn
+        .system_sdk = .{
+            .url = "https://github.com/zig-gamedev/system_sdk/archive/c0dbf11cdc17da5904ea8a17eadc54dee26567ec.tar.gz",
+            .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
+        },
+        // .dawn_x86_64_windows_gnu = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-windows-gnu/archive/d3a68014e6b6b53fd330a0ccba99e4dcfffddae5.tar.gz",
+        //     .hash = "N-V-__8AAGsYnAT5RIzeAu881RveLghQ1EidqgVBVx10gVTo",
+        //     .lazy = true,
+        // },
+        // .dawn_x86_64_linux_gnu = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-linux-gnu/archive/7d70db023bf254546024629cbec5ee6113e12a42.tar.gz",
+        //     .hash = "N-V-__8AAK7XUQNKNRnv1J6i189jtURJKjp3HTftoyD4Y4CB",
+        //     .lazy = true,
+        // },
+        // .dawn_aarch64_linux_gnu = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-aarch64-linux-gnu/archive/c1f55e740a62f6942ff046e709ecd509a005dbeb.tar.gz",
+        //     .hash = "N-V-__8AAJ-wTwNc0T9oSflO92iO6IxrdMeRil37UU-KQD_M",
+        //     .lazy = true,
+        // },
+        .dawn_aarch64_macos = .{
+            .url = "https://github.com/google/dawn/releases/download/v20260624.223603/Dawn-11ab3f92ed451db8c1e1366abcddd9c202e0738d-macos-latest-Release.tar.gz",
+            .hash = "N-V-__8AAOkBSwGBI3Wb7E60RWEuVKl1icIiatRvtWxn3bwr",
+            .lazy = true,
+        },
+        // .dawn_x86_64_macos = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-macos/archive/901716b10b31ce3e0d3fe479326b41e91d59c661.tar.gz",
+        //     .hash = "N-V-__8AAIz1QAKx8C8vft2YoHjGTjEAkH2QMR2UiAo8xZJ-",
+        //     .lazy = true,
+        // },
     },
 
     .paths = .{

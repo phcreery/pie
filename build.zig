@@ -25,13 +25,14 @@ pub fn build(b: *Build) !void {
     const dep_sokol = b.dependency("sokol", .{
         .target = target,
         .optimize = optimize,
-        // .wgpu = true,
+        .wgpu = true,
         .with_sokol_imgui = true,
     });
     const dep_cimgui = b.dependency("cimgui", opts);
     const dep_zdt = b.dependency("zdt", opts);
     const dep_libraw = b.dependency("libraw", opts);
     const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
+    // const dep_zgpu = b.dependency("zgpu", opts);
     const dep_zigimg = b.dependency("zigimg", opts);
     const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
     const dep_zuballoc = b.dependency("zuballoc", opts);
@@ -39,20 +40,11 @@ pub fn build(b: *Build) !void {
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
     // inject the webgpu/webgpu.h headers from zgpu
-
-    // const zdawn = b.addLibrary(.{
-    //     .name = "zdawn",
-    //     .use_llvm = true,
-    //     .root_module = b.createModule(.{
-    //         .target = target,
-    //         .optimize = optimize,
-    //         .link_libc = true,
-    //         .link_libcpp = target.result.abi != .msvc,
-    //     }),
-    // });
-    // b.installArtifact(zdawn);
-    // linkSystemDeps(b, zdawn);
-    // dep_sokol.artifact("sokol_clib").root_module.root_module.linkLibrary(zdawn);
+    // dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_wgpu_native.path("include"));
+    // dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_zgpu.path("libs/dawn/include"));
+    // dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_zgpu.artifact("zdawn"));
+    // dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dawn_prebuilt.path("lib"));
+    addLibraryPathsTo(b, target.result, dep_sokol.artifact("sokol_clib").root_module);
 
     // OPTIONS
     // see tigerbeetle for advanced build options handling
@@ -127,11 +119,11 @@ pub fn build(b: *Build) !void {
             .cimgui_clib_name = cimgui_conf.clib_name,
         });
     } else {
-        try buildNative(b, mod_main);
+        try buildNative(b, target.result, mod_main);
     }
 }
 
-fn buildNative(b: *Build, mod: *Build.Module) !void {
+fn buildNative(b: *Build, target: std.Target, mod: *Build.Module) !void {
     const exe = b.addExecutable(.{
         .name = "pie",
         .root_module = mod,
@@ -145,6 +137,9 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
     }
     // @import("zgpu").addLibraryPathsTo(exe);
     // exe.linkLibrary(dep_zgpu.artifact("zdawn"));
+    // exe.root_module.linkSystemLibrary("webgpu_dawn", .{});
+    addLibraryPathsTo(b, target, exe.root_module);
+    linkSystemDeps(b, exe);
     b.installArtifact(exe);
     b.step("run", "Run pie").dependOn(&b.addRunArtifact(exe).step);
 }
@@ -198,3 +193,109 @@ fn buildWasm(b: *Build, opts: BuildWasmOptions) !void {
     run.step.dependOn(&link_step.step);
     b.step("run", "Run pie").dependOn(&run.step);
 }
+
+// Dawn (webgpu./webgpu.h for sokol-app backend)
+
+pub fn linkSystemDeps(b: *std.Build, compile_step: *std.Build.Step.Compile) void {
+    switch (compile_step.rootModuleTarget().os.tag) {
+        .windows => {
+            if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
+                compile_step.root_module.addLibraryPath(system_sdk.path("windows/lib/x86_64-windows-gnu"));
+            }
+            compile_step.root_module.linkSystemLibrary("ole32", .{});
+            compile_step.root_module.linkSystemLibrary("dxguid", .{});
+        },
+        .macos => {
+            // NOTE: we intentionally do NOT use system_sdk's macos12 stub
+            // frameworks here. The Google dawn prebuilt was built against a
+            // recent macOS SDK and references Metal classes introduced in
+            // macOS 15.2+ (e.g. MTLLogStateDescriptor), which are absent from
+            // the macOS 12 stub Metal.framework. For native builds the host
+            // SDK's frameworks are correct and newer, so link directly.
+            compile_step.root_module.linkSystemLibrary("objc", .{});
+            compile_step.root_module.linkFramework("Metal", .{});
+            compile_step.root_module.linkFramework("CoreGraphics", .{});
+            compile_step.root_module.linkFramework("CoreFoundation", .{});
+            compile_step.root_module.linkFramework("Foundation", .{});
+            compile_step.root_module.linkFramework("IOKit", .{});
+            compile_step.root_module.linkFramework("IOSurface", .{});
+            compile_step.root_module.linkFramework("QuartzCore", .{});
+        },
+        else => {},
+    }
+}
+
+pub fn addLibraryPathsTo(b: *Build, target: std.Target, module: *std.Build.Module) void {
+    // const b = compile_step.step.owner;
+    // const target = compile_step.rootModuleTarget();
+    switch (target.os.tag) {
+        // .windows => {
+        //     if (b.lazyDependency("dawn_x86_64_windows_gnu", .{})) |dawn_prebuilt| {
+        //         module.addLibraryPath(dawn_prebuilt.path(""));
+        //     }
+        // },
+        // .linux => {
+        //     if (target.cpu.arch.isX86()) {
+        //         if (b.lazyDependency("dawn_x86_64_linux_gnu", .{})) |dawn_prebuilt| {
+        //             module.addLibraryPath(dawn_prebuilt.path(""));
+        //         }
+        //     } else if (target.cpu.arch.isAARCH64()) {
+        //         if (b.lazyDependency("dawn_aarch64_linux_gnu", .{})) |dawn_prebuilt| {
+        //             module.addLibraryPath(dawn_prebuilt.path(""));
+        //         }
+        //     }
+        // },
+        .macos => {
+            if (target.cpu.arch.isX86()) {
+                if (b.lazyDependency("dawn_x86_64_macos", .{})) |dawn_prebuilt| {
+                    module.addIncludePath(dawn_prebuilt.path("include"));
+                    module.addLibraryPath(dawn_prebuilt.path("lib"));
+                }
+            } else if (target.cpu.arch.isAARCH64()) {
+                if (b.lazyDependency("dawn_aarch64_macos", .{})) |dawn_prebuilt| {
+                    module.addIncludePath(dawn_prebuilt.path("include"));
+                    module.addLibraryPath(dawn_prebuilt.path("lib"));
+                }
+            }
+        },
+        else => {},
+    }
+    module.linkSystemLibrary("webgpu_dawn", .{});
+}
+
+// pub fn checkTargetSupported(target: std.Target) bool {
+//     const supported = switch (target.os.tag) {
+//         .windows => target.cpu.arch.isX86() and target.abi.isGnu(),
+//         .linux => (target.cpu.arch.isX86() or target.cpu.arch.isAARCH64()) and target.abi.isGnu(),
+//         .macos => blk: {
+//             if (!target.cpu.arch.isX86() and !target.cpu.arch.isAARCH64()) break :blk false;
+
+//             // If min. target macOS version is lesser than the min version we have available, then
+//             // our Dawn binary is incompatible with the target.
+//             if (target.os.version_range.semver.min.order(
+//                 .{ .major = 12, .minor = 0, .patch = 0 },
+//             ) == .lt) break :blk false;
+//             break :blk true;
+//         },
+//         else => false,
+//     };
+//     if (supported == false) {
+//         log.warn("\n" ++
+//             \\---------------------------------------------------------------------------
+//             \\
+//             \\Dawn/WebGPU binary for this target is not available.
+//             \\
+//             \\Following targets are supported:
+//             \\
+//             \\x86_64-windows-gnu
+//             \\x86_64-linux-gnu
+//             \\x86_64-macos.12.0.0-none
+//             \\aarch64-linux-gnu
+//             \\aarch64-macos.12.0.0-none
+//             \\
+//             \\---------------------------------------------------------------------------
+//             \\
+//         , .{});
+//     }
+//     return supported;
+// }

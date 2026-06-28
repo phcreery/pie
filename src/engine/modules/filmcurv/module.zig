@@ -43,6 +43,8 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const node_filmcurv = try pipe.addNode(mod, .{
         .type = .compute,
         .shader = @embedFile("./filmcurv.wgsl"),
+        // .shader = @embedFile("./main.comp"),
+        // .temp_shader_language = .glsl,
         .name = "filmcurv",
         .run_size = mod_output_sock.roi.?,
         .sockets = init: {
