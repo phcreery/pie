@@ -1,5 +1,14 @@
 const std = @import("std");
 
+// pub const std_options = std.Options{
+//     // .log_scope_levels = &[_]std.log.ScopeLevel{
+//     //     // .{ .scope = .websocket, .level = .debug },
+//     //     .{ .scope = .gpu, .level = .debug },
+//     // },
+//     // .logFn = customLogFn,
+//     .log_level = .debug,
+// };
+
 pub fn main() !void {
     // std.log.info("Starting Integration tests", .{});
 }
@@ -17,7 +26,6 @@ test {
     // _ = @import("engine/pipe_fullsize.zig");
 
     // TARGETS
-    // _ = @import("targets/001_DSC_6765/target.zig");
     _ = @import("targets/targets.zig");
 
     // MISC

@@ -36,6 +36,11 @@
             .url = "git+https://github.com/snorm-dev/wgpu_native_zig.git#8aef4a9873637ba9444282f7a706eaa251f8d8e9",
             .hash = "wgpu_native_zig-6.5.0-B9jeDCtzAwADQTiKl7pWvLrNC7pelV0GlH_ePoIse28g",
         },
+        // Local (trimmed) zgpu fork (dawn-update-windows branch) with the
+        // current dawn webgpu.h + Google dawn prebuilt. Provides the `zgpu`
+        // module (which re-exports a hand-written `wgpu` binding) and the
+        // `zdawn` artifact that links libwebgpu_dawn.a.
+        .zgpu = .{ .path = "src/engine/zgpu" },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg.git#4cab5a17d4c76584723576fcc11497293c25d092",
             .hash = "zigimg-0.1.0-8_eo2sywFwArMrr5UlqjhhAMbRtpmC4mL5KbBmjrxFba",

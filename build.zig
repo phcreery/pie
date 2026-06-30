@@ -32,6 +32,7 @@ pub fn build(b: *Build) !void {
     const dep_zdt = b.dependency("zdt", opts);
     const dep_libraw = b.dependency("libraw", opts);
     const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
+    const dep_zgpu = b.dependency("zgpu", opts);
     // const dep_zgpu = b.dependency("zgpu", opts);
     const dep_zigimg = b.dependency("zigimg", opts);
     const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
@@ -69,6 +70,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu", .module = dep_wgpu_native.module("wgpu") },
+            .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
@@ -119,11 +121,11 @@ pub fn build(b: *Build) !void {
             .cimgui_clib_name = cimgui_conf.clib_name,
         });
     } else {
-        try buildNative(b, target.result, mod_main);
+        try buildNative(b, target.result, mod_main, dep_zgpu);
     }
 }
 
-fn buildNative(b: *Build, target: std.Target, mod: *Build.Module) !void {
+fn buildNative(b: *Build, target: std.Target, mod: *Build.Module, dep_zgpu: *Build.Dependency) !void {
     const exe = b.addExecutable(.{
         .name = "pie",
         .root_module = mod,
@@ -138,6 +140,9 @@ fn buildNative(b: *Build, target: std.Target, mod: *Build.Module) !void {
     // @import("zgpu").addLibraryPathsTo(exe);
     // exe.linkLibrary(dep_zgpu.artifact("zdawn"));
     // exe.root_module.linkSystemLibrary("webgpu_dawn", .{});
+    // Link zgpu's zdawn artifact (which links libwebgpu_dawn.a + system
+    // frameworks) so the wgpu C procs resolve at link time.
+    exe.root_module.linkLibrary(dep_zgpu.artifact("zdawn"));
     addLibraryPathsTo(b, target, exe.root_module);
     linkSystemDeps(b, exe);
     b.installArtifact(exe);

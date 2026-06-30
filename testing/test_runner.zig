@@ -7,9 +7,11 @@
 
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
-        .{ .scope = .websocket, .level = .debug },
+        .{ .scope = .gpu, .level = .info },
+        .{ .scope = .pipe, .level = .info },
+        .{ .scope = .suballocator, .level = .info },
     },
-    .logFn = customLogFn,
+    // .logFn = customLogFn,
 };
 
 const std = @import("std");
