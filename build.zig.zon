@@ -32,10 +32,10 @@
             .url = "git+https://github.com/phcreery/LibRaw-zig.git#d6a01722b2f702b1bd41811cc588b69c63210a63",
             .hash = "libraw-0.21.4-c166SQR6AADQHFPUvMe5mMpjqLf6XAFFu5x9N1KjGSN8",
         },
-        .wgpu_native_zig = .{
-            .url = "git+https://github.com/snorm-dev/wgpu_native_zig.git#8aef4a9873637ba9444282f7a706eaa251f8d8e9",
-            .hash = "wgpu_native_zig-6.5.0-B9jeDCtzAwADQTiKl7pWvLrNC7pelV0GlH_ePoIse28g",
-        },
+        // .wgpu_native_zig = .{
+        //     .url = "git+https://github.com/snorm-dev/wgpu_native_zig.git#8aef4a9873637ba9444282f7a706eaa251f8d8e9",
+        //     .hash = "wgpu_native_zig-6.5.0-B9jeDCtzAwADQTiKl7pWvLrNC7pelV0GlH_ePoIse28g",
+        // },
         // Local (trimmed) zgpu fork (dawn-update-windows branch) with the
         // current dawn webgpu.h + Google dawn prebuilt. Provides the `zgpu`
         // module (which re-exports a hand-written `wgpu` binding) and the
@@ -63,6 +63,7 @@
         },
 
         // Dawn
+        // even though these re listed in zgpu, we need to add them here since we need to link the final exe to them
         .system_sdk = .{
             .url = "https://github.com/zig-gamedev/system_sdk/archive/c0dbf11cdc17da5904ea8a17eadc54dee26567ec.tar.gz",
             .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",

@@ -1,4 +1,5 @@
-/// A lot of this is just a wrapper around wgpu to make it easier to use in the context of image processing.
+/// A lot of this is just a wrapper around wgpu to make it easier to use in the
+/// context of image processing.
 const std = @import("std");
 const wgpu = @import("wgpu_dawn");
 const gpu_data = @import("gpu_data.zig");
