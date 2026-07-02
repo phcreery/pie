@@ -11,19 +11,94 @@ const builtin = @import("builtin");
 
 const window = @import("window.zig");
 const pie = @import("pie");
+const console = @import("console");
+const shd = @import("texview_shader");
+
+const Image = struct {
+    img: sg.Image = undefined,
+    tex_view: sg.View = undefined,
+    smp: sg.Sampler = undefined,
+    pip: sg.Pipeline = undefined,
+    width: f32 = 0.0,
+    height: f32 = 0.0,
+    scale: f32 = 1.0,
+    offset: struct { x: f32, y: f32 } = .{ .x = 0.0, .y = 0.0 },
+    color: struct { r: f32, g: f32, b: f32 } = .{ .r = 1.0, .g = 1.0, .b = 1.0 },
+
+    // static void create_image(const void* ptr, size_t size) {
+    //     reset_image_params();
+    //     state.file.qoi_decode_failed = false;
+    //     if (state.image.img.id != SG_INVALID_ID) {
+    //         sg_destroy_image(state.image.img);
+    //         state.image.img.id = SG_INVALID_ID;
+    //     }
+    //     if (state.image.tex_view.id != SG_INVALID_ID) {
+    //         sg_destroy_view(state.image.tex_view);
+    //         state.image.tex_view.id = SG_INVALID_ID;
+    //     }
+    //     qoi_desc qoi;
+    //     void* pixels = qoi_decode(ptr, (int)size, &qoi, 4);
+    //     if (!pixels) {
+    //         state.file.qoi_decode_failed = true;
+    //         return;
+    //     }
+    //     state.image.width = (float) qoi.width;
+    //     state.image.height = (float) qoi.height;
+    //     state.image.img = sg_make_image(&(sg_image_desc){
+    //         .pixel_format = SG_PIXELFORMAT_RGBA8,
+    //         .width = qoi.width,
+    //         .height = qoi.height,
+    //         .data.mip_levels[0] = {
+    //             .ptr = pixels,
+    //             .size = qoi.width * qoi.height * 4
+    //         }
+    //     });
+    //     state.image.tex_view = sg_make_view(&(sg_view_desc){
+    //         .texture.image = state.image.img,
+    //     });
+    //     free(pixels);
+    // }
+    fn create(self: *@This(), texture: *pie.gpu.Texture) void {
+        // self.texture = texture;
+        self.width = @floatFromInt(texture.roi.w);
+        self.height = @floatFromInt(texture.roi.h);
+        self.scale = 1.0;
+        self.offset = .{ .x = 0.0, .y = 0.0 };
+        self.color = .{ .r = 1.0, .g = 1.0, .b = 1.0 };
+        self.img = sg.makeImage(.{
+            .pixel_format = .RGBA16F,
+            .width = texture.roi.w,
+            .height = texture.roi.h,
+            .data = .{
+                .mip_levels = &.{.{ .ptr = texture.data, .size = texture.data_len }},
+            },
+        });
+        self.tex_view = sg.makeView(.{
+            .texture = self.img,
+        });
+    }
+};
 
 const AppState = struct {
+    allocator: std.mem.Allocator,
+    io: std.Io,
+
     pass_action: sg.PassAction = .{},
     window: window.WindowManager,
+    image: Image = undefined,
+    texture: *pie.gpu.Texture = undefined,
 
     const Self = @This();
 
-    fn init(allocator: std.mem.Allocator) AppState {
+    fn init(allocator: std.mem.Allocator, io: std.Io) AppState {
         const windowmgr = window.WindowManager.init(allocator);
 
         return .{
+            .allocator = allocator,
+            .io = io,
             .pass_action = .{},
             .window = windowmgr,
+            .image = Image{},
         };
     }
 
@@ -39,7 +114,8 @@ const AppState = struct {
 };
 
 // export fn init() void {
-export fn init(ptr: ?*anyopaque) void {
+export fn init_fn(ptr: ?*anyopaque) void {
+    std.debug.print("init_fn called with ptr: {any}\n", .{ptr});
     const state: *AppState = @ptrCast(@alignCast(ptr));
 
     // initialize sokol-gfx
@@ -57,6 +133,76 @@ export fn init(ptr: ?*anyopaque) void {
         .load_action = .CLEAR,
         .clear_value = .{ .r = 0.05, .g = 0.5, .b = 1.0, .a = 1.0 },
     };
+
+    // // a sampler object for nearest mag filter and linear min filter
+    // state.image.smp = sg_make_sampler(&(sg_sampler_desc){
+    //     .mag_filter = SG_FILTER_NEAREST,
+    //     .min_filter = SG_FILTER_LINEAR,
+    //     .wrap_u = SG_WRAP_CLAMP_TO_EDGE,
+    //     .wrap_v = SG_WRAP_CLAMP_TO_EDGE,
+    // });
+    state.image.smp = sg.makeSampler(.{
+        .mag_filter = .NEAREST,
+        .min_filter = .LINEAR,
+        .wrap_u = .CLAMP_TO_EDGE,
+        .wrap_v = .CLAMP_TO_EDGE,
+    });
+
+    std.debug.print("making pipeline...\n", .{});
+
+    //     // create a pipeline object with alpha blending for rendering the loaded image
+    // state.image.pip = sgl_make_pipeline(&(sg_pipeline_desc){
+    //     .colors[0] = {
+    //         .write_mask = SG_COLORMASK_RGB,
+    //         .blend = {
+    //             .enabled = true,
+    //             .src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA,
+    //             .dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
+    //         }
+    //     }
+    // });
+    // const pipeline_desc = sg.PipelineDesc{};
+    // state.image.pip = sg.makePipeline(.{
+    //     .colors = init: {
+    //         var c: @FieldType(sg.PipelineDesc, "colors") = @splat(.{});
+    //         c[0] = .{
+    //             .write_mask = .RGB,
+    //             .blend = .{
+    //                 .enabled = true,
+    //                 .src_factor_rgb = .SRC_ALPHA,
+    //                 .dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+    //             },
+    //         };
+    //         break :init c;
+    //     },
+    //     // .shader = {
+    //     //     .vertex = sg.makeShader(.{
+    //     //         .source = @embedFile("shaders/vertex.glsl"),
+    //     //     }),
+    //     //     .fragment = sg.makeShader(.{
+    //     //         .source = @embedFile("shaders/fragment.glsl"),
+    //     //     }),
+    //     // },
+    // });
+
+    // a render pipeline for bufferless 2D-rendering
+    // state.pip = sg.makePipeline(.{
+    //     .shader = sg.makeShader(texview_shader_desc(sg.queryBackend())),
+    //     .primitive_type = SG_PRIMITIVETYPE_TRIANGLE_STRIP,
+    //     .label = "pipeline",
+    // });
+    // create pipeline and shader for rendering into display
+    {
+        const pip_desc: sg.PipelineDesc = .{
+            .shader = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend())),
+            .primitive_type = .TRIANGLE_STRIP,
+        };
+        // pip_desc.layout.attrs[shd.ATTR_display_pos].format = .FLOAT2;
+        state.image.pip = sg.makePipeline(pip_desc);
+    }
+
+    state.texture = build_image(state.allocator, state.io) catch unreachable;
+    std.debug.print("texture: {any}\n", .{state.texture});
 }
 
 export fn frame(ptr: ?*anyopaque) void {
@@ -106,8 +252,8 @@ export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
     _ = simgui.handleEvent(ev.*);
 }
 
-fn build_image(allocator: *std.mem.Allocator, io: std.Io) void {
-    const cout = pie.cli.console.UTF8ConsoleOutput.init();
+fn build_image(allocator: std.mem.Allocator, io: std.Io) !*pie.gpu.Texture {
+    const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
 
     var gpu_instance = try pie.gpu.GPU.init(io);
@@ -171,21 +317,36 @@ fn build_image(allocator: *std.mem.Allocator, io: std.Io) void {
     try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_o_display, "input");
 
     try pipeline.run(arena);
+
+    const disp_tex = try pipeline.getDisplaySinkTexture();
+    // Use the display texture for rendering
+    return disp_tex;
 }
 
-pub fn run() void {
+pub fn run(init: std.process.Init) void {
+    // general purpose allocator for temporary heap allocations:
+    // const gpa = init.gpa;
+    // default Io implementation:
+    const io = init.io;
+    // access to environment variables:
+    // std.log.info("{d} env vars", .{init.environ_map.count()});
+    // access to CLI arguments
+    // const args = try init.minimal.args.toSlice(
+    //     init.arena.allocator()
+    // );
+
     // Allocate the application state on the heap to ensure it lives long enough.
     // const state = util.allocator.create(AppState) catch unreachable;
     // errdefer util.allocator.destroy(state);
     // state.* = AppState.init(util.allocator);
 
     // Alternatively, allocate the application state on the stack
-    const state: *AppState = @constCast(&AppState.init(util.allocator));
+    const state: *AppState = @constCast(&AppState.init(util.allocator, io));
     defer state.deinit();
 
     sapp.run(.{
         .user_data = state,
-        .init_userdata_cb = init,
+        .init_userdata_cb = init_fn,
         .frame_userdata_cb = frame,
         .cleanup_userdata_cb = cleanup,
         .event_userdata_cb = event,

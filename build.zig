@@ -51,6 +51,20 @@ pub fn build(b: *Build) !void {
     );
     mod_options.addOption(bool, "docking", opt_docking);
 
+    // Shaders (for UI)
+    // https://github.com/floooh/pacman.zig/blob/main/build.zig
+    // extract the sokol module and shdc dependency from sokol dependency
+    const mod_sokol = dep_sokol.module("sokol");
+    const dep_shdc = dep_sokol.builder.dependency("shdc", .{});
+
+    // call shdc.createModule() helper function, this returns a `!*Build.Module`:
+    const mod_texview_shd = try sokol.shdc.createModule(b, "texview_shader", mod_sokol, .{
+        .shdc_dep = dep_shdc,
+        .input = "src/gui/texview.glsl",
+        .output = "texview.zig",
+        .slang = .{ .wgsl = true },
+    });
+
     // CONSOLE MODULE
     const mod_console = b.createModule(.{
         .root_source_file = b.path("src/cli/root.zig"),
@@ -85,10 +99,11 @@ pub fn build(b: *Build) !void {
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "console", .module = mod_console },
+            .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
-            // .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
         },
     });
@@ -165,7 +180,8 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
     @import("zgpu").addLibraryPathsTo(exe);
     @import("zgpu").linkSystemDeps(b, exe);
     b.installArtifact(exe);
-    b.step("run", "Run pie").dependOn(&b.addRunArtifact(exe).step);
+    const exe_step = b.step("run", "Run pie");
+    exe_step.dependOn(&b.addRunArtifact(exe).step);
 }
 
 const BuildWasmOptions = struct {

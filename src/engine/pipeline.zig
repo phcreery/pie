@@ -377,8 +377,6 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runModulesCreateParamBufferHandles");
             try self.runModulesModifyROIOut();
             try self.perf.timerLap("runModulesModifyROIOut");
-            // try self.runModulesInitParams();
-            // try self.perf.timerLap("runModulesInitParams");
             try self.runModulesInitParamBuffers();
             try self.perf.timerLap("runModulesInitParamBuffers");
             try self.runModulesAllocateUploadBufferForParams();
@@ -1158,6 +1156,21 @@ pub const Pipeline = struct {
         }
 
         try gpu_inst.run(encoder.finish());
+    }
+
+    pub fn getDisplaySinkTexture(self: *Pipeline) !*gpu.Texture {
+        const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
+        const last_node = try self.node_pool.getPtr(last_node_handle);
+        const sock = last_node.desc.sockets[0] orelse return error.NodeOutputSocketMissingConnectorHandle;
+        if (sock.private.connector_handle) |h| {
+            const display_texture = try self.connector_pool.getPtr(h);
+            if (display_texture.*) |*tex| {
+                return tex;
+            } else {
+                return error.PipelineMissingDisplaySinkTexture;
+            }
+        }
+        return error.NodeOutputSocketMissingConnectorHandle;
     }
 
     fn runNodesDownloadSink(self: *Pipeline) !void {
