@@ -2,9 +2,10 @@ const std = @import("std");
 const pie = @import("pie");
 const libraw = @import("libraw");
 const zigimg = @import("zigimg");
+const console = @import("console");
 
-const gpu = pie.engine.gpu;
-const Pipeline = pie.engine.Pipeline;
+const gpu = pie.gpu;
+const Pipeline = pie.Pipeline;
 
 const PpmImage = struct {
     width: usize,
@@ -246,7 +247,7 @@ pub const TargetConfig = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         pipeline: *Pipeline,
-        modules: *pie.engine.modules.Registry,
+        modules: *pie.modules.Registry,
         input_filename: []const u8,
         output_filename: []const u8,
     ) anyerror!void = null,
@@ -256,20 +257,20 @@ test "test targets" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const cout = pie.cli.console.UTF8ConsoleOutput.init();
+    const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
 
     var gpu_instance = try gpu.GPU.init(io);
     defer gpu_instance.deinit();
 
-    var modules = try pie.engine.modules.Registry.init(allocator);
+    var modules = try pie.modules.Registry.init(allocator);
     defer modules.deinit();
 
     var arena_instance = std.heap.ArenaAllocator.init(allocator);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
 
-    const pipeline_config: pie.engine.pipeline.PipelineConfig = .{
+    const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 75e6,
         .download_buffer_size_bytes = 75e6,
     };

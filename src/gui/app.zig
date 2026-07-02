@@ -10,6 +10,7 @@ const util = @import("../mem.zig");
 const builtin = @import("builtin");
 
 const window = @import("window.zig");
+const pie = @import("pie");
 
 const AppState = struct {
     pass_action: sg.PassAction = .{},
@@ -103,6 +104,73 @@ export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
     _ = state;
     // forward input events to sokol-imgui
     _ = simgui.handleEvent(ev.*);
+}
+
+fn build_image(allocator: *std.mem.Allocator, io: std.Io) void {
+    const cout = pie.cli.console.UTF8ConsoleOutput.init();
+    defer cout.deinit();
+
+    var gpu_instance = try pie.gpu.GPU.init(io);
+    defer gpu_instance.deinit();
+
+    var modules = try pie.modules.Registry.init(allocator);
+    defer modules.deinit();
+
+    var arena_instance = std.heap.ArenaAllocator.init(allocator);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
+
+    const pipeline_config: pie.pipeline.PipelineConfig = .{
+        .upload_buffer_size_bytes = 75e6,
+        .download_buffer_size_bytes = 75e6,
+    };
+
+    var pipeline = pie.Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
+    defer pipeline.deinit();
+
+    // const config: pie.gpu.TargetConfig = @import("001_DSC_6765/target.zig").config;
+    // const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";
+    const input_filename = "testing/images/DSC_6765.NEF";
+    // const output_filename = "testing/integration/targets/" ++ config.name ++ "/output.ppm";
+
+    const mod_i_raw = try pipeline.addModule(modules.get("i-raw").?);
+    const mod_format = try pipeline.addModule(modules.get("format").?);
+    const mod_denoise = try pipeline.addModule(modules.get("denoise").?);
+    // const mod_whitebalance = try pipeline.addModule(modules.get("whitebalance").?);
+    const mod_demosaic = try pipeline.addModule(modules.get("demosaic").?);
+    const mod_crop = try pipeline.addModule(modules.get("crop").?);
+    const mod_color = try pipeline.addModule(modules.get("color").?);
+    const mod_filmcurv = try pipeline.addModule(modules.get("filmcurv").?);
+    // const mod_test_nop_glsl = try pipeline.addModule(modules.get("test-nop-glsl").?);
+    // const mod_test_nop_zig = try pipeline.addModule(modules.get("test-nop-zig").?);
+    const mod_o_display = try pipeline.addModule(modules.get("o-display").?);
+
+    try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
+    try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 0));
+    // try pipeline.setModuleParam(mod_color, "wb_temp", @as(f32, 6500.0));
+    try pipeline.setModuleParam(mod_color, "wb_tint", @as(f32, 0.0));
+    try pipeline.setModuleParam(mod_color, "wb_coeff", [3]f32{ 0.70393723, 1, 1.3611937 }); // from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
+    try pipeline.setModuleParam(mod_filmcurv, "colormode", @as(i32, 1));
+    try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 3.8));
+    try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.3));
+    try pipeline.setModuleParam(mod_filmcurv, "bias", @as(f32, 0.0));
+    // try pipeline.setModuleParam(mod_o_display, "filename", @as([]const u8, output_filename));
+
+    try pipeline.connectModuleSocketsByHandleName(mod_i_raw, "output", mod_format, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_format, "output", mod_denoise, "input");
+    // try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_whitebalance, "input");
+    // try pipeline.connectModuleSocketsByHandleName(mod_whitebalance, "output", mod_demosaic, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_demosaic, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_demosaic, "output", mod_crop, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_crop, "output", mod_color, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_filmcurv, "input");
+    // try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_test_nop_glsl, "input");
+    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
+    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_zig, "output", mod_o_ppm, "input");
+    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_o_ppm, "input");
+    try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_o_display, "input");
+
+    try pipeline.run(arena);
 }
 
 pub fn run() void {

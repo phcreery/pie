@@ -2,8 +2,8 @@ const std = @import("std");
 const pie = @import("pie");
 const TargetConfig = @import("../targets.zig").TargetConfig;
 
-const Pipeline = pie.engine.Pipeline;
-const Registry = pie.engine.modules.Registry;
+const Pipeline = pie.Pipeline;
+const Registry = pie.modules.Registry;
 
 pub const config: TargetConfig = .{
     .input_filename = "testing/images/DSC_6765.NEF",

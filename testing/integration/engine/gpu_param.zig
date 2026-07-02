@@ -2,19 +2,19 @@ const std = @import("std");
 const pie = @import("pie");
 const pretty = @import("pretty");
 
-const ROI = pie.engine.ROI;
-const GPU = pie.engine.gpu.GPU;
-const Buffer = pie.engine.gpu.Buffer;
-const Encoder = pie.engine.gpu.Encoder;
-const Shader = pie.engine.gpu.Shader;
-const ComputePipeline = pie.engine.gpu.ComputePipeline;
-const Texture = pie.engine.gpu.Texture;
-const Bindings = pie.engine.gpu.Bindings;
-const TextureFormat = pie.engine.gpu.TextureFormat;
-const BindGroupLayoutEntry = pie.engine.gpu.BindGroupLayoutEntry;
-const BindGroupEntry = pie.engine.gpu.BindGroupEntry;
-const MAX_BINDINGS = pie.engine.gpu.MAX_BINDINGS;
-const MAX_BIND_GROUPS = pie.engine.gpu.MAX_BIND_GROUPS;
+const ROI = pie.ROI;
+const GPU = pie.gpu.GPU;
+const Buffer = pie.gpu.Buffer;
+const Encoder = pie.gpu.Encoder;
+const Shader = pie.gpu.Shader;
+const ComputePipeline = pie.gpu.ComputePipeline;
+const Texture = pie.gpu.Texture;
+const Bindings = pie.gpu.Bindings;
+const TextureFormat = pie.gpu.TextureFormat;
+const BindGroupLayoutEntry = pie.gpu.BindGroupLayoutEntry;
+const BindGroupEntry = pie.gpu.BindGroupEntry;
+const MAX_BINDINGS = pie.gpu.MAX_BINDINGS;
+const MAX_BIND_GROUPS = pie.gpu.MAX_BIND_GROUPS;
 
 test "simple compute test with parameters" {
     // INIT
@@ -97,7 +97,7 @@ test "simple compute test with parameters" {
     var upload_fba = try upload.fixedBufferAllocator();
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
-    const induced_buf = try upload_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
+    const induced_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
     const induced_offset = @intFromPtr(induced_buf.ptr) - @intFromPtr(upload_fba.ptr);
     std.log.info("Upload induced offset: {d}", .{induced_offset});
 
@@ -105,19 +105,19 @@ test "simple compute test with parameters" {
     var download_allocator = download_fba.allocator();
 
     // PREP PARAMS
-    const param_buf = try upload_allocator.alignedAlloc(f32, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, 1);
+    const param_buf = try upload_allocator.alignedAlloc(f32, pie.gpu.COPY_BUFFER_ALIGNMENT, 1);
     const param_offset = @intFromPtr(param_buf.ptr) - @intFromPtr(upload_fba.ptr);
 
     std.log.info("Upload params offset: {d}", .{param_offset});
 
     // PREP UPLOAD
-    const src_buf = try upload_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
+    const src_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
     const src_offset = @intFromPtr(src_buf.ptr) - @intFromPtr(upload_fba.ptr);
 
     std.log.info("Upload texture offset: {d}", .{src_offset});
 
     // PREP DOWNLOAD
-    const dest_buf = try download_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * destination_format.nchannels());
+    const dest_buf = try download_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * destination_format.nchannels());
     const dest_offset = @intFromPtr(dest_buf.ptr) - @intFromPtr(download_fba.ptr);
 
     // UPLOAD

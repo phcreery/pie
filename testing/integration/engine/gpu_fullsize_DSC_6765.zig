@@ -3,17 +3,17 @@ const pie = @import("pie");
 const libraw = @import("libraw");
 const zigimg = @import("zigimg");
 
-const ROI = pie.engine.ROI;
-const GPU = pie.engine.gpu.GPU;
-const Buffer = pie.engine.gpu.Buffer;
-const Encoder = pie.engine.gpu.Encoder;
-const Shader = pie.engine.gpu.Shader;
-const ComputePipeline = pie.engine.gpu.ComputePipeline;
-const Texture = pie.engine.gpu.Texture;
-const TextureFormat = pie.engine.gpu.TextureFormat;
-const Bindings = pie.engine.gpu.Bindings;
-const BindGroupEntry = pie.engine.gpu.BindGroupEntry;
-const BindGroupLayoutEntry = pie.engine.gpu.BindGroupLayoutEntry;
+const ROI = pie.ROI;
+const GPU = pie.gpu.GPU;
+const Buffer = pie.gpu.Buffer;
+const Encoder = pie.gpu.Encoder;
+const Shader = pie.gpu.Shader;
+const ComputePipeline = pie.gpu.ComputePipeline;
+const Texture = pie.gpu.Texture;
+const TextureFormat = pie.gpu.TextureFormat;
+const Bindings = pie.gpu.Bindings;
+const BindGroupEntry = pie.gpu.BindGroupEntry;
+const BindGroupLayoutEntry = pie.gpu.BindGroupLayoutEntry;
 
 fn printImgBufContents(comptime T: type, ibuf: []T, stride: u32) void {
     const n = 8;
@@ -34,7 +34,7 @@ test "load raw, demosaic, save" {
 
     // Read contents from file
     const file_name = "testing/images/DSC_6765.NEF";
-    var pie_raw_image = try pie.engine.modules.i_raw.RawImage.read(allocator, io, file_name);
+    var pie_raw_image = try pie.modules.i_raw.RawImage.read(allocator, io, file_name);
     defer pie_raw_image.deinit();
 
     // flattened u16 array of the 2d rggb array
@@ -85,7 +85,7 @@ test "load raw, demosaic, save" {
     const source_format = TextureFormat.rgba16float;
     const destination_format = TextureFormat.rgba16float;
 
-    var roi_in = pie.engine.ROI.full(image_size_in_w, image_size_in_h);
+    var roi_in = pie.ROI.full(image_size_in_w, image_size_in_h);
 
     // THIS IS A WORKAROUND: I don't seem that wgpu supports single channel f16 storage textures.
     // see "texture-formats-tier2" in webgpu spec
@@ -107,7 +107,7 @@ test "load raw, demosaic, save" {
     roi_out_lower.x = 0;
     roi_out_lower.y = 0;
 
-    var gpu = try pie.engine.gpu.GPU.init(io);
+    var gpu = try pie.gpu.GPU.init(io);
     defer gpu.deinit();
 
     // these are intentionally over-provisioned to avoid OOM issues
@@ -126,18 +126,18 @@ test "load raw, demosaic, save" {
 
     // PREP UPLOAD
     // const upload_offset_upper = upload_fba.end_index;
-    const upload_buf_upper = try upload_allocator.alignedAlloc(u8, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi_in_upper.w * roi_in_upper.h * source_format.bpp());
+    const upload_buf_upper = try upload_allocator.alignedAlloc(u8, pie.gpu.COPY_BUFFER_ALIGNMENT, roi_in_upper.w * roi_in_upper.h * source_format.bpp());
     const upload_offset_upper = @intFromPtr(upload_buf_upper.ptr) - @intFromPtr(upload_fba.ptr);
     // const upload_offset_lower = upload_fba.end_index;
-    const upload_buf_lower = try upload_allocator.alignedAlloc(u8, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi_in_lower.w * roi_in_lower.h * source_format.bpp());
+    const upload_buf_lower = try upload_allocator.alignedAlloc(u8, pie.gpu.COPY_BUFFER_ALIGNMENT, roi_in_lower.w * roi_in_lower.h * source_format.bpp());
     const upload_offset_lower = @intFromPtr(upload_buf_lower.ptr) - @intFromPtr(upload_fba.ptr);
 
     // PREP DOWNLOAD
     // const download_offset_upper = download_fba.end_index;
-    const download_buf_upper = try download_allocator.alignedAlloc(u8, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi_out_upper.w * roi_out_upper.h * destination_format.bpp());
+    const download_buf_upper = try download_allocator.alignedAlloc(u8, pie.gpu.COPY_BUFFER_ALIGNMENT, roi_out_upper.w * roi_out_upper.h * destination_format.bpp());
     const download_offset_upper = @intFromPtr(download_buf_upper.ptr) - @intFromPtr(download_fba.ptr);
     // const download_offset_lower = download_fba.end_index;
-    const download_buf_lower = try download_allocator.alignedAlloc(u8, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi_out_lower.w * roi_out_lower.h * destination_format.bpp());
+    const download_buf_lower = try download_allocator.alignedAlloc(u8, pie.gpu.COPY_BUFFER_ALIGNMENT, roi_out_lower.w * roi_out_lower.h * destination_format.bpp());
     const download_offset_lower = @intFromPtr(download_buf_lower.ptr) - @intFromPtr(download_fba.ptr);
 
     // print offsets
@@ -152,7 +152,7 @@ test "load raw, demosaic, save" {
     @memcpy(upload_buf_lower, @as([*]u8, @ptrCast(@alignCast(init_contents_u16[roi_in_upper.w * roi_in_upper.h * source_format.nchannels() ..]))));
     upload.unmap();
 
-    var encoder = try pie.engine.gpu.Encoder.start(&gpu);
+    var encoder = try pie.gpu.Encoder.start(&gpu);
     defer encoder.deinit();
 
     // FORMAT CONVERSION WITH COMPUTE SHADER
@@ -188,11 +188,11 @@ test "load raw, demosaic, save" {
     var shader_convert = try Shader.compile(&gpu, convert, .{});
     defer shader_convert.deinit();
 
-    var layout_group_0_binding_convert: [pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
+    var layout_group_0_binding_convert: [pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding_convert[0] = .{ .texture = .{ .access = .read, .format = .rgba16uint } };
     layout_group_0_binding_convert[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
 
-    var layout_group_convert: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
+    var layout_group_convert: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_convert[0] = layout_group_0_binding_convert;
 
     var convert_compute_pipeline = try ComputePipeline.init(&gpu, shader_convert, "convert", layout_group_convert);
@@ -205,11 +205,11 @@ test "load raw, demosaic, save" {
     var texture_upper_out = try Texture.init(&gpu, "upper_out", layout_group_0_binding_convert[1].?.texture.?.format, roi_out_upper);
     defer texture_upper_out.deinit();
 
-    var bind_group_0_binds_upper_convert: [pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    var bind_group_0_binds_upper_convert: [pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group_0_binds_upper_convert[0] = .{ .texture = texture_upper_in };
     bind_group_0_binds_upper_convert[1] = .{ .texture = texture_upper_out };
 
-    var bind_group_upper_convert: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    var bind_group_upper_convert: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group_upper_convert[0] = bind_group_0_binds_upper_convert;
 
     var bindings_upper = try Bindings.init(&gpu, &convert_compute_pipeline, bind_group_upper_convert);
@@ -222,11 +222,11 @@ test "load raw, demosaic, save" {
     var texture_lower_out = try Texture.init(&gpu, "lower_out", layout_group_0_binding_convert[1].?.texture.?.format, roi_out_lower);
     defer texture_lower_out.deinit();
 
-    var bind_group_0_binds_lower_convert: [pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    var bind_group_0_binds_lower_convert: [pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group_0_binds_lower_convert[0] = .{ .texture = texture_lower_in };
     bind_group_0_binds_lower_convert[1] = .{ .texture = texture_lower_out };
 
-    var bind_group_lower_convert: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    var bind_group_lower_convert: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group_lower_convert[0] = bind_group_0_binds_lower_convert;
 
     var bindings_lower = try Bindings.init(&gpu, &convert_compute_pipeline, bind_group_lower_convert);
@@ -271,7 +271,7 @@ test "load raw, demosaic, save" {
 
     // roi_out_upper = roi_in_upper.scaled(2, 0.5); // works
     // roi_out_lower = roi_in_lower.scaled(2, 0.5); // works
-    roi_out = pie.engine.ROI.full(image_size_in_w, image_size_in_h).div(2, 2);
+    roi_out = pie.ROI.full(image_size_in_w, image_size_in_h).div(2, 2);
     roi_out_upper, roi_out_lower = roi_out.splitH();
 
     // DEMOSAIC WITH COMPUTE SHADER
@@ -396,11 +396,11 @@ test "load raw, demosaic, save" {
     var shader_demosaic = try Shader.compile(&gpu, demosaic_packed, .{});
     defer shader_demosaic.deinit();
 
-    var layout_group_0_binding: [pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
+    var layout_group_0_binding: [pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
     layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
 
-    var layout_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
+    var layout_group: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group[0] = layout_group_0_binding;
     var demosaic_compute_pipeline = try ComputePipeline.init(&gpu, shader_demosaic, "demosaic_packed", layout_group);
     defer demosaic_compute_pipeline.deinit();
@@ -414,11 +414,11 @@ test "load raw, demosaic, save" {
     var texture_upper_out2 = try Texture.init(&gpu, "upper_out2", layout_group_0_binding[1].?.texture.?.format, roi_out_upper);
     defer texture_upper_out2.deinit();
 
-    var bind_group_0_binds_upper: [pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    var bind_group_0_binds_upper: [pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group_0_binds_upper[0] = .{ .texture = texture_upper_in2 };
     bind_group_0_binds_upper[1] = .{ .texture = texture_upper_out2 };
 
-    var bind_group_upper: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    var bind_group_upper: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group_upper[0] = bind_group_0_binds_upper;
 
     bindings_upper = try Bindings.init(&gpu, &demosaic_compute_pipeline, bind_group_upper);
@@ -433,11 +433,11 @@ test "load raw, demosaic, save" {
     var texture_lower_out2 = try Texture.init(&gpu, "lower_out2", layout_group_0_binding[1].?.texture.?.format, roi_out_lower);
     defer texture_lower_out2.deinit();
 
-    var bind_group_0_binds_lower: [pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    var bind_group_0_binds_lower: [pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group_0_binds_lower[0] = .{ .texture = texture_lower_in2 };
     bind_group_0_binds_lower[1] = .{ .texture = texture_lower_out2 };
 
-    var bind_group_lower: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
+    var bind_group_lower: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
     bind_group_lower[0] = bind_group_0_binds_lower;
 
     bindings_lower = try Bindings.init(&gpu, &demosaic_compute_pipeline, bind_group_lower);

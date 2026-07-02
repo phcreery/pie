@@ -2,8 +2,8 @@ const std = @import("std");
 const pie = @import("pie");
 const zbench = @import("zbench");
 
-const gpu = pie.engine.gpu;
-const Pipeline = pie.engine.Pipeline;
+const gpu = pie.gpu;
+const Pipeline = pie.Pipeline;
 
 const PipeBench = struct {
     pipeline: *Pipeline,
@@ -54,12 +54,12 @@ test "simple test modules" {
     var gpu_instance = try gpu.GPU.init(std.testing.io);
     defer gpu_instance.deinit();
 
-    var registry = try pie.engine.modules.Registry.init(allocator);
+    var registry = try pie.modules.Registry.init(allocator);
     defer registry.deinit();
 
-    try pie.engine.modules.populateRegistry(&registry);
+    try pie.modules.populateRegistry(&registry);
 
-    const pipeline_config: pie.engine.pipeline.PipelineConfig = .{
+    const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 1024,
         .download_buffer_size_bytes = 1024,
     };

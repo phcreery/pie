@@ -1,5 +1,5 @@
 const std = @import("std");
-const pie = @import("../../main.zig");
+const pie = @import("pie");
 const graph = @import("graph.zig");
 
 fn Lanes(TLane: type, n: usize) type {

@@ -1,15 +1,15 @@
 const std = @import("std");
 const pie = @import("pie");
 
-const ROI = pie.engine.ROI;
-const GPU = pie.engine.gpu.GPU;
-const Buffer = pie.engine.gpu.Buffer;
-const Encoder = pie.engine.gpu.Encoder;
-const Shader = pie.engine.gpu.Shader;
-const ComputePipeline = pie.engine.gpu.ComputePipeline;
-const Texture = pie.engine.gpu.Texture;
-const TextureFormat = pie.engine.gpu.TextureFormat;
-const Bindings = pie.engine.gpu.Bindings;
+const ROI = pie.ROI;
+const GPU = pie.gpu.GPU;
+const Buffer = pie.gpu.Buffer;
+const Encoder = pie.gpu.Encoder;
+const Shader = pie.gpu.Shader;
+const ComputePipeline = pie.gpu.ComputePipeline;
+const Texture = pie.gpu.Texture;
+const TextureFormat = pie.gpu.TextureFormat;
+const Bindings = pie.gpu.Bindings;
 
 test "simple compute double buffer test" {
     var gpu = try GPU.init(std.testing.io);
@@ -43,17 +43,17 @@ test "simple compute double buffer test" {
     ;
     const shader = Shader.compile(&gpu, shader_code, .{}) catch unreachable;
 
-    var layout_group_0_binding: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    var layout_group_0_binding: [pie.gpu.MAX_BINDINGS]?pie.gpu.BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
     layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
     // see https://github.com/ziglang/zig/issues/6068
     // const binding_layout = init: {
-    //     var s: [pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    //     var s: [pie.gpu.MAX_BINDINGS]?pie.gpu.BindGroupLayoutEntry = @splat(null);
     //     s[0] = input_binding_layout;
     //     s[1] = output_binding_layout;
     //     break :init s;
     // };
-    var layout_group: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupLayoutEntry = @splat(null);
+    var layout_group: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?pie.gpu.BindGroupLayoutEntry = @splat(null);
     layout_group[0] = layout_group_0_binding;
     var compute_pipeline = try ComputePipeline.init(&gpu, shader, "doubleMe", layout_group);
     defer compute_pipeline.deinit();
@@ -65,14 +65,14 @@ test "simple compute double buffer test" {
     var texture_b = try Texture.init(&gpu, "b", format, roi);
     defer texture_b.deinit();
 
-    var bind_group_a_to_b: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    var bind_group_a_to_b: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?pie.gpu.BindGroupEntry = @splat(null);
     bind_group_a_to_b[0] = @splat(null);
     bind_group_a_to_b[0].?[0] = .{ .texture = texture_a };
     bind_group_a_to_b[0].?[1] = .{ .texture = texture_b };
     var bindings_a_to_b = try Bindings.init(&gpu, &compute_pipeline, bind_group_a_to_b);
     defer bindings_a_to_b.deinit();
 
-    var bind_group_b_to_a: [pie.engine.gpu.MAX_BIND_GROUPS]?[pie.engine.gpu.MAX_BINDINGS]?pie.engine.gpu.BindGroupEntry = @splat(null);
+    var bind_group_b_to_a: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?pie.gpu.BindGroupEntry = @splat(null);
     bind_group_b_to_a[0] = @splat(null);
     bind_group_b_to_a[0].?[0] = .{ .texture = texture_b };
     bind_group_b_to_a[0].?[1] = .{ .texture = texture_a };
@@ -89,11 +89,11 @@ test "simple compute double buffer test" {
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD
-    const upload_buf = try upload_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * format.nchannels());
+    const upload_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * format.nchannels());
     const upload_offset = @intFromPtr(upload_buf.ptr) - @intFromPtr(upload_fba.ptr);
 
     // PREP DOWNLOAD
-    const download_buf = try download_allocator.alignedAlloc(f16, pie.engine.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * format.nchannels());
+    const download_buf = try download_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * format.nchannels());
     const download_offset = @intFromPtr(download_buf.ptr) - @intFromPtr(download_fba.ptr);
 
     // UPLOAD

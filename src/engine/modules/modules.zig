@@ -2,7 +2,7 @@ const std = @import("std");
 const api = @import("api.zig");
 
 pub fn populateRegistry(registry: *Registry) !void {
-    // add built-in modules
+    // built-in modules
     try registry.add(@import("i-raw/module.zig").desc);
     try registry.add(@import("format/module.zig").desc);
     try registry.add(@import("denoise/module.zig").desc);
@@ -13,8 +13,9 @@ pub fn populateRegistry(registry: *Registry) !void {
     try registry.add(@import("filmcurv/module.zig").desc);
     try registry.add(@import("o-png/module.zig").desc);
     try registry.add(@import("o-ppm/module.zig").desc);
+    try registry.add(@import("o-display/module.zig").desc);
 
-    // add test modules
+    // test modules
     try registry.add(@import("test-multiply/module.zig").desc);
     // try registry.add(@import("test-2nodes/module.zig").desc);
     try registry.add(@import("test-i-1234/module.zig").desc);

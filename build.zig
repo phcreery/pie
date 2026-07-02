@@ -33,9 +33,8 @@ pub fn build(b: *Build) !void {
     const dep_libraw = b.dependency("libraw", opts);
     // const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
     const dep_zgpu = b.dependency("zgpu", opts);
-    // const dep_zgpu = b.dependency("zgpu", opts);
     const dep_zigimg = b.dependency("zigimg", opts);
-    const dep_zbench = b.dependency("zbench", opts); //.module("zbench");
+    const dep_zbench = b.dependency("zbench", opts);
     const dep_zuballoc = b.dependency("zuballoc", opts);
 
     // inject the cimgui header search path into the sokol C library compile step
@@ -44,8 +43,6 @@ pub fn build(b: *Build) !void {
     @import("zgpu").addDawnPaths(b, dep_sokol.artifact("sokol_clib").root_module, target.result);
 
     // OPTIONS
-    // see tigerbeetle for advanced build options handling
-    // https://github.com/tigerbeetle/tigerbeetle/blob/main/build.zig
     const mod_options = b.addOptions();
     mod_options.addOption(
         i64,
@@ -54,15 +51,22 @@ pub fn build(b: *Build) !void {
     );
     mod_options.addOption(bool, "docking", opt_docking);
 
-    // MAIN MODULE
+    // CONSOLE MODULE
+    const mod_console = b.createModule(.{
+        .root_source_file = b.path("src/cli/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
+    // PIE MODULE
     // main module with sokol and cimgui imports
-    const mod_main = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+    const mod_pie = b.createModule(.{
+        .root_source_file = b.path("src/engine/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "sokol", .module = dep_sokol.module("sokol") },
-            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
+            .{ .name = "console", .module = mod_console },
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
@@ -70,18 +74,36 @@ pub fn build(b: *Build) !void {
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
-    mod_main.addOptions("build_options", mod_options);
+    mod_pie.linkLibrary(dep_zgpu.artifact("zdawn"));
+
+    // APP MODULE
+    // main module with sokol and cimgui imports
+    const mod_app = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "pie", .module = mod_pie },
+            .{ .name = "console", .module = mod_console },
+            .{ .name = "sokol", .module = dep_sokol.module("sokol") },
+            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
+            .{ .name = "zdt", .module = dep_zdt.module("zdt") },
+            // .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
+        },
+    });
+    mod_app.addOptions("build_options", mod_options);
 
     // Link the zdawn C/C++ wrapper artifact.
     // this is our link to webgpu_dawn (libwebgpu_dawn.a)
-    mod_main.linkLibrary(dep_zgpu.artifact("zdawn"));
+    mod_app.linkLibrary(dep_zgpu.artifact("zdawn"));
 
     // TESTS
     // UNIT TESTS
     const test_step = b.step("test", "Run unit tests");
     const unit_tests = b.addTest(.{
         .name = "unit tests",
-        .root_module = mod_main,
+        .root_module = mod_app,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
@@ -94,7 +116,9 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "pie", .module = mod_main },
+            // .{ .name = "app", .module = mod_app },
+            .{ .name = "pie", .module = mod_pie },
+            .{ .name = "console", .module = mod_console },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "zbench", .module = dep_zbench.module("zbench") },
@@ -114,13 +138,13 @@ pub fn build(b: *Build) !void {
     // from here on different handling for native vs wasm builds
     if (target.result.cpu.arch.isWasm()) {
         try buildWasm(b, .{
-            .mod_main = mod_main,
+            .mod_main = mod_app,
             .dep_sokol = dep_sokol,
             .dep_cimgui = dep_cimgui,
             .cimgui_clib_name = cimgui_conf.clib_name,
         });
     } else {
-        try buildNative(b, mod_main);
+        try buildNative(b, mod_app);
     }
 }
 

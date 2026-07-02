@@ -6,7 +6,7 @@ const api = @import("modules/api.zig");
 const gpu = @import("gpu.zig");
 const wgpu = @import("wgpu");
 const ROI = @import("ROI.zig");
-const console = @import("../cli/console.zig");
+const console = @import("console");
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const Node = @import("Node.zig");
 const slog = std.log.scoped(.util);
@@ -133,7 +133,7 @@ pub fn printNodesGraph(self: *pipeline.Pipeline) !void {
     var writer = std.Io.File.stdout().writer(self.io, &stdout_buffer);
     const stdout = &writer.interface;
 
-    const term_size = console.termSize(self.io, std.Io.File.stdout()) catch unreachable orelse console.TermSize{
+    const term_size = console.console.termSize(self.io, std.Io.File.stdout()) catch unreachable orelse console.console.TermSize{
         .width = 80,
         .height = 24,
     };
