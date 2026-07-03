@@ -70,7 +70,11 @@ pub const Buffer = struct {
     /// size in bytes of the buffer
     pub fn init(gpu: *GPU, size_bytes: ?u64, memory_type: MemoryType) !Self {
         var limits = wgpu.Limits{};
-        _ = gpu.adapter.getLimits(&limits);
+        if (gpu.adapter) |adapter| {
+            _ = adapter.getLimits(&limits);
+        } else {
+            _ = gpu.device.getLimits(&limits);
+        }
 
         var max_buffer_size = limits.max_buffer_size;
         if (max_buffer_size == std.math.maxInt(u64)) {
@@ -125,20 +129,42 @@ pub const Buffer = struct {
         //
         // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
         // to tell you when the mapping is complete.
-        var buffer_map_complete = false;
-        const map_future = self.buffer.mapAsync(self.memory_type.toGPUMapMode(), 0, size_bytes, wgpu.BufferMapCallbackInfo{
-            .mode = .wait_any_only,
-            .callback = handleBufferMap,
-            .userdata_1 = @ptrCast(&buffer_map_complete),
-        });
-
         slog.debug("Waiting for buffer map to complete", .{});
 
-        // Block on the map future via instance.waitAny (same pattern as the
-        // adapter/device requests above). Sokol uses UINT64_MAX here.
-        var map_wait_infos = [_]wgpu.FutureWaitInfo{.{ .future = map_future, .completed = wgpu.c.WGPU_FALSE }};
-        const ws = self.gpu.instance.waitAny(&map_wait_infos, std.math.maxInt(u64));
-        _ = ws;
+        if (self.gpu.instance) |instance| {
+            var buffer_map_complete = false;
+            const map_future = self.buffer.mapAsync(self.memory_type.toGPUMapMode(), 0, size_bytes, wgpu.BufferMapCallbackInfo{
+                .mode = .wait_any_only,
+                .callback = handleBufferMap,
+                .userdata_1 = @ptrCast(&buffer_map_complete),
+            });
+            var map_wait_infos = [_]wgpu.FutureWaitInfo{.{ .future = map_future, .completed = wgpu.c.WGPU_FALSE }};
+            _ = instance.waitAny(&map_wait_infos, std.math.maxInt(u64));
+        } else {
+            const MapWait = struct {
+                done: std.atomic.Value(bool),
+                status: wgpu.MapAsyncStatus,
+            };
+            var map_wait = MapWait{ .done = std.atomic.Value(bool).init(false), .status = .success };
+            _ = self.buffer.mapAsync(self.memory_type.toGPUMapMode(), 0, size_bytes, wgpu.BufferMapCallbackInfo{
+                .mode = .allow_spontaneous,
+                .callback = struct {
+                    fn cb(status: wgpu.MapAsyncStatus, _: wgpu.c.WGPUStringView, userdata_1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
+                        const mw: *MapWait = @ptrCast(@alignCast(userdata_1.?));
+                        mw.status = status;
+                        mw.done.store(true, .release);
+                    }
+                }.cb,
+                .userdata_1 = @ptrCast(&map_wait),
+            });
+            while (!map_wait.done.load(.acquire)) {
+                std.atomic.spinLoopHint();
+            }
+            if (map_wait.status != .success) {
+                slog.err("Buffer map failed in external-device mode: {s}", .{@tagName(map_wait.status)});
+                @panic("buffer map failed");
+            }
+        }
 
         slog.debug("Buffer map complete", .{});
 
@@ -505,7 +531,11 @@ pub const Texture = struct {
     pub fn init(gpu: *GPU, name: []const u8, format: TextureFormat, roi: ROI) !Self {
         slog.debug("Creating texture {s} of size {d}x{d}", .{ @tagName(format), roi.w, roi.h });
         var limits = wgpu.Limits{};
-        _ = gpu.adapter.getLimits(&limits);
+        if (gpu.adapter) |adapter| {
+            _ = adapter.getLimits(&limits);
+        } else {
+            _ = gpu.device.getLimits(&limits);
+        }
 
         var usage = wgpu.TextureUsage{ .storage_binding = true, .texture_binding = true, .copy_src = true, .copy_dst = true };
         // r16uint does not support storage binding
@@ -558,7 +588,11 @@ pub const Bindings = struct {
     ) !Self {
         slog.debug("Creating Bindings", .{});
         var limits = wgpu.Limits{};
-        _ = gpu.adapter.getLimits(&limits);
+        if (gpu.adapter) |adapter| {
+            _ = adapter.getLimits(&limits);
+        } else {
+            _ = gpu.device.getLimits(&limits);
+        }
 
         // Even when the buffers are individually dropped, wgpu will keep the bind group and buffers
         // alive until the bind group itself is dropped.
@@ -839,8 +873,8 @@ pub const ComputePipeline = struct {
 
 /// GPU manages the WebGPU instance, adapter, device, and queue.
 pub const GPU = struct {
-    instance: wgpu.Instance = undefined,
-    adapter: wgpu.Adapter = undefined,
+    instance: ?wgpu.Instance = null,
+    adapter: ?wgpu.Adapter = null,
     device: wgpu.Device = undefined,
     queue: wgpu.Queue = undefined,
     adapter_name: []const u8 = "",
@@ -1008,13 +1042,28 @@ pub const GPU = struct {
         };
     }
 
+    pub fn initExternal(device: wgpu.Device, queue: wgpu.Queue) !Self {
+        slog.debug("Initializing GPU from external sokol-owned WebGPU device/queue", .{});
+        device.addRef();
+        errdefer device.release();
+        queue.addRef();
+        errdefer queue.release();
+        return .{
+            .instance = null,
+            .adapter = null,
+            .device = device,
+            .queue = queue,
+            .adapter_name = "sokol-external-device",
+        };
+    }
+
     pub fn deinit(self: *Self) void {
         slog.debug("De-initializing GPU", .{});
 
         self.queue.release();
         self.device.release();
-        self.adapter.release();
-        self.instance.release();
+        if (self.adapter) |adapter| adapter.release();
+        if (self.instance) |instance| instance.release();
     }
 
     pub fn run(self: *Self, command_buffer: ?wgpu.CommandBuffer) !void {
@@ -1038,19 +1087,46 @@ pub const GPU = struct {
         // fills it. Block here until the queue is idle, mirroring wgpu-native's
         // implicit device.poll(true) behaviour. We drive the queue-done callback
         // via instance.waitAny (same pattern as the adapter/device requests).
-        var work_done = false;
-        const work_future = self.queue.onSubmittedWorkDone(wgpu.QueueWorkDoneCallbackInfo{
-            .mode = .wait_any_only,
-            .callback = struct {
-                fn cb(_: wgpu.QueueWorkDoneStatus, _: wgpu.c.WGPUStringView, userdata_1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
-                    const done: *bool = @ptrCast(@alignCast(userdata_1.?));
-                    done.* = true;
-                }
-            }.cb,
-            .userdata_1 = @ptrCast(&work_done),
-        });
-        var work_wait_infos = [_]wgpu.FutureWaitInfo{.{ .future = work_future, .completed = wgpu.c.WGPU_FALSE }};
-        _ = self.instance.waitAny(&work_wait_infos, std.math.maxInt(u64));
-        slog.debug("queue work done: {}\n", .{work_done});
+        if (self.instance) |instance| {
+            var work_done = false;
+            const work_future = self.queue.onSubmittedWorkDone(wgpu.QueueWorkDoneCallbackInfo{
+                .mode = .wait_any_only,
+                .callback = struct {
+                    fn cb(_: wgpu.QueueWorkDoneStatus, _: wgpu.c.WGPUStringView, userdata_1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
+                        const done: *bool = @ptrCast(@alignCast(userdata_1.?));
+                        done.* = true;
+                    }
+                }.cb,
+                .userdata_1 = @ptrCast(&work_done),
+            });
+            var work_wait_infos = [_]wgpu.FutureWaitInfo{.{ .future = work_future, .completed = wgpu.c.WGPU_FALSE }};
+            _ = instance.waitAny(&work_wait_infos, std.math.maxInt(u64));
+            slog.debug("queue work done: {}\n", .{work_done});
+        } else {
+            const WorkWait = struct {
+                done: std.atomic.Value(bool),
+                status: wgpu.QueueWorkDoneStatus,
+            };
+            var work_wait = WorkWait{ .done = std.atomic.Value(bool).init(false), .status = .success };
+            _ = self.queue.onSubmittedWorkDone(wgpu.QueueWorkDoneCallbackInfo{
+                .mode = .allow_spontaneous,
+                .callback = struct {
+                    fn cb(status: wgpu.QueueWorkDoneStatus, _: wgpu.c.WGPUStringView, userdata_1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
+                        const ww: *WorkWait = @ptrCast(@alignCast(userdata_1.?));
+                        ww.status = status;
+                        ww.done.store(true, .release);
+                    }
+                }.cb,
+                .userdata_1 = @ptrCast(&work_wait),
+            });
+            while (!work_wait.done.load(.acquire)) {
+                std.atomic.spinLoopHint();
+            }
+            if (work_wait.status != .success) {
+                slog.err("Queue work completion failed in external-device mode: {s}", .{@tagName(work_wait.status)});
+                @panic("queue work done failed");
+            }
+            slog.debug("queue work done: {}\n", .{work_wait.done.load(.acquire)});
+        }
     }
 };

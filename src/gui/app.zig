@@ -4,8 +4,7 @@ const slog = sokol.log;
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
-const simgui = sokol.imgui;
-const sgl = sokol.gl;
+// const simgui = sokol.imgui;
 const std = @import("std");
 const util = @import("../mem.zig");
 const builtin = @import("builtin");
@@ -14,13 +13,14 @@ const window = @import("window.zig");
 const pie = @import("pie");
 const console = @import("console");
 const shd = @import("texview_shader");
+const wgpu = @import("wgpu_dawn");
 
 const Image = struct {
     img: sg.Image = undefined,
     tex_view: sg.View = undefined,
     smp: sg.Sampler = undefined,
-    // pip: sg.Pipeline = undefined,
-    pip: sgl.Pipeline = undefined,
+    shd: sg.Shader = undefined,
+    pip: sg.Pipeline = undefined,
 
     width: f32 = 0.0,
     height: f32 = 0.0,
@@ -28,65 +28,26 @@ const Image = struct {
     offset: struct { x: f32, y: f32 } = .{ .x = 0.0, .y = 0.0 },
     color: struct { r: f32, g: f32, b: f32 } = .{ .r = 1.0, .g = 1.0, .b = 1.0 },
 
-    // static void create_image(const void* ptr, size_t size) {
-    //     reset_image_params();
-    //     state.file.qoi_decode_failed = false;
-    //     if (state.image.img.id != SG_INVALID_ID) {
-    //         sg_destroy_image(state.image.img);
-    //         state.image.img.id = SG_INVALID_ID;
-    //     }
-    //     if (state.image.tex_view.id != SG_INVALID_ID) {
-    //         sg_destroy_view(state.image.tex_view);
-    //         state.image.tex_view.id = SG_INVALID_ID;
-    //     }
-    //     qoi_desc qoi;
-    //     void* pixels = qoi_decode(ptr, (int)size, &qoi, 4);
-    //     if (!pixels) {
-    //         state.file.qoi_decode_failed = true;
-    //         return;
-    //     }
-    //     state.image.width = (float) qoi.width;
-    //     state.image.height = (float) qoi.height;
-    //     state.image.img = sg_make_image(&(sg_image_desc){
-    //         .pixel_format = SG_PIXELFORMAT_RGBA8,
-    //         .width = qoi.width,
-    //         .height = qoi.height,
-    //         .data.mip_levels[0] = {
-    //             .ptr = pixels,
-    //             .size = qoi.width * qoi.height * 4
-    //         }
-    //     });
-    //     state.image.tex_view = sg_make_view(&(sg_view_desc){
-    //         .texture.image = state.image.img,
-    //     });
-    //     free(pixels);
-    // }
     fn create(self: *@This(), texture: *pie.gpu.Texture) void {
-        // self.texture = texture;
-        // sg.uninitImage(self.img);
         self.width = @floatFromInt(texture.roi.w);
         self.height = @floatFromInt(texture.roi.h);
         self.scale = 1.0;
         self.offset = .{ .x = 0.0, .y = 0.0 };
         self.color = .{ .r = 1.0, .g = 1.0, .b = 1.0 };
+
+        // Inject the existing GPU-side WebGPU texture into sokol instead of
+        // trying to upload CPU pixel data. sokol will addRef() the texture and
+        // create its own WGPUTextureView when we make the sg.View.
         self.img = sg.makeImage(.{
             .pixel_format = .RGBA16F,
-            .width = texture.roi.w,
-            .height = texture.roi.h,
-            .data = .{
-                .mip_levels = &.{.{ .ptr = texture.data, .size = texture.data_len }},
-            },
+            .width = @intCast(texture.roi.w),
+            .height = @intCast(texture.roi.h),
+            .wgpu_texture = @ptrCast(texture.texture),
+            .label = "display-texture",
         });
-        // sg.initImage(self.img, .{
-        //     .pixel_format = .RGBA16F,
-        //     .width = texture.roi.w,
-        //     .height = texture.roi.h,
-        //     .data = .{
-        //         .mip_levels = &.{.{ .ptr = texture.data, .size = texture.data_len }},
-        //     },
-        // });
         self.tex_view = sg.makeView(.{
-            .texture = self.img,
+            .texture = .{ .image = self.img },
+            .label = "display-texture-view",
         });
     }
 };
@@ -100,7 +61,7 @@ const AppState = struct {
     image: Image = undefined,
 
     gpu: pie.gpu.GPU = undefined,
-    pipeline: *pie.pipeline.Pipeline = undefined,
+    pipeline: pie.pipeline.Pipeline = undefined,
     modules: *pie.modules.Registry = undefined,
     arena: std.mem.Allocator = undefined,
 
@@ -141,10 +102,6 @@ export fn init_fn(ptr: ?*anyopaque) void {
         .environment = sglue.environment(),
         .logger = .{ .func = slog.func },
     });
-    // initialize sokol-imgui
-    simgui.setup(.{
-        .logger = .{ .func = slog.func },
-    });
 
     // initial clear color
     state.pass_action.colors[0] = .{
@@ -152,21 +109,8 @@ export fn init_fn(ptr: ?*anyopaque) void {
         .clear_value = .{ .r = 0.05, .g = 0.5, .b = 1.0, .a = 1.0 },
     };
 
-    // USING SGL
-    state.image.pip = sgl.makePipeline(.{
-        .colors = init: {
-            var c: @FieldType(sg.PipelineDesc, "colors") = @splat(.{});
-            c[0] = .{
-                .write_mask = .RGB,
-                .blend = .{
-                    .enabled = true,
-                    .src_factor_rgb = .SRC_ALPHA,
-                    .dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
-                },
-            };
-            break :init c;
-        },
-    });
+    // NOTE: create the fullscreen-quad pipeline lazily in frame() using the
+    // actual current swapchain formats.
 
     state.image.smp = sg.makeSampler(.{
         .mag_filter = .NEAREST,
@@ -176,119 +120,89 @@ export fn init_fn(ptr: ?*anyopaque) void {
     });
 
     std.debug.print("making pipeline...\n", .{});
-    // pre-allocate handles so we can keep rendering even no
-    // image has been loaded yet
-    state.image.img = sg.allocImage();
-    state.image.tex_view = sg.allocView();
 
-    // USING SG
-    // create pipeline and shader for rendering into display
-    // const pip_desc: sg.PipelineDesc = .{
-    //     .shader = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend())),
-    //     .primitive_type = .TRIANGLE_STRIP,
-    // };
-    // pip_desc.layout.attrs[shd.ATTR_display_pos].format = .FLOAT2;
-    // state.image.pip = sg.makePipeline(pip_desc); // note, sg. or sgl.? (qoi example uses sgl, but texview sample uses sg)
+    state.image.shd = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend()));
+    state.image.pip = sg.makePipeline(.{
+        .shader = state.image.shd,
+        .primitive_type = .TRIANGLE_STRIP,
+        .color_count = 1,
+        // .sample_count = sc.sample_count,
+        // .depth = .{ .pixel_format = sc.depth_format },
+        .colors = init: {
+            var c: @FieldType(sg.PipelineDesc, "colors") = @splat(.{});
+            c[0] = .{
+                // .pixel_format = sc.color_format,
+                .write_mask = .RGBA,
+            };
+            break :init c;
+        },
+    });
 
-    // state.image.pip = sgl.makePipeline(pip_desc);
+    const ext_device: wgpu.Device = @ptrCast(@constCast(sg.wgpuDevice().?));
+    const ext_queue: wgpu.Queue = @ptrCast(@constCast(sg.wgpuQueue().?));
+    state.gpu = pie.gpu.GPU.initExternal(ext_device, ext_queue) catch unreachable;
+
+    const pipeline_config: pie.pipeline.PipelineConfig = .{
+        .upload_buffer_size_bytes = 75e6,
+        .download_buffer_size_bytes = 75e6,
+    };
+    state.pipeline = pie.Pipeline.init(state.allocator, state.io, &state.gpu, pipeline_config) catch unreachable;
 
     state.texture = build_image(
         state.allocator,
         state.io,
-        state.pipeline,
+        &state.pipeline,
         state.modules,
         state.arena,
     ) catch unreachable;
     std.debug.print("texture: {any}\n", .{state.texture});
+    state.image.create(state.texture);
 }
 
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
 
-    // call simgui.newFrame() before any ImGui calls
-    simgui.newFrame(.{
-        .width = sapp.width(),
-        .height = sapp.height(),
-        .delta_time = sapp.frameDuration(),
-        .dpi_scale = sapp.dpiScale(),
-    });
+    const have_image = state.image.img.id != sg.invalid_id and state.image.tex_view.id != sg.invalid_id;
 
-    // === UI CODE STARTS HERE
-
-    ig.igSetNextWindowPos(.{ .x = 10, .y = 10 }, ig.ImGuiCond_Once);
-    ig.igSetNextWindowSize(.{ .x = 400, .y = 100 }, ig.ImGuiCond_Once);
-    _ = ig.igBegin("Hello Dear ImGui!", 0, ig.ImGuiWindowFlags_None);
-    _ = ig.igColorEdit3("Background", &state.pass_action.colors[0].clear_value.r, ig.ImGuiColorEditFlags_None);
-    ig.igEnd();
-
-    // std.debug.print("frame state\n", .{});
-    // std.debug.print("{any}\n", .{state});
-
-    // const float disp_w = sapp_widthf();
-    // const float disp_h = sapp_heightf();
-    const disp_w = sapp.widthf();
-    const disp_h = sapp.heightf();
-    sgl.defaults();
-    sgl.enableTexture();
-    sgl.matrixModeProjection();
-    sgl.ortho(-disp_w * 0.5, disp_w * 0.5, disp_h * 0.5, -disp_h * 0.5, -1.0, 1.0);
-
-    if (state.image.img.id != sg.invalid_id) {
-        // display the image
-        // const float x0 = ((-state.image.width * 0.5f) * state.image.scale) + (state.image.offset.x * state.image.scale);
-        // const float x1 = x0 + (state.image.width * state.image.scale);
-        // const float y0 = ((-state.image.height * 0.5f) * state.image.scale) + (state.image.offset.y * state.image.scale);
-        // const float y1 = y0 + (state.image.height * state.image.scale);
-
-        // sgl_texture(state.image.tex_view, state.image.smp);
-        // sgl_load_pipeline(state.image.pip);
-        // sgl_c3f(state.image.color.r, state.image.color.g, state.image.color.b);
-        // sgl_begin_quads();
-        // sgl_v2f_t2f(x0, y0, 0.0f, 0.0f);
-        // sgl_v2f_t2f(x1, y0, 1.0f, 0.0f);
-        // sgl_v2f_t2f(x1, y1, 1.0f, 1.0f);
-        // sgl_v2f_t2f(x0, y1, 0.0f, 1.0f);
-        // sgl_end();
-
-        const x0: f32 = ((-state.image.width * 0.5) * state.image.scale) + (state.image.offset.x * state.image.scale);
-        const x1: f32 = x0 + (state.image.width * state.image.scale);
-        const y0: f32 = ((-state.image.height * 0.5) * state.image.scale) + (state.image.offset.y * state.image.scale);
-        const y1: f32 = y0 + (state.image.height * state.image.scale);
-
-        sgl.texture(state.image.tex_view, state.image.smp);
-        sgl.loadPipeline(state.image.pip);
-        sgl.c3f(state.image.color.r, state.image.color.g, state.image.color.b);
-        sgl.beginQuads();
-        sgl.v2fT2f(x0, y0, 0.0, 0.0);
-        sgl.v2fT2f(x1, y0, 1.0, 0.0);
-        sgl.v2fT2f(x1, y1, 1.0, 1.0);
-        sgl.v2fT2f(x0, y1, 0.0, 1.0);
-        sgl.end();
-    }
-
-    state.window.render();
-
-    // === UI CODE ENDS HERE
-
-    // call simgui.render() inside a sokol-gfx pass
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
-    simgui.render();
+    if (have_image) {
+        const bindings = sg.Bindings{
+            .views = init: {
+                var v: [32]sg.View = @splat(.{});
+                v[shd.VIEW_tex] = state.image.tex_view;
+                break :init v;
+            },
+            .samplers = init: {
+                var s: [12]sg.Sampler = @splat(.{});
+                s[shd.SMP_smp] = state.image.smp;
+                break :init s;
+            },
+        };
+        const fs_params = shd.FsParams{ .mip_lod = 0.0 };
+        sg.applyPipeline(state.image.pip);
+        sg.applyBindings(bindings);
+        sg.applyUniforms(shd.UB_fs_params, .{ .ptr = &fs_params, .size = @sizeOf(shd.FsParams) });
+        sg.draw(0, 4, 1);
+    }
     sg.endPass();
     sg.commit();
 }
 
 export fn cleanup(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
-    _ = state;
-    simgui.shutdown();
+    if (state.image.tex_view.id != sg.invalid_id) sg.destroyView(state.image.tex_view);
+    if (state.image.img.id != sg.invalid_id) sg.destroyImage(state.image.img);
+    if (state.image.smp.id != sg.invalid_id) sg.destroySampler(state.image.smp);
+    if (state.image.pip.id != sg.invalid_id) sg.destroyPipeline(state.image.pip);
+    if (state.image.shd.id != sg.invalid_id) sg.destroyShader(state.image.shd);
+    state.pipeline.deinit();
+    state.gpu.deinit();
     sg.shutdown();
 }
 
 export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
-    const state: *AppState = @ptrCast(@alignCast(ptr));
-    _ = state;
-    // forward input events to sokol-imgui
-    _ = simgui.handleEvent(ev.*);
+    _ = ev;
+    _ = ptr;
 }
 
 fn build_image(
@@ -375,27 +289,14 @@ pub fn run(init: std.process.Init) !void {
     const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
 
-    var gpu_instance = try pie.gpu.GPU.init(io);
-    // defer gpu_instance.deinit();
-    state.gpu = gpu_instance;
-
     var modules = try pie.modules.Registry.init(allocator);
-    // defer modules.deinit();
+    defer modules.deinit();
     state.modules = &modules;
 
     var arena_instance = std.heap.ArenaAllocator.init(allocator);
-    // defer arena_instance.deinit();
+    defer arena_instance.deinit();
     const arena = arena_instance.allocator();
     state.arena = arena;
-
-    const pipeline_config: pie.pipeline.PipelineConfig = .{
-        .upload_buffer_size_bytes = 75e6,
-        .download_buffer_size_bytes = 75e6,
-    };
-
-    var pipeline = pie.Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
-    // defer pipeline.deinit();
-    state.pipeline = &pipeline;
 
     sapp.run(.{
         .user_data = state,

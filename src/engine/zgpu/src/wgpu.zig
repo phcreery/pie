@@ -1503,7 +1503,7 @@ pub const Device = *opaque {
     }
 
     pub fn getLimits(device: Device, limits: *Limits) bool {
-        return c.wgpuDeviceGetLimits(@ptrCast(device), limits);
+        return c.wgpuDeviceGetLimits(@ptrCast(device), @ptrCast(limits)) != 0;
     }
 
     pub fn getQueue(device: Device) Queue {
