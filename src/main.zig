@@ -4,9 +4,15 @@ const std = @import("std");
 pub const app = @import("gui/app.zig");
 
 pub const std_options: std.Options = .{
-    .log_level = .warn,
+    .log_level = .debug,
+    .log_scope_levels = &[_]std.log.ScopeLevel{
+        .{ .scope = .gpu, .level = .info },
+        .{ .scope = .pipe, .level = .debug },
+        .{ .scope = .suballocator, .level = .info },
+        // .logFn = customLogFn,
+    },
 };
 
 pub fn main(init: std.process.Init) !void {
-    app.run(init);
+    try app.run(init);
 }

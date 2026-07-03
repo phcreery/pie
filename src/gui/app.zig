@@ -5,6 +5,7 @@ const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
 const simgui = sokol.imgui;
+const sgl = sokol.gl;
 const std = @import("std");
 const util = @import("../mem.zig");
 const builtin = @import("builtin");
@@ -18,7 +19,9 @@ const Image = struct {
     img: sg.Image = undefined,
     tex_view: sg.View = undefined,
     smp: sg.Sampler = undefined,
-    pip: sg.Pipeline = undefined,
+    // pip: sg.Pipeline = undefined,
+    pip: sgl.Pipeline = undefined,
+
     width: f32 = 0.0,
     height: f32 = 0.0,
     scale: f32 = 1.0,
@@ -60,6 +63,7 @@ const Image = struct {
     // }
     fn create(self: *@This(), texture: *pie.gpu.Texture) void {
         // self.texture = texture;
+        // sg.uninitImage(self.img);
         self.width = @floatFromInt(texture.roi.w);
         self.height = @floatFromInt(texture.roi.h);
         self.scale = 1.0;
@@ -73,6 +77,14 @@ const Image = struct {
                 .mip_levels = &.{.{ .ptr = texture.data, .size = texture.data_len }},
             },
         });
+        // sg.initImage(self.img, .{
+        //     .pixel_format = .RGBA16F,
+        //     .width = texture.roi.w,
+        //     .height = texture.roi.h,
+        //     .data = .{
+        //         .mip_levels = &.{.{ .ptr = texture.data, .size = texture.data_len }},
+        //     },
+        // });
         self.tex_view = sg.makeView(.{
             .texture = self.img,
         });
@@ -86,6 +98,12 @@ const AppState = struct {
     pass_action: sg.PassAction = .{},
     window: window.WindowManager,
     image: Image = undefined,
+
+    gpu: pie.gpu.GPU = undefined,
+    pipeline: *pie.pipeline.Pipeline = undefined,
+    modules: *pie.modules.Registry = undefined,
+    arena: std.mem.Allocator = undefined,
+
     texture: *pie.gpu.Texture = undefined,
 
     const Self = @This();
@@ -134,74 +152,53 @@ export fn init_fn(ptr: ?*anyopaque) void {
         .clear_value = .{ .r = 0.05, .g = 0.5, .b = 1.0, .a = 1.0 },
     };
 
-    // // a sampler object for nearest mag filter and linear min filter
-    // state.image.smp = sg_make_sampler(&(sg_sampler_desc){
-    //     .mag_filter = SG_FILTER_NEAREST,
-    //     .min_filter = SG_FILTER_LINEAR,
-    //     .wrap_u = SG_WRAP_CLAMP_TO_EDGE,
-    //     .wrap_v = SG_WRAP_CLAMP_TO_EDGE,
-    // });
+    // USING SGL
+    state.image.pip = sgl.makePipeline(.{
+        .colors = init: {
+            var c: @FieldType(sg.PipelineDesc, "colors") = @splat(.{});
+            c[0] = .{
+                .write_mask = .RGB,
+                .blend = .{
+                    .enabled = true,
+                    .src_factor_rgb = .SRC_ALPHA,
+                    .dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+                },
+            };
+            break :init c;
+        },
+    });
+
     state.image.smp = sg.makeSampler(.{
         .mag_filter = .NEAREST,
         .min_filter = .LINEAR,
-        .wrap_u = .CLAMP_TO_EDGE,
-        .wrap_v = .CLAMP_TO_EDGE,
+        // .wrap_u = .CLAMP_TO_EDGE,
+        // .wrap_v = .CLAMP_TO_EDGE,
     });
 
     std.debug.print("making pipeline...\n", .{});
+    // pre-allocate handles so we can keep rendering even no
+    // image has been loaded yet
+    state.image.img = sg.allocImage();
+    state.image.tex_view = sg.allocView();
 
-    //     // create a pipeline object with alpha blending for rendering the loaded image
-    // state.image.pip = sgl_make_pipeline(&(sg_pipeline_desc){
-    //     .colors[0] = {
-    //         .write_mask = SG_COLORMASK_RGB,
-    //         .blend = {
-    //             .enabled = true,
-    //             .src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA,
-    //             .dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
-    //         }
-    //     }
-    // });
-    // const pipeline_desc = sg.PipelineDesc{};
-    // state.image.pip = sg.makePipeline(.{
-    //     .colors = init: {
-    //         var c: @FieldType(sg.PipelineDesc, "colors") = @splat(.{});
-    //         c[0] = .{
-    //             .write_mask = .RGB,
-    //             .blend = .{
-    //                 .enabled = true,
-    //                 .src_factor_rgb = .SRC_ALPHA,
-    //                 .dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
-    //             },
-    //         };
-    //         break :init c;
-    //     },
-    //     // .shader = {
-    //     //     .vertex = sg.makeShader(.{
-    //     //         .source = @embedFile("shaders/vertex.glsl"),
-    //     //     }),
-    //     //     .fragment = sg.makeShader(.{
-    //     //         .source = @embedFile("shaders/fragment.glsl"),
-    //     //     }),
-    //     // },
-    // });
-
-    // a render pipeline for bufferless 2D-rendering
-    // state.pip = sg.makePipeline(.{
-    //     .shader = sg.makeShader(texview_shader_desc(sg.queryBackend())),
-    //     .primitive_type = SG_PRIMITIVETYPE_TRIANGLE_STRIP,
-    //     .label = "pipeline",
-    // });
+    // USING SG
     // create pipeline and shader for rendering into display
-    {
-        const pip_desc: sg.PipelineDesc = .{
-            .shader = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend())),
-            .primitive_type = .TRIANGLE_STRIP,
-        };
-        // pip_desc.layout.attrs[shd.ATTR_display_pos].format = .FLOAT2;
-        state.image.pip = sg.makePipeline(pip_desc);
-    }
+    // const pip_desc: sg.PipelineDesc = .{
+    //     .shader = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend())),
+    //     .primitive_type = .TRIANGLE_STRIP,
+    // };
+    // pip_desc.layout.attrs[shd.ATTR_display_pos].format = .FLOAT2;
+    // state.image.pip = sg.makePipeline(pip_desc); // note, sg. or sgl.? (qoi example uses sgl, but texview sample uses sg)
 
-    state.texture = build_image(state.allocator, state.io) catch unreachable;
+    // state.image.pip = sgl.makePipeline(pip_desc);
+
+    state.texture = build_image(
+        state.allocator,
+        state.io,
+        state.pipeline,
+        state.modules,
+        state.arena,
+    ) catch unreachable;
     std.debug.print("texture: {any}\n", .{state.texture});
 }
 
@@ -226,6 +223,48 @@ export fn frame(ptr: ?*anyopaque) void {
 
     // std.debug.print("frame state\n", .{});
     // std.debug.print("{any}\n", .{state});
+
+    // const float disp_w = sapp_widthf();
+    // const float disp_h = sapp_heightf();
+    const disp_w = sapp.widthf();
+    const disp_h = sapp.heightf();
+    sgl.defaults();
+    sgl.enableTexture();
+    sgl.matrixModeProjection();
+    sgl.ortho(-disp_w * 0.5, disp_w * 0.5, disp_h * 0.5, -disp_h * 0.5, -1.0, 1.0);
+
+    if (state.image.img.id != sg.invalid_id) {
+        // display the image
+        // const float x0 = ((-state.image.width * 0.5f) * state.image.scale) + (state.image.offset.x * state.image.scale);
+        // const float x1 = x0 + (state.image.width * state.image.scale);
+        // const float y0 = ((-state.image.height * 0.5f) * state.image.scale) + (state.image.offset.y * state.image.scale);
+        // const float y1 = y0 + (state.image.height * state.image.scale);
+
+        // sgl_texture(state.image.tex_view, state.image.smp);
+        // sgl_load_pipeline(state.image.pip);
+        // sgl_c3f(state.image.color.r, state.image.color.g, state.image.color.b);
+        // sgl_begin_quads();
+        // sgl_v2f_t2f(x0, y0, 0.0f, 0.0f);
+        // sgl_v2f_t2f(x1, y0, 1.0f, 0.0f);
+        // sgl_v2f_t2f(x1, y1, 1.0f, 1.0f);
+        // sgl_v2f_t2f(x0, y1, 0.0f, 1.0f);
+        // sgl_end();
+
+        const x0: f32 = ((-state.image.width * 0.5) * state.image.scale) + (state.image.offset.x * state.image.scale);
+        const x1: f32 = x0 + (state.image.width * state.image.scale);
+        const y0: f32 = ((-state.image.height * 0.5) * state.image.scale) + (state.image.offset.y * state.image.scale);
+        const y1: f32 = y0 + (state.image.height * state.image.scale);
+
+        sgl.texture(state.image.tex_view, state.image.smp);
+        sgl.loadPipeline(state.image.pip);
+        sgl.c3f(state.image.color.r, state.image.color.g, state.image.color.b);
+        sgl.beginQuads();
+        sgl.v2fT2f(x0, y0, 0.0, 0.0);
+        sgl.v2fT2f(x1, y0, 1.0, 0.0);
+        sgl.v2fT2f(x1, y1, 1.0, 1.0);
+        sgl.v2fT2f(x0, y1, 0.0, 1.0);
+        sgl.end();
+    }
 
     state.window.render();
 
@@ -252,27 +291,15 @@ export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
     _ = simgui.handleEvent(ev.*);
 }
 
-fn build_image(allocator: std.mem.Allocator, io: std.Io) !*pie.gpu.Texture {
-    const cout = console.console.UTF8ConsoleOutput.init();
-    defer cout.deinit();
-
-    var gpu_instance = try pie.gpu.GPU.init(io);
-    defer gpu_instance.deinit();
-
-    var modules = try pie.modules.Registry.init(allocator);
-    defer modules.deinit();
-
-    var arena_instance = std.heap.ArenaAllocator.init(allocator);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
-
-    const pipeline_config: pie.pipeline.PipelineConfig = .{
-        .upload_buffer_size_bytes = 75e6,
-        .download_buffer_size_bytes = 75e6,
-    };
-
-    var pipeline = pie.Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
-    defer pipeline.deinit();
+fn build_image(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    pipeline: *pie.pipeline.Pipeline,
+    modules: *pie.modules.Registry,
+    arena: std.mem.Allocator,
+) !*pie.gpu.Texture {
+    _ = allocator;
+    _ = io;
 
     // const config: pie.gpu.TargetConfig = @import("001_DSC_6765/target.zig").config;
     // const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";
@@ -323,9 +350,10 @@ fn build_image(allocator: std.mem.Allocator, io: std.Io) !*pie.gpu.Texture {
     return disp_tex;
 }
 
-pub fn run(init: std.process.Init) void {
+pub fn run(init: std.process.Init) !void {
     // general purpose allocator for temporary heap allocations:
     // const gpa = init.gpa;
+    const allocator = util.allocator;
     // default Io implementation:
     const io = init.io;
     // access to environment variables:
@@ -341,8 +369,33 @@ pub fn run(init: std.process.Init) void {
     // state.* = AppState.init(util.allocator);
 
     // Alternatively, allocate the application state on the stack
-    const state: *AppState = @constCast(&AppState.init(util.allocator, io));
+    const state: *AppState = @constCast(&AppState.init(allocator, io));
     defer state.deinit();
+
+    const cout = console.console.UTF8ConsoleOutput.init();
+    defer cout.deinit();
+
+    var gpu_instance = try pie.gpu.GPU.init(io);
+    // defer gpu_instance.deinit();
+    state.gpu = gpu_instance;
+
+    var modules = try pie.modules.Registry.init(allocator);
+    // defer modules.deinit();
+    state.modules = &modules;
+
+    var arena_instance = std.heap.ArenaAllocator.init(allocator);
+    // defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
+    state.arena = arena;
+
+    const pipeline_config: pie.pipeline.PipelineConfig = .{
+        .upload_buffer_size_bytes = 75e6,
+        .download_buffer_size_bytes = 75e6,
+    };
+
+    var pipeline = pie.Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
+    // defer pipeline.deinit();
+    state.pipeline = &pipeline;
 
     sapp.run(.{
         .user_data = state,

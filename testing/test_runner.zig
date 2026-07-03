@@ -8,7 +8,7 @@
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
         .{ .scope = .gpu, .level = .info },
-        .{ .scope = .pipe, .level = .info },
+        .{ .scope = .pipe, .level = .debug },
         .{ .scope = .suballocator, .level = .info },
     },
     // .logFn = customLogFn,

@@ -1161,14 +1161,14 @@ pub const Pipeline = struct {
     pub fn getDisplaySinkTexture(self: *Pipeline) !*gpu.Texture {
         const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
         const last_node = try self.node_pool.getPtr(last_node_handle);
+        slog.debug("Getting display sink texture for last node {s}", .{last_node.desc.name});
         const sock = last_node.desc.sockets[0] orelse return error.NodeOutputSocketMissingConnectorHandle;
-        if (sock.private.connector_handle) |h| {
-            const display_texture = try self.connector_pool.getPtr(h);
-            if (display_texture.*) |*tex| {
-                return tex;
-            } else {
-                return error.PipelineMissingDisplaySinkTexture;
-            }
+        const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
+        const display_texture = try self.connector_pool.getPtr(connector_handle);
+        if (display_texture.*) |*tex| {
+            return tex;
+        } else {
+            return error.PipelineMissingDisplaySinkTexture;
         }
         return error.NodeOutputSocketMissingConnectorHandle;
     }
