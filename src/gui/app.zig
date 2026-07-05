@@ -16,25 +16,18 @@ const shd = @import("texview_shader");
 const wgpu = @import("wgpu_dawn");
 
 const Image = struct {
+    // sokol
     img: sg.Image = undefined,
     tex_view: sg.View = undefined,
     smp: sg.Sampler = undefined,
     shd: sg.Shader = undefined,
     pip: sg.Pipeline = undefined,
 
+    // meta
     width: f32 = 0.0,
     height: f32 = 0.0,
-    scale: f32 = 1.0,
-    offset: struct { x: f32, y: f32 } = .{ .x = 0.0, .y = 0.0 },
-    color: struct { r: f32, g: f32, b: f32 } = .{ .r = 1.0, .g = 1.0, .b = 1.0 },
 
-    fn create(self: *@This(), texture: *pie.gpu.Texture) void {
-        self.width = @floatFromInt(texture.roi.w);
-        self.height = @floatFromInt(texture.roi.h);
-        self.scale = 1.0;
-        self.offset = .{ .x = 0.0, .y = 0.0 };
-        self.color = .{ .r = 1.0, .g = 1.0, .b = 1.0 };
-
+    fn createFrom(self: *@This(), texture: *pie.gpu.Texture) void {
         // Inject the existing GPU-side WebGPU texture into sokol instead of
         // trying to upload CPU pixel data. sokol will addRef() the texture and
         // create its own WGPUTextureView when we make the sg.View.
@@ -42,13 +35,15 @@ const Image = struct {
             .pixel_format = .RGBA16F,
             .width = @intCast(texture.roi.w),
             .height = @intCast(texture.roi.h),
-            .wgpu_texture = @ptrCast(texture.texture),
+            .wgpu_texture = @ptrCast(texture.texture), // injection
             .label = "display-texture",
         });
         self.tex_view = sg.makeView(.{
             .texture = .{ .image = self.img },
             .label = "display-texture-view",
         });
+        self.width = @floatFromInt(texture.roi.w);
+        self.height = @floatFromInt(texture.roi.h);
     }
 };
 
@@ -56,16 +51,17 @@ const AppState = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
 
-    pass_action: sg.PassAction = .{},
+    // UI
     window: window.WindowManager,
+
+    // sokol
+    pass_action: sg.PassAction = .{},
     image: Image = undefined,
 
+    // pie
     gpu: pie.gpu.GPU = undefined,
     pipeline: pie.pipeline.Pipeline = undefined,
     modules: *pie.modules.Registry = undefined,
-    arena: std.mem.Allocator = undefined,
-
-    texture: *pie.gpu.Texture = undefined,
 
     const Self = @This();
 
@@ -109,24 +105,19 @@ export fn init_fn(ptr: ?*anyopaque) void {
         .clear_value = .{ .r = 0.05, .g = 0.5, .b = 1.0, .a = 1.0 },
     };
 
-    // NOTE: create the fullscreen-quad pipeline lazily in frame() using the
-    // actual current swapchain formats.
-
+    // initialize state.image
     state.image.smp = sg.makeSampler(.{
         .mag_filter = .NEAREST,
         .min_filter = .LINEAR,
         // .wrap_u = .CLAMP_TO_EDGE,
         // .wrap_v = .CLAMP_TO_EDGE,
     });
-
-    std.debug.print("making pipeline...\n", .{});
-
     state.image.shd = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend()));
     state.image.pip = sg.makePipeline(.{
         .shader = state.image.shd,
         .primitive_type = .TRIANGLE_STRIP,
         .color_count = 1,
-        // .sample_count = sc.sample_count,
+        // .sample_count = sc.sample_count, // sc = sglue.swapchain()
         // .depth = .{ .pixel_format = sc.depth_format },
         .colors = init: {
             var c: @FieldType(sg.PipelineDesc, "colors") = @splat(.{});
@@ -138,6 +129,7 @@ export fn init_fn(ptr: ?*anyopaque) void {
         },
     });
 
+    // initialize pie pipeline
     const ext_device: wgpu.Device = @ptrCast(@constCast(sg.wgpuDevice().?));
     const ext_queue: wgpu.Queue = @ptrCast(@constCast(sg.wgpuQueue().?));
     state.gpu = pie.gpu.GPU.initExternal(ext_device, ext_queue) catch unreachable;
@@ -148,42 +140,43 @@ export fn init_fn(ptr: ?*anyopaque) void {
     };
     state.pipeline = pie.Pipeline.init(state.allocator, state.io, &state.gpu, pipeline_config) catch unreachable;
 
-    state.texture = build_image(
+    // run pipeline and webgpu inject texture
+    const texture = build_image(
         state.allocator,
         state.io,
         &state.pipeline,
         state.modules,
-        state.arena,
     ) catch unreachable;
-    std.debug.print("texture: {any}\n", .{state.texture});
-    state.image.create(state.texture);
+    std.debug.print("texture: {any}\n", .{texture});
+    state.image.createFrom(texture);
 }
 
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
 
-    const have_image = state.image.img.id != sg.invalid_id and state.image.tex_view.id != sg.invalid_id;
-
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
+
+    const have_image = state.image.img.id != sg.invalid_id and state.image.tex_view.id != sg.invalid_id;
     if (have_image) {
         const bindings = sg.Bindings{
             .views = init: {
-                var v: [32]sg.View = @splat(.{});
+                var v: @FieldType(sg.Bindings, "views") = @splat(.{});
                 v[shd.VIEW_tex] = state.image.tex_view;
                 break :init v;
             },
             .samplers = init: {
-                var s: [12]sg.Sampler = @splat(.{});
+                var s: @FieldType(sg.Bindings, "samplers") = @splat(.{});
                 s[shd.SMP_smp] = state.image.smp;
                 break :init s;
             },
         };
-        const fs_params = shd.FsParams{ .mip_lod = 0.0 };
+        // const fs_params = shd.FsParams{ .mip_lod = 0.0 }; // example of params
         sg.applyPipeline(state.image.pip);
         sg.applyBindings(bindings);
-        sg.applyUniforms(shd.UB_fs_params, .{ .ptr = &fs_params, .size = @sizeOf(shd.FsParams) });
+        // sg.applyUniforms(shd.UB_fs_params, .{ .ptr = &fs_params, .size = @sizeOf(shd.FsParams) });
         sg.draw(0, 4, 1);
     }
+
     sg.endPass();
     sg.commit();
 }
@@ -210,52 +203,40 @@ fn build_image(
     io: std.Io,
     pipeline: *pie.pipeline.Pipeline,
     modules: *pie.modules.Registry,
-    arena: std.mem.Allocator,
 ) !*pie.gpu.Texture {
-    _ = allocator;
     _ = io;
 
-    // const config: pie.gpu.TargetConfig = @import("001_DSC_6765/target.zig").config;
-    // const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";
-    const input_filename = "testing/images/DSC_6765.NEF";
-    // const output_filename = "testing/integration/targets/" ++ config.name ++ "/output.ppm";
+    var arena_instance = std.heap.ArenaAllocator.init(allocator);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
 
-    const mod_i_raw = try pipeline.addModule(modules.get("i-raw").?);
-    const mod_format = try pipeline.addModule(modules.get("format").?);
-    const mod_denoise = try pipeline.addModule(modules.get("denoise").?);
-    // const mod_whitebalance = try pipeline.addModule(modules.get("whitebalance").?);
-    const mod_demosaic = try pipeline.addModule(modules.get("demosaic").?);
-    const mod_crop = try pipeline.addModule(modules.get("crop").?);
-    const mod_color = try pipeline.addModule(modules.get("color").?);
-    const mod_filmcurv = try pipeline.addModule(modules.get("filmcurv").?);
-    // const mod_test_nop_glsl = try pipeline.addModule(modules.get("test-nop-glsl").?);
-    // const mod_test_nop_zig = try pipeline.addModule(modules.get("test-nop-zig").?);
-    const mod_o_display = try pipeline.addModule(modules.get("o-display").?);
+    const input_filename = "testing/images/DSC_6765.NEF";
+
+    const mod_i_raw = try pipeline.getAndAddModule(modules, "i-raw");
+    const mod_format = try pipeline.getAndAddModule(modules, "format");
+    const mod_denoise = try pipeline.getAndAddModule(modules, "denoise");
+    const mod_demosaic = try pipeline.getAndAddModule(modules, "demosaic");
+    const mod_crop = try pipeline.getAndAddModule(modules, "crop");
+    const mod_color = try pipeline.getAndAddModule(modules, "color");
+    const mod_filmcurv = try pipeline.getAndAddModule(modules, "filmcurv");
+    const mod_o_display = try pipeline.getAndAddModule(modules, "o-display");
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 0));
-    // try pipeline.setModuleParam(mod_color, "wb_temp", @as(f32, 6500.0));
     try pipeline.setModuleParam(mod_color, "wb_tint", @as(f32, 0.0));
     try pipeline.setModuleParam(mod_color, "wb_coeff", [3]f32{ 0.70393723, 1, 1.3611937 }); // from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
     try pipeline.setModuleParam(mod_filmcurv, "colormode", @as(i32, 1));
     try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 3.8));
     try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.3));
     try pipeline.setModuleParam(mod_filmcurv, "bias", @as(f32, 0.0));
-    // try pipeline.setModuleParam(mod_o_display, "filename", @as([]const u8, output_filename));
 
-    try pipeline.connectModuleSocketsByHandleName(mod_i_raw, "output", mod_format, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_format, "output", mod_denoise, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_whitebalance, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_whitebalance, "output", mod_demosaic, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_demosaic, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_demosaic, "output", mod_crop, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_crop, "output", mod_color, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_filmcurv, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_test_nop_glsl, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_zig, "output", mod_o_ppm, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_o_ppm, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_o_display, "input");
+    try pipeline.connectModules(mod_i_raw, "output", mod_format, "input");
+    try pipeline.connectModules(mod_format, "output", mod_denoise, "input");
+    try pipeline.connectModules(mod_denoise, "output", mod_demosaic, "input");
+    try pipeline.connectModules(mod_demosaic, "output", mod_crop, "input");
+    try pipeline.connectModules(mod_crop, "output", mod_color, "input");
+    try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input");
+    try pipeline.connectModules(mod_filmcurv, "output", mod_o_display, "input");
 
     try pipeline.run(arena);
 
@@ -278,7 +259,7 @@ pub fn run(init: std.process.Init) !void {
     // );
 
     // Allocate the application state on the heap to ensure it lives long enough.
-    // const state = util.allocator.create(AppState) catch unreachable;
+    // const state = try util.allocator.create(AppState);
     // errdefer util.allocator.destroy(state);
     // state.* = AppState.init(util.allocator);
 
@@ -293,10 +274,10 @@ pub fn run(init: std.process.Init) !void {
     defer modules.deinit();
     state.modules = &modules;
 
-    var arena_instance = std.heap.ArenaAllocator.init(allocator);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
-    state.arena = arena;
+    // var arena_instance = std.heap.ArenaAllocator.init(allocator);
+    // defer arena_instance.deinit();
+    // const arena = arena_instance.allocator();
+    // state.arena = arena;
 
     sapp.run(.{
         .user_data = state,

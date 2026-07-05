@@ -705,11 +705,16 @@ pub const Shader = struct {
     ) !Shader {
         slog.debug("Compiling shader {s}", .{opts.name});
 
-        // dawn/webgpu.h uses a chained-source descriptor: ShaderModuleDescriptor
-        // with next_in_chain pointing at a ShaderSourceWGSL (or SPIRV). This
-        // replaces wgpu-native's shaderModuleWGSLDescriptor(...) helpers.
         var wgsl_source = wgpu.ShaderSourceWGSL{
-            .chain = .{ .next = null, .struct_type = .shader_source_wgsl },
+            .chain = .{
+                .next = null,
+                .struct_type = switch (opts.type) {
+                    .wgsl => .shader_source_wgsl,
+                    .spirv => .shader_source_spirv,
+                    // .glsl => .shader_source_glsl, // dawn doesn't support GLSL
+                    else => unreachable,
+                },
+            },
             .code = wgpu.StringView.cFromZig(shader_source),
         };
         const descriptor = wgpu.ShaderModuleDescriptor{

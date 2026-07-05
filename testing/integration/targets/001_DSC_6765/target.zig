@@ -45,17 +45,17 @@ fn build(
     try pipeline.setModuleParam(mod_filmcurv, "bias", @as(f32, 0.0));
     try pipeline.setModuleParam(mod_o_ppm, "filename", @as([]const u8, output_filename));
 
-    try pipeline.connectModuleSocketsByHandleName(mod_i_raw, "output", mod_format, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_format, "output", mod_denoise, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_whitebalance, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_whitebalance, "output", mod_demosaic, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_demosaic, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_demosaic, "output", mod_crop, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_crop, "output", mod_color, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_filmcurv, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_test_nop_glsl, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_zig, "output", mod_o_ppm, "input");
-    // try pipeline.connectModuleSocketsByHandleName(mod_test_nop_glsl, "output", mod_o_ppm, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_o_ppm, "input");
+    try pipeline.connectModules(mod_i_raw, "output", mod_format, "input");
+    try pipeline.connectModules(mod_format, "output", mod_denoise, "input");
+    // try pipeline.connectModules(mod_denoise, "output", mod_whitebalance, "input");
+    // try pipeline.connectModules(mod_whitebalance, "output", mod_demosaic, "input");
+    try pipeline.connectModules(mod_denoise, "output", mod_demosaic, "input");
+    try pipeline.connectModules(mod_demosaic, "output", mod_crop, "input");
+    try pipeline.connectModules(mod_crop, "output", mod_color, "input");
+    try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input");
+    // try pipeline.connectModules(mod_filmcurv, "output", mod_test_nop_glsl, "input");
+    // try pipeline.connectModules(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
+    // try pipeline.connectModules(mod_test_nop_zig, "output", mod_o_ppm, "input");
+    // try pipeline.connectModules(mod_test_nop_glsl, "output", mod_o_ppm, "input");
+    try pipeline.connectModules(mod_filmcurv, "output", mod_o_ppm, "input");
 }

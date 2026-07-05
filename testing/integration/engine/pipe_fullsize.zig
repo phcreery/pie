@@ -41,11 +41,11 @@ test "fullsize through pipeline" {
     try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.0));
     try pipeline.setModuleParam(mod_filmcurv, "bias", @as(f32, 0.0));
 
-    try pipeline.connectModuleSocketsByHandleName(mod_i_raw, "output", mod_format, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_format, "output", mod_denoise, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_denoise, "output", mod_demosaic, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_demosaic, "output", mod_color, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_color, "output", mod_filmcurv, "input");
-    try pipeline.connectModuleSocketsByHandleName(mod_filmcurv, "output", mod_o_png, "input");
+    try pipeline.connectModules(mod_i_raw, "output", mod_format, "input");
+    try pipeline.connectModules(mod_format, "output", mod_denoise, "input");
+    try pipeline.connectModules(mod_denoise, "output", mod_demosaic, "input");
+    try pipeline.connectModules(mod_demosaic, "output", mod_color, "input");
+    try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input");
+    try pipeline.connectModules(mod_filmcurv, "output", mod_o_png, "input");
     try pipeline.run(aa);
 }

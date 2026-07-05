@@ -15,15 +15,12 @@ void main() {
 
 @fs fs
 in vec2 uv;
-layout(binding=0) uniform fs_params {
-    float mip_lod;
-};
 layout(binding=0) uniform texture2D tex;
 layout(binding=0) uniform sampler smp;
 out vec4 frag_color;
 
 void main() {
-    frag_color = textureLod(sampler2D(tex, smp), uv, mip_lod);
+    frag_color = textureLod(sampler2D(tex, smp), uv, 0);
 }
 @end
 

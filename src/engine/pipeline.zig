@@ -8,6 +8,7 @@ const Node = @import("Node.zig");
 const Socket = @import("Socket.zig");
 const Param = @import("Param.zig");
 const ImgParam = @import("ImgParam.zig");
+const Modules = @import("modules/modules.zig");
 const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const slog = std.log.scoped(.pipe);
@@ -185,6 +186,11 @@ pub const Pipeline = struct {
         try self.initParams(module_handle);
         return module_handle;
     }
+    pub fn getAndAddModule(self: *Pipeline, registry: *Modules.Registry, name: []const u8) !ModuleHandle {
+        const module_desc = registry.get(name) orelse return error.ModuleNotFound;
+        const module_handle = try self.addModule(module_desc);
+        return module_handle;
+    }
 
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
         slog.debug("Adding node to pipeline: {s}", .{node_desc.name});
@@ -194,7 +200,7 @@ pub const Pipeline = struct {
         return try self.node_pool.add(node);
     }
 
-    pub fn connectModuleSocketsByNameName(
+    pub fn connectModulesByName(
         self: *Pipeline,
         src_mod_name: []const u8,
         src_mod_socket_name: []const u8,
@@ -203,10 +209,10 @@ pub const Pipeline = struct {
     ) !void {
         const src_mod = self.module_name_map.get(src_mod_name) orelse return error.ModuleNotFound;
         const dst_mod = self.module_name_map.get(dst_mod_name) orelse return error.ModuleNotFound;
-        return try self.connectModuleSocketsByHandleName(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+        return try self.connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
     }
 
-    pub fn connectModuleSocketsByHandleName(
+    pub fn connectModules(
         self: *Pipeline,
         src_mod: ModuleHandle,
         src_mod_socket_name: []const u8,
@@ -338,6 +344,7 @@ pub const Pipeline = struct {
         try param.set(value);
     }
 
+    /// arena is a small memory pool used for temporary allocations during pipeline execution.
     pub fn run(self: *Pipeline, arena: std.mem.Allocator) !void {
 
         // Order of Operations:
