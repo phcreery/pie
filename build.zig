@@ -27,8 +27,13 @@ pub fn build(b: *Build) !void {
         .optimize = optimize,
         .wgpu = true,
         .with_sokol_imgui = true,
+        .dynamic_linkage = true,
     });
-    const dep_cimgui = b.dependency("cimgui", opts);
+    const dep_cimgui = b.dependency("cimgui", .{
+        .target = target,
+        .optimize = optimize,
+        .dynamic_linkage = true,
+    });
     const dep_zdt = b.dependency("zdt", opts);
     const dep_libraw = b.dependency("libraw", opts);
     // const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
@@ -42,6 +47,18 @@ pub fn build(b: *Build) !void {
     dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
     // inject the webgpu/webgpu.h headers from zgpu
     @import("zgpu").addDawnPaths(b, dep_sokol.artifact("sokol_clib").root_module, target.result);
+    // When sokol_clib is built as a shared library, its native WebGPU symbols
+    // must resolve against the same shared Dawn instance used by the rest of
+    // the app. Link sokol_clib against shared zdawn instead of letting it rely
+    // on the final exe link step.
+    dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_zgpu.artifact("zdawn"));
+    dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_cimgui.artifact(cimgui_conf.clib_name));
+    dep_sokol.artifact("sokol_clib").root_module.addRPathSpecial("@loader_path");
+    // Install the shared runtime libs into this project's zig-out/lib so the
+    // host exe and zr plugin can both load them from a single place.
+    b.installArtifact(dep_zgpu.artifact("zdawn"));
+    b.installArtifact(dep_sokol.artifact("sokol_clib"));
+    b.installArtifact(dep_cimgui.artifact(cimgui_conf.clib_name));
 
     // OPTIONS
     const mod_options = b.addOptions();
@@ -103,7 +120,6 @@ pub fn build(b: *Build) !void {
             .{ .name = "zr", .module = dep_zr.module("zr") },
         },
     });
-    mod_gui.linkLibrary(dep_zgpu.artifact("zdawn"));
 
     // APP MODULE
     // main module with sokol and cimgui imports
@@ -126,9 +142,8 @@ pub fn build(b: *Build) !void {
     });
     mod_app.addOptions("build_options", mod_options);
 
-    // Link the zdawn C/C++ wrapper artifact.
-    // this is our link to webgpu_dawn (libwebgpu_dawn.a)
-    mod_app.linkLibrary(dep_zgpu.artifact("zdawn"));
+    // mod_pie already links zdawn; avoid adding duplicate direct load
+    // commands for libzdawn.dylib to the host exe and the hot-reload plugin.
 
     // link gui for hot reload
     // if (optimize == .Debug) {
@@ -137,6 +152,10 @@ pub fn build(b: *Build) !void {
         .name = "gui",
         .root_module = mod_gui,
     });
+    // The hot-reload plugin lives in zig-out/lib and depends on sibling
+    // shared libs (libzdawn.dylib, libsokol_clib.dylib, ...), so resolve
+    // them relative to the plugin itself.
+    gui_dl.root_module.addRPathSpecial("@loader_path");
     b.installArtifact(gui_dl);
     // }
 
@@ -200,15 +219,21 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
         const system_library_path: std.Build.LazyPath = .{ .cwd_relative = "C:\\Windows\\System32" };
         exe.root_module.addLibraryPath(system_library_path);
     }
-    // Link zgpu's zdawn artifact (which links libwebgpu_dawn.a + system
-    // frameworks) so the wgpu C procs resolve at link time.
+    // Link zgpu's zdawn artifact (which now builds as a shared lib and
+    // contains Dawn) plus any platform system deps.
     @import("zgpu").addLibraryPathsTo(exe);
     @import("zgpu").linkSystemDeps(b, exe);
+    // The installed exe lives in zig-out/bin and loads its shared libs from
+    // zig-out/lib.
+    exe.root_module.addRPathSpecial("@loader_path/../lib");
     b.installArtifact(exe);
     const exe_step = b.step("run", "Run pie");
 
-    const run_cmd = b.addRunArtifact(exe);
+    // const run_cmd = b.addRunArtifact(exe);
+    // run_cmd.step.dependOn(b.getInstallStep());
+    // exe_step.dependOn(&run_cmd.step);
 
+    const run_cmd = b.addSystemCommand(&.{b.getInstallPath(.bin, "pie")});
     run_cmd.step.dependOn(b.getInstallStep());
     exe_step.dependOn(&run_cmd.step);
 }

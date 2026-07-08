@@ -1,5 +1,6 @@
 const std = @import("std");
 const log = std.log.scoped(.zgpu);
+const wgpu_export_symbols = @import("src/wgpu_export_symbols.zig");
 
 const default_options = struct {
     const uniforms_buffer_size = 4 * 1024 * 1024;
@@ -129,6 +130,7 @@ pub fn build(b: *std.Build) void {
 
     const zdawn = b.addLibrary(.{
         .name = "zdawn",
+        .linkage = .dynamic,
         .use_llvm = true,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/zdawn.zig"),
@@ -143,6 +145,12 @@ pub fn build(b: *std.Build) void {
     // prebuilt libs from os-specific dependency
     zdawn.root_module.linkSystemLibrary("webgpu_dawn", .{});
     if (zdawn.rootModuleTarget().os.tag == .windows) zdawn.root_module.linkSystemLibrary("mingw_helpers", .{});
+    // When building zdawn as a shared library on macOS, the linker would
+    // otherwise only pull the subset of libwebgpu_dawn.a referenced directly
+    // by zdawn.zig. Force all exported wgpu* entry points out of the static
+    // archive so libzdawn.dylib can serve as the single shared Dawn runtime
+    // for both pie and sokol_clib.
+    forceExportAllDawnWebgpuSymbols(b, zdawn, zdawn.rootModuleTarget());
 
     zdawn.root_module.link_libc = true;
     zdawn.root_module.link_libcpp = true;
@@ -227,6 +235,13 @@ pub fn linkSystemDeps(b: *std.Build, compile_step: *std.Build.Step.Compile) void
 /// both its library path (`lib/` or root) and its header path (`include/`)
 /// to `m`. Used by the zgpu `root` module (which @cImports webgpu/webgpu.h)
 /// and the `zdawn`/test artifacts.
+fn forceExportAllDawnWebgpuSymbols(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Target) void {
+    if (target.os.tag != .macos) return;
+    for (wgpu_export_symbols.all) |sym| {
+        compile.forceUndefinedSymbol(b.fmt("_{s}", .{sym}));
+    }
+}
+
 pub fn addDawnPaths(b: *std.Build, m: *std.Build.Module, target: std.Target) void {
     switch (target.os.tag) {
         .windows => {

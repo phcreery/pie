@@ -74,7 +74,7 @@ pub const AppState = struct {
             .pass_action = .{},
             .gpu = undefined,
             .gui = undefined, // will init in sokol init fn
-            .repo = undefined, // assigned in run()
+            .repo = pie.modules.Repository.init(allocator) catch unreachable, // assigned in run()
             // .window = windowmgr,
             .plugin_gui = undefined,
             .gui_update = undefined,
@@ -114,6 +114,23 @@ export fn init_fn(ptr: ?*anyopaque) void {
 
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
+
+    const has_reloaded = state.plugin_gui.reload() catch blk: {
+        std.debug.print("Hot-reload error: {s}\n", .{zr.err.load(.seq_cst) orelse "<none>"});
+        break :blk false;
+    };
+    if (has_reloaded) {
+        // If a reload has been performed, `zr` calls `registry.backup_variables` automatically,
+        // patching in the static/globals and function pointers.
+        //
+        // For static/global variable hot-reloading to work, you need to have a function in your
+        // plugin to call every time `has_reloaded` is `true`.
+        //
+        // This function can take a `zr.Registry` and call `restore_variables()` on it.
+        // Calling it host-side may work but it may also bug out.
+        // reload_test(&plugin.registry);
+        std.debug.print("Hot-reload successful\n", .{});
+    }
 
     // Run logic + compute (may submit to the WebGPU queue) BEFORE the render
     // pass: Dawn disallows buffer mapAsync/queue.submit while a render command
@@ -166,9 +183,6 @@ pub fn run(init: std.process.Init) !void {
 
     const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
-
-    const repo = try pie.modules.Repository.init(allocator);
-    state.repo = repo;
 
     // Use preferably a dynamic allocator for a plugin, rather than a `FixedBufferAllocator` or an `ArenaAllocator`,
     // since it holds mainly array lists inside.
