@@ -26,8 +26,8 @@ pub const ParamBufferPool = HashMapPool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
 pub const PipelineConfig = struct {
-    upload_buffer_size_bytes: ?usize = null,
-    download_buffer_size_bytes: ?usize = null,
+    upload_buffer_size_bytes: ?usize = 75e6,
+    download_buffer_size_bytes: ?usize = 75e6,
 };
 
 // TODO: history pool
@@ -81,11 +81,12 @@ pub const Pipeline = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         gpu_instance: ?*gpu.GPU,
-        config: PipelineConfig,
+        user_config: ?PipelineConfig,
     ) !Pipeline {
         if (gpu_instance == null) {
             slog.debug("No GPU instance provided, performing a dry run", .{});
         }
+        const config: PipelineConfig = user_config orelse .{};
         var upload_buffer: ?gpu.Buffer = null;
         var upload_fba: ?gpu.Buffer.Allocator = null;
         var download_buffer: ?gpu.Buffer = null;
@@ -103,25 +104,25 @@ pub const Pipeline = struct {
             }
         }
 
-        var module_pool = ModulePool.init(allocator);
+        var module_pool: ModulePool = .init(allocator);
         errdefer module_pool.deinit();
 
-        var module_name_map = std.StringHashMap(ModuleHandle).init(allocator);
+        var module_name_map: std.StringHashMap(ModuleHandle) = .init(allocator);
         errdefer module_name_map.deinit();
 
         var module_execution_order = std.ArrayList(ModuleHandle).initCapacity(allocator, 2) catch unreachable;
         errdefer module_execution_order.deinit(allocator);
 
-        var node_pool = NodePool.init(allocator);
+        var node_pool: NodePool = .init(allocator);
         errdefer node_pool.deinit();
 
         var node_execution_order = std.ArrayList(NodeHandle).initCapacity(allocator, 2) catch unreachable;
         errdefer node_execution_order.deinit(allocator);
 
-        var connector_pool = ConnectorPool.init(allocator);
+        var connector_pool: ConnectorPool = .init(allocator);
         errdefer connector_pool.deinit();
 
-        var param_buffer_pool = ParamBufferPool.init(allocator);
+        var param_buffer_pool: ParamBufferPool = .init(allocator);
         errdefer param_buffer_pool.deinit();
 
         return Pipeline{
@@ -146,7 +147,7 @@ pub const Pipeline = struct {
 
             .param_buffer_pool = param_buffer_pool,
 
-            .perf = try PerfMetrics.init(allocator, io),
+            .perf = try .init(allocator, io),
         };
     }
 
@@ -338,7 +339,7 @@ pub const Pipeline = struct {
         return mod.getParamPtr(param_name);
     }
 
-    pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
+    pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) !void {
         const mod = try self.module_pool.getPtr(mod_handle);
         const param = try mod.getParamPtr(param_name);
         try param.set(value);
@@ -431,6 +432,21 @@ pub const Pipeline = struct {
         self.perf.countNodes(&self.node_pool);
         self.perf.countConnectors(&self.connector_pool);
         self.perf.printReport();
+    }
+
+    pub fn getDisplaySinkTexture(self: *Pipeline) !*gpu.Texture {
+        const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
+        const last_node = try self.node_pool.getPtr(last_node_handle);
+        slog.debug("Getting display sink texture for last node {s}", .{last_node.desc.name});
+        const sock = last_node.desc.sockets[0] orelse return error.NodeOutputSocketMissingConnectorHandle;
+        const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
+        const display_texture = try self.connector_pool.getPtr(connector_handle);
+        if (display_texture.*) |*tex| {
+            return tex;
+        } else {
+            return error.PipelineMissingDisplaySinkTexture;
+        }
+        return error.NodeOutputSocketMissingConnectorHandle;
     }
 
     // ================================================
@@ -1020,8 +1036,6 @@ pub const Pipeline = struct {
                 // upload params
                 params: {
                     if (module.param_size == 0 or module.param_size == null) break :params;
-                    var buf = try arena.alloc(u8, 1024);
-                    defer arena.free(buf);
                     // extract just ParamValue from params
                     var tu: [api.MAX_PARAMS_PER_MODULE]Param = undefined;
                     var tu_len: usize = 0;
@@ -1032,6 +1046,8 @@ pub const Pipeline = struct {
                         }
                     }
                     // if (tu_len == 0) break :params;
+                    var buf = try arena.alloc(u8, 1024);
+                    defer arena.free(buf);
                     const used_len = try Param.layoutTaggedUnion(buf, tu[0..tu_len]);
 
                     // slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.desc.name, list.items.len });
@@ -1052,7 +1068,7 @@ pub const Pipeline = struct {
                 // upload img params
                 if (module.img_param) |img_param| {
                     slog.debug("Uploading img params for module {s}:", .{module.desc.name});
-                    var buf = try arena.alloc(u8, 1024);
+                    var buf = try arena.alloc(u8, try gpu.layoutStruct(null, img_param));
                     defer arena.free(buf);
                     const used_len = try gpu.layoutStruct(buf, img_param);
 
@@ -1163,21 +1179,6 @@ pub const Pipeline = struct {
         }
 
         try gpu_inst.run(encoder.finish());
-    }
-
-    pub fn getDisplaySinkTexture(self: *Pipeline) !*gpu.Texture {
-        const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
-        const last_node = try self.node_pool.getPtr(last_node_handle);
-        slog.debug("Getting display sink texture for last node {s}", .{last_node.desc.name});
-        const sock = last_node.desc.sockets[0] orelse return error.NodeOutputSocketMissingConnectorHandle;
-        const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
-        const display_texture = try self.connector_pool.getPtr(connector_handle);
-        if (display_texture.*) |*tex| {
-            return tex;
-        } else {
-            return error.PipelineMissingDisplaySinkTexture;
-        }
-        return error.NodeOutputSocketMissingConnectorHandle;
     }
 
     fn runNodesDownloadSink(self: *Pipeline) !void {

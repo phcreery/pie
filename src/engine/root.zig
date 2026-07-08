@@ -1,3 +1,5 @@
+pub const std = @import("std");
+
 pub const ROI = @import("ROI.zig");
 pub const Module = @import("Module.zig");
 pub const Node = @import("Node.zig");
@@ -17,6 +19,16 @@ pub const Texture = gpu.Texture;
 pub const TextureFormat = gpu.TextureFormat;
 
 pub const Pipeline = pipeline.Pipeline;
+
+// pub const PIE = struct {
+//     allocator: std.mem.Allocator,
+//     io: std.Io,
+//     gpu: *gpu.GPU,
+
+//     // TODO: multiple pipeline suppot
+//     // currently just one pipeline
+//     pipeline: *pipeline.Pipeline,
+// };
 
 // test {
 //     // _ = @import("engine/gpu.zig");

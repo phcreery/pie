@@ -93,6 +93,10 @@
         //     .hash = "N-V-__8AAIz1QAKx8C8vft2YoHjGTjEAkH2QMR2UiAo8xZJ-",
         //     .lazy = true,
         // },
+        .zr = .{
+            .url = "git+https://codeberg.org/zwynd/zr#8030a9f8d354e319759a4abc2eda7216b839780f",
+            .hash = "zr-0.2.0-dj-tcjQDAQCSG6DwW7tgq0XOYkJkHOR71XtTh2ecW6KO",
+        },
     },
 
     .paths = .{

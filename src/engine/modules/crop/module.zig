@@ -59,7 +59,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
         .rotate90CW => 90.0,
         .rotate270CW => 270.0,
     };
-    try api.setParam(pipe, mod, "rotation_deg", rotation_deg);
+    try api.setParam(pipe, mod, "rotation_deg", f32, rotation_deg);
 }
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {

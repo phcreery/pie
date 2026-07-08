@@ -880,8 +880,8 @@ pub const ComputePipeline = struct {
 pub const GPU = struct {
     instance: ?wgpu.Instance = null,
     adapter: ?wgpu.Adapter = null,
-    device: wgpu.Device = undefined,
-    queue: wgpu.Queue = undefined,
+    device: wgpu.Device,
+    queue: wgpu.Queue,
     adapter_name: []const u8 = "",
 
     const Self = @This();

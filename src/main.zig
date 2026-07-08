@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 // APP
-pub const app = @import("gui/app.zig");
+pub const app = @import("app/app.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .debug,
@@ -11,7 +11,6 @@ pub const std_options: std.Options = .{
         .{ .scope = .pipe, .level = .info },
         .{ .scope = .suballocator, .level = .info },
         .{ .scope = .DebugAllocator, .level = .warn },
-
         // .logFn = customLogFn,
     },
 };

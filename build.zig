@@ -44,11 +44,8 @@ pub fn build(b: *Build) !void {
 
     // OPTIONS
     const mod_options = b.addOptions();
-    mod_options.addOption(
-        i64,
-        "timestamp",
-        std.Io.Timestamp.now(b.graph.io, std.Io.Clock.real).toSeconds(),
-    );
+    const build_date = std.Io.Timestamp.now(b.graph.io, std.Io.Clock.real).toSeconds();
+    mod_options.addOption(i64, "timestamp", build_date);
     mod_options.addOption(bool, "docking", opt_docking);
 
     // Shaders (for UI)
@@ -90,6 +87,23 @@ pub fn build(b: *Build) !void {
     });
     mod_pie.linkLibrary(dep_zgpu.artifact("zdawn"));
 
+    // GUI MODULE
+    // main module with sokol and cimgui imports
+    const mod_gui = b.createModule(.{
+        .root_source_file = b.path("src/gui/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "pie", .module = mod_pie },
+            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
+            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
+            .{ .name = "texview_shader", .module = mod_texview_shd },
+            .{ .name = "sokol", .module = dep_sokol.module("sokol") },
+        },
+    });
+    mod_gui.linkLibrary(dep_zgpu.artifact("zdawn"));
+
     // APP MODULE
     // main module with sokol and cimgui imports
     const mod_app = b.createModule(.{
@@ -98,12 +112,13 @@ pub fn build(b: *Build) !void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
+            .{ .name = "gui", .module = mod_gui },
             .{ .name = "console", .module = mod_console },
-            .{ .name = "texview_shader", .module = mod_texview_shd },
+            // .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
-            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
-            .{ .name = "zdt", .module = dep_zdt.module("zdt") },
-            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
+            // .{ .name = "zdt", .module = dep_zdt.module("zdt") },
+            // .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
         },
     });
@@ -124,7 +139,7 @@ pub fn build(b: *Build) !void {
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
 
-    // INTEGRATION
+    // INTEGRATION TESTS
     // first run the zig code as an executable
     const mod_integration = b.createModule(.{
         .root_source_file = b.path("testing/integration/integration.zig"),
@@ -139,8 +154,6 @@ pub fn build(b: *Build) !void {
             .{ .name = "zbench", .module = dep_zbench.module("zbench") },
         },
     });
-
-    // INTEGRATION TESTS
     const integration_test_step = b.step("integration", "Run integration tests");
     const integration_tests = b.addTest(.{
         .name = "integration tests",

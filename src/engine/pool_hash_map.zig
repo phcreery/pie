@@ -5,10 +5,9 @@ const std = @import("std");
 pub fn HashMapPool(comptime T: type) type {
     return struct {
         pool: std.heap.memory_pool.ExtraManaged(T, .{}),
-        hash_map: std.AutoHashMap(usize, *T),
+        hash_map: std.AutoHashMap(Key, *T),
         current_id: usize = 0,
 
-        // pub const column_fields = std.meta.fields(T);
         const Key = usize;
         pub const Handle = struct {
             id: Key,
@@ -18,8 +17,8 @@ pub fn HashMapPool(comptime T: type) type {
 
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{
-                .pool = std.heap.memory_pool.ExtraManaged(T, .{}).init(allocator),
-                .hash_map = std.AutoHashMap(Key, *T).init(allocator),
+                .pool = .init(allocator),
+                .hash_map = .init(allocator),
             };
         }
 
@@ -29,7 +28,6 @@ pub fn HashMapPool(comptime T: type) type {
                     if (@hasDecl(optional_info.child, "deinit")) {
                         var it = self.iterator();
                         while (it.next()) |handle| {
-                            // std.debug.print("Deinit optional handle {d}\n", .{handle.id});
                             const value = self.get(handle) orelse continue;
                             if (value.*) |*inner| {
                                 inner.deinit();
@@ -41,7 +39,6 @@ pub fn HashMapPool(comptime T: type) type {
                     if (@hasDecl(T, "deinit")) {
                         var it = self.iterator();
                         while (it.next()) |handle| {
-                            // std.debug.print("Deinit struct handle {d}\n", .{handle.id});
                             const value = self.get(handle) orelse continue;
                             value.deinit();
                         }
@@ -74,7 +71,7 @@ pub fn HashMapPool(comptime T: type) type {
             return self.hash_map.get(handle.id);
         }
 
-        /// alias for `get()` for compatibility with zpool
+        /// alias for `get()`, for compatibility with zpool
         pub fn getPtr(self: *Self, handle: Handle) !*T {
             const val = self.hash_map.get(handle.id);
             if (val) |ptr| {
@@ -93,7 +90,7 @@ pub fn HashMapPool(comptime T: type) type {
             return count;
         }
 
-        /// alias for `iterator()` for compatibility with zpool
+        /// alias for `iterator()`, for compatibility with zpool
         pub fn liveHandles(self: *Self) Iterator {
             return self.iterator();
         }
@@ -120,14 +117,14 @@ test "PoolList simple test" {
     };
 
     const allocator = std.testing.allocator;
-    var pool = HashMapPool(Element).init(allocator);
+    var pool: HashMapPool(Element) = .init(allocator);
     defer pool.deinit();
     const IntHandle = HashMapPool(Element).Handle;
 
     // ADD
-    const handle1 = try pool.add(Element{ .value = 42 });
-    const handle2 = try pool.add(Element{ .value = 100 });
-    const handle3 = try pool.add(Element{ .value = 200 });
+    const handle1 = try pool.add(.{ .value = 42 });
+    const handle2 = try pool.add(.{ .value = 100 });
+    const handle3 = try pool.add(.{ .value = 200 });
 
     const val1 = try pool.get(handle1);
     const val2 = try pool.get(handle2);

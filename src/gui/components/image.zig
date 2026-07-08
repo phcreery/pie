@@ -49,6 +49,9 @@ pub const Image = struct {
     shd: sg.Shader = undefined,
     pip: sg.Pipeline = undefined,
 
+    // pie
+    pipeline: pie.Pipeline,
+
     // meta
     width: f32 = 0.0,
     height: f32 = 0.0,
@@ -58,19 +61,21 @@ pub const Image = struct {
 
     const Self = @This();
 
-    pub fn init() Self {
-        var image = Self{};
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU) Self {
+        var self: Self = .{
+            .pipeline = pie.Pipeline.init(allocator, io, gpu, null) catch unreachable,
+        };
 
         // initialize state.image
-        image.smp = sg.makeSampler(.{
+        self.smp = sg.makeSampler(.{
             .mag_filter = .NEAREST,
             .min_filter = .LINEAR,
             // .wrap_u = .CLAMP_TO_EDGE,
             // .wrap_v = .CLAMP_TO_EDGE,
         });
-        image.shd = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend()));
-        image.pip = sg.makePipeline(.{
-            .shader = image.shd,
+        self.shd = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend()));
+        self.pip = sg.makePipeline(.{
+            .shader = self.shd,
             .primitive_type = .TRIANGLE_STRIP,
             .color_count = 1,
             // .sample_count = sc.sample_count, // sc = sglue.swapchain()
@@ -85,7 +90,15 @@ pub const Image = struct {
             },
         });
 
-        return image;
+        return self;
+    }
+
+    pub fn deinit(self: *Self) void {
+        if (self.tex_view.id != sg.invalid_id) sg.destroyView(self.tex_view);
+        if (self.img.id != sg.invalid_id) sg.destroyImage(self.img);
+        if (self.smp.id != sg.invalid_id) sg.destroySampler(self.smp);
+        if (self.pip.id != sg.invalid_id) sg.destroyPipeline(self.pip);
+        if (self.shd.id != sg.invalid_id) sg.destroyShader(self.shd);
     }
 
     pub fn createFrom(self: *Self, texture: *pie.gpu.Texture) void {
@@ -97,18 +110,18 @@ pub const Image = struct {
             .width = @intCast(texture.roi.w),
             .height = @intCast(texture.roi.h),
             .wgpu_texture = @ptrCast(texture.texture), // injection
-            .label = "display-texture",
+            .label = "display-image-texture",
         });
         self.tex_view = sg.makeView(.{
             .texture = .{ .image = self.img },
-            .label = "display-texture-view",
+            .label = "display-image-texture-view",
         });
         self.width = @floatFromInt(texture.roi.w);
         self.height = @floatFromInt(texture.roi.h);
     }
 
     /// Handle a sokol_app event. Returns nothing; mutates `view`.
-    pub fn input(self: *Self, ev: *const sapp.Event) void {
+    pub fn event(self: *Self, ev: *const sapp.Event) void {
         const v = &self.view;
         switch (ev.type) {
             .MOUSE_DOWN => {
@@ -154,9 +167,12 @@ pub const Image = struct {
         }
     }
 
+    pub fn have_image(self: *Self) bool {
+        return self.img.id != sg.invalid_id and self.tex_view.id != sg.invalid_id;
+    }
+
     pub fn draw(self: *Self) void {
-        const have_image = self.img.id != sg.invalid_id and self.tex_view.id != sg.invalid_id;
-        if (have_image) {
+        if (self.have_image()) {
             const bindings = sg.Bindings{
                 .views = init: {
                     var v: @FieldType(sg.Bindings, "views") = @splat(.{});
