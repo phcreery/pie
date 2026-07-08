@@ -123,8 +123,8 @@ export fn cleanup(ptr: ?*anyopaque) void {
 }
 
 export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
-    _ = ev;
-    _ = ptr;
+    const state: *AppState = @ptrCast(@alignCast(ptr));
+    state.image.input(ev);
 }
 
 fn build_image(
