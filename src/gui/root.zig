@@ -11,7 +11,11 @@ const CurrentView = enum {
     darkroom,
 };
 
+// God Object for GUI State
 pub const GUI = struct {
+    allocator: std.mem.Allocator,
+    io: std.Io,
+
     // pie
     gpu: *pie.GPU,
     repo: *pie.modules.Repository,
@@ -31,6 +35,8 @@ pub const GUI = struct {
         repo: *pie.modules.Repository,
     ) Self {
         return .{
+            .allocator = allocator,
+            .io = io,
             .gpu = gpu,
             .repo = repo,
             .current_view = .darkroom,

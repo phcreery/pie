@@ -6,31 +6,43 @@ const std = @import("std");
 const pie = @import("pie");
 const Image = @import("../components/image.zig").Image;
 
+const GUI = @import("../root.zig").GUI;
+// const AppState = @import("../../app/app.zig").AppState;
+
 pub const Darkroom = struct {
     image: Image,
+    image_loaded: bool = false,
+
+    // repo: *pie.modules.Repository,
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU, repo: *pie.modules.Repository) Self {
-        var self: Self = .{
+        _ = repo;
+        return .{
             .image = .init(allocator, io, gpu),
-            // .gpu = gpu, // save for later
         };
-        // run pipeline and webgpu inject texture
-        const texture = build_image(
-            allocator,
-            io,
-            &self.image.pipeline,
-            repo,
-        ) catch unreachable;
-        std.debug.print("texture: {any}\n", .{texture});
-        self.image.createFrom(texture);
-        return self;
     }
     pub fn deinit(self: *Self) void {
         self.image.deinit();
     }
     pub fn draw(self: *Self) void {
+        // const state: *AppState = @ptrCast(@alignCast(ptr)); // , ptr: ?*anyopaque
+        const gui: *GUI = @fieldParentPtr("darkroom", self);
+
+        if (!self.image_loaded) {
+            std.debug.print("building texture", .{});
+            // run pipeline and webgpu inject texture
+            const texture = build_image(
+                gui.allocator,
+                gui.io,
+                &self.image.pipeline,
+                gui.repo,
+            ) catch unreachable;
+            std.debug.print("texture: {any}\n", .{texture});
+            self.image.createFrom(texture);
+            self.image_loaded = true;
+        }
         self.image.draw();
     }
     pub fn event(self: *Self, ev: [*c]const sapp.Event) void {

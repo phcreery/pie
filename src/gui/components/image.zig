@@ -167,12 +167,12 @@ pub const Image = struct {
         }
     }
 
-    pub fn have_image(self: *Self) bool {
+    pub fn have_sokol_image(self: *Self) bool {
         return self.img.id != sg.invalid_id and self.tex_view.id != sg.invalid_id;
     }
 
     pub fn draw(self: *Self) void {
-        if (self.have_image()) {
+        if (self.have_sokol_image()) {
             const bindings = sg.Bindings{
                 .views = init: {
                     var v: @FieldType(sg.Bindings, "views") = @splat(.{});

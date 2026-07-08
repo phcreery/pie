@@ -16,6 +16,7 @@ const wgpu = @import("wgpu_dawn");
 const gui = @import("gui");
 // const window = @import("app_windows.zig");
 
+// God Object for app state
 pub const AppState = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
