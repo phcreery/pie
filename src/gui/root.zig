@@ -48,6 +48,13 @@ pub const GUI = struct {
         self.darkroom.deinit();
     }
 
+    pub fn update(self: *Self) void {
+        switch (self.current_view) {
+            .darkroom => {
+                self.darkroom.update();
+            },
+        }
+    }
     pub fn draw(self: *Self) void {
         switch (self.current_view) {
             .darkroom => {
@@ -63,3 +70,16 @@ pub const GUI = struct {
         }
     }
 };
+
+pub fn gui_update(gui: *GUI) callconv(.c) void {
+    gui.update();
+}
+
+pub fn gui_draw(gui: *GUI) callconv(.c) void {
+    gui.draw();
+}
+
+comptime {
+    @export(&gui_update, .{ .name = "gui_update" });
+    @export(&gui_draw, .{ .name = "gui_draw" });
+}

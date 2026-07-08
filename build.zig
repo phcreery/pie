@@ -36,6 +36,7 @@ pub fn build(b: *Build) !void {
     const dep_zigimg = b.dependency("zigimg", opts);
     const dep_zbench = b.dependency("zbench", opts);
     const dep_zuballoc = b.dependency("zuballoc", opts);
+    const dep_zr = b.dependency("zr", opts);
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -53,8 +54,6 @@ pub fn build(b: *Build) !void {
     // extract the sokol module and shdc dependency from sokol dependency
     const mod_sokol = dep_sokol.module("sokol");
     const dep_shdc = dep_sokol.builder.dependency("shdc", .{});
-
-    // call shdc.createModule() helper function, this returns a `!*Build.Module`:
     const mod_texview_shd = try sokol.shdc.createModule(b, "texview_shader", mod_sokol, .{
         .shdc_dep = dep_shdc,
         .input = "src/gui/texview.glsl",
@@ -93,6 +92,7 @@ pub fn build(b: *Build) !void {
         .root_source_file = b.path("src/gui/root.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true, // Necessary for zr
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
@@ -100,6 +100,7 @@ pub fn build(b: *Build) !void {
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
+            .{ .name = "zr", .module = dep_zr.module("zr") },
         },
     });
     mod_gui.linkLibrary(dep_zgpu.artifact("zdawn"));
@@ -120,6 +121,7 @@ pub fn build(b: *Build) !void {
             // .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             // .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
+            .{ .name = "zr", .module = dep_zr.module("zr") },
         },
     });
     mod_app.addOptions("build_options", mod_options);
@@ -127,6 +129,16 @@ pub fn build(b: *Build) !void {
     // Link the zdawn C/C++ wrapper artifact.
     // this is our link to webgpu_dawn (libwebgpu_dawn.a)
     mod_app.linkLibrary(dep_zgpu.artifact("zdawn"));
+
+    // link gui for hot reload
+    // if (optimize == .Debug) {
+    const gui_dl = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "gui",
+        .root_module = mod_gui,
+    });
+    b.installArtifact(gui_dl);
+    // }
 
     // TESTS
     // UNIT TESTS
@@ -194,7 +206,11 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
     @import("zgpu").linkSystemDeps(b, exe);
     b.installArtifact(exe);
     const exe_step = b.step("run", "Run pie");
-    exe_step.dependOn(&b.addRunArtifact(exe).step);
+
+    const run_cmd = b.addRunArtifact(exe);
+
+    run_cmd.step.dependOn(b.getInstallStep());
+    exe_step.dependOn(&run_cmd.step);
 }
 
 const BuildWasmOptions = struct {

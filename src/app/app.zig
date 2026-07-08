@@ -1,3 +1,6 @@
+const std = @import("std");
+const builtin = @import("builtin");
+
 const ig = @import("cimgui");
 const sokol = @import("sokol");
 const slog = sokol.log;
@@ -5,16 +8,37 @@ const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
 // const simgui = sokol.imgui;
-const std = @import("std");
-const util = @import("../mem.zig");
-const builtin = @import("builtin");
+const zr = @import("zr");
 
 const pie = @import("pie");
 const console = @import("console");
 const wgpu = @import("wgpu_dawn");
 
 const gui = @import("gui");
+
 // const window = @import("app_windows.zig");
+const util = @import("../mem.zig");
+
+// Configured plugin type. This will hold the symbols we wish to hot-reload.
+const PluginGUI = zr.Plugin(@import("gui"), .{
+    .name = "gui",
+    .link_mode = .dynamic,
+    // An override to the subpath (relative to file executable directory) where the plugin's dynamic library is located in.
+    //
+    // If `null`, this is `./` on windows and `../lib/` everywhere else.
+    .load_path_override = null,
+    // Contains the list of symbols that will be hot-reloaded.
+    //
+    // These need to be actual symbols in the `"plugin"` module we imported before.
+    // They are the "single source of truth" and the types will be fetched from them.
+    //
+    // These symbols need to be exported with `@export`, and if they are functions,
+    // they need to be `callconv(.c)`.
+    .syms = &.{
+        "gui_update",
+        "gui_draw",
+    },
+});
 
 // God Object for app state
 pub const AppState = struct {
@@ -31,7 +55,13 @@ pub const AppState = struct {
     // app
     // these are initted and deinitted in the sokol calls
     gui: gui.GUI,
-    // window: gui.window.WindowManager = undefined,
+
+    // hot relaod
+    plugin_gui: PluginGUI,
+    // gui_draw: @TypeOf(gui.gui_draw),
+    // gui_draw: *anytype,
+    gui_update: *fn (*gui.GUI) callconv(.c) void,
+    gui_draw: *fn (*gui.GUI) callconv(.c) void,
 
     const Self = @This();
 
@@ -44,8 +74,11 @@ pub const AppState = struct {
             .pass_action = .{},
             .gpu = undefined,
             .gui = undefined, // will init in sokol init fn
-            .repo = pie.modules.Repository.init(allocator) catch unreachable,
+            .repo = undefined, // assigned in run()
             // .window = windowmgr,
+            .plugin_gui = undefined,
+            .gui_update = undefined,
+            .gui_draw = undefined,
         };
     }
 
@@ -82,9 +115,16 @@ export fn init_fn(ptr: ?*anyopaque) void {
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
 
+    // Run logic + compute (may submit to the WebGPU queue) BEFORE the render
+    // pass: Dawn disallows buffer mapAsync/queue.submit while a render command
+    // encoder is open ("Concurrent buffer operations are not allowed").
+    state.gui_update(&state.gui);
+
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
 
-    state.gui.draw();
+    // Render only.
+    // state.gui.draw();
+    state.gui_draw(&state.gui);
 
     sg.endPass();
     sg.commit();
@@ -127,14 +167,17 @@ pub fn run(init: std.process.Init) !void {
     const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
 
-    var repo = try pie.modules.Repository.init(allocator);
-    defer repo.deinit();
+    const repo = try pie.modules.Repository.init(allocator);
     state.repo = repo;
 
-    // var arena_instance = std.heap.ArenaAllocator.init(allocator);
-    // defer arena_instance.deinit();
-    // const arena = arena_instance.allocator();
-    // state.arena = arena;
+    // Use preferably a dynamic allocator for a plugin, rather than a `FixedBufferAllocator` or an `ArenaAllocator`,
+    // since it holds mainly array lists inside.
+    var plugin_gui = try PluginGUI.new(io, allocator);
+    defer plugin_gui.destroy();
+    state.plugin_gui = plugin_gui;
+
+    state.gui_update = @constCast(plugin_gui.symbol("gui_update"));
+    state.gui_draw = @constCast(plugin_gui.symbol("gui_draw"));
 
     sapp.run(.{
         .user_data = state,

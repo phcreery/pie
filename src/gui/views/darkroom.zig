@@ -13,8 +13,6 @@ pub const Darkroom = struct {
     image: Image,
     image_loaded: bool = false,
 
-    // repo: *pie.modules.Repository,
-
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU, repo: *pie.modules.Repository) Self {
@@ -26,8 +24,10 @@ pub const Darkroom = struct {
     pub fn deinit(self: *Self) void {
         self.image.deinit();
     }
-    pub fn draw(self: *Self) void {
-        // const state: *AppState = @ptrCast(@alignCast(ptr)); // , ptr: ?*anyopaque
+    pub fn update(self: *Self) void {
+        // Logic + compute (pipeline run) must happen *outside* the sokol
+        // render pass: WebGPU disallows buffer mapAsync/queue.submit while a
+        // render command encoder is open ("Concurrent buffer operations").
         const gui: *GUI = @fieldParentPtr("darkroom", self);
 
         if (!self.image_loaded) {
@@ -43,6 +43,8 @@ pub const Darkroom = struct {
             self.image.createFrom(texture);
             self.image_loaded = true;
         }
+    }
+    pub fn draw(self: *Self) void {
         self.image.draw();
     }
     pub fn event(self: *Self, ev: [*c]const sapp.Event) void {
