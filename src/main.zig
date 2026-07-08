@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 // APP
 pub const app = @import("gui/app.zig");
@@ -17,4 +18,11 @@ pub const std_options: std.Options = .{
 
 pub fn main(init: std.process.Init) !void {
     try app.run(init);
+}
+
+comptime {
+    if (builtin.is_test) {
+        // std.testing.refAllDecls(@This());
+        // _ = @import("foo.zig");
+    }
 }

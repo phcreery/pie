@@ -247,7 +247,7 @@ pub const TargetConfig = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         pipeline: *Pipeline,
-        modules: *pie.modules.Registry,
+        modules: *pie.modules.Repository,
         input_filename: []const u8,
         output_filename: []const u8,
     ) anyerror!void = null,
@@ -263,7 +263,7 @@ test "test targets" {
     var gpu_instance = try gpu.GPU.init(io);
     defer gpu_instance.deinit();
 
-    var modules = try pie.modules.Registry.init(allocator);
+    var modules = try pie.modules.Repository.init(allocator);
     defer modules.deinit();
 
     var arena_instance = std.heap.ArenaAllocator.init(allocator);

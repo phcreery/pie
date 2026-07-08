@@ -54,10 +54,10 @@ test "simple test modules" {
     var gpu_instance = try gpu.GPU.init(std.testing.io);
     defer gpu_instance.deinit();
 
-    var registry = try pie.modules.Registry.init(allocator);
-    defer registry.deinit();
+    var repository = try pie.modules.Repository.init(allocator);
+    defer repository.deinit();
 
-    try pie.modules.populateRegistry(&registry);
+    try pie.modules.populateRepository(&repository);
 
     const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 1024,
@@ -67,13 +67,13 @@ test "simple test modules" {
     var pipeline = try Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config);
     defer pipeline.deinit();
 
-    const mod_test_i_1234 = try pipeline.addModule(registry.get("test-i-1234").?);
-    const mod_test_multiply = try pipeline.addModule(registry.get("test-multiply").?);
-    // const mod_test_2nodes = try pipeline.addModule(registry.get("test-2nodes").?);
-    const mod_test_o_2468 = try pipeline.addModule(registry.get("test-o-2468").?);
-    _ = try pipeline.addModule(registry.get("test-multiply").?); // dummy?
-    // const mod_test_nop_1 = try pipeline.addModule(registry.get("test-nop").?);
-    // const mod_test_nop_2 = try pipeline.addModule(registry.get("test-nop").?);
+    const mod_test_i_1234 = try pipeline.addModule(repository.get("test-i-1234").?);
+    const mod_test_multiply = try pipeline.addModule(repository.get("test-multiply").?);
+    // const mod_test_2nodes = try pipeline.addModule(repository.get("test-2nodes").?);
+    const mod_test_o_2468 = try pipeline.addModule(repository.get("test-o-2468").?);
+    _ = try pipeline.addModule(repository.get("test-multiply").?); // dummy?
+    // const mod_test_nop_1 = try pipeline.addModule(repository.get("test-nop").?);
+    // const mod_test_nop_2 = try pipeline.addModule(repository.get("test-nop").?);
 
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", @as(f32, 2.0));
     // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0));

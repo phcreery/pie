@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 // pub const std_options = std.Options{
 //     // .log_scope_levels = &[_]std.log.ScopeLevel{
@@ -9,27 +10,28 @@ const std = @import("std");
 //     .log_level = .debug,
 // };
 
-pub fn main() !void {
-    // std.log.info("Starting Integration tests", .{});
-}
+pub fn main() !void {}
 
-test {
-    // std.testing.log_level = .debug;
-    // GPU
-    // _ = @import("engine/gpu_simple.zig");
-    // _ = @import("engine/gpu_db.zig");
-    // _ = @import("engine/gpu_param.zig");
-    // _ = @import("engine/gpu_fullsize_DSC_6765.zig");
+comptime {
+    if (builtin.is_test) {
 
-    // PIPELINE
-    // _ = @import("engine/pipe_simple.zig");
-    // _ = @import("engine/pipe_fullsize.zig");
+        // std.testing.log_level = .debug;
+        // GPU
+        // _ = @import("engine/gpu_simple.zig");
+        // _ = @import("engine/gpu_db.zig");
+        // _ = @import("engine/gpu_param.zig");
+        // _ = @import("engine/gpu_fullsize_DSC_6765.zig");
 
-    // TARGETS
-    _ = @import("targets/targets.zig");
+        // PIPELINE
+        // _ = @import("engine/pipe_simple.zig");
+        // _ = @import("engine/pipe_fullsize.zig");
 
-    // MISC
-    // _ = @import("misc/zpool.zig");
-    // _ = @import("misc/musubi.zig");
-    // _ = @import("misc/zig-graph.zig");
+        // TARGETS
+        _ = @import("targets/targets.zig");
+
+        // MISC
+        // _ = @import("misc/zpool.zig");
+        // _ = @import("misc/musubi.zig");
+        // _ = @import("misc/zig-graph.zig");
+    }
 }

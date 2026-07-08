@@ -186,8 +186,8 @@ pub const Pipeline = struct {
         try self.initParams(module_handle);
         return module_handle;
     }
-    pub fn getAndAddModule(self: *Pipeline, registry: *Modules.Registry, name: []const u8) !ModuleHandle {
-        const module_desc = registry.get(name) orelse return error.ModuleNotFound;
+    pub fn addModuleFromRepo(self: *Pipeline, repository: *Modules.Repository, name: []const u8) !ModuleHandle {
+        const module_desc = repository.get(name) orelse return error.ModuleNotFound;
         const module_handle = try self.addModule(module_desc);
         return module_handle;
     }

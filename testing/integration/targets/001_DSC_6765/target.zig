@@ -3,7 +3,7 @@ const pie = @import("pie");
 const TargetConfig = @import("../targets.zig").TargetConfig;
 
 const Pipeline = pie.Pipeline;
-const Registry = pie.modules.Registry;
+const Repository = pie.modules.Repository;
 
 pub const config: TargetConfig = .{
     .input_filename = "testing/images/DSC_6765.NEF",
@@ -15,24 +15,24 @@ fn build(
     allocator: std.mem.Allocator,
     io: std.Io,
     pipeline: *Pipeline,
-    modules: *Registry,
+    repo: *Repository,
     input_filename: []const u8,
     output_filename: []const u8,
 ) anyerror!void {
     _ = allocator;
     _ = io;
 
-    const mod_i_raw = try pipeline.addModule(modules.get("i-raw").?);
-    const mod_format = try pipeline.addModule(modules.get("format").?);
-    const mod_denoise = try pipeline.addModule(modules.get("denoise").?);
+    const mod_i_raw = try pipeline.addModule(repo.get("i-raw").?);
+    const mod_format = try pipeline.addModule(repo.get("format").?);
+    const mod_denoise = try pipeline.addModule(repo.get("denoise").?);
     // const mod_whitebalance = try pipeline.addModule(modules.get("whitebalance").?);
-    const mod_demosaic = try pipeline.addModule(modules.get("demosaic").?);
-    const mod_crop = try pipeline.addModule(modules.get("crop").?);
-    const mod_color = try pipeline.addModule(modules.get("color").?);
-    const mod_filmcurv = try pipeline.addModule(modules.get("filmcurv").?);
+    const mod_demosaic = try pipeline.addModule(repo.get("demosaic").?);
+    const mod_crop = try pipeline.addModule(repo.get("crop").?);
+    const mod_color = try pipeline.addModule(repo.get("color").?);
+    const mod_filmcurv = try pipeline.addModule(repo.get("filmcurv").?);
     // const mod_test_nop_glsl = try pipeline.addModule(modules.get("test-nop-glsl").?);
     // const mod_test_nop_zig = try pipeline.addModule(modules.get("test-nop-zig").?);
-    const mod_o_ppm = try pipeline.addModule(modules.get("o-ppm").?);
+    const mod_o_ppm = try pipeline.addModule(repo.get("o-ppm").?);
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 0));

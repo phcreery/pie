@@ -12,40 +12,9 @@ const builtin = @import("builtin");
 const window = @import("window.zig");
 const pie = @import("pie");
 const console = @import("console");
-const shd = @import("texview_shader");
 const wgpu = @import("wgpu_dawn");
 
-const Image = struct {
-    // sokol
-    img: sg.Image = undefined,
-    tex_view: sg.View = undefined,
-    smp: sg.Sampler = undefined,
-    shd: sg.Shader = undefined,
-    pip: sg.Pipeline = undefined,
-
-    // meta
-    width: f32 = 0.0,
-    height: f32 = 0.0,
-
-    fn createFrom(self: *@This(), texture: *pie.gpu.Texture) void {
-        // Inject the existing GPU-side WebGPU texture into sokol instead of
-        // trying to upload CPU pixel data. sokol will addRef() the texture and
-        // create its own WGPUTextureView when we make the sg.View.
-        self.img = sg.makeImage(.{
-            .pixel_format = .RGBA16F,
-            .width = @intCast(texture.roi.w),
-            .height = @intCast(texture.roi.h),
-            .wgpu_texture = @ptrCast(texture.texture), // injection
-            .label = "display-texture",
-        });
-        self.tex_view = sg.makeView(.{
-            .texture = .{ .image = self.img },
-            .label = "display-texture-view",
-        });
-        self.width = @floatFromInt(texture.roi.w);
-        self.height = @floatFromInt(texture.roi.h);
-    }
-};
+const Image = @import("components/image.zig").Image;
 
 const AppState = struct {
     allocator: std.mem.Allocator,
@@ -61,7 +30,7 @@ const AppState = struct {
     // pie
     gpu: pie.gpu.GPU = undefined,
     pipeline: pie.pipeline.Pipeline = undefined,
-    modules: *pie.modules.Registry = undefined,
+    modules: *pie.modules.Repository = undefined,
 
     const Self = @This();
 
@@ -105,29 +74,8 @@ export fn init_fn(ptr: ?*anyopaque) void {
         .clear_value = .{ .r = 0.05, .g = 0.5, .b = 1.0, .a = 1.0 },
     };
 
-    // initialize state.image
-    state.image.smp = sg.makeSampler(.{
-        .mag_filter = .NEAREST,
-        .min_filter = .LINEAR,
-        // .wrap_u = .CLAMP_TO_EDGE,
-        // .wrap_v = .CLAMP_TO_EDGE,
-    });
-    state.image.shd = sg.makeShader(shd.texviewShaderDesc(sg.queryBackend()));
-    state.image.pip = sg.makePipeline(.{
-        .shader = state.image.shd,
-        .primitive_type = .TRIANGLE_STRIP,
-        .color_count = 1,
-        // .sample_count = sc.sample_count, // sc = sglue.swapchain()
-        // .depth = .{ .pixel_format = sc.depth_format },
-        .colors = init: {
-            var c: @FieldType(sg.PipelineDesc, "colors") = @splat(.{});
-            c[0] = .{
-                // .pixel_format = sc.color_format,
-                .write_mask = .RGBA,
-            };
-            break :init c;
-        },
-    });
+    // init image
+    state.image = Image.init();
 
     // initialize pie pipeline
     const ext_device: wgpu.Device = @ptrCast(@constCast(sg.wgpuDevice().?));
@@ -156,26 +104,7 @@ export fn frame(ptr: ?*anyopaque) void {
 
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
 
-    const have_image = state.image.img.id != sg.invalid_id and state.image.tex_view.id != sg.invalid_id;
-    if (have_image) {
-        const bindings = sg.Bindings{
-            .views = init: {
-                var v: @FieldType(sg.Bindings, "views") = @splat(.{});
-                v[shd.VIEW_tex] = state.image.tex_view;
-                break :init v;
-            },
-            .samplers = init: {
-                var s: @FieldType(sg.Bindings, "samplers") = @splat(.{});
-                s[shd.SMP_smp] = state.image.smp;
-                break :init s;
-            },
-        };
-        // const fs_params = shd.FsParams{ .mip_lod = 0.0 }; // example of params
-        sg.applyPipeline(state.image.pip);
-        sg.applyBindings(bindings);
-        // sg.applyUniforms(shd.UB_fs_params, .{ .ptr = &fs_params, .size = @sizeOf(shd.FsParams) });
-        sg.draw(0, 4, 1);
-    }
+    state.image.draw();
 
     sg.endPass();
     sg.commit();
@@ -202,7 +131,7 @@ fn build_image(
     allocator: std.mem.Allocator,
     io: std.Io,
     pipeline: *pie.pipeline.Pipeline,
-    modules: *pie.modules.Registry,
+    repo: *pie.modules.Repository,
 ) !*pie.gpu.Texture {
     _ = io;
 
@@ -212,14 +141,14 @@ fn build_image(
 
     const input_filename = "testing/images/DSC_6765.NEF";
 
-    const mod_i_raw = try pipeline.getAndAddModule(modules, "i-raw");
-    const mod_format = try pipeline.getAndAddModule(modules, "format");
-    const mod_denoise = try pipeline.getAndAddModule(modules, "denoise");
-    const mod_demosaic = try pipeline.getAndAddModule(modules, "demosaic");
-    const mod_crop = try pipeline.getAndAddModule(modules, "crop");
-    const mod_color = try pipeline.getAndAddModule(modules, "color");
-    const mod_filmcurv = try pipeline.getAndAddModule(modules, "filmcurv");
-    const mod_o_display = try pipeline.getAndAddModule(modules, "o-display");
+    const mod_i_raw = try pipeline.addModuleFromRepo(repo, "i-raw");
+    const mod_format = try pipeline.addModuleFromRepo(repo, "format");
+    const mod_denoise = try pipeline.addModuleFromRepo(repo, "denoise");
+    const mod_demosaic = try pipeline.addModuleFromRepo(repo, "demosaic");
+    const mod_crop = try pipeline.addModuleFromRepo(repo, "crop");
+    const mod_color = try pipeline.addModuleFromRepo(repo, "color");
+    const mod_filmcurv = try pipeline.addModuleFromRepo(repo, "filmcurv");
+    const mod_o_display = try pipeline.addModuleFromRepo(repo, "o-display");
 
     try pipeline.setModuleParam(mod_i_raw, "filename", @as([]const u8, input_filename));
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 0));
@@ -270,7 +199,7 @@ pub fn run(init: std.process.Init) !void {
     const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
 
-    var modules = try pie.modules.Registry.init(allocator);
+    var modules = try pie.modules.Repository.init(allocator);
     defer modules.deinit();
     state.modules = &modules;
 
