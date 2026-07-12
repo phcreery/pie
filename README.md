@@ -70,6 +70,7 @@ Does basic raw -> srgb. Thats just about it.
 ```
 zig build integration --watch --error-style minimal_clear
 zig build test --watch --error-style minimal_clear
+zig build run --watch --error-style minimal_clear --fork=../zgpu
 ```
 
 To build and run the experimental web version:

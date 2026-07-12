@@ -40,7 +40,8 @@
         // current dawn webgpu.h + Google dawn prebuilt. Provides the `zgpu`
         // module (which re-exports a hand-written `wgpu` binding) and the
         // `zdawn` artifact that links libwebgpu_dawn.a.
-        .zgpu = .{ .path = "src/engine/zgpu" },
+        // .zgpu = .{ .path = "src/engine/zgpu" },
+        .zdawn = .{ .path = "../zdawn" },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg.git#4cab5a17d4c76584723576fcc11497293c25d092",
             .hash = "zigimg-0.1.0-8_eo2sywFwArMrr5UlqjhhAMbRtpmC4mL5KbBmjrxFba",
@@ -62,8 +63,9 @@
             .hash = "zuballoc-0.1.0-uXtpGsOiAAAc_AqFTLo7DCd5JGjKVkICl84jw1vf6xfH",
         },
         .zr = .{
-            .url = "git+https://codeberg.org/rdunnington/zr#e82c604c8c482d63212212d68b0c3f3f67044c5c",
-            .hash = "zr-0.2.0-dj-tckcHAQBiJEKwXzGzKf9K2m0SPpmEoVyfKyRhrMHf",
+            // .url = "git+https://codeberg.org/rdunnington/zr#e82c604c8c482d63212212d68b0c3f3f67044c5c",
+            // .hash = "zr-0.2.0-dj-tckcHAQBiJEKwXzGzKf9K2m0SPpmEoVyfKyRhrMHf",
+            .path = "../zr",
         },
 
         // Dawn
@@ -72,11 +74,11 @@
             .url = "https://github.com/zig-gamedev/system_sdk/archive/c0dbf11cdc17da5904ea8a17eadc54dee26567ec.tar.gz",
             .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
         },
-        // .dawn_x86_64_windows_gnu = .{
-        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-windows-gnu/archive/d3a68014e6b6b53fd330a0ccba99e4dcfffddae5.tar.gz",
-        //     .hash = "N-V-__8AAGsYnAT5RIzeAu881RveLghQ1EidqgVBVx10gVTo",
-        //     .lazy = true,
-        // },
+        .dawn_x86_64_windows_msvc = .{
+            .url = "https://github.com/google/dawn/releases/download/v20260624.223603/Dawn-11ab3f92ed451db8c1e1366abcddd9c202e0738d-windows-latest-Release.tar.gz",
+            .hash = "N-V-__8AAG_MEySOjSy1sj_Ccx36C80Qsay7Ol7CKbJhADhz",
+            .lazy = true,
+        },
         // .dawn_x86_64_linux_gnu = .{
         //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-linux-gnu/archive/7d70db023bf254546024629cbec5ee6113e12a42.tar.gz",
         //     .hash = "N-V-__8AAK7XUQNKNRnv1J6i189jtURJKjp3HTftoyD4Y4CB",

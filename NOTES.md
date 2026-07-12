@@ -31,6 +31,7 @@
 
 - gpu
   - https://codeberg.org/Games-by-Mason/mr_gpu
+  - https://code.hexops.org/hexops/mach/src/branch/main/src/sysgpu/gpu_allocator.zig
 
 - UI
   - https://codeberg.org/shahwali/knots

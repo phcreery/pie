@@ -6,7 +6,9 @@ const cimgui = @import("cimgui");
 
 pub fn build(b: *Build) !void {
     // CONFIGURATION
-    const target = b.standardTargetOptions(.{});
+    const target = b.standardTargetOptions(.{
+        .default_target = .{ .abi = .msvc },
+    });
     // for testing only, forces a native build
     // const target = b.resolveTargetQuery(.{
     //     .ofmt = .c,
@@ -32,12 +34,15 @@ pub fn build(b: *Build) !void {
     const dep_cimgui = b.dependency("cimgui", .{
         .target = target,
         .optimize = optimize,
-        .dynamic_linkage = true,
+        // With msvc ABI, shared DLLs don't auto-export symbols, so the
+        // ig* cimgui functions wouldn't be visible to sokol_clib.dll.
+        // Build as static to embed the symbols directly.
+        .dynamic_linkage = builtin.os.tag != .windows or target.result.abi != .msvc,
     });
     const dep_zdt = b.dependency("zdt", opts);
     const dep_libraw = b.dependency("libraw", opts);
     // const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
-    const dep_zgpu = b.dependency("zgpu", opts);
+    const dep_zdawn = b.dependency("zdawn", .{});
     const dep_zigimg = b.dependency("zigimg", opts);
     const dep_zbench = b.dependency("zbench", opts);
     const dep_zuballoc = b.dependency("zuballoc", opts);
@@ -45,20 +50,41 @@ pub fn build(b: *Build) !void {
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
-    // inject the webgpu/webgpu.h headers from zgpu
-    @import("zgpu").addDawnPaths(b, dep_sokol.artifact("sokol_clib").root_module, target.result);
+    // inject the webgpu/webgpu.h headers from zdawn
+    @import("zdawn").addDawnPaths(b, dep_sokol.artifact("sokol_clib").root_module, target.result);
     // When sokol_clib is built as a shared library, its native WebGPU symbols
     // must resolve against the same shared Dawn instance used by the rest of
     // the app. Link sokol_clib against shared zdawn instead of letting it rely
     // on the final exe link step.
-    dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_zgpu.artifact("zdawn"));
+    dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_zdawn.artifact("zdawn"));
     dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_cimgui.artifact(cimgui_conf.clib_name));
     dep_sokol.artifact("sokol_clib").root_module.addRPathSpecial("@loader_path");
+    // Embed /ALTERNATENAME linker directives for CRT init stubs (same as zdawn).
+    if (builtin.os.tag == .windows and target.result.abi == .msvc) {
+        dep_sokol.artifact("sokol_clib").root_module.addCSourceFile(.{
+            .file = dep_zdawn.path("src/crt_stubs.c"),
+        });
+    }
+    // The standalone Windows SDK is missing individual x64 import libraries
+    // (gdi32, shell32, imm32, etc.). We link OneCoreUAP.Lib (which has all
+    // the actual symbols) AND add a directory of generated import libraries
+    // to satisfy linkSystemLibrary("gdi32") etc. file lookups.
+    if (builtin.os.tag == .windows) {
+        const stub_dir: std.Build.LazyPath = .{
+            .cwd_relative = b.pathJoin(&.{ b.pathFromRoot("."), ".scratch", "stublibs" }),
+        };
+        dep_sokol.artifact("sokol_clib").root_module.addLibraryPath(stub_dir);
+        dep_sokol.artifact("sokol_clib").root_module.linkSystemLibrary("OneCoreUAP", .{});
+        dep_libraw.artifact("libraw_clib").root_module.addLibraryPath(stub_dir);
+        dep_libraw.artifact("libraw_clib").root_module.linkSystemLibrary("OneCoreUAP", .{});
+    }
     // Install the shared runtime libs into this project's zig-out/lib so the
     // host exe and zr plugin can both load them from a single place.
-    b.installArtifact(dep_zgpu.artifact("zdawn"));
+    b.installArtifact(dep_zdawn.artifact("zdawn"));
     b.installArtifact(dep_sokol.artifact("sokol_clib"));
-    b.installArtifact(dep_cimgui.artifact(cimgui_conf.clib_name));
+    if (dep_cimgui.artifact(cimgui_conf.clib_name).isDynamicLibrary()) {
+        b.installArtifact(dep_cimgui.artifact(cimgui_conf.clib_name));
+    }
 
     // OPTIONS
     const mod_options = b.addOptions();
@@ -96,12 +122,12 @@ pub fn build(b: *Build) !void {
             .{ .name = "console", .module = mod_console },
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
+            .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
-    mod_pie.linkLibrary(dep_zgpu.artifact("zdawn"));
+    mod_pie.linkLibrary(dep_zdawn.artifact("zdawn"));
 
     // GUI MODULE
     // main module with sokol and cimgui imports
@@ -113,7 +139,7 @@ pub fn build(b: *Build) !void {
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
+            .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
@@ -136,14 +162,11 @@ pub fn build(b: *Build) !void {
             // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             // .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             // .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu_dawn", .module = dep_zgpu.module("wgpu") },
+            .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
             .{ .name = "zr", .module = dep_zr.module("zr") },
         },
     });
     mod_app.addOptions("build_options", mod_options);
-
-    // mod_pie already links zdawn; avoid adding duplicate direct load
-    // commands for libzdawn.dylib to the host exe and the hot-reload plugin.
 
     // link gui for hot reload
     // if (optimize == .Debug) {
@@ -203,32 +226,59 @@ pub fn build(b: *Build) !void {
             .cimgui_clib_name = cimgui_conf.clib_name,
         });
     } else {
-        try buildNative(b, mod_app);
+        try buildNative(b, mod_app, dep_zdawn, target.result);
     }
 }
 
-fn buildNative(b: *Build, mod: *Build.Module) !void {
+fn buildNative(b: *Build, mod: *Build.Module, dep_zdawn: *Build.Dependency, target_result: std.Target) !void {
     const exe = b.addExecutable(.{
         .name = "pie",
         .root_module = mod,
     });
-    if (builtin.os.tag == .windows) {
-        // zig does not include System32 in the default library search path
-        // so we need to add it manually here
-        // https://github.com/ziglang/zig/blob/ddc815e3d88d32b8f3df0610ee59c8d34b8ff8eb/lib/std/zig/system/NativePaths.zig#L130
-        const system_library_path: std.Build.LazyPath = .{ .cwd_relative = "C:\\Windows\\System32" };
-        exe.root_module.addLibraryPath(system_library_path);
-    }
-    // Link zgpu's zdawn artifact (which now builds as a shared lib and
+    // Force Zig's own entry point (WinStartup) instead of MSVC's
+    // mainCRTStartup, so the Zig runtime is properly initialized
+    // before main() is called. MSVC's mainCRTStartup calls main()
+    // with C-style (int argc, char** argv) parameters, but Zig's
+    // main expects std.process.Init.
+    exe.entry = .enabled;
+    // Link zdawn's zdawn artifact (which now builds as a shared lib and
     // contains Dawn) plus any platform system deps.
-    @import("zgpu").addLibraryPathsTo(exe);
-    @import("zgpu").linkSystemDeps(b, exe);
+    @import("zdawn").addLibraryPathsTo(exe);
+    @import("zdawn").linkSystemDeps(b, exe);
+    // Embed /ALTERNATENAME linker directives for CRT init stubs and
+    // POSIX function name aliases (same as zdawn and sokol_clib).
+    if (builtin.os.tag == .windows and target_result.abi == .msvc) {
+        exe.root_module.addCSourceFile(.{
+            .file = dep_zdawn.path("src/crt_stubs.c"),
+        });
+    }
     // The installed exe lives in zig-out/bin and loads its shared libs from
     // zig-out/lib.
     exe.root_module.addRPathSpecial("@loader_path/../lib");
     b.installArtifact(exe);
+    // Dawn dynamically loads system DLLs at runtime via LoadLibraryExW with
+    // LOAD_LIBRARY_SEARCH_DEFAULT_DIRS. This flag fails with Error 87 when
+    // SetDefaultDllDirectories hasn't been called (the MSVC CRT normally
+    // handles this, but our CRT init stubs are no-ops). As a workaround,
+    // copy the needed DLLs to the exe directory where they're always found.
+    if (builtin.os.tag == .windows) {
+        const system_dlls = [_][]const u8{
+            "d3dcompiler_47.dll",
+            "vulkan-1.dll",
+            "dxgi.dll",
+            "d3d11.dll",
+            "d3d12.dll",
+        };
+        for (system_dlls) |dll| {
+            const src = b.fmt("C:\\Windows\\System32\\{s}", .{dll});
+            const install_dll = b.addInstallBinFile(
+                .{ .cwd_relative = src },
+                dll,
+            );
+            exe.step.dependOn(&install_dll.step);
+        }
+    }
     const exe_step = b.step("run", "Run pie");
-
     // const run_cmd = b.addRunArtifact(exe);
     // run_cmd.step.dependOn(b.getInstallStep());
     // exe_step.dependOn(&run_cmd.step);
