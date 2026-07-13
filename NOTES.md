@@ -48,6 +48,7 @@
   - https://codeberg.org/Silverclaw/zig-wgpu-native
   - https://github.com/bronter/wgpu_native_zig
     - https://github.com/carrot-sticks/wgpu_native_zig
+  - https://codeberg.org/shahwali/wgpu-zig
   - https://github.com/zig-gamedev/zgpu
     - https://github.com/zig-gamedev/zig-gamedev/
 
