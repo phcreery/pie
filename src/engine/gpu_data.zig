@@ -123,7 +123,9 @@ pub fn layoutStruct(maybe_buf: ?[]u8, s: anytype) !usize {
     var i: usize = 0;
     var struct_alignment: usize = 0;
 
-    inline for (std.meta.fieldTypes(@TypeOf(s))) |field_type| {
+    const s_type = @TypeOf(s);
+    const f_types = comptime std.meta.fieldTypes(s_type);
+    inline for (f_types) |field_type| {
         const field_align = alignment(field_type);
         if (field_align > struct_alignment) {
             struct_alignment = field_align;
@@ -131,7 +133,7 @@ pub fn layoutStruct(maybe_buf: ?[]u8, s: anytype) !usize {
     }
 
     // loop through fields of s
-    inline for (std.meta.fieldTypes(@TypeOf(s)), 0..) |field_type, j| {
+    inline for (f_types, 0..) |field_type, j| {
         const field_align = alignment(field_type);
         const field_size = size(field_type);
 

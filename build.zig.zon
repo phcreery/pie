@@ -6,8 +6,7 @@
     .dependencies = .{
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         .sokol = .{
-            .url = "git+https://github.com/floooh/sokol-zig#20f2e2cd3249098093770ea20f6d8b00703bddb3",
-            .hash = "sokol-0.1.0-pb1HK-DmNwC58_M1ri4psw-QW3xPMZs2JoS3tPkFJC7q",
+            .path = "deps/sokol-zig",
         },
         .cimgui = .{
             // zig 0.16.0
@@ -19,7 +18,9 @@
             // with fix 2025-07-25
             // .url = "git+https://github.com/Altagos/dcimgui#af62ae7049a25b645003dae8883de31685cc3791",
             // .hash = "cimgui-0.1.0-44ClkR8dmgDBFr1Cx4CVsiB8n5ulQfys6WH_1UDoUOFo",
-            .path = "../dcimgui",
+            // .path = "../dcimgui",
+            .url = "git+https://github.com/phcreery/dcimgui#db71ec2330cbdad5b561d5e03f5edc28bda85c9b",
+            .hash = "cimgui-0.1.0-44ClkS4_nACw903tZvEFrtrzO9W3rh724LkcH29Xm-Io",
         },
         .zdt = .{
             .url = "git+https://codeberg.org/FObersteiner/zdt#ef21e970c3fead80b4a43051f8e7ab5327efa4b1",
@@ -49,7 +50,11 @@
         // module (which re-exports a hand-written `wgpu` binding) and the
         // `zdawn` artifact that links libwebgpu_dawn.a.
         // .zgpu = .{ .path = "src/engine/zgpu" },
-        .zdawn = .{ .path = "../zdawn" },
+        .zdawn = .{
+            // .url = "git+https://github.com/phcreery/zdawn#7adb02b17fc04b15a06b4c1636d29ca9f8d9c950",
+            // .hash = "zgpu-0.1.0-nqFT5MatAQDGKXaOqKYOEyLEDn5k4h2fz7bPDRhSGuK1",
+            .path = "../zdawn",
+        },
         .zigimg = .{
             // 0.16.0
             // .url = "git+https://github.com/zigimg/zigimg.git#4cab5a17d4c76584723576fcc11497293c25d092",
@@ -78,6 +83,8 @@
             // .url = "git+https://github.com/Justus2308/zuballoc.git#68eab414d6d3b1e9aa5ea31139e2e02827ab7350",
             // .hash = "zuballoc-0.1.0-uXtpGsOiAAAc_AqFTLo7DCd5JGjKVkICl84jw1vf6xfH",
             .path = "../zuballoc",
+            // .url = "git+https://github.com/phcreery/zuballoc#90151524c6b048bca7eb96a9e4bb9a48fa346c5b",
+            // .hash = "zuballoc-0.1.0-uXtpGryiAABmtJVMVW59n7xllD_87c2FB8FwYpr7oUK0",
         },
         // .zr = .{
         //     // .url = "git+https://codeberg.org/rdunnington/zr#e82c604c8c482d63212212d68b0c3f3f67044c5c",

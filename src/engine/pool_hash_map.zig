@@ -64,7 +64,7 @@ pub fn HashMapPool(comptime T: type) type {
         pub fn remove(self: *Self, handle: Handle) void {
             const item = self.hash_map.get(handle.id);
             if (item) |ptr| {
-                self.pool.destroy(self.allocator, @alignCast(ptr));
+                self.pool.destroy(@alignCast(ptr));
             }
             _ = self.hash_map.remove(handle.id);
         }

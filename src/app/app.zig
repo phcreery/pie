@@ -76,7 +76,7 @@ pub const AppState = struct {
             .gui = undefined, // will init in sokol init fn
             .repo = pie.modules.Repository.init(allocator) catch unreachable, // assigned in run()
             // .window = windowmgr,
-            .plugin_gui = undefined,
+            // .plugin_gui = undefined,
             // .gui_update = undefined,
             // .gui_draw = undefined,
         };
