@@ -1,17 +1,25 @@
 .{
     .name = .pie,
     .version = "0.0.0",
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.16.0",
     .fingerprint = 0x2257f47b657d2acb,
     .dependencies = .{
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         .sokol = .{
-            .url = "git+https://github.com/floooh/sokol-zig/#ba97ac4e82e36a0f6c62f7fad5dc9c2d82beadd8",
-            .hash = "sokol-0.1.0-pb1HK4prNwDGx2RJFyv7VtYJubDahi19XKioPzPeMCxv",
+            .url = "git+https://github.com/floooh/sokol-zig#20f2e2cd3249098093770ea20f6d8b00703bddb3",
+            .hash = "sokol-0.1.0-pb1HK-DmNwC58_M1ri4psw-QW3xPMZs2JoS3tPkFJC7q",
         },
         .cimgui = .{
-            .url = "git+https://github.com/floooh/dcimgui.git#3c2b41a9333b1195e2c2f8ce6a2d3e50660a73bf",
-            .hash = "cimgui-0.1.0-44ClkR8dmgDqqnfloyLE1bUAtl4zSKTT1wxaHSEC0ikV",
+            // zig 0.16.0
+            // .url = "git+https://github.com/floooh/dcimgui.git#3c2b41a9333b1195e2c2f8ce6a2d3e50660a73bf",
+            // .hash = "cimgui-0.1.0-44ClkR8dmgDqqnfloyLE1bUAtl4zSKTT1wxaHSEC0ikV",
+            // zig 0.17.0
+            // .url = "git+https://github.com/floooh/dcimgui#d15599dd15f11658b6cbde1bda3da269f324b4f2",
+            // .hash = "cimgui-0.1.0-44ClkR8dmgDIgUMPprFBFvquKmS06xKYMGhJ4Imxvn2C",
+            // with fix 2025-07-25
+            // .url = "git+https://github.com/Altagos/dcimgui#af62ae7049a25b645003dae8883de31685cc3791",
+            // .hash = "cimgui-0.1.0-44ClkR8dmgDBFr1Cx4CVsiB8n5ulQfys6WH_1UDoUOFo",
+            .path = "../dcimgui",
         },
         .zdt = .{
             .url = "git+https://codeberg.org/FObersteiner/zdt#ef21e970c3fead80b4a43051f8e7ab5327efa4b1",
@@ -43,8 +51,12 @@
         // .zgpu = .{ .path = "src/engine/zgpu" },
         .zdawn = .{ .path = "../zdawn" },
         .zigimg = .{
-            .url = "git+https://github.com/zigimg/zigimg.git#4cab5a17d4c76584723576fcc11497293c25d092",
-            .hash = "zigimg-0.1.0-8_eo2sywFwArMrr5UlqjhhAMbRtpmC4mL5KbBmjrxFba",
+            // 0.16.0
+            // .url = "git+https://github.com/zigimg/zigimg.git#4cab5a17d4c76584723576fcc11497293c25d092",
+            // .hash = "zigimg-0.1.0-8_eo2sywFwArMrr5UlqjhhAMbRtpmC4mL5KbBmjrxFba",
+            // 0.17.0
+            .url = "git+https://github.com/flying-swallow/zigimg#d441b531cebd7a51bee32826d18841a18e3196d0",
+            .hash = "zigimg-0.1.0-8_eo2o7CFwAqoFP7jU_FBBy3YyU9qO6HOsfthhOKZ77v",
         },
         // .ztracy = .{
         //     .url = "git+https://github.com/zig-gamedev/ztracy#3cc6a4a1502fdea2e4d3869099e39d9c5e8b98a5",
@@ -55,35 +67,40 @@
         //     .hash = "zpool-0.11.0-dev-bG692YNDAQAyX1pDZKrJrDmorwVqVNTZbbH-zpoDQO-N",
         // },
         .zbench = .{
-            .url = "git+https://github.com/hendriknielaender/zbench#2a231fc165ab22e5ef0c2b7c8841ee86a445dffa",
-            .hash = "zbench-0.13.0-YTdc71ZAAQCUJ0w9jM6ZyLOBxDlGv2j3CqCEj49l-KcP",
+            // 0.16.0
+            // .url = "git+https://github.com/hendriknielaender/zbench#2a231fc165ab22e5ef0c2b7c8841ee86a445dffa",
+            // .hash = "zbench-0.13.0-YTdc71ZAAQCUJ0w9jM6ZyLOBxDlGv2j3CqCEj49l-KcP",
+            // 0.17.0
+            .url = "git+https://github.com/hendriknielaender/zBench/#f12a2262bcd9d300207890555c577da5e29de453",
+            .hash = "zbench-0.14.1-YTdc781OAQCR6wxqkgAwm9bG4TnFGzm8c9aE-ZPiTAU1",
         },
         .zuballoc = .{
-            .url = "git+https://github.com/Justus2308/zuballoc.git#68eab414d6d3b1e9aa5ea31139e2e02827ab7350",
-            .hash = "zuballoc-0.1.0-uXtpGsOiAAAc_AqFTLo7DCd5JGjKVkICl84jw1vf6xfH",
+            // .url = "git+https://github.com/Justus2308/zuballoc.git#68eab414d6d3b1e9aa5ea31139e2e02827ab7350",
+            // .hash = "zuballoc-0.1.0-uXtpGsOiAAAc_AqFTLo7DCd5JGjKVkICl84jw1vf6xfH",
+            .path = "../zuballoc",
         },
-        .zr = .{
-            // .url = "git+https://codeberg.org/rdunnington/zr#e82c604c8c482d63212212d68b0c3f3f67044c5c",
-            // .hash = "zr-0.2.0-dj-tckcHAQBiJEKwXzGzKf9K2m0SPpmEoVyfKyRhrMHf",
-            .path = "../zr",
-        },
+        // .zr = .{
+        //     // .url = "git+https://codeberg.org/rdunnington/zr#e82c604c8c482d63212212d68b0c3f3f67044c5c",
+        //     // .hash = "zr-0.2.0-dj-tckcHAQBiJEKwXzGzKf9K2m0SPpmEoVyfKyRhrMHf",
+        //     .path = "../zr",
+        // },
 
         // Dawn
         // even though these re listed in zgpu, we need to add them here since we need to link the final exe to them
-        .system_sdk = .{
-            .url = "https://github.com/zig-gamedev/system_sdk/archive/c0dbf11cdc17da5904ea8a17eadc54dee26567ec.tar.gz",
-            .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
-        },
+        // .system_sdk = .{
+        //     .url = "https://github.com/zig-gamedev/system_sdk/archive/c0dbf11cdc17da5904ea8a17eadc54dee26567ec.tar.gz",
+        //     .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
+        // },
         .dawn_x86_64_windows_msvc = .{
             .url = "https://github.com/google/dawn/releases/download/v20260624.223603/Dawn-11ab3f92ed451db8c1e1366abcddd9c202e0738d-windows-latest-Release.tar.gz",
             .hash = "N-V-__8AAG_MEySOjSy1sj_Ccx36C80Qsay7Ol7CKbJhADhz",
             .lazy = true,
         },
-        // .dawn_x86_64_linux_gnu = .{
-        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-linux-gnu/archive/7d70db023bf254546024629cbec5ee6113e12a42.tar.gz",
-        //     .hash = "N-V-__8AAK7XUQNKNRnv1J6i189jtURJKjp3HTftoyD4Y4CB",
-        //     .lazy = true,
-        // },
+        .dawn_x86_64_linux_gnu = .{
+            .url = "https://github.com/google/dawn/releases/download/v20260624.223603/Dawn-11ab3f92ed451db8c1e1366abcddd9c202e0738d-ubuntu-latest-Release.tar.gz",
+            .hash = "N-V-__8AALe6jgLNC3FSGGsDvlupHKw3w_ZmmF5QhdenCn4M",
+            .lazy = true,
+        },
         // .dawn_aarch64_linux_gnu = .{
         //     .url = "https://github.com/michal-z/webgpu_dawn-aarch64-linux-gnu/archive/c1f55e740a62f6942ff046e709ecd509a005dbeb.tar.gz",
         //     .hash = "N-V-__8AAJ-wTwNc0T9oSflO92iO6IxrdMeRil37UU-KQD_M",

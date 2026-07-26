@@ -68,7 +68,7 @@ Does basic raw -> srgb. Thats just about it.
 ## Development
 
 ```
-zig build integration --watch --error-style minimal_clear
+zig build integration --watch --error-style minimal_clear -freference-trace=100
 zig build test --watch --error-style minimal_clear
 zig build run --watch --error-style minimal_clear --fork=../zgpu
 ```
@@ -81,8 +81,12 @@ This may require changing the default allocator.
 
 ## Build Requirements
 
-zig 0.17.0-dev.978+a078d55a2
+// zig 0.17.0-dev.978+a078d55a2
+zig 0.17.0-dev.1464+6aff551f1
+
+To use 0.16.0 zls on master, `ln ~/.local/share/zvm/0.16.0/zls ~/.local/share/zvm/bin/zls`
 
 ### Linux
 
 `alsa-lib-devel libX11-devel mesa-libGL mesa-libGL-devel libXi-devel libXcursor-devel`
+`libX11-devel libXi-devel libXcursor-devel libXrandr-devel mesa-libGL-devel`

@@ -123,17 +123,17 @@ pub fn layoutStruct(maybe_buf: ?[]u8, s: anytype) !usize {
     var i: usize = 0;
     var struct_alignment: usize = 0;
 
-    inline for (std.meta.fields(@TypeOf(s))) |field| {
-        const field_align = alignment(field.type);
+    inline for (std.meta.fieldTypes(@TypeOf(s))) |field_type| {
+        const field_align = alignment(field_type);
         if (field_align > struct_alignment) {
             struct_alignment = field_align;
         }
     }
 
     // loop through fields of s
-    inline for (std.meta.fields(@TypeOf(s))) |field| {
-        const field_align = alignment(field.type);
-        const field_size = size(field.type);
+    inline for (std.meta.fieldTypes(@TypeOf(s)), 0..) |field_type, j| {
+        const field_align = alignment(field_type);
+        const field_size = size(field_type);
 
         // align i to field_align
         const align_offset = @mod(i, field_align);
@@ -141,7 +141,7 @@ pub fn layoutStruct(maybe_buf: ?[]u8, s: anytype) !usize {
             i += field_align - align_offset;
         }
 
-        const field_value = @field(s, field.name);
+        const field_value = @field(s, std.meta.fieldNames(@TypeOf(s))[j]);
         if (maybe_buf) |buf| {
             writeBytes(buf[i..], field_value);
         }

@@ -4,7 +4,8 @@ const std = @import("std");
 /// This allows for fast lookups and removals by handle.
 pub fn HashMapPool(comptime T: type) type {
     return struct {
-        pool: std.heap.memory_pool.ExtraManaged(T, .{}),
+        allocator: std.mem.Allocator, // TODO: make this unmanages
+        pool: std.heap.memory_pool.Extra(T, .{}),
         hash_map: std.AutoHashMap(Key, *T),
         current_id: usize = 0,
 
@@ -17,7 +18,8 @@ pub fn HashMapPool(comptime T: type) type {
 
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{
-                .pool = .init(allocator),
+                .allocator = allocator,
+                .pool = std.heap.memory_pool.Extra(T, .{}).initCapacity(allocator, 100) catch unreachable,
                 .hash_map = .init(allocator),
             };
         }
@@ -47,12 +49,12 @@ pub fn HashMapPool(comptime T: type) type {
                 else => {},
             }
 
-            self.pool.deinit();
+            self.pool.deinit(self.allocator);
             self.hash_map.deinit();
         }
 
         pub fn add(self: *Self, value: T) !Handle {
-            const item = try self.pool.create();
+            const item = try self.pool.create(self.allocator);
             item.* = value;
             try self.hash_map.put(self.current_id, item);
             self.current_id += 1;
@@ -62,7 +64,7 @@ pub fn HashMapPool(comptime T: type) type {
         pub fn remove(self: *Self, handle: Handle) void {
             const item = self.hash_map.get(handle.id);
             if (item) |ptr| {
-                self.pool.destroy(@alignCast(ptr));
+                self.pool.destroy(self.allocator, @alignCast(ptr));
             }
             _ = self.hash_map.remove(handle.id);
         }
