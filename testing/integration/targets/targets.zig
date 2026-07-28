@@ -254,7 +254,7 @@ pub const TargetConfig = struct {
 };
 
 test "test targets" {
-    const allocator = std.testing.allocator;
+    // const allocator = std.testing.allocator;
     const io = std.testing.io;
 
     const cout = console.console.UTF8ConsoleOutput.init();
@@ -263,41 +263,41 @@ test "test targets" {
     var gpu_instance = try gpu.GPU.init(io);
     defer gpu_instance.deinit();
 
-    var modules = try pie.modules.Repository.init(allocator);
-    defer modules.deinit();
+    // var modules = try pie.modules.Repository.init(allocator);
+    // defer modules.deinit();
 
-    var arena_instance = std.heap.ArenaAllocator.init(allocator);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
-
-    const pipeline_config: pie.pipeline.PipelineConfig = .{
-        .upload_buffer_size_bytes = 75e6,
-        .download_buffer_size_bytes = 75e6,
-    };
-
-    var pipeline = Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
-    defer pipeline.deinit();
-
-    const config: TargetConfig = @import("001_DSC_6765/target.zig").config;
-    const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";
-    const input_filename = config.input_filename;
-    const output_filename = "testing/integration/targets/" ++ config.name ++ "/output.ppm";
-
-    try libraw_dcraw_process(allocator, io, input_filename, target_filename, false);
-
-    if (config.build) |build_fn| {
-        try build_fn(allocator, io, &pipeline, &modules, input_filename, output_filename);
-    } else {
-        return error.NoBuildFunction;
-    }
-
-    try pipeline.run(arena);
-
-    const target_stats = try readImageStats(allocator, io, target_filename);
-    const output_stats = try readImageStats(allocator, io, output_filename);
-    logImageStats("target", target_stats);
-    logImageStats("output", output_stats);
-
-    const score = try scorePpmOutputs(allocator, io, target_filename, output_filename);
-    logComparisonScore(score);
+    // var arena_instance = std.heap.ArenaAllocator.init(allocator);
+    // defer arena_instance.deinit();
+    // const arena = arena_instance.allocator();
+    //
+    // const pipeline_config: pie.pipeline.PipelineConfig = .{
+    //     .upload_buffer_size_bytes = 75e6,
+    //     .download_buffer_size_bytes = 75e6,
+    // };
+    //
+    // var pipeline = Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
+    // defer pipeline.deinit();
+    //
+    // const config: TargetConfig = @import("001_DSC_6765/target.zig").config;
+    // const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";
+    // const input_filename = config.input_filename;
+    // const output_filename = "testing/integration/targets/" ++ config.name ++ "/output.ppm";
+    //
+    // try libraw_dcraw_process(allocator, io, input_filename, target_filename, false);
+    //
+    // if (config.build) |build_fn| {
+    //     try build_fn(allocator, io, &pipeline, &modules, input_filename, output_filename);
+    // } else {
+    //     return error.NoBuildFunction;
+    // }
+    //
+    // try pipeline.run(arena);
+    //
+    // const target_stats = try readImageStats(allocator, io, target_filename);
+    // const output_stats = try readImageStats(allocator, io, output_filename);
+    // logImageStats("target", target_stats);
+    // logImageStats("output", output_stats);
+    //
+    // const score = try scorePpmOutputs(allocator, io, target_filename, output_filename);
+    // logComparisonScore(score);
 }

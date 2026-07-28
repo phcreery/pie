@@ -29,28 +29,33 @@
 
 ## Zig
 
-- gpu
-  - https://codeberg.org/Games-by-Mason/mr_gpu
-  - https://code.hexops.org/hexops/mach/src/branch/main/src/sysgpu/gpu_allocator.zig
-
 - UI
   - https://codeberg.org/shahwali/knots
   - https://codeberg.org/Games-by-Mason/dear_imgui_zig
-  - as of 08-Sep-2025, sokol allows for webgou on native
+  - as of 08-Sep-2025, sokol allows for webgpu on native
 
 - Image Loaders
   - LibRaw [used by darktable]
   - rawspeed [used by darktable]
   - rawloader [used by vkdt]
 
-- wgpu Zig bindings
+- gpu
+  - https://codeberg.org/Games-by-Mason/mr_gpu
+  - https://code.hexops.org/hexops/mach/src/branch/main/src/sysgpu/gpu_allocator.zig
+
+- wgpu bindings
   - https://git.bouvais.lu/adrien/zig-wgpu
   - https://codeberg.org/Silverclaw/zig-wgpu-native
   - https://github.com/bronter/wgpu_native_zig
     - https://github.com/carrot-sticks/wgpu_native_zig
   - https://codeberg.org/shahwali/wgpu-zig
+
+- dawn bindings
   - https://github.com/zig-gamedev/zgpu
     - https://github.com/zig-gamedev/zig-gamedev/
+    - https://github.com/a-day-old-bagel/zgpu
+  - https://github.com/akunaakwei/zig-dawn
+
 
 - Shader stuff
   - https://codeberg.org/Games-by-Mason/mr_glsl

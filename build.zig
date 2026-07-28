@@ -7,7 +7,8 @@ const cimgui = @import("cimgui");
 pub fn build(b: *Build) !void {
     // CONFIGURATION
     const target = b.standardTargetOptions(.{
-        // .default_target = .{ .abi = .msvc }, // google dawn is compile with msvc
+        // .default_target = .{ .abi = .msvc }, // google dawn is compile with msvc on windows
+        .default_target = .{ .abi = .gnu }, // google dawn is compile with gnu on linux
     });
     // for testing only, forces a native build
     // const target = b.resolveTargetQuery(.{
@@ -47,20 +48,21 @@ pub fn build(b: *Build) !void {
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
     // inject the webgpu/webgpu.h headers from zdawn
-    @import("zdawn").addDawnPaths(b, dep_sokol.artifact("sokol_clib").root_module, target.result);
+    std.debug.print("1\n", .{});
+    // @import("zdawn").addDawnPathsTo(dep_sokol.artifact("sokol_clib"));
 
     // When sokol_clib is built as a shared library, its native WebGPU symbols
     // must resolve against the same shared Dawn instance used by the rest of
     // the app. Link sokol_clib against shared zdawn instead of letting it rely
     // on the final exe link step.
-    dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_zdawn.artifact("zdawn"));
+    // dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_zdawn.artifact("zdawn"));
     // dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_cimgui.artifact(cimgui_conf.clib_name));
     // @loader_path is a dynamic variable used in Mach-O binaries to specify a relative path for loading frameworks and shared libraries.
     // dep_sokol.artifact("sokol_clib").root_module.addRPathSpecial("@loader_path");
 
     // Install the shared runtime libs into this project's zig-out/lib so the
     // host exe and zr plugin can both load them from a single place.
-    b.installArtifact(dep_zdawn.artifact("zdawn"));
+    // b.installArtifact(dep_zdawn.artifact("zdawn"));
     b.installArtifact(dep_sokol.artifact("sokol_clib"));
     if (dep_cimgui.artifact(cimgui_conf.clib_name).isDynamicLibrary()) {
         b.installArtifact(dep_cimgui.artifact(cimgui_conf.clib_name));
@@ -150,16 +152,16 @@ pub fn build(b: *Build) !void {
 
     // link gui for hot reload
     // if (optimize == .Debug) {
-    const gui_dl = b.addLibrary(.{
-        .linkage = .dynamic,
-        .name = "gui",
-        .root_module = mod_gui,
-    });
+    // const gui_dl = b.addLibrary(.{
+    //     .linkage = .dynamic,
+    //     .name = "gui",
+    //     .root_module = mod_gui,
+    // });
     // The hot-reload plugin lives in zig-out/lib and depends on sibling
     // shared libs (libzdawn.dylib, libsokol_clib.dylib, ...), so resolve
     // them relative to the plugin itself.
-    gui_dl.root_module.addRPathSpecial("@loader_path");
-    b.installArtifact(gui_dl);
+    // gui_dl.root_module.addRPathSpecial("@loader_path");
+    // b.installArtifact(gui_dl);
     // }
 
     // TESTS
@@ -179,6 +181,11 @@ pub fn build(b: *Build) !void {
         .root_source_file = b.path("testing/integration/integration.zig"),
         .target = target,
         .optimize = optimize,
+        // libwebgpu_dawn.a is a C++ archive built against the GCC libstdc++
+        // ABI (__cxx11). Zig's `link_libcpp` links its bundled libc++
+        // (clang ABI) which lacks those symbols, so link the system
+        // libstdc++ runtime directly instead.
+        .link_libc = true,
         .imports = &.{
             // .{ .name = "app", .module = mod_app },
             .{ .name = "pie", .module = mod_pie },
@@ -188,6 +195,8 @@ pub fn build(b: *Build) !void {
             .{ .name = "zbench", .module = dep_zbench.module("zbench") },
         },
     });
+    @import("zdawn").addDawnPaths(b, mod_integration, target.result);
+
     const integration_test_step = b.step("integration", "Run integration tests");
     const integration_tests = b.addTest(.{
         .name = "integration tests",
@@ -217,9 +226,10 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
     });
     // Link zgpu's zdawn artifact (which links libwebgpu_dawn.a + system
     // frameworks) so the wgpu C procs resolve at link time.
-    @import("zdawn").addLibraryPathsTo(exe);
-    @import("zdawn").linkSystemDeps(b, exe);
+    @import("zdawn").addDawnPathsTo(exe);
+    // @import("zdawn").linkSystemDeps(b, exe);
     b.installArtifact(exe);
+    // exe.linkLibrary(zgpu.artifact("zdawn"));
     const exe_step = b.step("run", "Run pie");
     // const run_cmd = b.addRunArtifact(exe);
     // run_cmd.step.dependOn(b.getInstallStep());
@@ -229,6 +239,7 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
     // run_cmd.step.dependOn(b.getInstallStep());
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
+    // b.getInstallStep().*.dump();
     exe_step.dependOn(&run_cmd.step);
 }
 
