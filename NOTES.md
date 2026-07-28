@@ -8,12 +8,22 @@
 - https://rcsumner.net/raw_guide/RAWguide.pdf
 - https://www.odelama.com/photo/Developing-a-RAW-Photo-by-hand/
 - https://www.odelama.com/photo/Developing-a-RAW-Photo-by-hand/Developing-a-RAW-Photo-by-hand_Part-2/
-- https://www.strollswithmydog.com/raw-data-physical-units/
-- https://www.strollswithmydog.com/linear-color-transforms/
+- strollswithmydog
+  - https://www.strollswithmydog.com/raw-data-physical-units/
+  - https://www.strollswithmydog.com/linear-color-transforms/
+- https://discuss.pixls.us/t/article-color-management-in-raw-processing/11521
 
+### Camera Calibration
 - https://www.dxomark.com/Cameras/Nikon/D7100---Measurements
+- https://torger.se/anders/dcamprof.html
+  - https://torger.se/anders/photography/camera-profiling.html\
+- Series by Glenn Butcher
+  - https://discuss.pixls.us/t/the-quest-for-good-color-1-spectral-sensitivity-functions-ssfs-and-camera-profiles/18002/11
+  - https://discuss.pixls.us/t/the-quest-for-good-color-2-spectral-profiles-on-the-cheap/18286
+  - https://discuss.pixls.us/t/the-quest-for-good-color-3-how-close-can-it8-come-to-ssf/18689
+- https://openaccess.thecvf.com/content_iccv_workshops_2013/W25/papers/Prasad_Quick_Approximation_of_2013_ICCV_paper.pdf
 
-- WB/CCT/CAT
+### WB/CCT/CAT
   - https://www.energy.gov/cmei/ssl/articles/modifications-robertson-method-calculating-correlated-color-temperature-improve
   - https://jo.dreggn.org/vkdt/src/pipe/modules/colour/readme.html
   - https://photo.stackexchange.com/questions/122251/how-do-color-values-change-mathematically-as-you-change-temperature-and-tint
@@ -22,6 +32,10 @@
   - https://discuss.pixls.us/t/confused-about-d50-d65-and-cct-in-white-balance-and-color-calibration-modules/37293/10
   - https://ansel.photos/en/resources/white-balances/#fnref:2
   - https://jackchou00.com/en/posts/cat16-reversibility/
+
+### Misc
+
+- https://www.photonstophotos.net/
 
 ## Gpu
 
