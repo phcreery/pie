@@ -12,6 +12,7 @@
   - https://www.strollswithmydog.com/raw-data-physical-units/
   - https://www.strollswithmydog.com/linear-color-transforms/
 - https://discuss.pixls.us/t/article-color-management-in-raw-processing/11521
+- https://jo.dreggn.org/2019_sigmoid.pdf
 
 ### Camera Calibration
 - https://www.dxomark.com/Cameras/Nikon/D7100---Measurements
