@@ -16,10 +16,10 @@ pub fn populateRepository(repo: *Repository) !void {
     try repo.add(@import("o-display/module.zig").desc);
 
     // test modules
-    // try repo.add(@import("test-multiply/module.zig").desc);
+    try repo.add(@import("test-multiply/module.zig").desc);
     // try repository.add(@import("test-2nodes/module.zig").desc);
-    // try repo.add(@import("test-i-1234/module.zig").desc);
-    // try repo.add(@import("test-o-2468/module.zig").desc);
+    try repo.add(@import("test-i-1234/module.zig").desc);
+    try repo.add(@import("test-o-2468/module.zig").desc);
     // try repository.add(@import("test-o-firstbytes/module.zig").desc);
     // try repo.add(@import("test-nop/module.zig").desc);
     // try repo.add(@import("test-nop-glsl/module.zig").desc);

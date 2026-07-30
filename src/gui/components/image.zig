@@ -109,7 +109,7 @@ pub const Image = struct {
             .pixel_format = .RGBA16F,
             .width = @intCast(texture.roi.w),
             .height = @intCast(texture.roi.h),
-            .wgpu_texture = @ptrCast(texture.texture), // injection
+            .wgpu_texture = @ptrCast(texture.texture.texture), // injection
             .label = "display-image-texture",
         });
         self.tex_view = sg.makeView(.{

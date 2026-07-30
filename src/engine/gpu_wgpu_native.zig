@@ -1,4 +1,5 @@
 /// A lot of this is just a wrapper around wgpu to make it easier to use in the context of image processing.
+/// intended to be used with [snorm-dev/wgpu_native_zig](https://github.com/snorm-dev/wgpu_native_zig)
 const std = @import("std");
 const wgpu = @import("wgpu");
 const gpu_data = @import("gpu_data.zig");

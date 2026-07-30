@@ -1,5 +1,6 @@
 const std = @import("std");
 const pie = @import("pie");
+const console = @import("console");
 
 const gpu = pie.gpu;
 const Pipeline = pie.Pipeline;
@@ -11,7 +12,7 @@ test "fullsize through pipeline" {
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
+    const cp_out = console.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
     var gpu_instance = try gpu.GPU.init(std.testing.io);

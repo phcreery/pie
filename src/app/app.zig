@@ -12,7 +12,7 @@ const sglue = sokol.glue;
 
 const pie = @import("pie");
 const console = @import("console");
-const wgpu = @import("wgpu_dawn");
+const wgpu = @import("wgpu_zig");
 
 const gui = @import("gui");
 
@@ -105,8 +105,8 @@ export fn init_fn(ptr: ?*anyopaque) void {
     };
 
     // initialize pie pipeline
-    const ext_device: wgpu.Device = @ptrCast(@constCast(sg.wgpuDevice().?));
-    const ext_queue: wgpu.Queue = @ptrCast(@constCast(sg.wgpuQueue().?));
+    const ext_device = wgpu.Device{ .device = @ptrCast(@constCast(sg.wgpuDevice().?)) };
+    const ext_queue = wgpu.Queue{ .queue = @ptrCast(@constCast(sg.wgpuQueue().?)) };
     state.gpu = pie.GPU.initExternal(ext_device, ext_queue) catch unreachable;
     // state.pipeline = pie.Pipeline.init(state.allocator, state.io, &state.gpu, null) catch unreachable;
     state.gui = .init(state.allocator, state.io, &state.gpu, &state.repo);
@@ -142,6 +142,7 @@ export fn frame(ptr: ?*anyopaque) void {
     // Render only.
     // state.gui.draw();
     // state.gui_draw(&state.gui);
+    state.gui.update();
     state.gui.draw();
 
     sg.endPass();

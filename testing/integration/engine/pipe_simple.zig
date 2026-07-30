@@ -1,6 +1,7 @@
 const std = @import("std");
 const pie = @import("pie");
 const zbench = @import("zbench");
+const console = @import("console");
 
 const gpu = pie.gpu;
 const Pipeline = pie.Pipeline;
@@ -48,7 +49,7 @@ test "simple test modules" {
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const cp_out = pie.cli.console.UTF8ConsoleOutput.init();
+    const cp_out = console.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
     var gpu_instance = try gpu.GPU.init(std.testing.io);
@@ -75,7 +76,7 @@ test "simple test modules" {
     // const mod_test_nop_1 = try pipeline.addModule(repository.get("test-nop").?);
     // const mod_test_nop_2 = try pipeline.addModule(repository.get("test-nop").?);
 
-    try pipeline.setModuleParam(mod_test_multiply, "multiplier", @as(f32, 2.0));
+    try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0);
     // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0));
 
     // pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;

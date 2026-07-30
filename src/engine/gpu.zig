@@ -1,10 +1,12 @@
-/// A lot of this is just a wrapper around wgpu to make it easier to use in the
-/// context of image processing.
+/// A lot of this is just a wrapper around wgpu to make it easier to use in the context of image processing.
+/// intended to be used with [shahwali/wgpu-zig](https://codeberg.org/shahwali/wgpu-zig) (wgpu-native)
 const std = @import("std");
-const wgpu = @import("wgpu_dawn");
+const wgpu = @import("wgpu_zig");
 const gpu_data = @import("gpu_data.zig");
 const ROI = @import("ROI.zig");
 const zuballoc = @import("zuballoc");
+
+const c = wgpu.c;
 
 const slog = std.log.scoped(.gpu);
 
@@ -23,9 +25,9 @@ pub const WORKGROUP_SIZE_Z: u32 = 1;
 
 pub const layoutStruct = gpu_data.layoutStruct;
 
-fn handleBufferMap(status: wgpu.MapAsyncStatus, msg: wgpu.c.WGPUStringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
-    const msg_str = wgpu.StringView.zigFromC(msg) orelse "<no message>";
-    slog.debug("handleBufferMap: status={s} msg=\"{s}\"\n", .{ @tagName(status), msg_str });
+fn handleBufferMap(status: c.WGPUMapAsyncStatus, _: c.WGPUStringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
+    // slog.debug("buffer_map status={x:.8}\n", .{@intFromEnum(status)});
+    _ = status;
     const complete: *bool = @ptrCast(@alignCast(userdata1));
     complete.* = true;
 }
@@ -36,23 +38,21 @@ pub const MemoryType = enum {
     storage,
     uniform,
 
-    pub fn toGPUBufferUsage(self: MemoryType) wgpu.BufferUsage {
+    pub fn toGPUBufferUsage(self: MemoryType) wgpu.Buffer.Usage {
         return switch (self) {
             .upload => .{ .copy_src = true, .map_write = true },
             .download => .{ .copy_dst = true, .map_read = true },
             .storage => .{ .copy_dst = true, .storage = true },
             .uniform => .{ .copy_dst = true, .uniform = true },
-            // else => unreachable,
         };
     }
 
-    pub fn toGPUMapMode(self: MemoryType) wgpu.MapMode {
+    fn toGPUMapMode(self: MemoryType) c_uint {
         return switch (self) {
-            .upload => .{ .write = true },
-            .download => .{ .read = true },
-            .storage => .{ .write = true },
-            .uniform => .{ .write = true },
-            // else => unreachable,
+            .upload => c.WGPUMapMode_Write,
+            .download => c.WGPUMapMode_Read,
+            .storage => c.WGPUMapMode_Write,
+            .uniform => c.WGPUMapMode_Write,
         };
     }
 };
@@ -69,14 +69,11 @@ pub const Buffer = struct {
 
     /// size in bytes of the buffer
     pub fn init(gpu: *GPU, size_bytes: ?u64, memory_type: MemoryType) !Self {
-        var limits = wgpu.Limits{};
-        if (gpu.adapter) |adapter| {
-            _ = adapter.getLimits(&limits);
-        } else {
-            _ = gpu.device.getLimits(&limits);
-        }
+        var max_buffer_size: u64 = if (gpu.adapterLimits()) |limits|
+            limits.maxBufferSize
+        else
+            std.math.maxInt(u64);
 
-        var max_buffer_size = limits.max_buffer_size;
         if (max_buffer_size == std.math.maxInt(u64)) {
             // set to something reasonable
             max_buffer_size = 256 * 1024 * 1024 * 12; // 256 MB x12 for RGBAf16
@@ -94,13 +91,13 @@ pub const Buffer = struct {
         // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
         // and that usage can only be used with `COPY_DST`.
         slog.info("Creating Buffer with size {B:.4}", .{buffer_size_bytes});
-        const buffer = gpu.device.createBuffer(wgpu.BufferDescriptor{
-            .label = wgpu.StringView.cFromZig("buffer"),
+        const buffer = try gpu.device.createBuffer(.{
+            .label = "buffer",
             .usage = memory_type.toGPUBufferUsage(),
             .size = buffer_size_bytes,
-            .mapped_at_creation = wgpu.c.WGPU_FALSE,
+            .mapped_at_creation = false,
         });
-        errdefer buffer.release();
+        errdefer buffer.deinit();
 
         return Self{
             .gpu = gpu,
@@ -111,7 +108,7 @@ pub const Buffer = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.buffer.release();
+        self.buffer.deinit();
     }
 
     /// maps the buffer and returns a pointer to write to
@@ -129,54 +126,24 @@ pub const Buffer = struct {
         //
         // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
         // to tell you when the mapping is complete.
+        var buffer_map_complete = false;
+        _ = c.wgpuBufferMapAsync(self.buffer.buffer, self.memory_type.toGPUMapMode(), 0, size_bytes, .{
+            .mode = c.WGPUCallbackMode_AllowSpontaneous,
+            .callback = handleBufferMap,
+            .userdata1 = @ptrCast(&buffer_map_complete),
+        });
+
         slog.debug("Waiting for buffer map to complete", .{});
 
-        if (self.gpu.instance) |instance| {
-            var buffer_map_complete = false;
-            const map_future = self.buffer.mapAsync(self.memory_type.toGPUMapMode(), 0, size_bytes, wgpu.BufferMapCallbackInfo{
-                .mode = .wait_any_only,
-                .callback = handleBufferMap,
-                .userdata_1 = @ptrCast(&buffer_map_complete),
-            });
-            var map_wait_infos = [_]wgpu.FutureWaitInfo{.{ .future = map_future, .completed = wgpu.c.WGPU_FALSE }};
-            _ = instance.waitAny(&map_wait_infos, std.math.maxInt(u64));
-        } else {
-            const MapWait = struct {
-                done: std.atomic.Value(bool),
-                status: wgpu.MapAsyncStatus,
-            };
-            var map_wait = MapWait{ .done = std.atomic.Value(bool).init(false), .status = .success };
-            _ = self.buffer.mapAsync(self.memory_type.toGPUMapMode(), 0, size_bytes, wgpu.BufferMapCallbackInfo{
-                .mode = .allow_spontaneous,
-                .callback = struct {
-                    fn cb(status: wgpu.MapAsyncStatus, _: wgpu.c.WGPUStringView, userdata_1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
-                        const mw: *MapWait = @ptrCast(@alignCast(userdata_1.?));
-                        mw.status = status;
-                        mw.done.store(true, .release);
-                    }
-                }.cb,
-                .userdata_1 = @ptrCast(&map_wait),
-            });
-            while (!map_wait.done.load(.acquire)) {
-                std.atomic.spinLoopHint();
-            }
-            if (map_wait.status != .success) {
-                slog.err("Buffer map failed in external-device mode: {s}", .{@tagName(map_wait.status)});
-                @panic("buffer map failed");
-            }
+        // Wait for the GPU to finish working on the submitted work. wgpu-native
+        // resolves the map callback from wgpuDevicePoll.
+        while (!buffer_map_complete) {
+            _ = self.gpu.device.poll(true);
         }
 
         slog.debug("Buffer map complete", .{});
 
-        if (self.memory_type == .download) {
-            const mapped = self.buffer.getConstMappedRange(u8, 0, size_bytes);
-            slog.debug("getConstMappedRange(offset=0, size={d}) -> {s}\n", .{ size_bytes, if (mapped != null) "ptr" else "null" });
-            return @ptrCast(@constCast(mapped.?.ptr));
-        } else {
-            const mapped = self.buffer.getMappedRange(u8, 0, size_bytes);
-            slog.debug("getMappedRange(offset=0, size={d}) -> {s}\n", .{ size_bytes, if (mapped != null) "ptr" else "null" });
-            return @ptrCast(mapped.?.ptr);
-        }
+        return c.wgpuBufferGetMappedRange(self.buffer.buffer, 0, size_bytes).?;
     }
 
     pub fn map(self: *Self) void {
@@ -201,10 +168,10 @@ pub const Buffer = struct {
         slog.debug("First 4 values to upload: {any}, {any}, {any}, {any}", .{ data[0], data[1], data[2], data[3] });
 
         const size_bytes = roi.w * roi.h * format.bpp();
-        const upload_mapped_ptr: *anyopaque = self.mapUpload(size_bytes);
+        const upload_mapped_ptr: *anyopaque = self.mapSize(size_bytes);
         const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(upload_mapped_ptr));
         const upload_buffer_slice = upload_buffer_ptr[0..(roi.w * roi.h * format.nchannels())];
-        defer self.unmapUpload();
+        defer self.unmap();
 
         @memcpy(upload_buffer_slice, data);
     }
@@ -240,31 +207,24 @@ pub const Buffer = struct {
         slog.debug("Writing data to GPU Texture", .{});
 
         const bytes_per_row = roi.w * format.bpp();
-        const offset = @as(u64, roi.y) * bytes_per_row + roi.x * format.bpp();
-        const data_layout = wgpu.TexelCopyBufferLayout{
-            .offset = offset,
-            .bytes_per_row = bytes_per_row,
-            .rows_per_image = roi.h,
-        };
-
-        const copy_size = wgpu.Extent3D{
-            .width = roi.w,
-            .height = roi.h,
-            .depth_or_array_layers = 1,
-        };
-        const destination = wgpu.TexelCopyTextureInfo{
-            .texture = texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
-        };
-
         self.gpu.queue.writeTexture(
-            destination,
-            data_layout,
-            copy_size,
             T,
+            .{
+                .texture = texture.texture,
+                .mip_level = 0,
+                .origin = .{ .x = 0, .y = 0, .z = 0 },
+            },
             data,
+            .{
+                .offset = @as(u64, roi.y) * bytes_per_row + roi.x * format.bpp(),
+                .bytes_per_row = bytes_per_row,
+                .rows_per_image = roi.h,
+            },
+            .{
+                .width = roi.w,
+                .height = roi.h,
+                .depth_or_array_layers = 1,
+            },
         );
     }
 };
@@ -274,10 +234,10 @@ pub const Encoder = struct {
     const Self = @This();
     pub fn start(gpu: *GPU) !Self {
         // The command encoder allows us to record commands that we will later submit to the GPU.
-        const encoder = gpu.device.createCommandEncoder(wgpu.CommandEncoderDescriptor{
-            .label = wgpu.StringView.cFromZig("Command Encoder"),
+        const encoder = try gpu.device.createCommandEncoder(.{
+            .label = "Command Encoder",
         });
-        errdefer encoder.release();
+        errdefer encoder.deinit();
 
         return Self{
             .encoder = encoder,
@@ -285,38 +245,37 @@ pub const Encoder = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.encoder.release();
+        self.encoder.deinit();
     }
 
     /// you need to submit the command buffer to the GPU queue after finishing the encoder
-    pub fn finish(self: *Self) ?wgpu.CommandBuffer {
+    pub fn finish(self: *Self) ?wgpu.CommandEncoder.CommandBuffer {
         slog.debug("Finishing command encoder", .{});
 
         // We finish the encoder, giving us a fully recorded command buffer.
-        const command_buffer = self.encoder.finish(wgpu.CommandBufferDescriptor{
-            .label = wgpu.StringView.cFromZig("Command Buffer"),
-        });
-
-        // the command buffer need to be released after submitting with command_buffer.release()
+        // the command buffer needs to be released after submitting
         // GPU.run() will do that for you
-        return command_buffer;
+        return self.encoder.finish(.{
+            .label = "Command Buffer",
+        }) catch null;
     }
 
     pub fn enqueueShader(self: *Self, compute_pipeline: *const ComputePipeline, bindings: *Bindings, work_size: ROI) void {
         slog.debug("Enqueuing compute shader", .{});
         // A compute pass is a single series of compute operations. While we are recording a compute
         // pass, we cannot record to the encoder.
-        const compute_pass = self.encoder.beginComputePass(wgpu.ComputePassDescriptor{
-            .label = wgpu.StringView.cFromZig("Compute Pass"),
-        });
+        var compute_pass = self.encoder.beginComputePass(.{
+            .label = "Compute Pass",
+        }) catch unreachable;
+        defer compute_pass.deinit();
+
         // Set the pipeline that we want to use
         compute_pass.setPipeline(compute_pipeline.pipeline);
 
-        // compute_pass.setBindGroup(0, bindings.bind_group, 0, null);
         for (bindings.bind_groups, 0..) |bind_group, index| {
             const bg = bind_group orelse continue;
             slog.debug("Setting bind group {d}", .{index});
-            compute_pass.setBindGroup(@as(u32, @intCast(index)), bg, null);
+            compute_pass.setBindGroup(@intCast(index), bg, &.{});
         }
 
         // Now we dispatch a series of workgroups. Each workgroup is a 3D grid of individual programs.
@@ -326,18 +285,6 @@ pub const Encoder = struct {
         const workgroup_count_x = (work_size.w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X; // ceil division
         const workgroup_count_y = (work_size.h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y; // ceil division
         const workgroup_count_z = 1;
-
-        { // Debug info
-            // const output_size = work_size.w * work_size.h;
-            // const workgroup_size = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y * WORKGROUP_SIZE_Z;
-            // slog.debug("output_size: {d}", .{output_size});
-            // slog.debug("workgroup_size: {d}", .{workgroup_size});
-            // slog.debug("workgroup_count_x: {d}", .{workgroup_count_x});
-            // slog.debug("workgroup_count_y: {d}", .{workgroup_count_y});
-            // slog.debug("workgroup_count_z: {d}", .{workgroup_count_z});
-            // slog.debug("total workgroups: {d}", .{workgroup_count_x * workgroup_count_y * workgroup_count_z});
-            // slog.debug("total invocations: {d}", .{@as(u32, workgroup_count_x) * workgroup_count_y * workgroup_count_z * workgroup_size});
-        }
 
         slog.debug("Dispatching compute work", .{});
         compute_pass.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
@@ -353,27 +300,26 @@ pub const Encoder = struct {
 
         // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
         // CPU to the input buffer on the GPU.
-        const copy_size = wgpu.Extent3D{
+        const copy_size = c.WGPUExtent3D{
             .width = roi.w,
             .height = roi.h,
-            .depth_or_array_layers = 1,
+            .depthOrArrayLayers = 1,
         };
-        const offset = @as(u64, mem_offset); //+ @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
-        const source = wgpu.TexelCopyBufferInfo{
-            .buffer = memory.buffer,
-            .layout = wgpu.TexelCopyBufferLayout{
-                .offset = offset,
-                .bytes_per_row = padded_bytes_per_row,
-                .rows_per_image = roi.h,
+        const source = c.WGPUTexelCopyBufferInfo{
+            .buffer = memory.buffer.buffer,
+            .layout = .{
+                .offset = @as(u64, mem_offset), //+ @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
+                .bytesPerRow = padded_bytes_per_row,
+                .rowsPerImage = roi.h,
             },
         };
-        const destination = wgpu.TexelCopyTextureInfo{
-            .texture = texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        const destination = c.WGPUTexelCopyTextureInfo{
+            .texture = texture.texture.texture,
+            .mipLevel = 0,
+            .origin = .{ .x = 0, .y = 0, .z = 0 },
+            .aspect = c.WGPUTextureAspect_All,
         };
-        self.encoder.copyBufferToTexture(source, destination, copy_size);
+        c.wgpuCommandEncoderCopyBufferToTexture(self.encoder.encoder, &source, &destination, &copy_size);
     }
     pub fn enqueueTexToBuf(self: *Self, buffer: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
         slog.debug("Reading GPU buffer from Shader Buffer", .{});
@@ -381,66 +327,59 @@ pub const Encoder = struct {
         const bytes_per_row = roi.w * texture.format.bpp();
         const padded_bytes_per_row = ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of COPY_BYTES_PER_ROW_ALIGNMENT
 
-        const copy_size = wgpu.Extent3D{
+        const copy_size = c.WGPUExtent3D{
             .width = roi.w,
             .height = roi.h,
-            .depth_or_array_layers = 1,
+            .depthOrArrayLayers = 1,
         };
-        const source = wgpu.TexelCopyTextureInfo{
-            .texture = texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        const source = c.WGPUTexelCopyTextureInfo{
+            .texture = texture.texture.texture,
+            .mipLevel = 0,
+            .origin = .{ .x = 0, .y = 0, .z = 0 },
+            .aspect = c.WGPUTextureAspect_All,
         };
-        const offset = @as(u64, mem_offset); //+ @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
-        const destination = wgpu.TexelCopyBufferInfo{
-            .buffer = buffer.buffer,
-            .layout = wgpu.TexelCopyBufferLayout{
-                .offset = offset,
-                .bytes_per_row = padded_bytes_per_row,
-                .rows_per_image = roi.h,
+        const destination = c.WGPUTexelCopyBufferInfo{
+            .buffer = buffer.buffer.buffer,
+            .layout = .{
+                .offset = @as(u64, mem_offset), //+ @as(u64, roi.y) * padded_bytes_per_row + roi.x * texture.format.bpp();
+                .bytesPerRow = padded_bytes_per_row,
+                .rowsPerImage = roi.h,
             },
         };
-        self.encoder.copyTextureToBuffer(source, destination, copy_size);
+        c.wgpuCommandEncoderCopyTextureToBuffer(self.encoder.encoder, &source, &destination, &copy_size);
     }
 
     pub fn enqueueTexToTex(self: *Self, src_texture: *Texture, dst_texture: *Texture, roi: ROI) !void {
         slog.debug("Copying GPU texture to another GPU texture", .{});
 
-        const copy_size = wgpu.Extent3D{
+        const copy_size = c.WGPUExtent3D{
             .width = roi.w,
             .height = roi.h,
-            .depth_or_array_layers = 1,
+            .depthOrArrayLayers = 1,
         };
-        const source = wgpu.TexelCopyTextureInfo{
-            .texture = src_texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        const source = c.WGPUTexelCopyTextureInfo{
+            .texture = src_texture.texture.texture,
+            .mipLevel = 0,
+            .origin = .{ .x = 0, .y = 0, .z = 0 },
+            .aspect = c.WGPUTextureAspect_All,
         };
-
-        const destination = wgpu.TexelCopyTextureInfo{
-            .texture = dst_texture.texture,
-            .mip_level = 0,
-            // .origin = wgpu.Origin3D{ .x = roi.x, .y = roi.y, .z = 0 },
-            .origin = wgpu.Origin3D{ .x = 0, .y = 0, .z = 0 },
+        const destination = c.WGPUTexelCopyTextureInfo{
+            .texture = dst_texture.texture.texture,
+            .mipLevel = 0,
+            .origin = .{ .x = 0, .y = 0, .z = 0 },
+            .aspect = c.WGPUTextureAspect_All,
         };
-
-        self.encoder.copyTextureToTexture(source, destination, copy_size);
+        c.wgpuCommandEncoderCopyTextureToTexture(self.encoder.encoder, &source, &destination, &copy_size);
     }
     pub fn enqueueBufToBuf(self: *Self, src_memory: *Buffer, src_offset: usize, dst_memory: *Buffer, dst_offset: usize, size_bytes: usize) !void {
         slog.debug("Copying GPU buffer to another GPU buffer", .{});
 
-        const src_offset_aligned = @as(u64, src_offset);
-        const dst_offset_aligned = @as(u64, dst_offset);
-        const size_bytes_aligned = @as(u64, size_bytes);
-
         self.encoder.copyBufferToBuffer(
             src_memory.buffer,
-            src_offset_aligned,
+            @as(u64, src_offset),
             dst_memory.buffer,
-            dst_offset_aligned,
-            size_bytes_aligned,
+            @as(u64, dst_offset),
+            @as(u64, size_bytes),
         );
     }
 };
@@ -456,31 +395,31 @@ pub const TextureFormat = enum {
     rggb16float, // we will treat this as rgba16float with quarter width
     rggb16uint,
 
-    pub fn toWGPUFormat(self: TextureFormat) wgpu.TextureFormat {
+    pub fn toWGPUFormat(self: TextureFormat) wgpu.Texture.Format {
         return switch (self) {
-            .rgba16float => wgpu.TextureFormat.rgba16_float,
-            .rgba16uint => wgpu.TextureFormat.rgba16_uint,
-            .r8uint => wgpu.TextureFormat.r8_uint,
-            .r16uint => wgpu.TextureFormat.r16_uint,
-            .r16float => wgpu.TextureFormat.r16_float,
+            .rgba16float => .rgba16_float,
+            .rgba16uint => .rgba16_uint,
+            .r8uint => .r8_uint,
+            .r16uint => .r16_uint,
+            .r16float => .r16_float,
 
             // special cases
-            .rggb16float => wgpu.TextureFormat.rgba16_float,
-            .rggb16uint => wgpu.TextureFormat.rgba16_uint,
+            .rggb16float => .rgba16_float,
+            .rggb16uint => .rgba16_uint,
         };
     }
 
-    pub fn toWGPUSampleType(self: TextureFormat) wgpu.TextureSampleType {
+    pub fn toWGPUSampleType(self: TextureFormat) wgpu.BindGroupLayout.TextureSampleType {
         return switch (self) {
-            .rgba16float => wgpu.TextureSampleType.float,
-            .rgba16uint => wgpu.TextureSampleType.uint,
-            .r8uint => wgpu.TextureSampleType.uint,
-            .r16uint => wgpu.TextureSampleType.uint,
-            .r16float => wgpu.TextureSampleType.float,
+            .rgba16float => .float,
+            .rgba16uint => .uint,
+            .r8uint => .uint,
+            .r16uint => .uint,
+            .r16float => .float,
 
             // special cases
-            .rggb16float => wgpu.TextureSampleType.float,
-            .rggb16uint => wgpu.TextureSampleType.uint,
+            .rggb16float => .float,
+            .rggb16uint => .uint,
         };
     }
 
@@ -530,33 +469,36 @@ pub const Texture = struct {
 
     pub fn init(gpu: *GPU, name: []const u8, format: TextureFormat, roi: ROI) !Self {
         slog.debug("Creating texture {s} of size {d}x{d}", .{ @tagName(format), roi.w, roi.h });
-        var limits = wgpu.Limits{};
-        if (gpu.adapter) |adapter| {
-            _ = adapter.getLimits(&limits);
-        } else {
-            _ = gpu.device.getLimits(&limits);
-        }
 
-        var usage = wgpu.TextureUsage{ .storage_binding = true, .texture_binding = true, .copy_src = true, .copy_dst = true };
+        var usage: wgpu.Texture.Usage = .{
+            .storage_binding = true,
+            .texture_binding = true,
+            .copy_src = true,
+            .copy_dst = true,
+        };
         // r16uint does not support storage binding
         if (format == .r16uint or format == .r16float) {
-            usage = .{ .texture_binding = true, .copy_src = true, .copy_dst = true };
+            usage = .{
+                .texture_binding = true,
+                .copy_src = true,
+                .copy_dst = true,
+            };
         }
 
-        const texture = gpu.device.createTexture(wgpu.TextureDescriptor{
-            .label = wgpu.StringView.cFromZig(name),
-            .size = wgpu.Extent3D{
+        const texture = try gpu.device.createTexture(.{
+            .label = name,
+            .size = .{
                 .width = roi.w,
                 .height = roi.h,
                 .depth_or_array_layers = 1,
             },
             .mip_level_count = 1,
             .sample_count = 1,
-            .dimension = wgpu.TextureDimension.tdim_2d,
+            .dimension = .@"2d",
             .format = format.toWGPUFormat(),
             .usage = usage,
         });
-        errdefer texture.release();
+        errdefer texture.deinit();
         return Texture{
             .texture = texture,
             .format = format,
@@ -565,7 +507,7 @@ pub const Texture = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.texture.release();
+        self.texture.deinit();
     }
 };
 
@@ -587,51 +529,41 @@ pub const Bindings = struct {
         bind_group_entries: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupEntry,
     ) !Self {
         slog.debug("Creating Bindings", .{});
-        var limits = wgpu.Limits{};
-        if (gpu.adapter) |adapter| {
-            _ = adapter.getLimits(&limits);
-        } else {
-            _ = gpu.device.getLimits(&limits);
-        }
 
         // Even when the buffers are individually dropped, wgpu will keep the bind group and buffers
         // alive until the bind group itself is dropped.
         var bind_groups: [MAX_BIND_GROUPS]?wgpu.BindGroup = @splat(null);
         for (bind_group_entries, 0..) |bind_group, bind_group_number| {
-            var wgpu_bind_group_entries: [MAX_BINDINGS]wgpu.BindGroupEntry = undefined;
+            var wgpu_bind_group_entries: [MAX_BINDINGS]wgpu.BindGroup.Entry = undefined;
             const bg = bind_group orelse continue;
             var bind_count: u32 = 0;
             for (bg, 0..) |bind_group_entry, bind_group_entry_number| {
                 const bge = bind_group_entry orelse continue;
                 if (bge.texture) |texture| {
-                    const entry = wgpu.BindGroupEntry{
+                    wgpu_bind_group_entries[bind_group_entry_number] = .{
                         .binding = @intCast(bind_group_entry_number),
-                        .size = 0,
-                        .texture_view = texture.texture.createView(.{}),
+                        .texture_view = try texture.texture.createView(.{}),
                     };
-                    wgpu_bind_group_entries[bind_group_entry_number] = entry;
                 } else if (bge.buffer) |buffer| {
                     if (buffer.buffer_size == 0) {
                         slog.err("Buffer size is 0, cannot bind bind group {d} entry {d} to pipeline", .{ bind_group_number, bind_group_entry_number });
                         return error.InvalidInput;
                     }
-                    const entry = wgpu.BindGroupEntry{
+                    wgpu_bind_group_entries[bind_group_entry_number] = .{
                         .binding = @intCast(bind_group_entry_number),
                         .buffer = buffer.buffer,
                         .offset = 0,
                         .size = buffer.buffer_size,
                     };
-                    wgpu_bind_group_entries[bind_group_entry_number] = entry;
                 }
                 bind_count += 1;
             }
-            const wgpu_bind_group = gpu.device.createBindGroup(wgpu.BindGroupDescriptor{
-                .label = wgpu.StringView.cFromZig("Bind Group"),
+            const wgpu_bind_group = try gpu.device.createBindGroup(.{
+                .label = "Bind Group",
                 .layout = compute_pipeline.wgpu_bind_group_layouts[bind_group_number].?,
-                .entry_count = bind_count,
-                .entries = &wgpu_bind_group_entries,
+                .entries = wgpu_bind_group_entries[0..bind_count],
             });
-            errdefer wgpu_bind_group.release();
+            errdefer wgpu_bind_group.deinit();
             bind_groups[bind_group_number] = wgpu_bind_group;
         }
         return Bindings{
@@ -641,8 +573,8 @@ pub const Bindings = struct {
 
     pub fn deinit(self: *Self) void {
         for (self.bind_groups) |bind_group| {
-            var bg = bind_group orelse continue;
-            bg.release();
+            const bg = bind_group orelse continue;
+            bg.deinit();
         }
     }
 };
@@ -662,11 +594,11 @@ pub const BindGroupLayoutBufferEntryType = enum {
     uniform,
     // read_only_storage,
 
-    pub fn toWGPUBufferBindingType(self: BindGroupLayoutBufferEntryType) wgpu.BufferBindingType {
+    pub fn toWGPUBufferBindingType(self: BindGroupLayoutBufferEntryType) wgpu.BindGroupLayout.BufferBindingType {
         return switch (self) {
-            .storage => wgpu.BufferBindingType.storage,
-            .uniform => wgpu.BufferBindingType.uniform,
-            // .read_only_storage => wgpu.BufferBindingType.read_only_storage,
+            .storage => .storage,
+            .uniform => .uniform,
+            // .read_only_storage => .read_only_storage,
         };
     }
 };
@@ -705,24 +637,17 @@ pub const Shader = struct {
     ) !Shader {
         slog.debug("Compiling shader {s}", .{opts.name});
 
-        var wgsl_source = wgpu.ShaderSourceWGSL{
-            .chain = .{
-                .next = null,
-                .struct_type = switch (opts.type) {
-                    .wgsl => .shader_source_wgsl,
-                    .spirv => .shader_source_spirv,
-                    // .glsl => .shader_source_glsl, // dawn doesn't support GLSL
-                    else => unreachable,
-                },
+        const source: wgpu.ShaderSource = switch (opts.type) {
+            .wgsl => .{ .wgsl = shader_source },
+            .spirv => blk: {
+                const code_ptr: [*]const u32 = @ptrCast(@alignCast(shader_source.ptr));
+                break :blk .{ .spirv = code_ptr[0 .. shader_source.len / @sizeOf(u32)] };
             },
-            .code = wgpu.StringView.cFromZig(shader_source),
-        };
-        const descriptor = wgpu.ShaderModuleDescriptor{
-            .next_in_chain = @ptrCast(&wgsl_source),
-            .label = wgpu.StringView.cFromZig(opts.name),
+            // wgpu-native has no GLSL frontend (that was a Dawn feature)
+            .glsl => return error.UnsupportedShaderLanguage,
         };
 
-        const shader_module = gpu.device.createShaderModule(descriptor);
+        const shader_module = try gpu.device.createShaderModule(source);
 
         return Self{
             .shader_module = shader_module,
@@ -730,7 +655,7 @@ pub const Shader = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.shader_module.release();
+        self.shader_module.deinit();
     }
 };
 
@@ -767,7 +692,7 @@ pub const ComputePipeline = struct {
         var bind_group_layout_count: u32 = 0;
         bgle_blk: for (bind_group_layout_entries, 0..) |bind_group_layout, bind_group_layout_number| {
             const bgl = bind_group_layout orelse break :bgle_blk;
-            var wgpu_g0_bind_group_layout_entries: [MAX_BINDINGS]wgpu.BindGroupLayoutEntry = undefined;
+            var wgpu_bind_group_layout_entries: [MAX_BINDINGS]wgpu.BindGroupLayout.Entry = undefined;
 
             var bind_count: u32 = 0;
             bgl_blk: for (bgl, 0..) |bind_group_layout_entry, bind_number| {
@@ -778,82 +703,70 @@ pub const ComputePipeline = struct {
                         .read => {
                             // Note: we don't need format for input textures
                             // but we do need to specify the sample type
-                            const entry = wgpu.BindGroupLayoutEntry{
+                            wgpu_bind_group_layout_entries[bind_number] = .{
                                 .binding = @intCast(bind_number),
                                 .visibility = .{ .compute = true },
-                                .texture = wgpu.TextureBindingLayout{
-                                    .view_dimension = wgpu.TextureViewDimension.tvdim_2d,
+                                .texture = .{
+                                    .view_dimension = .@"2d",
                                     .sample_type = bgle_texture.format.toWGPUSampleType(),
                                 },
                             };
-                            wgpu_g0_bind_group_layout_entries[bind_number] = entry;
                         },
                         .write => {
-                            const entry = wgpu.BindGroupLayoutEntry{
+                            wgpu_bind_group_layout_entries[bind_number] = .{
                                 .binding = @intCast(bind_number),
                                 .visibility = .{ .compute = true },
-                                .storage_texture = wgpu.StorageTextureBindingLayout{
-                                    .access = wgpu.StorageTextureAccess.write_only,
+                                .storage_texture = .{
+                                    .access = .write_only,
                                     .format = bgle_texture.format.toWGPUFormat(),
-                                    .view_dimension = wgpu.TextureViewDimension.tvdim_2d,
+                                    .view_dimension = .@"2d",
                                 },
                             };
-                            wgpu_g0_bind_group_layout_entries[bind_number] = entry;
                         },
                     }
                 } else if (bgle.buffer) |bgle_buffer| {
-                    const entry = wgpu.BindGroupLayoutEntry{
+                    wgpu_bind_group_layout_entries[bind_number] = .{
                         .binding = @intCast(bind_number),
                         .visibility = .{ .compute = true },
-                        .buffer = wgpu.BufferBindingLayout{
+                        .buffer = .{
                             .binding_type = bgle_buffer.binding_type.toWGPUBufferBindingType(),
 
-                            // .has_dynamic_offset = @intFromBool(false),
+                            // .has_dynamic_offset = false,
                             // .min_binding_size = bge_buffer.size,
                         },
                     };
-                    wgpu_g0_bind_group_layout_entries[bind_number] = entry;
                 }
                 bind_count += 1;
             }
-            const wgpu_bind_group_layout = gpu.device.createBindGroupLayout(wgpu.BindGroupLayoutDescriptor{
-                .label = wgpu.StringView.cFromZig("Bind Group Layout"),
-                .entry_count = bind_count,
-                .entries = &wgpu_g0_bind_group_layout_entries,
+            const wgpu_bind_group_layout = try gpu.device.createBindGroupLayout(.{
+                .label = "Bind Group Layout",
+                .entries = wgpu_bind_group_layout_entries[0..bind_count],
             });
-            errdefer wgpu_bind_group_layout.release();
+            errdefer wgpu_bind_group_layout.deinit();
 
             wgpu_bind_group_layouts[bind_group_layout_number] = wgpu_bind_group_layout;
             bind_group_layout_count += 1;
         }
 
-        // this basically converts from [MAX_BIND_GROUPS]?wgpu.BindGroupLayout to [MAX_BIND_GROUPS]wgpu.BindGroupLayout
-        // by skipping null entries
-        var bind_group_layouts: [MAX_BIND_GROUPS]wgpu.BindGroupLayout = undefined;
-        for (wgpu_bind_group_layouts, 0..) |bgl, index| {
-            const layout = bgl orelse continue;
-            bind_group_layouts[index] = layout;
-        }
         // The pipeline layout describes the bind groups that a pipeline expects
-        const wgpu_pipeline_layout = gpu.device.createPipelineLayout(wgpu.PipelineLayoutDescriptor{
-            .label = wgpu.StringView.cFromZig("Pipeline Layout"),
-            .bind_group_layout_count = bind_group_layout_count,
-            .bind_group_layouts = &bind_group_layouts,
-        });
-        errdefer wgpu_pipeline_layout.release();
+        // (only the non-null prefix of bind group layouts)
+        const wgpu_pipeline_layout = try gpu.device.createPipelineLayout(
+            "Pipeline Layout",
+            wgpu_bind_group_layouts[0..bind_group_layout_count],
+            0, // immediate_size
+        );
+        errdefer wgpu_pipeline_layout.deinit();
 
         // The pipeline is the ready-to-go program state for the GPU. It contains the shader modules,
         // the interfaces (bind group layouts) and the shader entry point.
         // this does some compilation/validation/linking as well
-        const pipeline = gpu.device.createComputePipeline(wgpu.ComputePipelineDescriptor{
-            .label = wgpu.StringView.cFromZig("Compute Pipeline"),
+        const pipeline = try gpu.device.createComputePipeline(.{
+            .label = "Compute Pipeline",
             .layout = wgpu_pipeline_layout,
-            .compute = wgpu.ComputeState{
-                .module = shader.shader_module,
-                .entry_point = wgpu.StringView.cFromZig(name),
-            },
+            .module = shader.shader_module,
+            .entry_point = name,
         });
-        errdefer pipeline.release();
+        errdefer pipeline.deinit();
 
         return ComputePipeline{
             .name = name,
@@ -867,12 +780,12 @@ pub const ComputePipeline = struct {
         slog.debug("De-initializing ShaderPass {s}", .{self.name});
 
         for (self.wgpu_bind_group_layouts) |bind_group_layout| {
-            var bgl = bind_group_layout orelse continue;
-            bgl.release();
+            const bgl = bind_group_layout orelse continue;
+            bgl.deinit();
         }
 
-        self.pipeline_layout.release();
-        self.pipeline.release();
+        self.pipeline_layout.deinit();
+        self.pipeline.deinit();
     }
 };
 
@@ -880,179 +793,118 @@ pub const ComputePipeline = struct {
 pub const GPU = struct {
     instance: ?wgpu.Instance = null,
     adapter: ?wgpu.Adapter = null,
-    device: wgpu.Device,
-    queue: wgpu.Queue,
+    device: wgpu.Device = undefined,
+    queue: wgpu.Queue = undefined,
     adapter_name: []const u8 = "",
 
     const Self = @This();
 
+    fn adapterLimits(self: *const Self) ?c.WGPULimits {
+        const adapter = self.adapter orelse return null;
+        return adapter.getLimits() catch null;
+    }
+
     pub fn init(io: std.Io) !Self {
-        _ = io;
+        _ = io; // not needed by wgpu-native (its futures resolve via device poll / process events)
         slog.debug("Initializing GPU", .{});
 
-        // Native dawn requires the `timed_wait_any` instance feature to accept
-        // CallbackMode.allow_process_events (which is how we drive the async
-        // adapter/device requests synchronously below). Mirrors what sokol_app.h
-        // does for its SOKOL_WGPU native backend.
-        const instance_features = [_]wgpu.InstanceFeatureName{.timed_wait_any};
-        const instance = wgpu.createInstance(wgpu.InstanceDescriptor{
-            .required_feature_count = instance_features.len,
-            .required_features = &instance_features[0],
-        });
-        errdefer instance.release();
+        const instance = try wgpu.Instance.init(null);
+        errdefer instance.deinit();
 
-        // zgpu's wgpu bindings only expose the async (callback) adapter/device
-        // requests. We use CallbackMode.WaitAnyOnly and block on the returned
-        // Future via instance.waitAny() with an infinite timeout — this is the
-        // exact pattern sokol_app.h uses for its native SOKOL_WGPU backend
-        // (_SAPP_WGPU_HAS_WAIT). The callback is delivered from inside
-        // waitAny, so no processEvents polling is needed.
-        var adapter_result: struct {
-            adapter: ?wgpu.Adapter = null,
-            status: wgpu.RequestAdapterStatus = .success,
-            fired: bool = false,
-        } = .{};
-        const adapter_future = instance.requestAdapter(wgpu.RequestAdapterOptions{
+        const adapter = try instance.requestAdapterSync(.{
             .power_preference = .high_performance,
-        }, wgpu.RequestAdapterCallbackInfo{
-            .mode = .wait_any_only,
-            .callback = struct {
-                fn cb(
-                    ad_status: wgpu.RequestAdapterStatus,
-                    adapter: wgpu.Adapter,
-                    msg: wgpu.c.WGPUStringView,
-                    userdata_1: ?*anyopaque,
-                    _: ?*anyopaque,
-                ) callconv(.c) void {
-                    const r: *@TypeOf(adapter_result) = @ptrCast(@alignCast(userdata_1.?));
-                    r.fired = true;
-                    r.status = ad_status;
-                    r.adapter = if (ad_status == .success) adapter else null;
-                    const msg_str = wgpu.StringView.zigFromC(msg) orelse "<no message>";
-                    slog.debug("requestAdapter callback fired: status={s} msg=\"{s}\"\n", .{ @tagName(ad_status), msg_str });
-                }
-            }.cb,
-            .userdata_1 = @ptrCast(&adapter_result),
         });
-        slog.debug("requestAdapter dispatched, blocking on future...\n", .{});
-        // Block until the callback fires. Sokol uses UINT64_MAX here.
-        var wait_infos = [_]wgpu.FutureWaitInfo{.{ .future = adapter_future, .completed = wgpu.c.WGPU_FALSE }};
-        const ws = instance.waitAny(&wait_infos, std.math.maxInt(u64));
-        slog.debug("waitAny returned: {s}, fired={} status={s}\n", .{ @tagName(ws), adapter_result.fired, @tagName(adapter_result.status) });
-        if (adapter_result.adapter == null) {
-            slog.debug("No adapter: status={s}\n", .{@tagName(adapter_result.status)});
-            return error.NoAdapter;
-        }
-        const adapter = adapter_result.adapter.?;
-        errdefer adapter.release();
+        errdefer adapter.deinit();
 
-        var info: wgpu.AdapterInfo = .{};
-        const status = adapter.getInfo(&info);
-        if (status != .success) {
+        const info = adapter.getInfo() catch {
             slog.err("Failed to get adapter info", .{});
             return error.AdapterInfo;
-        } else {
-            const name = wgpu.StringView.zigFromC(info.device);
-            if (name) |value| {
-                slog.info("Using adapter: {s} (backend={s}, type={s})", .{ value, @tagName(info.backend_type), @tagName(info.adapter_type) });
-            } else {
-                slog.err("Failed to get adapter name", .{});
-            }
-        }
+        };
+        slog.info("Using adapter: {s} (backend={s}, type={s})", .{ info.device, @tagName(info.backend_type), @tagName(info.adapter_type) });
 
         // We then create a `Device` and a `Queue` from the `Adapter`.
         // https://webgpureport.org/
-        const required_features = [_]wgpu.FeatureName{
-            .shader_f16, // enable f16 support
-            // In current WebGPU/dawn, read-write storage texture access is gated
-            // behind texture_formats_tier_2 (supersedes wgpu-native's
-            // `texture_adapter_specific_format_features`).
-            .texture_formats_tier2,
+        //
+        // The wgpu-zig Device.Descriptor does not (yet) expose required
+        // features/limits, so request the device through the C API directly
+        // and wrap the handle.
+        const required_features = [_]c.WGPUFeatureName{
+            c.WGPUFeatureName_ShaderF16, // enable f16 support
+            // without this flag, read/write storage access is not allowed at all
+            @as(c.WGPUFeatureName, @intCast(c.WGPUNativeFeature_TextureAdapterSpecificFormatFeatures)),
             // .mappable_primary_buffers, // https://docs.rs/wgpu-types/0.7.0/wgpu_types/struct.Features.html#associatedconstant.MAPPABLE_PRIMARY_BUFFERS
         };
-        const required_limits = wgpu.Limits{
-            // .max_bind_groups = 8,
-            // .max_bindings_per_bind_group = 16,
-            // .max_texture_dimension_2d = 16384,
-            .max_storage_buffer_binding_size = 1024 * 1024 * 1024, // 1 GB
-            .max_buffer_size = 1024 * 1024 * 1024, // 1 GB
+        // start from the adapter's supported limits so every field carries a
+        // valid value, then tighten the two we actually care about
+        var required_limits = try adapter.getLimits();
+        required_limits.maxStorageBufferBindingSize = 1024 * 1024 * 1024; // 1 GB
+        required_limits.maxBufferSize = 1024 * 1024 * 1024; // 1 GB
+
+        var device_data = DeviceRequestData{};
+        const device_descriptor = c.WGPUDeviceDescriptor{
+            .label = stringView("Device"),
+            .requiredFeatureCount = required_features.len,
+            .requiredFeatures = &required_features,
+            .requiredLimits = &required_limits,
+            .defaultQueue = .{
+                .label = stringView("Queue"),
+            },
+            .deviceLostCallbackInfo = .{
+                .mode = c.WGPUCallbackMode_AllowSpontaneous,
+                .callback = deviceLostCb,
+            },
+            .uncapturedErrorCallbackInfo = .{
+                .callback = uncapturedErrorCb,
+            },
         };
-        const device_descriptor = wgpu.DeviceDescriptor{
-            .required_limits = &required_limits,
-            .required_features = &required_features,
-            .required_features_count = required_features.len,
-        };
-        var device_result: struct { device: ?wgpu.Device = null, status: wgpu.RequestDeviceStatus = .success, fired: bool = false } = .{};
-        const device_future = adapter.requestDevice(device_descriptor, wgpu.RequestDeviceCallbackInfo{
-            .mode = .wait_any_only,
-            .callback = struct {
-                fn cb(
-                    dev_status: wgpu.RequestDeviceStatus,
-                    device: wgpu.Device,
-                    msg: wgpu.c.WGPUStringView,
-                    userdata_1: ?*anyopaque,
-                    _: ?*anyopaque,
-                ) callconv(.c) void {
-                    const r: *@TypeOf(device_result) = @ptrCast(@alignCast(userdata_1.?));
-                    r.fired = true;
-                    r.status = dev_status;
-                    r.device = if (dev_status == .success) device else null;
-                    const msg_str = wgpu.StringView.zigFromC(msg) orelse "<no message>";
-                    slog.debug("requestDevice callback fired: status={s} msg=\"{s}\"\n", .{ @tagName(dev_status), msg_str });
-                }
-            }.cb,
-            .userdata_1 = @ptrCast(&device_result),
+        _ = c.wgpuAdapterRequestDevice(adapter.adapter, &device_descriptor, .{
+            .mode = c.WGPUCallbackMode_AllowSpontaneous,
+            .callback = requestDeviceCb,
+            .userdata1 = &device_data,
         });
-        slog.debug("requestDevice dispatched, blocking on future...\n", .{});
-        var device_wait_infos = [_]wgpu.FutureWaitInfo{.{ .future = device_future, .completed = wgpu.c.WGPU_FALSE }};
-        const dws = instance.waitAny(&device_wait_infos, std.math.maxInt(u64));
-        slog.debug("device waitAny returned: {s}, fired={} status={s}\n", .{ @tagName(dws), device_result.fired, @tagName(device_result.status) });
-        if (device_result.device == null) {
-            slog.debug("No device: status={s}\n", .{@tagName(device_result.status)});
-            return error.NoDevice;
+        while (device_data.device == null) {
+            c.wgpuInstanceProcessEvents(instance.instance);
         }
-        const device = device_result.device.?;
-        errdefer device.release();
+        const device = wgpu.Device{
+            .device = device_data.device orelse return error.NoDevice,
+        };
+        errdefer device.deinit();
 
-        const queue = device.getQueue();
-        errdefer queue.release();
+        const queue = try device.getQueue();
+        errdefer queue.deinit();
 
-        var limits = wgpu.Limits{};
-        _ = adapter.getLimits(&limits);
+        const limits = try adapter.getLimits();
 
         slog.info("Adapter limits:", .{});
-        slog.info(" max_bind_groups: {d}", .{limits.max_bind_groups});
-        slog.info(" max_bindings_per_bind_group: {d}", .{limits.max_bindings_per_bind_group});
-        // slog.info(" max_texture_dimension_1d: {d}", .{limits.max_texture_dimension_1d});
-        slog.info(" max_texture_dimension_2d: {d}", .{limits.max_texture_dimension_2d});
-        // slog.info(" max_texture_dimension_3d: {d}", .{limits.max_texture_dimension_3d});
-        // slog.info(" max_texture_array_layers: {d}", .{limits.max_texture_array_layers});
-        slog.info(" max_compute_invocations_per_workgroup: {d}", .{limits.max_compute_invocations_per_workgroup});
-        slog.info(" max_compute_workgroup_size_x: {d}", .{limits.max_compute_workgroup_size_x});
-        slog.info(" max_compute_workgroup_size_y: {d}", .{limits.max_compute_workgroup_size_y});
-        slog.info(" max_compute_workgroup_size_z: {d}", .{limits.max_compute_workgroup_size_z});
-        slog.info(" max_compute_workgroups_per_dimension: {d}", .{limits.max_compute_workgroups_per_dimension});
-        slog.info(" max_buffer_size: {B:.2}", .{limits.max_buffer_size});
-        slog.info(" max_uniform_buffer_binding_size: {B:.2}", .{limits.max_uniform_buffer_binding_size});
-        slog.info(" max_storage_buffer_binding_size: {B:.2}", .{limits.max_storage_buffer_binding_size});
-        slog.info(" min_uniform_buffer_offset_alignment: {d}", .{limits.min_uniform_buffer_offset_alignment});
-        slog.info(" min_storage_buffer_offset_alignment: {d}", .{limits.min_storage_buffer_offset_alignment});
+        slog.info(" max_bind_groups: {d}", .{limits.maxBindGroups});
+        slog.info(" max_bindings_per_bind_group: {d}", .{limits.maxBindingsPerBindGroup});
+        slog.info(" max_texture_dimension_2d: {d}", .{limits.maxTextureDimension2D});
+        slog.info(" max_compute_invocations_per_workgroup: {d}", .{limits.maxComputeInvocationsPerWorkgroup});
+        slog.info(" max_compute_workgroup_size_x: {d}", .{limits.maxComputeWorkgroupSizeX});
+        slog.info(" max_compute_workgroup_size_y: {d}", .{limits.maxComputeWorkgroupSizeY});
+        slog.info(" max_compute_workgroup_size_z: {d}", .{limits.maxComputeWorkgroupSizeZ});
+        slog.info(" max_compute_workgroups_per_dimension: {d}", .{limits.maxComputeWorkgroupsPerDimension});
+        slog.info(" max_buffer_size: {B:.2}", .{limits.maxBufferSize});
+        slog.info(" max_uniform_buffer_binding_size: {B:.2}", .{limits.maxUniformBufferBindingSize});
+        slog.info(" max_storage_buffer_binding_size: {B:.2}", .{limits.maxStorageBufferBindingSize});
+        slog.info(" min_uniform_buffer_offset_alignment: {d}", .{limits.minUniformBufferOffsetAlignment});
+        slog.info(" min_storage_buffer_offset_alignment: {d}", .{limits.minStorageBufferOffsetAlignment});
 
         return Self{
             .instance = instance,
             .adapter = adapter,
             .device = device,
             .queue = queue,
-            .adapter_name = wgpu.StringView.zigFromC(info.device) orelse "Unknown",
+            .adapter_name = info.device,
         };
     }
 
     pub fn initExternal(device: wgpu.Device, queue: wgpu.Queue) !Self {
         slog.debug("Initializing GPU from external sokol-owned WebGPU device/queue", .{});
-        device.addRef();
-        errdefer device.release();
-        queue.addRef();
-        errdefer queue.release();
+        c.wgpuDeviceAddRef(device.device);
+        errdefer device.deinit();
+        c.wgpuQueueAddRef(queue.queue);
+        errdefer queue.deinit();
         return .{
             .instance = null,
             .adapter = null,
@@ -1065,13 +917,13 @@ pub const GPU = struct {
     pub fn deinit(self: *Self) void {
         slog.debug("De-initializing GPU", .{});
 
-        self.queue.release();
-        self.device.release();
-        if (self.adapter) |adapter| adapter.release();
-        if (self.instance) |instance| instance.release();
+        self.queue.deinit();
+        self.device.deinit();
+        if (self.adapter) |adapter| adapter.deinit();
+        if (self.instance) |instance| instance.deinit();
     }
 
-    pub fn run(self: *Self, command_buffer: ?wgpu.CommandBuffer) !void {
+    pub fn run(self: *Self, command_buffer: ?wgpu.CommandEncoder.CommandBuffer) !void {
         slog.debug("Submitting command buffer to GPU", .{});
 
         const command_buffer_unwrapped = command_buffer orelse {
@@ -1084,54 +936,55 @@ pub const GPU = struct {
         //
         // Submitting to the queue sends the command buffer to the gpu. The gpu will then execute the
         // commands in the command buffer in order.
-        self.queue.submit(&[_]wgpu.CommandBuffer{command_buffer_unwrapped});
-        command_buffer_unwrapped.release();
-
-        // dawn: a subsequent read-map (Buffer.mapSize with .download) won't return
-        // a valid mapped range until the GPU has finished executing the copy that
-        // fills it. Block here until the queue is idle, mirroring wgpu-native's
-        // implicit device.poll(true) behaviour. We drive the queue-done callback
-        // via instance.waitAny (same pattern as the adapter/device requests).
-        if (self.instance) |instance| {
-            var work_done = false;
-            const work_future = self.queue.onSubmittedWorkDone(wgpu.QueueWorkDoneCallbackInfo{
-                .mode = .wait_any_only,
-                .callback = struct {
-                    fn cb(_: wgpu.QueueWorkDoneStatus, _: wgpu.c.WGPUStringView, userdata_1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
-                        const done: *bool = @ptrCast(@alignCast(userdata_1.?));
-                        done.* = true;
-                    }
-                }.cb,
-                .userdata_1 = @ptrCast(&work_done),
-            });
-            var work_wait_infos = [_]wgpu.FutureWaitInfo{.{ .future = work_future, .completed = wgpu.c.WGPU_FALSE }};
-            _ = instance.waitAny(&work_wait_infos, std.math.maxInt(u64));
-            slog.debug("queue work done: {}\n", .{work_done});
-        } else {
-            const WorkWait = struct {
-                done: std.atomic.Value(bool),
-                status: wgpu.QueueWorkDoneStatus,
-            };
-            var work_wait = WorkWait{ .done = std.atomic.Value(bool).init(false), .status = .success };
-            _ = self.queue.onSubmittedWorkDone(wgpu.QueueWorkDoneCallbackInfo{
-                .mode = .allow_spontaneous,
-                .callback = struct {
-                    fn cb(status: wgpu.QueueWorkDoneStatus, _: wgpu.c.WGPUStringView, userdata_1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
-                        const ww: *WorkWait = @ptrCast(@alignCast(userdata_1.?));
-                        ww.status = status;
-                        ww.done.store(true, .release);
-                    }
-                }.cb,
-                .userdata_1 = @ptrCast(&work_wait),
-            });
-            while (!work_wait.done.load(.acquire)) {
-                std.atomic.spinLoopHint();
-            }
-            if (work_wait.status != .success) {
-                slog.err("Queue work completion failed in external-device mode: {s}", .{@tagName(work_wait.status)});
-                @panic("queue work done failed");
-            }
-            slog.debug("queue work done: {}\n", .{work_wait.done.load(.acquire)});
-        }
+        // NOTE: Queue.submitCommands releases the command buffer for us.
+        self.queue.submitCommands(&.{command_buffer_unwrapped});
     }
 };
+
+// ================
+// INTERNAL HELPERS
+// ================
+
+fn stringView(s: []const u8) c.WGPUStringView {
+    return .{ .data = s.ptr, .length = s.len };
+}
+
+const DeviceRequestData = struct {
+    device: c.WGPUDevice = null,
+};
+
+fn requestDeviceCb(
+    status: c.WGPURequestDeviceStatus,
+    device_handle: c.WGPUDevice,
+    _: c.WGPUStringView,
+    userdata1: ?*anyopaque,
+    _: ?*anyopaque,
+) callconv(.c) void {
+    const data: *DeviceRequestData = @ptrCast(@alignCast(userdata1));
+    if (status == c.WGPURequestDeviceStatus_Success) {
+        data.device = device_handle;
+    }
+}
+
+fn deviceLostCb(
+    _: [*c]const c.WGPUDevice,
+    reason: c.WGPUDeviceLostReason,
+    message: c.WGPUStringView,
+    _: ?*anyopaque,
+    _: ?*anyopaque,
+) callconv(.c) void {
+    const msg = if (message.length > 0) message.data[0..message.length] else "";
+    slog.err("Device lost (reason={d}): {s}", .{ reason, msg });
+}
+
+fn uncapturedErrorCb(
+    _: [*c]const c.WGPUDevice,
+    err_type: c.WGPUErrorType,
+    message: c.WGPUStringView,
+    _: ?*anyopaque,
+    _: ?*anyopaque,
+) callconv(.c) void {
+    if (err_type == c.WGPUErrorType_NoError) return;
+    const msg = if (message.length > 0) message.data[0..message.length] else "";
+    slog.err("Uncaptured error (type={d}): {s}", .{ err_type, msg });
+}

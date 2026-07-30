@@ -6,10 +6,7 @@ const cimgui = @import("cimgui");
 
 pub fn build(b: *Build) !void {
     // CONFIGURATION
-    const target = b.standardTargetOptions(.{
-        // .default_target = .{ .abi = .msvc }, // google dawn is compile with msvc on windows
-        .default_target = .{ .abi = .gnu }, // google dawn is compile with gnu on linux
-    });
+    const target = b.standardTargetOptions(.{});
     // for testing only, forces a native build
     // const target = b.resolveTargetQuery(.{
     //     .ofmt = .c,
@@ -29,6 +26,7 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
         .wgpu = true,
+        .wgpu_native = true,
         .with_sokol_imgui = true,
         // .dynamic_linkage = true,
     });
@@ -39,7 +37,8 @@ pub fn build(b: *Build) !void {
     const dep_zdt = b.dependency("zdt", opts);
     const dep_libraw = b.dependency("libraw", opts);
     // const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
-    const dep_zdawn = b.dependency("zdawn", .{});
+    // const dep_zdawn = b.dependency("zdawn", .{});
+    const dep_wgpu_zig = b.dependency("wgpu-zig", .{});
     const dep_zigimg = b.dependency("zigimg", opts);
     const dep_zbench = b.dependency("zbench", opts);
     const dep_zuballoc = b.dependency("zuballoc", opts);
@@ -47,26 +46,13 @@ pub fn build(b: *Build) !void {
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
-    // inject the webgpu/webgpu.h headers from zdawn
-    std.debug.print("1\n", .{});
-    // @import("zdawn").addDawnPathsTo(dep_sokol.artifact("sokol_clib"));
+    @import("wgpu-zig").addWgpuNativeObjectFiles(b, dep_sokol.artifact("sokol_clib").root_module, target, optimize);
 
     // When sokol_clib is built as a shared library, its native WebGPU symbols
     // must resolve against the same shared Dawn instance used by the rest of
     // the app. Link sokol_clib against shared zdawn instead of letting it rely
     // on the final exe link step.
-    // dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_zdawn.artifact("zdawn"));
-    // dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_cimgui.artifact(cimgui_conf.clib_name));
-    // @loader_path is a dynamic variable used in Mach-O binaries to specify a relative path for loading frameworks and shared libraries.
-    // dep_sokol.artifact("sokol_clib").root_module.addRPathSpecial("@loader_path");
-
-    // Install the shared runtime libs into this project's zig-out/lib so the
-    // host exe and zr plugin can both load them from a single place.
-    // b.installArtifact(dep_zdawn.artifact("zdawn"));
-    b.installArtifact(dep_sokol.artifact("sokol_clib"));
-    if (dep_cimgui.artifact(cimgui_conf.clib_name).isDynamicLibrary()) {
-        b.installArtifact(dep_cimgui.artifact(cimgui_conf.clib_name));
-    }
+    // dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_wgpu_zig.artifact("wgpu"));
 
     // OPTIONS
     const mod_options = b.addOptions();
@@ -95,7 +81,6 @@ pub fn build(b: *Build) !void {
     });
 
     // PIE MODULE
-    // main module with sokol and cimgui imports
     const mod_pie = b.createModule(.{
         .root_source_file = b.path("src/engine/root.zig"),
         .target = target,
@@ -104,15 +89,14 @@ pub fn build(b: *Build) !void {
             .{ .name = "console", .module = mod_console },
             .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
+            // .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
+            .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
-    mod_pie.linkLibrary(dep_zdawn.artifact("zdawn"));
 
     // GUI MODULE
-    // main module with sokol and cimgui imports
     const mod_gui = b.createModule(.{
         .root_source_file = b.path("src/gui/root.zig"),
         .target = target,
@@ -121,7 +105,8 @@ pub fn build(b: *Build) !void {
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
+            // .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
+            .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
@@ -130,7 +115,6 @@ pub fn build(b: *Build) !void {
     });
 
     // APP MODULE
-    // main module with sokol and cimgui imports
     const mod_app = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -144,31 +128,19 @@ pub fn build(b: *Build) !void {
             // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             // .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             // .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
+            // .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
+            .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
             // .{ .name = "zr", .module = dep_zr.module("zr") },
         },
     });
     mod_app.addOptions("build_options", mod_options);
-
-    // link gui for hot reload
-    // if (optimize == .Debug) {
-    // const gui_dl = b.addLibrary(.{
-    //     .linkage = .dynamic,
-    //     .name = "gui",
-    //     .root_module = mod_gui,
-    // });
-    // The hot-reload plugin lives in zig-out/lib and depends on sibling
-    // shared libs (libzdawn.dylib, libsokol_clib.dylib, ...), so resolve
-    // them relative to the plugin itself.
-    // gui_dl.root_module.addRPathSpecial("@loader_path");
-    // b.installArtifact(gui_dl);
-    // }
 
     // TESTS
     // UNIT TESTS
     const test_step = b.step("test", "Run unit tests");
     const unit_tests = b.addTest(.{
         .name = "unit tests",
+        .use_llvm = true,
         .root_module = mod_pie,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
@@ -181,13 +153,7 @@ pub fn build(b: *Build) !void {
         .root_source_file = b.path("testing/integration/integration.zig"),
         .target = target,
         .optimize = optimize,
-        // libwebgpu_dawn.a is a C++ archive built against the GCC libstdc++
-        // ABI (__cxx11). Zig's `link_libcpp` links its bundled libc++
-        // (clang ABI) which lacks those symbols, so link the system
-        // libstdc++ runtime directly instead.
-        .link_libc = true,
         .imports = &.{
-            // .{ .name = "app", .module = mod_app },
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "console", .module = mod_console },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
@@ -195,11 +161,11 @@ pub fn build(b: *Build) !void {
             .{ .name = "zbench", .module = dep_zbench.module("zbench") },
         },
     });
-    @import("zdawn").addDawnPaths(b, mod_integration, target.result);
 
     const integration_test_step = b.step("integration", "Run integration tests");
     const integration_tests = b.addTest(.{
         .name = "integration tests",
+        .use_llvm = true,
         .root_module = mod_integration,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
@@ -223,23 +189,12 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
     const exe = b.addExecutable(.{
         .name = "pie",
         .root_module = mod,
+        .use_llvm = true,
     });
-    // Link zgpu's zdawn artifact (which links libwebgpu_dawn.a + system
-    // frameworks) so the wgpu C procs resolve at link time.
-    @import("zdawn").addDawnPathsTo(exe);
-    // @import("zdawn").linkSystemDeps(b, exe);
     b.installArtifact(exe);
-    // exe.linkLibrary(zgpu.artifact("zdawn"));
     const exe_step = b.step("run", "Run pie");
-    // const run_cmd = b.addRunArtifact(exe);
-    // run_cmd.step.dependOn(b.getInstallStep());
-    // exe_step.dependOn(&run_cmd.step);
-
-    // const run_cmd = b.addSystemCommand(&.{b.getInstallPath(.bin, "pie")});
-    // run_cmd.step.dependOn(b.getInstallStep());
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    // b.getInstallStep().*.dump();
     exe_step.dependOn(&run_cmd.step);
 }
 
