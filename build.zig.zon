@@ -8,7 +8,9 @@
         .sokol = .{
             // .url = "git+https://github.com/floooh/sokol-zig#20f2e2cd3249098093770ea20f6d8b00703bddb3",
             // .hash = "sokol-0.1.0-pb1HK-DmNwC58_M1ri4psw-QW3xPMZs2JoS3tPkFJC7q",
-            .path = "../sokol-zig",
+            // .path = "../sokol-zig",
+            .url = "git+https://github.com/phcreery/sokol-zig#b4e1fb9c7517bbf7447e4b0a19b12b776e8acaf5",
+            .hash = "sokol-0.1.0-pb1HKz3yNwDda3-6oO20hdETC7cmertKSWngUg9xaDZz",
         },
         .cimgui = .{
             // zig 0.16.0
@@ -36,12 +38,10 @@
         //     .url = "git+https://github.com/emscripten-core/emsdk?ref=4.0.14#eff90ca04a3785f571a8095b3a42b63799cf384a",
         //     .hash = "N-V-__8AAMGsDwC6L1OfDgzRF1zFI2t-CaR0sVhEm8pmrpxm",
         // },
-        // .libraw = .{
-        //     .path = "../LibRaw-zig",
-        // },
         .libraw = .{
             .url = "git+https://github.com/phcreery/LibRaw-zig.git#d6a01722b2f702b1bd41811cc588b69c63210a63",
             .hash = "libraw-0.21.4-c166SQR6AADQHFPUvMe5mMpjqLf6XAFFu5x9N1KjGSN8",
+            // .path = "../LibRaw-zig",
         },
         // .wgpu_native_zig = .{
         //     .url = "git+https://github.com/snorm-dev/wgpu_native_zig.git#8aef4a9873637ba9444282f7a706eaa251f8d8e9",
@@ -55,7 +55,9 @@
         .@"wgpu-zig" = .{
             // .url = "git+https://codeberg.org/shahwali/wgpu-zig#304d81bb504034d4caf5e608d2a150f680298ba1",
             // .hash = "wgpu-0.0.3-Z1CB1nh2AQCkwNLkZ6DWaoFvK6imy-TmN_-GsMXQfHV0",
-            .path = "../wgpu-zig",
+            // .path = "../wgpu-zig",
+            .url = "git+https://codeberg.org/phcreery/wgpu-zig#3b8606b95bfd301608f58e8d88257173584281f4",
+            .hash = "wgpu-0.0.3-Z1CB1sB5AQAzBFvisZcfgLszODKgCVRjDxGXU-aWo4MV",
         },
         .zigimg = .{
             // 0.16.0
@@ -84,9 +86,9 @@
         .zuballoc = .{
             // .url = "git+https://github.com/Justus2308/zuballoc.git#68eab414d6d3b1e9aa5ea31139e2e02827ab7350",
             // .hash = "zuballoc-0.1.0-uXtpGsOiAAAc_AqFTLo7DCd5JGjKVkICl84jw1vf6xfH",
-            .path = "../zuballoc",
-            // .url = "git+https://github.com/phcreery/zuballoc#90151524c6b048bca7eb96a9e4bb9a48fa346c5b",
-            // .hash = "zuballoc-0.1.0-uXtpGryiAABmtJVMVW59n7xllD_87c2FB8FwYpr7oUK0",
+            // .path = "../zuballoc",
+            .url = "git+https://github.com/phcreery/zuballoc#169f3e948e3eadb0b80ac0a4dda978f9834c605a",
+            .hash = "zuballoc-0.1.0-uXtpGrCiAAC3zBT0Na6dmz9xShh5CFLpPjOIfjxkDT6H",
         },
         // .zr = .{
         //     // .url = "git+https://codeberg.org/rdunnington/zr#e82c604c8c482d63212212d68b0c3f3f67044c5c",
