@@ -22,6 +22,7 @@
   - https://discuss.pixls.us/t/the-quest-for-good-color-2-spectral-profiles-on-the-cheap/18286
   - https://discuss.pixls.us/t/the-quest-for-good-color-3-how-close-can-it8-come-to-ssf/18689
 - https://openaccess.thecvf.com/content_iccv_workshops_2013/W25/papers/Prasad_Quick_Approximation_of_2013_ICCV_paper.pdf
+- https://color-lab-eilat.github.io/Spectral-sensitivity-estimation-web/
 
 ### WB/CCT/CAT
   - https://www.energy.gov/cmei/ssl/articles/modifications-robertson-method-calculating-correlated-color-temperature-improve
