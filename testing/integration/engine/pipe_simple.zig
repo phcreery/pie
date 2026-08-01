@@ -74,7 +74,7 @@ test "simple test modules" {
     const mod_test_o_2468 = try pipeline.addModule(repository.get("test-o-2468").?);
     _ = try pipeline.addModule(repository.get("test-multiply").?); // dummy?
     // const mod_test_nop_1 = try pipeline.addModule(repository.get("test-nop").?);
-    // const mod_test_nop_2 = try pipeline.addModule(repository.get("test-nop").?);
+    const mod_test_nop_glsl = try pipeline.addModule(repository.get("test-nop-glsl").?);
 
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0);
     // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0));
@@ -86,7 +86,8 @@ test "simple test modules" {
     // pipeline.connectModules(mod_test_nop_2, "output", mod_test_o_2468, "input") catch unreachable;
 
     try pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input");
-    try pipeline.connectModules(mod_test_multiply, "output", mod_test_o_2468, "input");
+    try pipeline.connectModules(mod_test_multiply, "output", mod_test_nop_glsl, "input");
+    try pipeline.connectModules(mod_test_nop_glsl, "output", mod_test_o_2468, "input");
 
     try pipeline.run(aa);
     // pipeline.rerouted = true;

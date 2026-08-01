@@ -612,8 +612,6 @@ pub const BindGroupLayoutEntry = struct {
     buffer: ?BindGroupLayoutBufferEntry = null,
 };
 
-// pub const Shader = wgpu.ShaderModule;
-
 pub const ShaderLanguage = enum {
     wgsl,
     spirv,
@@ -643,8 +641,7 @@ pub const Shader = struct {
                 const code_ptr: [*]const u32 = @ptrCast(@alignCast(shader_source.ptr));
                 break :blk .{ .spirv = code_ptr[0 .. shader_source.len / @sizeOf(u32)] };
             },
-            // wgpu-native has no GLSL frontend (that was a Dawn feature)
-            .glsl => return error.UnsupportedShaderLanguage,
+            .glsl => .{ .glsl = .{ .code = shader_source, .stage = .compute } },
         };
 
         const shader_module = try gpu.device.createShaderModule(source);

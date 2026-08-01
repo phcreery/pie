@@ -54,7 +54,7 @@ test "simple compute test with parameters" {
     layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
 
     var layout_group_1_binding: [MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
-    layout_group_1_binding[0] = .{ .buffer = .{} };
+    layout_group_1_binding[0] = .{ .buffer = .{ .binding_type = .storage } };
 
     var layout_group: [MAX_BIND_GROUPS]?[MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group[0] = layout_group_0_binding;

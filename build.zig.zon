@@ -55,9 +55,9 @@
         .@"wgpu-zig" = .{
             // .url = "git+https://codeberg.org/shahwali/wgpu-zig#304d81bb504034d4caf5e608d2a150f680298ba1",
             // .hash = "wgpu-0.0.3-Z1CB1nh2AQCkwNLkZ6DWaoFvK6imy-TmN_-GsMXQfHV0",
-            // .path = "../wgpu-zig",
-            .url = "git+https://codeberg.org/phcreery/wgpu-zig#3b8606b95bfd301608f58e8d88257173584281f4",
-            .hash = "wgpu-0.0.3-Z1CB1sB5AQAzBFvisZcfgLszODKgCVRjDxGXU-aWo4MV",
+            .path = "../wgpu-zig",
+            // .url = "git+https://codeberg.org/phcreery/wgpu-zig#3b8606b95bfd301608f58e8d88257173584281f4",
+            // .hash = "wgpu-0.0.3-Z1CB1sB5AQAzBFvisZcfgLszODKgCVRjDxGXU-aWo4MV",
         },
         .zigimg = .{
             // 0.16.0
