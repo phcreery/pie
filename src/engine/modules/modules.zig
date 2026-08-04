@@ -27,6 +27,37 @@ pub fn populateRepository(repo: *Repository) !void {
     // try repo.add(@import("test-text/module.zig").desc);
 }
 
+// pub fn populateRepository(repo: *Repository) !void {
+//     // built-in modules
+//     const builtin_modules = &[_][]const u8{
+//         "i-raw",
+//         "format",
+//         "denoise",
+//         "whitebalance",
+//         "demosaic",
+//         "crop",
+//         "color",
+//         "filmcurv",
+//         "o-png",
+//         "o-ppm",
+//         "o-display",
+
+//         // test modules
+//         "test-multiply",
+//         // "test-2nodes",
+//         "test-i-1234",
+//         "test-o-2468",
+//         // "test-o-firstbytes",
+//         // "test-nop",
+//         "test-nop-glsl",
+//         // "test-nop-zig",
+//         // "test-text",
+//     };
+//     inline for (builtin_modules) |module_name| {
+//         try repo.add(module_name, @import(module_name ++ "/module.zig").desc);
+//     }
+// }
+
 pub const Repository = struct {
     map: std.StringHashMap(api.ModuleDesc),
 
@@ -45,6 +76,10 @@ pub const Repository = struct {
 
     pub fn add(self: *Self, desc: api.ModuleDesc) !void {
         try self.map.put(desc.name, desc);
+    }
+
+    pub fn add2(self: *Self, name: []const u8, desc: api.ModuleDesc) !void {
+        try self.map.put(name, desc);
     }
 
     pub fn get(self: *Self, name: []const u8) ?api.ModuleDesc {

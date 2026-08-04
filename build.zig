@@ -34,7 +34,7 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const dep_zdt = b.dependency("zdt", opts);
+    // const dep_zdt = b.dependency("zdt", opts);
     const dep_libraw = b.dependency("libraw", opts);
     // const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
     // const dep_zdawn = b.dependency("zdawn", .{});
@@ -87,9 +87,7 @@ pub fn build(b: *Build) !void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "console", .module = mod_console },
-            .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            // .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
@@ -101,16 +99,13 @@ pub fn build(b: *Build) !void {
         .root_source_file = b.path("src/gui/root.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true, // Necessary for zr
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            // .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
-            // .{ .name = "zr", .module = dep_zr.module("zr") },
         },
     });
 
@@ -127,10 +122,7 @@ pub fn build(b: *Build) !void {
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             // .{ .name = "zdt", .module = dep_zdt.module("zdt") },
-            // .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            // .{ .name = "wgpu_dawn", .module = dep_zdawn.module("webgpu") },
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
-            // .{ .name = "zr", .module = dep_zr.module("zr") },
         },
     });
     mod_app.addOptions("build_options", mod_options);
@@ -192,7 +184,7 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
         .use_llvm = true,
     });
     b.installArtifact(exe);
-    const exe_step = b.step("run", "Run pie");
+    const exe_step = b.step("app", "Run pie app");
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     exe_step.dependOn(&run_cmd.step);

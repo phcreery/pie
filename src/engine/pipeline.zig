@@ -224,21 +224,21 @@ pub const Pipeline = struct {
         var src_mod_ptr = try self.module_pool.getPtr(src_mod);
         var dst_mod_ptr = try self.module_pool.getPtr(dst_mod);
 
-        slog.debug("Connecting module {s} socket {s} to module {s} socket {s}", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
+        slog.debug("Connecting module '{s} > {s}' to module '{s} > {s}'", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
         const dst_socket_idx = try dst_mod_ptr.getSocketIndex(dst_mod_socket_name);
         const src_socket_idx = try src_mod_ptr.getSocketIndex(src_mod_socket_name);
 
         var dst_mod_socket = &(dst_mod_ptr.desc.sockets[dst_socket_idx] orelse {
-            slog.err("Destination module {s} socket {s} is null", .{ dst_mod_ptr.desc.name, dst_mod_socket_name });
+            slog.err("Destination module '{s} > {s}' is null", .{ dst_mod_ptr.desc.name, dst_mod_socket_name });
             return error.ModuleSocketNotFound;
         });
         const src_mod_socket = &(src_mod_ptr.desc.sockets[src_socket_idx] orelse {
-            slog.err("Source module {s} socket {s} is null", .{ src_mod_ptr.desc.name, src_mod_socket_name });
+            slog.err("Source module '{s} > {s}' is null", .{ src_mod_ptr.desc.name, src_mod_socket_name });
             return error.ModuleSocketNotFound;
         });
 
         if (!Socket.areCompatible(src_mod_socket, dst_mod_socket)) {
-            slog.err("Incompatible module socket connection from {s}.{s} to {s}.{s}", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
+            slog.err("Incompatible module socket connection from '{s} > {s}' to '{s} > {s}'", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
             return error.ModuleSocketConnectionIncompatible;
         }
 
@@ -256,25 +256,25 @@ pub const Pipeline = struct {
         dst_node: NodeHandle,
         dst_node_socket_name: []const u8,
     ) !void {
-        slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node, src_node_socket_name, dst_node, dst_node_socket_name });
+        // slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node, src_node_socket_name, dst_node, dst_node_socket_name });
         var src_node_ptr = try self.node_pool.getPtr(src_node);
         var dst_node_ptr = try self.node_pool.getPtr(dst_node);
 
-        slog.debug("Connecting node {s} socket {s} to node {s} socket {s}", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
+        slog.debug("Connecting node '{s} > {s}' to node '{s} > {s}'", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
         const dst_socket_idx = try dst_node_ptr.getSocketIndex(dst_node_socket_name);
         const src_socket_idx = try src_node_ptr.getSocketIndex(src_node_socket_name);
 
         var dst_node_socket = &(dst_node_ptr.desc.sockets[dst_socket_idx] orelse {
-            slog.err("Destination node {s} socket {s} is null", .{ dst_node_ptr.desc.name, dst_node_socket_name });
+            slog.err("Destination node '{s} > {s}' is null", .{ dst_node_ptr.desc.name, dst_node_socket_name });
             return error.NodeSocketNotFound;
         });
         const src_node_socket = &(src_node_ptr.desc.sockets[src_socket_idx] orelse {
-            slog.err("Source node {s} socket {s} is null", .{ src_node_ptr.desc.name, src_node_socket_name });
+            slog.err("Source node '{s} > {s}' is null", .{ src_node_ptr.desc.name, src_node_socket_name });
             return error.NodeSocketNotFound;
         });
 
         if (!Socket.areCompatible(src_node_socket, dst_node_socket)) {
-            slog.err("Incompatible node socket connection from {s}.{s} to {s}.{s}", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
+            slog.err("Incompatible node socket connection from '{s} > {s}' to '{s} > {s}'", .{ src_node_ptr.desc.name, src_node_socket_name, dst_node_ptr.desc.name, dst_node_socket_name });
             return error.NodeSocketConnectionIncompatible;
         }
 
@@ -292,24 +292,25 @@ pub const Pipeline = struct {
         node_handle: NodeHandle,
         node_socket_name: []const u8,
     ) !void {
-        slog.debug("Connecting module {any} socket {s} to node {any} socket {s}", .{ node_handle, mod_socket_name, node_handle, node_socket_name });
+        // slog.debug("Copying module {any} > {s} to node {any} > {s}", .{ mod_handle, mod_socket_name, node_handle, node_socket_name });
 
         var mod = try self.module_pool.getPtr(mod_handle);
         var node = try self.node_pool.getPtr(node_handle);
+        slog.debug("Copying connector from module '{s} > {s}' to node '{s} > {s}'", .{ mod.desc.name, mod_socket_name, node.desc.name, node_socket_name });
 
         const mod_socket_idx = try mod.getSocketIndex(mod_socket_name);
         const node_socket_idx = try node.getSocketIndex(node_socket_name);
 
         const node_socket = &(node.desc.sockets[node_socket_idx] orelse {
-            slog.err("Destination node {s} socket {s} is null", .{ node.desc.name, node_socket_name });
+            slog.err("Destination node '{s} > {s}' is null", .{ node.desc.name, node_socket_name });
             return error.NodeSocketNotFound;
         });
         const mod_socket = &(mod.desc.sockets[mod_socket_idx] orelse {
-            slog.err("Source module {s} socket {s} is null", .{ mod.desc.name, mod_socket_name });
+            slog.err("Source module '{s} > {s}' is null", .{ mod.desc.name, mod_socket_name });
             return error.ModuleSocketNotFound;
         });
         if (!Socket.areSimilar(mod_socket, node_socket)) {
-            slog.err("Incompatible socket connection from module {s}.{s} to node {s}.{s}", .{ mod.desc.name, mod_socket_name, node.desc.name, node_socket_name });
+            slog.err("Incompatible connector copy from module '{s} > {s}' to node '{s} > {s}'", .{ mod.desc.name, mod_socket_name, node.desc.name, node_socket_name });
             return error.ModuleNodeSocketConnectionIncompatible;
         }
 
@@ -455,7 +456,7 @@ pub const Pipeline = struct {
 
     /// initialize connector handles for output sockets
     fn initOutputConnectorHandles(self: *Pipeline, item: anytype) !void {
-        // with type checking
+        // ##### with type checking #####
         // we could do duct typing here but this allows better lsp support
         switch (comptime @TypeOf(item)) {
             inline *Module => {
@@ -466,7 +467,7 @@ pub const Pipeline = struct {
                             var this_sock = try module.getSocketPtr(sock.name);
                             if (this_sock.private.connector_handle == null) {
                                 this_sock.private.connector_handle = try self.connector_pool.add(null);
-                                slog.debug("Created connector handle {any} for {s} output socket {s}", .{ this_sock.private.connector_handle.?, module.desc.name, sock.name });
+                                slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.private.connector_handle.?, module.desc.name, sock.name });
                             }
                         }
                     }
@@ -480,8 +481,9 @@ pub const Pipeline = struct {
                             var this_sock = try node.getSocketPtr(sock.name);
                             if (this_sock.private.connector_handle == null) {
                                 this_sock.private.connector_handle = try self.connector_pool.add(null);
-                                slog.debug("Created connector handle {any} for {s} output socket {s}", .{ this_sock.private.connector_handle.?, node.desc.name, sock.name });
+                                slog.debug("Created output connector handle {any} for node '{s} > {s}'", .{ this_sock.private.connector_handle.?, node.desc.name, sock.name });
                             }
+                            // NOTE: this most likely gets discarded when we copy the connector from the module to the node, but we need to create it here in case we do a node-to-node connection without a module in between
                         }
                     }
                 }
@@ -489,7 +491,7 @@ pub const Pipeline = struct {
             else => unreachable,
         }
 
-        // with duck-typing
+        // ##### with duck-typing #####
         // for (item.desc.sockets) |socket| {
         //     if (socket) |sock| {
         //         if (sock.type.direction() == .output) {
@@ -549,7 +551,7 @@ pub const Pipeline = struct {
         // print.printModules(self);
         // print.printNodes(self);
         print.printNodesGraph(self) catch unreachable;
-        // print.printNodeExecutionOrder(self);
+        print.printNodeExecutionOrder(self);
     }
 
     fn runModulesPreCheck(self: *Pipeline) !void {
@@ -619,20 +621,10 @@ pub const Pipeline = struct {
     fn runModulesCreateParamBufferHandles(self: *Pipeline) !void {
         for (self.module_execution_order.items) |module_handle| {
             var module = try self.module_pool.getPtr(module_handle);
-            // create params buffer
             module.img_param_handle = try self.param_buffer_pool.add(null);
-
-            // if (module.params.len == 0) continue;
-            var params_len: usize = 0;
-            for (module.params) |param| {
-                if (param != null) {
-                    params_len += 1;
-                } else {
-                    break;
-                }
+            if (module.params_len() != 0) {
+                module.param_handle = try self.param_buffer_pool.add(null);
             }
-            if (params_len == 0) continue;
-            module.param_handle = try self.param_buffer_pool.add(null);
         }
     }
 
@@ -649,7 +641,7 @@ pub const Pipeline = struct {
                         if (sock.private.connected_to_module) |connection| {
                             const connected_to_module = try self.module_pool.getPtr(connection.item);
                             var socket_ptr = try module.getSocketPtr(sock.name);
-                            slog.debug("Setting ROI for module {s} socket {s} from connected module {s}", .{ module.desc.name, sock.name, connected_to_module.desc.name });
+                            // slog.debug("Setting input ROI for module '{s} > {s}' from previous connected module '{s}'", .{ module.desc.name, sock.name, connected_to_module.desc.name });
                             const connected_to_socket = connected_to_module.desc.sockets[connection.socket_idx] orelse unreachable;
                             socket_ptr.roi = connected_to_socket.roi;
 
@@ -853,7 +845,7 @@ pub const Pipeline = struct {
                         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
                         var buf: [256]u8 = undefined;
                         const str = try std.fmt.bufPrint(&buf, "id: {d}", .{connector_handle.id});
-                        slog.debug("Allocating output texture for node {any} {s} socket {s} with connector handle {any}", .{ node_handle, node.desc.name, sock.name, connector_handle });
+                        slog.debug("Allocating output texture for node '{s} > {s}' with connector handle {any}", .{ node.desc.name, sock.name, connector_handle });
                         const roi = sock.roi orelse return error.NodeOutputSocketMissingROICode;
                         const texture = try gpu.Texture.init(gpu_inst, str, sock.format, roi);
                         // defer texture.deinit();
@@ -912,7 +904,7 @@ pub const Pipeline = struct {
                                 .format = sock.format,
                             },
                         };
-                        slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
+                        // slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
 
                         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
                         const conn = try self.connector_pool.getPtr(connector_handle);
@@ -920,14 +912,14 @@ pub const Pipeline = struct {
                         bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
                             .texture = texture,
                         };
-                        slog.debug("Added bind group entry for binding {d} {any}", .{ binding_number, bind_group_1_binds[binding_number] });
+                        // slog.debug("Added bind group entry for binding {d} {any}", .{ binding_number, bind_group_1_binds[binding_number] });
                     }
                 }
 
                 // CREATE SHADER PIPE AND BINDINGS
                 // ideally this would be done once on startup, but vkdt runs dt_graph_create_shader_module()
                 // with the spirv code for each node every frame in dt_graph_run_nodes_allocate()
-                slog.debug("Creating shader for node with entry point: {s}", .{node.desc.name});
+                slog.debug("Creating shader for node '{s}'", .{node.desc.name});
                 var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
                 layout_group[0] = layout_group_0_binding;
                 layout_group[1] = layout_group_1_binding;
@@ -941,7 +933,7 @@ pub const Pipeline = struct {
                 );
                 node.compute_pipeline = pipeline;
 
-                slog.debug("Creating bindings for node with entry point: {s}", .{node.desc.name});
+                slog.debug("Creating bindings for node '{s}'", .{node.desc.name});
                 var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
                 bind_group[0] = bind_group_0_binds;
                 bind_group[1] = bind_group_1_binds;
@@ -975,8 +967,8 @@ pub const Pipeline = struct {
                     const aligned_bytes_per_row = ((bytes_per_row + gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
                     const size_bytes = aligned_bytes_per_row * sock.roi.?.h;
 
-                    slog.debug("Allocating upload buffer for textures for size {d} bytes", .{size_bytes});
-                    slog.debug("Source socket ROI w: {d} h: {d}", .{ sock.roi.?.w, sock.roi.?.h });
+                    slog.debug("Allocating {d} bytes upload buffer for source socket '{s} > {s}'", .{ size_bytes, first_node_ptr.desc.name, sock.name });
+                    slog.debug("Source socket ROI {any}", .{.{ .w = sock.roi.?.w, .h = sock.roi.?.h }});
                     const mapped_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
                     const upload_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(upload_fba.ptr);
@@ -1007,8 +999,8 @@ pub const Pipeline = struct {
                     const bytes_per_row = sock.roi.?.w * sock.format.bpp();
                     const aligned_bytes_per_row = ((bytes_per_row + gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
                     const size_bytes = aligned_bytes_per_row * sock.roi.?.h;
-                    slog.debug("Allocating download buffer at for size {d} bytes", .{size_bytes});
-                    slog.debug("Sink socket ROI w: {d} h: {d}", .{ sock.roi.?.w, sock.roi.?.h });
+                    slog.debug("Allocating {d} bytes download buffer for sink socket '{s} > {s}'", .{ size_bytes, last_node_ptr.desc.name, sock.name });
+                    slog.debug("Sink socket ROI {any}", .{.{ .w = sock.roi.?.w, .h = sock.roi.?.h }});
                     const mapped_slice = try download_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
 
                     const download_offset = @intFromPtr(mapped_slice.ptr) - @intFromPtr(download_fba.ptr);

@@ -167,7 +167,7 @@ pub fn printNodeExecutionOrder(self: *pipeline.Pipeline) void {
     std.debug.print("NODE EXECUTION ORDER\n", .{});
     for (self.node_execution_order.items, 0..) |node_handle, idx| {
         const node = self.node_pool.getPtr(node_handle) catch unreachable;
-        std.debug.print(" {d}. {s} (id: {d})\n", .{ idx + 1, node.desc.name, node_handle.id });
+        std.debug.print(" {d}. ({d}) {s}\n", .{ idx + 1, node_handle.id, node.desc.name });
     }
 }
 
@@ -191,6 +191,6 @@ fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []
     if (node_mod.enabled) {
         enabled_str = "[x]";
     }
-    const res = std.fmt.bufPrint(buf, "{s} ({any}) {s}: {s} > {s}", .{ enabled_str, vert.id, @tagName(node_mod.desc.type), node_mod.desc.name, node.desc.name }) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} ({any}) {s} | {s} : {s}", .{ enabled_str, vert.id, @tagName(node_mod.desc.type), node_mod.desc.name, node.desc.name }) catch "<error>";
     return @constCast(res);
 }

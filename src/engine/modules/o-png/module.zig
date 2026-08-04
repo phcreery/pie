@@ -5,6 +5,11 @@ const zigimg = @import("zigimg");
 pub const desc: api.ModuleDesc = .{
     .name = "o-png",
     .type = .sink,
+    .params = init: {
+        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
+        p[0] = .{ .name = "filename", .len = 256, .typ = .str };
+        break :init p;
+    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{
@@ -15,9 +20,14 @@ pub const desc: api.ModuleDesc = .{
         };
         break :init s;
     },
+    .initParams = initParams,
     .writeSink = writeSink,
     .createNodes = createNodes,
 };
+
+pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+    try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "output.png"));
+}
 
 pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     const socket = try api.getModSocket(pipe, mod, "input");
@@ -45,9 +55,10 @@ pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, 
         std.log.info("Converting to RGBA64", .{});
         try zig_image.convert(allocator, .rgba64);
 
-        std.log.info("Writing PNG to file", .{});
+        const filename = try api.getParam(pipe, mod, "filename", []const u8);
+        std.log.info("Writing PNG to file {s}", .{filename});
         var write_buffer2: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-        try zig_image.writeToFilePath(allocator, io, "testing/images/DSC_6765_debayered.png", write_buffer2[0..], .{ .png = .{} });
+        try zig_image.writeToFilePath(allocator, io, filename, write_buffer2[0..], .{ .png = .{} });
     }
 }
 

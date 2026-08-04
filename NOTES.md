@@ -73,7 +73,7 @@
     - https://github.com/zig-gamedev/zig-gamedev/
     - https://github.com/a-day-old-bagel/zgpu
   - https://github.com/akunaakwei/zig-dawn
-  - Note: dawn provides a couple pre-compiled static libs, but the linux does not work since it is compiled with gnu, and 
+  - Note: dawn provides a couple pre-compiled static libs, but the linux does not work since it is compiled with gnu, and according to a llm:
 ```
 The facts:
 - libwebgpu_dawn.a prebuilt was compiled with GCC → needs libstdc++ (__cxx11) symbols.
@@ -98,15 +98,15 @@ Verdict: Yes — sokol-zig will work with wgpu-zig (wgpu-native v29.0.1.1), with
 
  I checked all three layers — headers, exported symbols, and API semantics:
 
- ### Symbol/header compatibility ✅
+ ### Symbol/header compatibility
 
  - Extracted all 182 distinct wgpu*/WGPU* symbols used by sokol_gfx.h + sokol_app.h and checked them against the exact webgpu-headers@673658bc that wgpu-zig vendors:
      - 179/182 present. The misses are:
          - WGPUExtent — false positive (my regex truncated WGPUExtent3D, which exists)
          - WGPUEmscriptenSurfaceSourceCanvasHTMLSelector — Emscripten-only, correctly guarded by #if defined(__EMSCRIPTEN__) in sokol
-         - wgpuDeviceSetLoggingCallback / WGPULoggingCallbackInfo / WGPULoggingType — genuinely Dawn-only ⚠️
-
- ### Implementation compatibility ✅
+         - wgpuDeviceSetLoggingCallback / WGPULoggingCallbackInfo / WGPULoggingType — genuinely Dawn-only
+ 
+ ### Implementation compatibility
 
  - Downloaded the actual wgpu-linux-x86_64-release.zip for v29.0.1.1 and ran nm -D on libwgpu_native.so: every function sokol calls is exported — including the new-style API
    sokol_app relies on: wgpuInstanceWaitAny, wgpuInstanceProcessEvents, wgpuDeviceGetLimits (new WGPULimits* style), wgpuSurfaceGetCurrentTexture (status-enum style),
@@ -114,7 +114,7 @@ Verdict: Yes — sokol-zig will work with wgpu-zig (wgpu-native v29.0.1.1), with
  - Semantics line up too: sokol uses WGPUCallbackMode_WaitAnyOnly/AllowProcessEvents + WGPUInstanceFeatureName_TimedWaitAny, all of which wgpu-native supports natively (it has a
    real event loop, unlike emdawnwebgpu where sokol needs fallbacks).
 
- ### The one required patch ⚠️
+ ### The one required patch
 
  sokol_app.h:4149-4196 — on native builds (#if !defined(_SAPP_EMSCRIPTEN)), sokol unconditionally registers a Dawn-only logging callback:
 

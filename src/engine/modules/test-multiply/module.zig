@@ -72,11 +72,6 @@ pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
 }
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
-    const multiplier = try api.getParam(pipe, mod, "multiplier", f32);
-    const adder = try api.getParam(pipe, mod, "adder", f32);
-    std.debug.print("Multiplier param value: {d}\n", .{multiplier});
-    std.debug.print("Adder param value: {d}\n", .{adder});
-
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node = try pipe.addNode(mod, .{
         .type = .compute,

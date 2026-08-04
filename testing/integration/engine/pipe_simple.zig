@@ -70,11 +70,11 @@ test "simple test modules" {
 
     const mod_test_i_1234 = try pipeline.addModule(repository.get("test-i-1234").?);
     const mod_test_multiply = try pipeline.addModule(repository.get("test-multiply").?);
+    // _ = try pipeline.addModule(repository.get("test-multiply").?); // dummy?
     // const mod_test_2nodes = try pipeline.addModule(repository.get("test-2nodes").?);
-    const mod_test_o_2468 = try pipeline.addModule(repository.get("test-o-2468").?);
-    _ = try pipeline.addModule(repository.get("test-multiply").?); // dummy?
-    // const mod_test_nop_1 = try pipeline.addModule(repository.get("test-nop").?);
     const mod_test_nop_glsl = try pipeline.addModule(repository.get("test-nop-glsl").?);
+    const mod_test_o_2468 = try pipeline.addModule(repository.get("test-o-2468").?);
+    // const mod_test_nop_1 = try pipeline.addModule(repository.get("test-nop").?);
 
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0);
     // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0));

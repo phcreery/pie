@@ -18,6 +18,9 @@ test "fullsize through pipeline" {
     var gpu_instance = try gpu.GPU.init(std.testing.io);
     defer gpu_instance.deinit();
 
+    var repository = try pie.modules.Repository.init(allocator);
+    defer repository.deinit();
+
     const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
         .download_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
@@ -26,21 +29,23 @@ test "fullsize through pipeline" {
     var pipeline = Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    const mod_i_raw = try pipeline.addModule(pie.modules.i_raw.desc);
-    const mod_format = try pipeline.addModule(pie.modules.format.desc);
-    const mod_denoise = try pipeline.addModule(pie.modules.denoise.desc);
-    const mod_demosaic = try pipeline.addModule(pie.modules.demosaic.desc);
-    const mod_color = try pipeline.addModule(pie.modules.color.desc);
-    const mod_filmcurv = try pipeline.addModule(pie.modules.filmcurv.desc);
-    const mod_o_png = try pipeline.addModule(pie.modules.o_png.desc);
+    const mod_i_raw = try pipeline.addModule(repository.get("i-raw").?);
+    const mod_format = try pipeline.addModule(repository.get("format").?);
+    const mod_denoise = try pipeline.addModule(repository.get("denoise").?);
+    const mod_demosaic = try pipeline.addModule(repository.get("demosaic").?);
+    const mod_color = try pipeline.addModule(repository.get("color").?);
+    const mod_filmcurv = try pipeline.addModule(repository.get("filmcurv").?);
+    const mod_o_png = try pipeline.addModule(repository.get("o-png").?);
 
-    try pipeline.setModuleParam(mod_i_raw, "wb_mode", @as(i32, 1));
-    try pipeline.setModuleParam(mod_i_raw, "matrix_mode", @as(i32, 0));
+    try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, "testing/images/DSC_6765.NEF");
+    try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 1);
 
-    try pipeline.setModuleParam(mod_filmcurv, "colormode", @as(i32, 1));
-    try pipeline.setModuleParam(mod_filmcurv, "brightness", @as(f32, 2.22));
-    try pipeline.setModuleParam(mod_filmcurv, "contrast", @as(f32, 1.0));
-    try pipeline.setModuleParam(mod_filmcurv, "bias", @as(f32, 0.0));
+    try pipeline.setModuleParam(mod_filmcurv, "colormode", i32, 1);
+    try pipeline.setModuleParam(mod_filmcurv, "brightness", f32, 2.22);
+    try pipeline.setModuleParam(mod_filmcurv, "contrast", f32, 1.0);
+    try pipeline.setModuleParam(mod_filmcurv, "bias", f32, 0.0);
+
+    try pipeline.setModuleParam(mod_o_png, "filename", []const u8, "testing/images/DSC_6765_debayered.png");
 
     try pipeline.connectModules(mod_i_raw, "output", mod_format, "input");
     try pipeline.connectModules(mod_format, "output", mod_denoise, "input");

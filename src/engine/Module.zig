@@ -73,3 +73,15 @@ pub fn getParamPtr(mod: *Self, name: []const u8) !*Param {
     }
     return error.ModuleParamNotFound;
 }
+
+pub fn params_len(mod: *Self) usize {
+    var count: usize = 0;
+    for (mod.desc.params) |param| {
+        if (param != null) {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    return count;
+}

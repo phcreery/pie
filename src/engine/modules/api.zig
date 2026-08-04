@@ -38,7 +38,6 @@ pub const SocketDesc = struct {
 
 pub const Sockets = [MAX_SOCKETS]?SocketDesc;
 
-// Can we make NodeDesc a tagged union instead?
 pub const NodeType = enum {
     compute,
     source,
@@ -49,7 +48,6 @@ pub const NodeType = enum {
 pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
     shader: ?[]const u8 = null,
-    // shader: ?gpu.Shader = null,
     temp_shader_language: gpu.ShaderLanguage = .wgsl, // TODO: remove this once we have a proper shader compilation pipeline
     name: []const u8,
     run_size: ?ROI = null,
@@ -68,13 +66,9 @@ pub const ParamDesc = struct {
     typ: Param.Type,
 };
 
-/// Module structure
-///
 /// A module can have multiple nodes.
-///
 /// They can have source and sink connectors as well, but the module must have
 /// respective read_source and write_sink functions to handle them.
-///
 /// vkdt dt_module_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/module.h#L107
 /// vkdt dt_module_so_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/global.h#L62
 pub const ModuleDesc = struct {
