@@ -42,6 +42,7 @@ fn runPipeBench(allocator: std.mem.Allocator, arena: std.mem.Allocator, pipeline
 
 test "simple test modules" {
     const allocator = std.testing.allocator;
+    const io = std.testing.io;
 
     // const aa = allocator;
 
@@ -52,7 +53,7 @@ test "simple test modules" {
     const cp_out = console.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
-    var gpu_instance = try gpu.GPU.init(std.testing.io);
+    var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
     var repository = try pie.modules.Repository.init(allocator);
@@ -65,15 +66,15 @@ test "simple test modules" {
         .download_buffer_size_bytes = 1024,
     };
 
-    var pipeline = try Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config);
+    var pipeline = try Pipeline.init(allocator, io, &gpu_instance, pipeline_config);
     defer pipeline.deinit();
 
-    const mod_test_i_1234 = try pipeline.addModule(repository.get("test-i-1234").?);
-    const mod_test_multiply = try pipeline.addModule(repository.get("test-multiply").?);
+    const mod_test_i_1234 = try pipeline.addModuleDesc(repository.get("test-i-1234").?);
+    const mod_test_multiply = try pipeline.addModuleDesc(repository.get("test-multiply").?);
     // _ = try pipeline.addModule(repository.get("test-multiply").?); // dummy?
     // const mod_test_2nodes = try pipeline.addModule(repository.get("test-2nodes").?);
-    const mod_test_nop_glsl = try pipeline.addModule(repository.get("test-nop-glsl").?);
-    const mod_test_o_2468 = try pipeline.addModule(repository.get("test-o-2468").?);
+    const mod_test_nop_glsl = try pipeline.addModuleDesc(repository.get("test-nop-glsl").?);
+    const mod_test_o_2468 = try pipeline.addModuleDesc(repository.get("test-o-2468").?);
     // const mod_test_nop_1 = try pipeline.addModule(repository.get("test-nop").?);
 
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0);

@@ -1,5 +1,6 @@
-/// A lot of this is just a wrapper around wgpu to make it easier to use in the context of image processing.
-/// intended to be used with [shahwali/wgpu-zig](https://codeberg.org/shahwali/wgpu-zig) (wgpu-native)
+//! A lot of this is just a wrapper around wgpu to make it easier to use in the context of image processing.
+//! intended to be used with [shahwali/wgpu-zig](https://codeberg.org/shahwali/wgpu-zig) (wgpu-native)
+
 const std = @import("std");
 const wgpu = @import("wgpu_zig");
 const gpu_data = @import("gpu_data.zig");
@@ -618,6 +619,12 @@ pub const ShaderLanguage = enum {
     glsl,
 };
 
+pub const ShaderSource = union(ShaderLanguage) {
+    wgsl: []const u8,
+    spirv: []const u32,
+    glsl: []const u8,
+};
+
 pub const CompileShaderOpts = struct {
     name: []const u8 = "Compute Shader",
     type: ShaderLanguage = .wgsl,
@@ -628,20 +635,15 @@ pub const Shader = struct {
 
     const Self = @This();
 
-    pub fn compile(
-        gpu: *GPU,
-        shader_source: []const u8,
-        opts: CompileShaderOpts,
-    ) !Shader {
-        slog.debug("Compiling shader {s}", .{opts.name});
-
-        const source: wgpu.ShaderSource = switch (opts.type) {
-            .wgsl => .{ .wgsl = shader_source },
+    pub fn compile(gpu: *GPU, shader_source: ShaderSource) !Shader {
+        slog.debug("Compiling shader", .{});
+        const source: wgpu.ShaderSource = switch (shader_source) {
+            .wgsl => .{ .wgsl = shader_source.wgsl },
             .spirv => blk: {
-                const code_ptr: [*]const u32 = @ptrCast(@alignCast(shader_source.ptr));
-                break :blk .{ .spirv = code_ptr[0 .. shader_source.len / @sizeOf(u32)] };
+                const code_ptr: [*]const u32 = @ptrCast(@alignCast(shader_source.spirv.ptr));
+                break :blk .{ .spirv = code_ptr[0 .. shader_source.spirv.len / @sizeOf(u32)] };
             },
-            .glsl => .{ .glsl = .{ .code = shader_source, .stage = .compute } },
+            .glsl => .{ .glsl = .{ .code = shader_source.glsl, .stage = .compute } },
         };
 
         const shader_module = try gpu.device.createShaderModule(source);
@@ -786,13 +788,58 @@ pub const ComputePipeline = struct {
     }
 };
 
+pub const ShaderSourceContext = struct {
+    pub fn hash(self: ShaderSourceContext, key: ShaderSource) u64 {
+        _ = self;
+        var hasher = std.hash.Wyhash.init(0);
+
+        // Hash the active language tag first
+        const tag = @as(ShaderLanguage, key);
+        hasher.update(std.mem.asBytes(&tag));
+
+        // Safely hash the slice contents based on active variant
+        switch (key) {
+            .wgsl => |code| hasher.update(code),
+            .glsl => |code| hasher.update(code),
+            .spirv => |words| {
+                // Cast the u32 slice safely to a byte slice for the hasher
+                const bytes = std.mem.sliceAsBytes(words);
+                hasher.update(bytes);
+            },
+        }
+        return hasher.final();
+    }
+
+    pub fn eql(self: ShaderSourceContext, a: ShaderSource, b: ShaderSource) bool {
+        _ = self;
+        // Verify they are the same language variant
+        const tag_a = @as(ShaderLanguage, a);
+        const tag_b = @as(ShaderLanguage, b);
+        if (tag_a != tag_b) return false;
+
+        // Perform a deep content equality check on the slices
+        return switch (a) {
+            .wgsl => std.mem.eql(u8, a.wgsl, b.wgsl),
+            .glsl => std.mem.eql(u8, a.glsl, b.glsl),
+            .spirv => std.mem.eql(u32, a.spirv, b.spirv),
+        };
+    }
+};
+pub const ShaderMap = std.HashMap(
+    ShaderSource,
+    Shader,
+    ShaderSourceContext,
+    std.hash_map.default_max_load_percentage,
+);
+
 /// GPU manages the WebGPU instance, adapter, device, and queue.
 pub const GPU = struct {
-    instance: ?wgpu.Instance = null,
-    adapter: ?wgpu.Adapter = null,
-    device: wgpu.Device = undefined,
-    queue: wgpu.Queue = undefined,
-    adapter_name: []const u8 = "",
+    instance: ?wgpu.Instance,
+    adapter: ?wgpu.Adapter,
+    device: wgpu.Device,
+    queue: wgpu.Queue,
+    adapter_name: []const u8,
+    shader_cache: ShaderMap,
 
     const Self = @This();
 
@@ -801,8 +848,9 @@ pub const GPU = struct {
         return adapter.getLimits() catch null;
     }
 
-    pub fn init(io: std.Io) !Self {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) !Self {
         _ = io; // not needed by wgpu-native (its futures resolve via device poll / process events)
+        // _ = allocator;
         slog.debug("Initializing GPU", .{});
 
         const instance = try wgpu.Instance.init(null);
@@ -831,8 +879,7 @@ pub const GPU = struct {
             @as(c.WGPUFeatureName, @intCast(c.WGPUNativeFeature_TextureAdapterSpecificFormatFeatures)),
             // .mappable_primary_buffers, // https://docs.rs/wgpu-types/0.7.0/wgpu_types/struct.Features.html#associatedconstant.MAPPABLE_PRIMARY_BUFFERS
         };
-        // start from the adapter's supported limits so every field carries a
-        // valid value, then tighten the two we actually care about
+
         var required_limits = try adapter.getLimits();
         required_limits.maxStorageBufferBindingSize = 1024 * 1024 * 1024; // 1 GB
         required_limits.maxBufferSize = 1024 * 1024 * 1024; // 1 GB
@@ -873,19 +920,21 @@ pub const GPU = struct {
         const limits = try adapter.getLimits();
 
         slog.info("Adapter limits:", .{});
-        slog.info(" max_bind_groups: {d}", .{limits.maxBindGroups});
-        slog.info(" max_bindings_per_bind_group: {d}", .{limits.maxBindingsPerBindGroup});
-        slog.info(" max_texture_dimension_2d: {d}", .{limits.maxTextureDimension2D});
-        slog.info(" max_compute_invocations_per_workgroup: {d}", .{limits.maxComputeInvocationsPerWorkgroup});
-        slog.info(" max_compute_workgroup_size_x: {d}", .{limits.maxComputeWorkgroupSizeX});
-        slog.info(" max_compute_workgroup_size_y: {d}", .{limits.maxComputeWorkgroupSizeY});
-        slog.info(" max_compute_workgroup_size_z: {d}", .{limits.maxComputeWorkgroupSizeZ});
-        slog.info(" max_compute_workgroups_per_dimension: {d}", .{limits.maxComputeWorkgroupsPerDimension});
-        slog.info(" max_buffer_size: {B:.2}", .{limits.maxBufferSize});
-        slog.info(" max_uniform_buffer_binding_size: {B:.2}", .{limits.maxUniformBufferBindingSize});
-        slog.info(" max_storage_buffer_binding_size: {B:.2}", .{limits.maxStorageBufferBindingSize});
-        slog.info(" min_uniform_buffer_offset_alignment: {d}", .{limits.minUniformBufferOffsetAlignment});
-        slog.info(" min_storage_buffer_offset_alignment: {d}", .{limits.minStorageBufferOffsetAlignment});
+        slog.info("- max_bind_groups: {d}", .{limits.maxBindGroups});
+        slog.info("- max_bindings_per_bind_group: {d}", .{limits.maxBindingsPerBindGroup});
+        slog.info("- max_texture_dimension_2d: {d}", .{limits.maxTextureDimension2D});
+        slog.info("- max_compute_invocations_per_workgroup: {d}", .{limits.maxComputeInvocationsPerWorkgroup});
+        slog.info("- max_compute_workgroup_size_x: {d}", .{limits.maxComputeWorkgroupSizeX});
+        slog.info("- max_compute_workgroup_size_y: {d}", .{limits.maxComputeWorkgroupSizeY});
+        slog.info("- max_compute_workgroup_size_z: {d}", .{limits.maxComputeWorkgroupSizeZ});
+        slog.info("- max_compute_workgroups_per_dimension: {d}", .{limits.maxComputeWorkgroupsPerDimension});
+        slog.info("- max_buffer_size: {B:.2}", .{limits.maxBufferSize});
+        slog.info("- max_uniform_buffer_binding_size: {B:.2}", .{limits.maxUniformBufferBindingSize});
+        slog.info("- max_storage_buffer_binding_size: {B:.2}", .{limits.maxStorageBufferBindingSize});
+        slog.info("- min_uniform_buffer_offset_alignment: {d}", .{limits.minUniformBufferOffsetAlignment});
+        slog.info("- min_storage_buffer_offset_alignment: {d}", .{limits.minStorageBufferOffsetAlignment});
+
+        const shader_cache = ShaderMap.init(allocator);
 
         return Self{
             .instance = instance,
@@ -893,21 +942,25 @@ pub const GPU = struct {
             .device = device,
             .queue = queue,
             .adapter_name = info.device,
+            .shader_cache = shader_cache,
         };
     }
 
-    pub fn initExternal(device: wgpu.Device, queue: wgpu.Queue) !Self {
+    pub fn initExternal(allocator: std.mem.Allocator, io: std.Io, device: wgpu.Device, queue: wgpu.Queue) !Self {
+        _ = io;
         slog.debug("Initializing GPU from external sokol-owned WebGPU device/queue", .{});
         c.wgpuDeviceAddRef(device.device);
         errdefer device.deinit();
         c.wgpuQueueAddRef(queue.queue);
         errdefer queue.deinit();
+        const shader_cache = ShaderMap.init(allocator);
         return .{
             .instance = null,
             .adapter = null,
             .device = device,
             .queue = queue,
             .adapter_name = "sokol-external-device",
+            .shader_cache = shader_cache,
         };
     }
 
@@ -918,6 +971,19 @@ pub const GPU = struct {
         self.device.deinit();
         if (self.adapter) |adapter| adapter.deinit();
         if (self.instance) |instance| instance.deinit();
+        self.shader_cache.deinit();
+    }
+
+    pub fn compileShader(self: *Self, shader_source: ShaderSource) !Shader {
+        const shader = self.shader_cache.get(shader_source) orelse blk: {
+            slog.info("Shader not found in cache, compiling new shader", .{});
+            const shader = try Shader.compile(self, shader_source);
+            self.shader_cache.put(shader_source, shader) catch {
+                slog.err("Failed to cache shader", .{});
+            };
+            break :blk shader;
+        };
+        return shader;
     }
 
     pub fn run(self: *Self, command_buffer: ?wgpu.CommandEncoder.CommandBuffer) !void {

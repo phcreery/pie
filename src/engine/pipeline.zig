@@ -13,6 +13,8 @@ const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const slog = std.log.scoped(.pipe);
 
+// TYPES
+
 pub const ModulePool = HashMapPool(Module);
 pub const ModuleHandle = ModulePool.Handle;
 
@@ -25,10 +27,16 @@ pub const ConnectorHandle = ConnectorPool.Handle;
 pub const ParamBufferPool = HashMapPool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
+// CONFIG
+
 pub const PipelineConfig = struct {
     upload_buffer_size_bytes: ?usize = 75e6,
     download_buffer_size_bytes: ?usize = 75e6,
 };
+
+pub const MAX_MODULES = 100;
+pub const MAX_NODES = 200;
+pub const MAX_CONNECTORS = 500;
 
 // TODO: history pool
 
@@ -72,10 +80,6 @@ pub const Pipeline = struct {
     dirty: bool = true,
 
     perf: PerfMetrics,
-
-    pub const MAX_MODULES = 100;
-    pub const MAX_NODES = 200;
-    pub const MAX_CONNECTORS = 500;
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -177,7 +181,7 @@ pub const Pipeline = struct {
     // Public Pipeline functions
     // ================================================
 
-    pub fn addModule(self: *Pipeline, module_desc: api.ModuleDesc) !ModuleHandle {
+    pub fn addModuleDesc(self: *Pipeline, module_desc: api.ModuleDesc) !ModuleHandle {
         slog.debug("Adding module to pipeline: {s}", .{module_desc.name});
         var module = try Module.init(module_desc);
         try self.initOutputConnectorHandles(&module);
@@ -189,7 +193,7 @@ pub const Pipeline = struct {
     }
     pub fn addModuleFromRepo(self: *Pipeline, repository: *Modules.Repository, name: []const u8) !ModuleHandle {
         const module_desc = repository.get(name) orelse return error.ModuleNotFound;
-        const module_handle = try self.addModule(module_desc);
+        const module_handle = try self.addModuleDesc(module_desc);
         return module_handle;
     }
 
@@ -551,7 +555,7 @@ pub const Pipeline = struct {
         // print.printModules(self);
         // print.printNodes(self);
         print.printNodesGraph(self) catch unreachable;
-        print.printNodeExecutionOrder(self);
+        // print.printNodeExecutionOrder(self);
     }
 
     fn runModulesPreCheck(self: *Pipeline) !void {
@@ -764,7 +768,7 @@ pub const Pipeline = struct {
                 continue;
             }
             if (node.desc.shader) |shader| {
-                node.shader = try api.compileShader(self, shader, node.desc.temp_shader_language);
+                node.shader = try api.compileShader(self, shader);
             }
         }
     }

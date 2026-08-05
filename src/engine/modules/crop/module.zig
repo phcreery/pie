@@ -67,7 +67,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
 
     const node = try pipe.addNode(mod, .{
         .type = .compute,
-        .shader = @embedFile("./rotate_center.wgsl"),
+        .shader = .{ .wgsl = @embedFile("./rotate_center.wgsl") },
         .name = "rotate_center",
         .run_size = mod_output_sock.roi.?,
         .sockets = init: {

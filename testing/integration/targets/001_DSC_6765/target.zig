@@ -22,17 +22,17 @@ fn build(
     _ = allocator;
     _ = io;
 
-    const mod_i_raw = try pipe.addModule(repo.get("i-raw").?);
-    const mod_format = try pipe.addModule(repo.get("format").?);
-    const mod_denoise = try pipe.addModule(repo.get("denoise").?);
+    const mod_i_raw = try pipe.addModuleDesc(repo.get("i-raw").?);
+    const mod_format = try pipe.addModuleDesc(repo.get("format").?);
+    const mod_denoise = try pipe.addModuleDesc(repo.get("denoise").?);
     // const mod_whitebalance = try pipeline.addModule(modules.get("whitebalance").?);
-    const mod_demosaic = try pipe.addModule(repo.get("demosaic").?);
-    const mod_crop = try pipe.addModule(repo.get("crop").?);
-    const mod_color = try pipe.addModule(repo.get("color").?);
-    const mod_filmcurv = try pipe.addModule(repo.get("filmcurv").?);
+    const mod_demosaic = try pipe.addModuleDesc(repo.get("demosaic").?);
+    const mod_crop = try pipe.addModuleDesc(repo.get("crop").?);
+    const mod_color = try pipe.addModuleDesc(repo.get("color").?);
+    const mod_filmcurv = try pipe.addModuleDesc(repo.get("filmcurv").?);
     // const mod_test_nop_glsl = try pipeline.addModule(modules.get("test-nop-glsl").?);
     // const mod_test_nop_zig = try pipeline.addModule(modules.get("test-nop-zig").?);
-    const mod_o_ppm = try pipe.addModule(repo.get("o-ppm").?);
+    const mod_o_ppm = try pipe.addModuleDesc(repo.get("o-ppm").?);
 
     try pipe.setModuleParam(mod_i_raw, "filename", []const u8, input_filename);
     try pipe.setModuleParam(mod_i_raw, "wb_mode", i32, 0);

@@ -47,8 +47,7 @@ pub const NodeType = enum {
 // vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
 pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
-    shader: ?[]const u8 = null,
-    temp_shader_language: gpu.ShaderLanguage = .wgsl, // TODO: remove this once we have a proper shader compilation pipeline
+    shader: ?gpu.ShaderSource = null,
     name: []const u8,
     run_size: ?ROI = null,
     sockets: Sockets,
@@ -96,9 +95,10 @@ pub const ModuleDesc = struct {
 // PIPELINE HELPERS
 // ================
 
-pub fn compileShader(pipe: *Pipeline, shader_code: []const u8, temp_shader_language: gpu.ShaderLanguage) !gpu.Shader {
+pub fn compileShader(pipe: *Pipeline, shader_source: gpu.ShaderSource) !gpu.Shader {
     const gpu_inst = pipe.gpu orelse return error.GPUNotInitialized;
-    return gpu.Shader.compile(gpu_inst, shader_code, .{ .type = temp_shader_language });
+    // return gpu.Shader.compile(gpu_inst, shader_source);
+    return gpu_inst.compileShader(shader_source);
 }
 
 pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
