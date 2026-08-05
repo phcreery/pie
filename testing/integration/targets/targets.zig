@@ -260,7 +260,7 @@ test "test targets" {
     const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
 
-    var gpu_instance = try gpu.GPU.init(io);
+    var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
     var modules = try pie.modules.Repository.init(allocator);

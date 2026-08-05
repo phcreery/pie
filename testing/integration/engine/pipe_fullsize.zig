@@ -7,6 +7,7 @@ const Pipeline = pie.Pipeline;
 
 test "fullsize through pipeline" {
     const allocator = std.testing.allocator;
+    const io = std.testing.io;
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -15,7 +16,7 @@ test "fullsize through pipeline" {
     const cp_out = console.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
-    var gpu_instance = try gpu.GPU.init(std.testing.io);
+    var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
     var repository = try pie.modules.Repository.init(allocator);
@@ -29,13 +30,13 @@ test "fullsize through pipeline" {
     var pipeline = Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    const mod_i_raw = try pipeline.addModule(repository.get("i-raw").?);
-    const mod_format = try pipeline.addModule(repository.get("format").?);
-    const mod_denoise = try pipeline.addModule(repository.get("denoise").?);
-    const mod_demosaic = try pipeline.addModule(repository.get("demosaic").?);
-    const mod_color = try pipeline.addModule(repository.get("color").?);
-    const mod_filmcurv = try pipeline.addModule(repository.get("filmcurv").?);
-    const mod_o_png = try pipeline.addModule(repository.get("o-png").?);
+    const mod_i_raw = try pipeline.addModuleDesc(repository.get("i-raw").?);
+    const mod_format = try pipeline.addModuleDesc(repository.get("format").?);
+    const mod_denoise = try pipeline.addModuleDesc(repository.get("denoise").?);
+    const mod_demosaic = try pipeline.addModuleDesc(repository.get("demosaic").?);
+    const mod_color = try pipeline.addModuleDesc(repository.get("color").?);
+    const mod_filmcurv = try pipeline.addModuleDesc(repository.get("filmcurv").?);
+    const mod_o_png = try pipeline.addModuleDesc(repository.get("o-png").?);
 
     try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, "testing/images/DSC_6765.NEF");
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 1);
