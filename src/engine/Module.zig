@@ -5,6 +5,7 @@ const Param = @import("Param.zig");
 const ImgParam = @import("ImgParam.zig");
 const slog = std.log.scoped(.mod);
 
+id: []const u8,
 desc: api.ModuleDesc,
 enabled: bool,
 
@@ -27,8 +28,9 @@ img_param_size: ?usize = null,
 
 const Self = @This();
 
-pub fn init(desc: api.ModuleDesc) !Self {
+pub fn init(id: []const u8, desc: api.ModuleDesc) !Self {
     return Self{
+        .id = id,
         .desc = desc,
         .enabled = true,
     };

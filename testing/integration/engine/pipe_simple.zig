@@ -69,12 +69,12 @@ test "simple test modules" {
     var pipeline = try Pipeline.init(allocator, io, &gpu_instance, pipeline_config);
     defer pipeline.deinit();
 
-    const mod_test_i_1234 = try pipeline.addModuleDesc(repository.get("test-i-1234").?);
-    const mod_test_multiply = try pipeline.addModuleDesc(repository.get("test-multiply").?);
+    const mod_test_i_1234 = try pipeline.addModuleDesc("01", repository.get("test-i-1234").?);
+    const mod_test_multiply = try pipeline.addModuleDesc("01", repository.get("test-multiply").?);
     // _ = try pipeline.addModule(repository.get("test-multiply").?); // dummy?
     // const mod_test_2nodes = try pipeline.addModule(repository.get("test-2nodes").?);
-    const mod_test_nop_glsl = try pipeline.addModuleDesc(repository.get("test-nop-glsl").?);
-    const mod_test_o_2468 = try pipeline.addModuleDesc(repository.get("test-o-2468").?);
+    const mod_test_nop_glsl = try pipeline.addModuleDesc("01", repository.get("test-nop-glsl").?);
+    const mod_test_o_2468 = try pipeline.addModuleDesc("01", repository.get("test-o-2468").?);
     // const mod_test_nop_1 = try pipeline.addModule(repository.get("test-nop").?);
 
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0);

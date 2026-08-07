@@ -174,8 +174,7 @@ pub fn printNodeExecutionOrder(self: *pipeline.Pipeline) void {
 fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaque) []u8 {
     var pipe: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
     const conn = pipe.connector_pool.getPtr(edge) catch unreachable;
-    const res = std.fmt.bufPrint(buf, "({any}) {s} {d}x{d}", .{
-        edge.id,
+    const res = std.fmt.bufPrint(buf, "{s} {d}x{d}", .{
         @tagName(conn.*.?.format),
         conn.*.?.roi.h,
         conn.*.?.roi.w,
@@ -191,6 +190,6 @@ fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []
     if (node_mod.enabled) {
         enabled_str = "[x]";
     }
-    const res = std.fmt.bufPrint(buf, "{s} ({any}) {s} | {s} : {s}", .{ enabled_str, vert.id, @tagName(node_mod.desc.type), node_mod.desc.name, node.desc.name }) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} {s} | {s} : {s}", .{ enabled_str, @tagName(node_mod.desc.type), node_mod.desc.name, node.desc.name }) catch "<error>";
     return @constCast(res);
 }

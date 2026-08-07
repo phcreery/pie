@@ -9,7 +9,7 @@ pub const api = @import("modules/api.zig");
 pub const modules = @import("modules/modules.zig");
 
 pub const graph = @import("zig-graph/graph.zig");
-pub const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
+pub const Pool = @import("pool.zig").Pool;
 
 pub const GPU = gpu.GPU;
 pub const Buffer = gpu.Buffer;
@@ -37,7 +37,7 @@ pub const Pipeline = pipeline.Pipeline;
 //     // _ = @import("engine/modules/i-raw/i-raw.zig");
 //     // _ = @import("engine/zig-graph/graph.zig");
 //     // _ = @import("engine/zig-graph/print.zig");
-//     // _ = @import("engine/pool_hash_map.zig");
+//     // _ = @import("engine/pool.zig");
 //     _ = @import("engine/Param.zig");
 //     // _ = @import("engine/ImgParam.zig");
 // }

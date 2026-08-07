@@ -9,22 +9,22 @@ const Socket = @import("Socket.zig");
 const Param = @import("Param.zig");
 const ImgParam = @import("ImgParam.zig");
 const Modules = @import("modules/modules.zig");
-const HashMapPool = @import("pool_hash_map.zig").HashMapPool;
+const Pool = @import("pool.zig").Pool;
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const slog = std.log.scoped(.pipe);
 
 // TYPES
 
-pub const ModulePool = HashMapPool(Module);
+pub const ModulePool = Pool(Module);
 pub const ModuleHandle = ModulePool.Handle;
 
-pub const NodePool = HashMapPool(Node);
+pub const NodePool = Pool(Node);
 pub const NodeHandle = NodePool.Handle;
 
-pub const ConnectorPool = HashMapPool(?gpu.Texture);
+pub const ConnectorPool = Pool(?gpu.Texture);
 pub const ConnectorHandle = ConnectorPool.Handle;
 
-pub const ParamBufferPool = HashMapPool(?gpu.Buffer);
+pub const ParamBufferPool = Pool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
 // CONFIG
@@ -66,7 +66,7 @@ pub const Pipeline = struct {
     download_fba: ?gpu.Buffer.Allocator,
 
     module_pool: ModulePool,
-    module_name_map: std.StringHashMap(ModuleHandle),
+    module_name_map: std.StringHashMap(ModuleHandle), // stored as name:id, ex. "i-raw:01"
     module_execution_order: std.ArrayList(ModuleHandle),
 
     node_pool: NodePool,
@@ -161,6 +161,10 @@ pub const Pipeline = struct {
         self.deinitParams();
         // the pool deinit will take care of deallocating the textures
         self.module_execution_order.deinit(self.allocator);
+        var module_name_map_it = self.module_name_map.iterator();
+        while (module_name_map_it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
         self.module_name_map.deinit();
         self.module_pool.deinit();
         self.node_execution_order.deinit(self.allocator);
@@ -181,13 +185,18 @@ pub const Pipeline = struct {
     // Public Pipeline functions
     // ================================================
 
-    pub fn addModuleDesc(self: *Pipeline, module_desc: api.ModuleDesc) !ModuleHandle {
+    pub fn addModuleDesc(self: *Pipeline, id: []const u8, module_desc: api.ModuleDesc) !ModuleHandle {
         slog.debug("Adding module to pipeline: {s}", .{module_desc.name});
-        var module = try Module.init(module_desc);
+        var module = try Module.init(id, module_desc);
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
         const module_handle = try self.module_pool.add(module);
-        try self.module_name_map.put(module.desc.name, module_handle);
+
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ module.desc.name, ":", id });
+
+        std.debug.print("Adding module to name map: {s} -> {any}", .{ fullname, module_handle });
+
+        try self.module_name_map.put(fullname, module_handle);
         try self.initParams(module_handle);
         return module_handle;
     }
@@ -208,12 +217,22 @@ pub const Pipeline = struct {
     pub fn connectModulesByName(
         self: *Pipeline,
         src_mod_name: []const u8,
+        src_mod_id: []const u8,
         src_mod_socket_name: []const u8,
         dst_mod_name: []const u8,
+        dst_mod_id: []const u8,
         dst_mod_socket_name: []const u8,
     ) !void {
-        const src_mod = self.module_name_map.get(src_mod_name) orelse return error.ModuleNotFound;
-        const dst_mod = self.module_name_map.get(dst_mod_name) orelse return error.ModuleNotFound;
+        const src_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ src_mod_name, ":", src_mod_id });
+        defer self.allocator.free(src_mod_fullname);
+
+        const src_mod = self.module_name_map.get(src_mod_fullname) orelse return error.ModuleNotFound;
+
+        const dst_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
+        defer self.allocator.free(dst_mod_fullname);
+
+        const dst_mod = self.module_name_map.get(dst_mod_fullname) orelse return error.ModuleNotFound;
+
         return try self.connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
     }
 
@@ -395,7 +414,7 @@ pub const Pipeline = struct {
             try self.runModulesAllocateUploadBufferForParams();
             try self.perf.timerLap("runModulesAllocateUploadBufferForParams");
 
-            try self.runModulesReCreateNodes();
+            try self.runModulesReCreateNodes(arena);
             try self.perf.timerLap("runModulesCreateNodes");
             try self.runNodesCompileShaders();
             try self.perf.timerLap("runNodesCompileShaders");
@@ -410,7 +429,7 @@ pub const Pipeline = struct {
             try self.runNodesCreateBindings();
             try self.perf.timerLap("runNodesCreateBindings");
 
-            try self.freeUnusedConnectors();
+            try self.freeUnusedConnectors(arena);
             try self.perf.timerLap("freeUnusedConnectors");
 
             self.printPipeToStdout();
@@ -742,9 +761,16 @@ pub const Pipeline = struct {
 
     /// remove all existing nodes and
     /// create nodes for each module
-    fn runModulesReCreateNodes(self: *Pipeline) !void {
+    fn runModulesReCreateNodes(self: *Pipeline, arena: std.mem.Allocator) !void {
+        var old_node_handles = try std.ArrayList(NodeHandle).initCapacity(arena, self.node_pool.len());
+        defer old_node_handles.deinit(arena);
+
         var node_pool_handles = self.node_pool.liveHandles();
         while (node_pool_handles.next()) |node_handle| {
+            try old_node_handles.append(arena, node_handle);
+        }
+
+        for (old_node_handles.items) |node_handle| {
             // remove node
             // we leave connectors alone for now since they are shared with modules and may be reused
             slog.debug("Removing node {any} from pipeline", .{node_handle});
@@ -1234,9 +1260,16 @@ pub const Pipeline = struct {
         download_buffer.unmap();
     }
 
-    fn freeUnusedConnectors(self: *Pipeline) !void {
+    fn freeUnusedConnectors(self: *Pipeline, arena: std.mem.Allocator) !void {
+        var connector_handles = try std.ArrayList(ConnectorHandle).initCapacity(arena, self.connector_pool.len());
+        defer connector_handles.deinit(arena);
+
         var conn_pool_handles = self.connector_pool.liveHandles();
         while (conn_pool_handles.next()) |connector_handle| {
+            try connector_handles.append(arena, connector_handle);
+        }
+
+        for (connector_handles.items) |connector_handle| {
             // check if connector is used in any module or node
             var found = false;
 
@@ -1310,18 +1343,18 @@ pub const Pipeline = struct {
     }
 };
 
-/// stack-based DFS iterator for traversing DAGs stored in a HashMapPool
+/// stack-based DFS iterator for traversing DAGs stored in a Pool
 /// each element T must have a `desc` field in which there is a `sockets` field
 /// each socket must have a `private.connected_to_node` field which is an optional connection to another node handle
 pub fn PooledDagDfsIterator(T: type) type {
     return struct {
-        pub fn iterator(allocator: std.mem.Allocator, pool: *HashMapPool(T)) !DagDfsIterator {
+        pub fn iterator(allocator: std.mem.Allocator, pool: *Pool(T)) !DagDfsIterator {
             // Map from `id` to `mark` value
-            var mark = std.AutoHashMap(HashMapPool(T).Handle, u8).init(allocator);
+            var mark = std.AutoHashMap(Pool(T).Handle, u8).init(allocator);
             errdefer mark.deinit();
 
             // Stack to hold node IDs
-            var stack = try std.ArrayList(HashMapPool(T).Handle).initCapacity(allocator, 1024);
+            var stack = try std.ArrayList(Pool(T).Handle).initCapacity(allocator, 1024);
             errdefer stack.deinit(allocator);
             var sp: isize = -1; // Stack pointer
 
@@ -1360,17 +1393,17 @@ pub fn PooledDagDfsIterator(T: type) type {
         /// DagDfsIterator must deinit after use
         const DagDfsIterator = struct {
             allocator: std.mem.Allocator,
-            stack: std.ArrayList(HashMapPool(T).Handle),
+            stack: std.ArrayList(Pool(T).Handle),
             sp: isize,
-            mark: std.AutoHashMap(HashMapPool(T).Handle, u8),
-            node_pool: *HashMapPool(T),
+            mark: std.AutoHashMap(Pool(T).Handle, u8),
+            node_pool: *Pool(T),
 
             pub fn deinit(it: *DagDfsIterator) void {
                 it.stack.deinit(it.allocator);
                 it.mark.deinit();
             }
 
-            pub fn next(it: *DagDfsIterator) !?HashMapPool(T).Handle {
+            pub fn next(it: *DagDfsIterator) !?Pool(T).Handle {
                 if (it.sp < 0) {
                     return null;
                 }
@@ -1412,12 +1445,12 @@ pub fn PooledDagDfsIterator(T: type) type {
 /// this used to be the default way to build the execution order for modules/nodes
 pub fn buildGraph(
     T: type,
-    pool: *HashMapPool(T),
-    graph: *DirectedGraph(HashMapPool(T).Handle, ConnectorHandle, std.hash_map.AutoContext(HashMapPool(T).Handle)),
+    pool: *Pool(T),
+    graph: *DirectedGraph(Pool(T).Handle, ConnectorHandle, std.hash_map.AutoContext(Pool(T).Handle)),
 ) !void {
     //  NOTE: this is better then check over each possible connection like I was doing,
     // but vkdt uses the connected_mi and associated_i fields to build the graph AND perform the DFS traversal
-    // const Graph = DirectedGraph(HashMapPool(T).Handle, ConnectorHandle, std.hash_map.AutoContext(HashMapPool(T).Handle));
+    // const Graph = DirectedGraph(Pool(T).Handle, ConnectorHandle, std.hash_map.AutoContext(Pool(T).Handle));
     // var graph = Graph.init(allocator);
 
     var pool_handles = pool.liveHandles();
