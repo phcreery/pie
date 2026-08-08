@@ -8,8 +8,9 @@ heavily inspired by [vkdt](https://github.com/hanatos/vkdt)
 
 ## Status
 
-Does basic raw -> srgb. Thats just about it.
-?Build a basic pipeline. The pipeline is a DAG but it makes many false assumptions.
+Build a basic pipeline. The pipeline is a DAG but it makes many false assumptions.
+
+The pipeline does basic raw -> srgb. Thats just about it.
 
 ```
 ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ NODES ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒

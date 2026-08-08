@@ -2,9 +2,6 @@ const std = @import("std");
 const pie = @import("pie");
 const TargetConfig = @import("../targets.zig").TargetConfig;
 
-const Pipeline = pie.Pipeline;
-const Repository = pie.modules.Repository;
-
 pub const config: TargetConfig = .{
     .input_filename = "testing/images/DSC_6765.NEF",
     .name = "001_DSC_6765",
@@ -14,8 +11,8 @@ pub const config: TargetConfig = .{
 fn build(
     allocator: std.mem.Allocator,
     io: std.Io,
-    pipe: *Pipeline,
-    repo: *Repository,
+    pipe: *pie.Pipeline,
+    repo: *pie.modules.Repository,
     input_filename: []const u8,
     output_filename: []const u8,
 ) anyerror!void {

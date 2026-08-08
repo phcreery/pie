@@ -1,7 +1,7 @@
 .{
     .name = .pie,
     .version = "0.0.0",
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .fingerprint = 0x2257f47b657d2acb,
     .dependencies = .{
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
@@ -13,9 +13,6 @@
             .hash = "sokol-0.1.0-pb1HKz3yNwDda3-6oO20hdETC7cmertKSWngUg9xaDZz",
         },
         .cimgui = .{
-            // zig 0.16.0
-            // .url = "git+https://github.com/floooh/dcimgui.git#3c2b41a9333b1195e2c2f8ce6a2d3e50660a73bf",
-            // .hash = "cimgui-0.1.0-44ClkR8dmgDqqnfloyLE1bUAtl4zSKTT1wxaHSEC0ikV",
             // zig 0.17.0
             // .url = "git+https://github.com/floooh/dcimgui#d15599dd15f11658b6cbde1bda3da269f324b4f2",
             // .hash = "cimgui-0.1.0-44ClkR8dmgDIgUMPprFBFvquKmS06xKYMGhJ4Imxvn2C",
@@ -33,10 +30,6 @@
         // .shdc = .{
         //     .url = "git+https://github.com/floooh/sokol-tools-bin#a06f19929ff8f9824ec6dd87c21329b1f205809e",
         //     .hash = "sokolshdc-0.1.0-r2KZDr4qbAT_0SJoZpYt2S0-vHgOmOdU4ulPIeUt5Ato",
-        // },
-        // .emsdk = .{
-        //     .url = "git+https://github.com/emscripten-core/emsdk?ref=4.0.14#eff90ca04a3785f571a8095b3a42b63799cf384a",
-        //     .hash = "N-V-__8AAMGsDwC6L1OfDgzRF1zFI2t-CaR0sVhEm8pmrpxm",
         // },
         .libraw = .{
             .url = "git+https://github.com/phcreery/LibRaw-zig.git#d6a01722b2f702b1bd41811cc588b69c63210a63",
@@ -60,10 +53,6 @@
             .hash = "wgpu-0.0.3-Z1CB1gZ_AQCQCbwjBkW8q5od-O3DKfjI7u7aXSWuYSlo",
         },
         .zigimg = .{
-            // 0.16.0
-            // .url = "git+https://github.com/zigimg/zigimg.git#4cab5a17d4c76584723576fcc11497293c25d092",
-            // .hash = "zigimg-0.1.0-8_eo2sywFwArMrr5UlqjhhAMbRtpmC4mL5KbBmjrxFba",
-            // 0.17.0
             .url = "git+https://github.com/flying-swallow/zigimg#d441b531cebd7a51bee32826d18841a18e3196d0",
             .hash = "zigimg-0.1.0-8_eo2o7CFwAqoFP7jU_FBBy3YyU9qO6HOsfthhOKZ77v",
         },
@@ -71,15 +60,7 @@
         //     .url = "git+https://github.com/zig-gamedev/ztracy#3cc6a4a1502fdea2e4d3869099e39d9c5e8b98a5",
         //     .hash = "ztracy-0.14.0-dev-zHJSq8SJGADr475eGiGJzmX_-P5sDoU564IQSVfZxmYC",
         // },
-        // .zpool = .{
-        //     .url = "git+https://github.com/zig-gamedev/zpool/#2ebe5b065d19989a0c5b4f06227c524c8404c516",
-        //     .hash = "zpool-0.11.0-dev-bG692YNDAQAyX1pDZKrJrDmorwVqVNTZbbH-zpoDQO-N",
-        // },
         .zbench = .{
-            // 0.16.0
-            // .url = "git+https://github.com/hendriknielaender/zbench#2a231fc165ab22e5ef0c2b7c8841ee86a445dffa",
-            // .hash = "zbench-0.13.0-YTdc71ZAAQCUJ0w9jM6ZyLOBxDlGv2j3CqCEj49l-KcP",
-            // 0.17.0
             .url = "git+https://github.com/hendriknielaender/zBench/#f12a2262bcd9d300207890555c577da5e29de453",
             .hash = "zbench-0.14.1-YTdc781OAQCR6wxqkgAwm9bG4TnFGzm8c9aE-ZPiTAU1",
         },
@@ -94,38 +75,6 @@
         //     // .url = "git+https://codeberg.org/rdunnington/zr#e82c604c8c482d63212212d68b0c3f3f67044c5c",
         //     // .hash = "zr-0.2.0-dj-tckcHAQBiJEKwXzGzKf9K2m0SPpmEoVyfKyRhrMHf",
         //     .path = "../zr",
-        // },
-
-        // Dawn
-        // even though these re listed in zgpu, we need to add them here since we need to link the final exe to them
-        // .system_sdk = .{
-        //     .url = "https://github.com/zig-gamedev/system_sdk/archive/c0dbf11cdc17da5904ea8a17eadc54dee26567ec.tar.gz",
-        //     .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
-        // },
-        // .dawn_x86_64_windows_msvc = .{
-        //     .url = "https://github.com/google/dawn/releases/download/v20260624.223603/Dawn-11ab3f92ed451db8c1e1366abcddd9c202e0738d-windows-latest-Release.tar.gz",
-        //     .hash = "N-V-__8AAG_MEySOjSy1sj_Ccx36C80Qsay7Ol7CKbJhADhz",
-        //     .lazy = true,
-        // },
-        // .dawn_x86_64_linux_gnu = .{
-        //     .url = "https://github.com/google/dawn/releases/download/v20260624.223603/Dawn-11ab3f92ed451db8c1e1366abcddd9c202e0738d-ubuntu-latest-Release.tar.gz",
-        //     .hash = "N-V-__8AALe6jgLNC3FSGGsDvlupHKw3w_ZmmF5QhdenCn4M",
-        //     .lazy = true,
-        // },
-        // .dawn_aarch64_linux_gnu = .{
-        //     .url = "https://github.com/michal-z/webgpu_dawn-aarch64-linux-gnu/archive/c1f55e740a62f6942ff046e709ecd509a005dbeb.tar.gz",
-        //     .hash = "N-V-__8AAJ-wTwNc0T9oSflO92iO6IxrdMeRil37UU-KQD_M",
-        //     .lazy = true,
-        // },
-        // .dawn_aarch64_macos = .{
-        //     .url = "https://github.com/google/dawn/releases/download/v20260624.223603/Dawn-11ab3f92ed451db8c1e1366abcddd9c202e0738d-macos-latest-Release.tar.gz",
-        //     .hash = "N-V-__8AAOkBSwGBI3Wb7E60RWEuVKl1icIiatRvtWxn3bwr",
-        //     .lazy = true,
-        // },
-        // .dawn_x86_64_macos = .{
-        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-macos/archive/901716b10b31ce3e0d3fe479326b41e91d59c661.tar.gz",
-        //     .hash = "N-V-__8AAIz1QAKx8C8vft2YoHjGTjEAkH2QMR2UiAo8xZJ-",
-        //     .lazy = true,
         // },
 
         // wgpu
@@ -180,7 +129,6 @@
         "build.zig",
         "build.zig.zon",
         "src",
-        // For example...
         "LICENSE",
         "README.md",
     },
