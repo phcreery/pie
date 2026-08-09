@@ -450,12 +450,14 @@ pub const Pipeline = struct {
             self.dirty = false;
         }
 
-        self.perf.recordUploadBufferUsage(self.upload_fba);
-        self.perf.recordDownloadBufferUsage(self.download_fba);
-        self.perf.countModules(&self.module_pool);
-        self.perf.countNodes(&self.node_pool);
-        self.perf.countConnectors(&self.connector_pool);
-        self.perf.printReport();
+        {
+            self.perf.recordUploadBufferUsage(self.upload_fba);
+            self.perf.recordDownloadBufferUsage(self.download_fba);
+            self.perf.countModules(&self.module_pool);
+            self.perf.countNodes(&self.node_pool);
+            self.perf.countConnectors(&self.connector_pool);
+            self.perf.printReport();
+        }
     }
 
     pub fn getDisplaySinkTexture(self: *Pipeline) !*gpu.Texture {
