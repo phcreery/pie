@@ -30,23 +30,6 @@ fn mul3x3Rows(m: mat3x3<f32>, v: vec3<f32>) -> vec3<f32> {
     );
 }
 
-// chromatic adaptation transform matrices, CAT16 M and inverse
-// Smet and Ma, "Some concerns regarding the CAT16 chromatic adaptation transform",
-// Color Res Appl. 2020;45:172–177.
-// M: XYZ to cone-like
-// #define matrix_cat16_Mi makemat(1.86206786, -1.01125463,  0.14918677, 0.38752654,  0.62144744, -0.00897398, -0.01584150, -0.03412294,  1.04996444)
-// #define matrix_cat16_M  makemat(0.401288, 0.650173, -0.051461, -0.250268, 1.204414,  0.045854, -0.002079, 0.048952,  0.953127)
-
-// XYZ
-// #define matrix_rec2020_to_xyz makemat(0.636958048301290991, 0.144616903586208406, 0.168880975164172054, 0.26270021201126692, 0.677998071518871148, 0.0593017164698619384, 4.9999999999999999e-17, 0.0280726930490874452, 1.06098505771079066)
-// #define matrix_xyz_to_rec2020 makemat(1.71665119, -0.35567078, -0.25336628, -0.66668435,  1.61648124,  0.01576855, 0.01763986, -0.04277061, 0.94210312)
-
-// Rec709 to XYZ D65
-// #define matrix_rec709_to_xyz makemat(0.412390799265959229, 0.357584339383878125, 0.180480788401834347, 0.212639005871510217, 0.71516867876775625, 0.0721923153607337414, 0.0193308187155918181, 0.119194779794626018, 0.950532152249661033)
-// XYZ D65 to Rec709
-// #define matrix_xyz_to_rec709 makemat(3.24096994190452348, -1.53738317757009435, -0.498610760293003552, -0.969243636280879506, 1.87596750150771996, 0.0415550574071755843, 0.0556300796969936354, -0.20397695888897649, 1.05697151424287816)
-
-
 
 fn cat16(rec2020_d65: vec3<f32>, rec2020_src: vec3<f32>, rec2020_dst: vec3<f32>) -> vec3<f32> {
     // these are the CAT16 M^{-1} and M matrices.
@@ -91,7 +74,7 @@ fn cat16(rec2020_d65: vec3<f32>, rec2020_src: vec3<f32>, rec2020_dst: vec3<f32>)
     // cl *= cl_dst / cl_src;
     // return xyz_to_rec2020 * M16i * cl;
 
-    // well ... because were actually in srgb 
+    // well ... because we're actually in srgb 
     let cl_src = M16 * rec709_to_xyz * rec2020_src;
     let cl_dst = M16 * rec709_to_xyz * rec2020_dst;
     var cl = M16 * rec709_to_xyz * rec2020_d65;

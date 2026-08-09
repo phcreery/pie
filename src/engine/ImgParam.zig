@@ -15,7 +15,26 @@ pub const Orientation = enum(i32) {
     rotate270CW = 8,
 };
 
+pub const WhitePoint = enum(i32) {
+    d65 = 0,
+    d50 = 1,
+};
+
+pub const Primaries = enum(i32) {
+    camera = 0,
+    rec709 = 1,
+    rec2020 = 2,
+};
+
+pub const ColorProfile = struct {
+    white_point: WhitePoint,
+    primaries: Primaries,
+};
+
 pub const ImgParams = struct {
+    // the color profile is the gamut and white point of the image for any given step in the pipeline
+    color_profile: ColorProfile,
+
     black: [4]f32, // black point
     white: [4]f32, // clipping threshold
 
