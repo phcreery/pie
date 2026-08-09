@@ -34,15 +34,11 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    // const dep_zdt = b.dependency("zdt", opts);
     const dep_libraw = b.dependency("libraw", opts);
-    // const dep_wgpu_native = b.dependency("wgpu_native_zig", opts);
-    // const dep_zdawn = b.dependency("zdawn", .{});
     const dep_wgpu_zig = b.dependency("wgpu-zig", .{});
     const dep_zigimg = b.dependency("zigimg", opts);
     const dep_zbench = b.dependency("zbench", opts);
     const dep_zuballoc = b.dependency("zuballoc", opts);
-    // const dep_zr = b.dependency("zr", opts);
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -121,7 +117,6 @@ pub fn build(b: *Build) !void {
             // .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
-            // .{ .name = "zdt", .module = dep_zdt.module("zdt") },
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
         },
     });

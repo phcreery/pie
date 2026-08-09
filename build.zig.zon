@@ -23,10 +23,10 @@
             .url = "git+https://github.com/phcreery/dcimgui#db71ec2330cbdad5b561d5e03f5edc28bda85c9b",
             .hash = "cimgui-0.1.0-44ClkS4_nACw903tZvEFrtrzO9W3rh724LkcH29Xm-Io",
         },
-        .zdt = .{
-            .url = "git+https://codeberg.org/FObersteiner/zdt#ef21e970c3fead80b4a43051f8e7ab5327efa4b1",
-            .hash = "zdt-0.9.4-xr0_vHvnEQBa2kexZk6j3CrdybDFd0BHa7DdL7hgDqfD",
-        },
+        // .zdt = .{
+        //     .url = "git+https://codeberg.org/FObersteiner/zdt#ef21e970c3fead80b4a43051f8e7ab5327efa4b1",
+        //     .hash = "zdt-0.9.4-xr0_vHvnEQBa2kexZk6j3CrdybDFd0BHa7DdL7hgDqfD",
+        // },
         // .shdc = .{
         //     .url = "git+https://github.com/floooh/sokol-tools-bin#a06f19929ff8f9824ec6dd87c21329b1f205809e",
         //     .hash = "sokolshdc-0.1.0-r2KZDr4qbAT_0SJoZpYt2S0-vHgOmOdU4ulPIeUt5Ato",
@@ -36,15 +36,6 @@
             .hash = "libraw-0.21.4-c166SQR6AADQHFPUvMe5mMpjqLf6XAFFu5x9N1KjGSN8",
             // .path = "../LibRaw-zig",
         },
-        // .wgpu_native_zig = .{
-        //     .url = "git+https://github.com/snorm-dev/wgpu_native_zig.git#8aef4a9873637ba9444282f7a706eaa251f8d8e9",
-        //     .hash = "wgpu_native_zig-6.5.0-B9jeDCtzAwADQTiKl7pWvLrNC7pelV0GlH_ePoIse28g",
-        // },
-        // .zdawn = .{
-        //     // .url = "git+https://github.com/phcreery/zdawn#7adb02b17fc04b15a06b4c1636d29ca9f8d9c950",
-        //     // .hash = "zgpu-0.1.0-nqFT5MatAQDGKXaOqKYOEyLEDn5k4h2fz7bPDRhSGuK1",
-        //     .path = "../zdawn",
-        // },
         .@"wgpu-zig" = .{
             // .url = "git+https://codeberg.org/shahwali/wgpu-zig#304d81bb504034d4caf5e608d2a150f680298ba1",
             // .hash = "wgpu-0.0.3-Z1CB1nh2AQCkwNLkZ6DWaoFvK6imy-TmN_-GsMXQfHV0",
