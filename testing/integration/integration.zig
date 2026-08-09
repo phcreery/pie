@@ -25,6 +25,7 @@ comptime {
         // PIPELINE
         _ = @import("engine/pipe_simple.zig");
         _ = @import("engine/pipe_fullsize.zig");
+        _ = @import("engine/pipe_serdes.zig");
 
         // TARGETS
         // _ = @import("targets/targets.zig");

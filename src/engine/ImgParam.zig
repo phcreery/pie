@@ -33,7 +33,7 @@ pub const ColorProfile = struct {
 
 pub const ImgParams = struct {
     // the color profile is the gamut and white point of the image for any given step in the pipeline
-    color_profile: ColorProfile,
+    // color_profile: ColorProfile,
 
     black: [4]f32, // black point
     white: [4]f32, // clipping threshold

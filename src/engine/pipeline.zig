@@ -186,7 +186,7 @@ pub const Pipeline = struct {
     // ================================================
 
     pub fn addModuleDesc(self: *Pipeline, id: []const u8, module_desc: api.ModuleDesc) !ModuleHandle {
-        slog.debug("Adding module to pipeline: {s}", .{module_desc.name});
+        slog.debug("Adding module to pipeline: '{s}'", .{module_desc.name});
         var module = try Module.init(id, module_desc);
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
@@ -194,7 +194,7 @@ pub const Pipeline = struct {
 
         const fullname = try std.mem.concat(self.allocator, u8, &.{ module.desc.name, ":", id });
 
-        std.debug.print("Adding module to name map: {s} -> {any}", .{ fullname, module_handle });
+        // std.debug.print("Adding module to name map: {s} -> {any}", .{ fullname, module_handle });
 
         try self.module_name_map.put(fullname, module_handle);
         try self.initParams(module_handle);
@@ -207,7 +207,7 @@ pub const Pipeline = struct {
     }
 
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
-        slog.debug("Adding node to pipeline: {s}", .{node_desc.name});
+        slog.debug("Adding node to pipeline: '{s}'", .{node_desc.name});
         var node = try Node.init(self, mod_handle, node_desc);
         try self.initOutputConnectorHandles(&node);
         self.rerouted = true;
@@ -461,7 +461,7 @@ pub const Pipeline = struct {
     pub fn getDisplaySinkTexture(self: *Pipeline) !*gpu.Texture {
         const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
         const last_node = try self.node_pool.getPtr(last_node_handle);
-        slog.debug("Getting display sink texture for last node {s}", .{last_node.desc.name});
+        slog.debug("Getting display sink texture for last node '{s}'", .{last_node.desc.name});
         const sock = last_node.desc.sockets[0] orelse return error.NodeOutputSocketMissingConnectorHandle;
         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
         const display_texture = try self.connector_pool.getPtr(connector_handle);
@@ -521,7 +521,7 @@ pub const Pipeline = struct {
         //             var this_sock = try item.getSocketPtr(sock.name);
         //             if (this_sock.private.connector_handle == null) {
         //                 this_sock.private.connector_handle = try self.connector_pool.add(null);
-        //                 slog.debug("Created connector handle {any} for {s} output socket {s}", .{ this_sock.private.connector_handle.?, item.desc.name, sock.name });
+        //                 slog.debug("Created connector handle {any} for '{s}' output socket '{s}'", .{ this_sock.private.connector_handle.?, item.desc.name, sock.name });
         //             }
         //         }
         //     }
@@ -584,19 +584,19 @@ pub const Pipeline = struct {
             if (module.desc.type == .source) {
                 const input_socket = module.getSocketPtr("input") catch null;
                 if (input_socket != null) {
-                    slog.err("Source module {s} has an input socket defined", .{module.desc.name});
+                    slog.err("Source module '{s}' has an input socket defined", .{module.desc.name});
                     return error.ModuleSourceHasInputSocket;
                 }
             }
             if (module.desc.type == .compute) {
                 const input_socket = module.getSocketPtr("input") catch null;
                 if (input_socket == null) {
-                    slog.err("Compute module {s} has no input socket defined", .{module.desc.name});
+                    slog.err("Compute module '{s}' has no input socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingInputSocket;
                 }
                 const output_socket = module.getSocketPtr("output") catch null;
                 if (output_socket == null) {
-                    slog.err("Compute module {s} has no output socket defined", .{module.desc.name});
+                    slog.err("Compute module '{s}' has no output socket defined", .{module.desc.name});
                     return error.ModuleComputeMissingOutputSocket;
                 }
             }
@@ -773,7 +773,7 @@ pub const Pipeline = struct {
         for (old_node_handles.items) |node_handle| {
             // remove node
             // we leave connectors alone for now since they are shared with modules and may be reused
-            slog.debug("Removing node {any} from pipeline", .{node_handle});
+            slog.debug("Removing node '{any}' from pipeline", .{node_handle});
             self.node_pool.remove(node_handle);
         }
 
@@ -790,7 +790,7 @@ pub const Pipeline = struct {
         while (node_pool_handles.next()) |node_handle| {
             var node = try self.node_pool.getPtr(node_handle);
             if (node.shader) |_| {
-                slog.debug("Node {s} already has a compiled shader, skipping compilation", .{node.desc.name});
+                slog.debug("Node '{s}' already has a compiled shader, skipping compilation", .{node.desc.name});
                 continue;
             }
             if (node.desc.shader) |shader| {
@@ -875,7 +875,8 @@ pub const Pipeline = struct {
                         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
                         var buf: [256]u8 = undefined;
                         const str = try std.fmt.bufPrint(&buf, "id: {d}", .{connector_handle.id});
-                        slog.debug("Allocating output texture for node '{s} > {s}' with connector handle {any}", .{ node.desc.name, sock.name, connector_handle });
+                        // slog.debug("Allocating output texture for node '{s} > {s}' with connector handle {any}", .{ node.desc.name, sock.name, connector_handle });
+                        slog.debug("Allocating output texture for node '{s} > {s}'", .{ node.desc.name, sock.name });
                         const roi = sock.roi orelse return error.NodeOutputSocketMissingROICode;
                         const texture = try gpu.Texture.init(gpu_inst, str, sock.format, roi);
                         // defer texture.deinit();
@@ -984,7 +985,7 @@ pub const Pipeline = struct {
             const first_node_handle = self.node_execution_order.items[0];
             var first_node_ptr = try self.node_pool.getPtr(first_node_handle);
 
-            slog.debug("First node: {s}", .{first_node_ptr.desc.name});
+            slog.debug("First node: '{s}'", .{first_node_ptr.desc.name});
 
             // TODO: support multiple source uploads in the future
             if (first_node_ptr.desc.sockets[0]) |*sock| {
@@ -1089,7 +1090,7 @@ pub const Pipeline = struct {
 
                 // upload img params
                 if (module.img_param) |img_param| {
-                    slog.debug("Uploading img params for module {s}:", .{module.desc.name});
+                    slog.debug("Uploading img params for module '{s}':", .{module.desc.name});
                     var buf = try arena.alloc(u8, try gpu.layoutStruct(null, img_param));
                     defer arena.free(buf);
                     const used_len = try gpu.layoutStruct(buf, img_param);
@@ -1171,7 +1172,7 @@ pub const Pipeline = struct {
                     }
                     var compute_pipeline = node.compute_pipeline orelse return error.NodeMissingShader;
                     var bindings = node.bindings orelse return error.NodeMissingBindings;
-                    slog.debug("Enqueueing compute shader for node {s}", .{node.desc.name});
+                    slog.debug("Enqueueing compute shader for node '{s}'", .{node.desc.name});
                     encoder.enqueueShader(
                         &compute_pipeline,
                         &bindings,
@@ -1179,7 +1180,7 @@ pub const Pipeline = struct {
                     );
                 },
                 .source => {
-                    slog.debug("Enqueueing source node {s} buffer to texture copy", .{node.desc.name});
+                    slog.debug("Enqueueing source node '{s}' buffer to texture copy", .{node.desc.name});
                     const connector_handle = self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle;
                     const connector = try self.connector_pool.getPtr(connector_handle);
                     var tex = connector.* orelse return error.PipelineMissingSourceNodeTexture;
@@ -1189,7 +1190,7 @@ pub const Pipeline = struct {
                     try encoder.enqueueBufToTex(&upload_buffer, staging_offset, &tex, roi);
                 },
                 .sink => {
-                    slog.debug("Enqueueing sink node {s} texture to buffer copy", .{node.desc.name});
+                    slog.debug("Enqueueing sink node '{s}' texture to buffer copy", .{node.desc.name});
                     const connector = try self.connector_pool.getPtr(self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle);
                     var tex = connector.* orelse return error.PipelineMissingSinkNodeTexture;
                     const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
@@ -1585,7 +1586,7 @@ pub const PerfMetrics = struct {
         printFn("Pipeline Performance Report:", .{});
         for (self.time_keys.items) |key| {
             const entry = self.times.getPtr(key) orelse continue;
-            printFn(" {d: >5.2}% {d: >8.2} ms {s}", .{
+            printFn(" {d: >5.2}% {d: >8.2} ms  {s}", .{
                 @as(f64, @floatFromInt(entry.*)) / total_time_ns * 100.0,
                 @as(f64, @floatFromInt(entry.*)) / std.time.ns_per_ms,
                 key,
@@ -1597,13 +1598,13 @@ pub const PerfMetrics = struct {
         const upload_buffer_size_bytes = self.upload_buffer_size_bytes orelse 0;
         const download_buffer_usage_size_bytes = self.download_buffer_usage_size_bytes orelse 0;
         const download_buffer_size_bytes = self.download_buffer_size_bytes orelse 0;
-        printFn(" {d: >5.2}% {B:>6.2}/{B:.2} {s}", .{
+        printFn(" {d: >5.2}% {B:>6.2}/{B:.2}  {s}", .{
             @as(f64, @floatFromInt(upload_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(upload_buffer_size_bytes)) * 100.0,
             upload_buffer_usage_size_bytes,
             upload_buffer_size_bytes,
             "upload_buffer_size_bytes",
         });
-        printFn(" {d: >5.2}% {B:>6.2}/{B:.2} {s}", .{
+        printFn(" {d: >5.2}% {B:>6.2}/{B:.2}  {s}", .{
             @as(f64, @floatFromInt(download_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(download_buffer_size_bytes)) * 100.0,
             download_buffer_usage_size_bytes,
             download_buffer_size_bytes,

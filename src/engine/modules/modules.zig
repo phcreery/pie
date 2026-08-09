@@ -52,6 +52,6 @@ pub const Repository = struct {
     }
 
     pub fn get(self: *Self, name: []const u8) ?api.ModuleDesc {
-        return self.map.get(name).?;
+        return self.map.get(name);
     }
 };
