@@ -42,7 +42,7 @@ pub fn writeSink(
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "input");
-    const node = try pipe.addNode(mod, .{
+    const node = try pipe.addNodeDesc(mod, .{
         .type = .sink,
         .name = "sink",
         .run_size = null,

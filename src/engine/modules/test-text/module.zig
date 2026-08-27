@@ -36,7 +36,7 @@ pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node = try pipe.addNode(mod, .{
+    const node = try pipe.addNodeDesc(mod, .{
         .type = .compute,
         .shader = @embedFile("./text.wgsl"),
         .name = "text",

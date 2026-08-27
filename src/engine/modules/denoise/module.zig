@@ -24,7 +24,7 @@ pub var desc: api.ModuleDesc = .{
 
 pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_interpolation = try pipe.addNode(mod, .{
+    const node_interpolation = try pipe.addNodeDesc(mod, .{
         .type = .compute,
         .shader = .{ .wgsl = @embedFile("./interpolation.wgsl") },
         .name = "interpolation",

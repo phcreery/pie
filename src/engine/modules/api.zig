@@ -101,10 +101,6 @@ pub fn compileShader(pipe: *Pipeline, shader_source: gpu.ShaderSource) !gpu.Shad
     return gpu_inst.compileShader(shader_source);
 }
 
-pub fn addNode(pipe: *Pipeline, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
-    return pipe.addNode(mod, node_desc);
-}
-
 pub fn initParam(pipe: *Pipeline, desc: ParamDesc, value: anytype) !Param {
     const param = try Param.init(pipe.allocator, desc, value);
     return param;

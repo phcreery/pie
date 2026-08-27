@@ -5,6 +5,7 @@ pub const Module = @import("Module.zig");
 pub const Node = @import("Node.zig");
 pub const gpu = @import("gpu.zig");
 pub const pipeline = @import("pipeline.zig");
+pub const history = @import("history.zig");
 pub const serdes = @import("serdes.zig");
 pub const api = @import("modules/api.zig");
 pub const modules = @import("modules/modules.zig");
