@@ -30,13 +30,14 @@ test "fullsize through pipeline" {
     var pipeline = Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    const mod_i_raw = try pipeline.addModuleDesc("01", repo.get("i-raw").?);
-    const mod_format = try pipeline.addModuleDesc("01", repo.get("format").?);
-    const mod_denoise = try pipeline.addModuleDesc("01", repo.get("denoise").?);
-    const mod_demosaic = try pipeline.addModuleDesc("01", repo.get("demosaic").?);
-    const mod_color = try pipeline.addModuleDesc("01", repo.get("color").?);
-    const mod_filmcurv = try pipeline.addModuleDesc("01", repo.get("filmcurv").?);
-    const mod_o_png = try pipeline.addModuleDesc("01", repo.get("o-png").?);
+    try pipeline.addRepo(&repo);
+    const mod_i_raw = try pipeline.addModule("01", "i-raw");
+    const mod_format = try pipeline.addModule("01", "format");
+    const mod_denoise = try pipeline.addModule("01", "denoise");
+    const mod_demosaic = try pipeline.addModule("01", "demosaic");
+    const mod_color = try pipeline.addModule("01", "color");
+    const mod_filmcurv = try pipeline.addModule("01", "filmcurv");
+    const mod_o_png = try pipeline.addModule("01", "o-png");
 
     try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, "testing/images/DSC_6765.NEF");
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 1);

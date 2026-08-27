@@ -70,6 +70,11 @@ pub const Pipeline = struct {
     module_name_map: std.StringHashMap(ModuleHandle), // stored as name:id, ex. "i-raw:01"
     module_execution_order: std.ArrayList(ModuleHandle),
 
+    /// Module repositories the pipeline can resolve names from. Non-owning:
+    /// the caller keeps these alive (typically for the pipeline's lifetime)
+    /// and deinits them. Replayed history resolves module names through here.
+    repos: std.ArrayList(*Modules.Repository),
+
     node_pool: NodePool,
     node_execution_order: std.ArrayList(NodeHandle),
 
@@ -120,6 +125,9 @@ pub const Pipeline = struct {
         var module_execution_order = std.ArrayList(ModuleHandle).initCapacity(allocator, 2) catch unreachable;
         errdefer module_execution_order.deinit(allocator);
 
+        var repos: std.ArrayList(*Modules.Repository) = .empty;
+        errdefer repos.deinit(allocator);
+
         var node_pool: NodePool = .init(allocator);
         errdefer node_pool.deinit();
 
@@ -151,6 +159,8 @@ pub const Pipeline = struct {
             .module_name_map = module_name_map,
             .module_execution_order = module_execution_order,
 
+            .repos = repos,
+
             .node_pool = node_pool,
             .node_execution_order = node_execution_order,
 
@@ -168,6 +178,7 @@ pub const Pipeline = struct {
         self.deinitParams();
         // the pool deinit will take care of deallocating the textures
         self.module_execution_order.deinit(self.allocator);
+        self.repos.deinit(self.allocator);
         var module_name_map_it = self.module_name_map.iterator();
         while (module_name_map_it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
@@ -211,16 +222,29 @@ pub const Pipeline = struct {
         return module_handle;
     }
 
-    /// Public edit op: add a module and record a `module:` delta in history.
-    pub fn addModule(self: *Pipeline, id: []const u8, module_desc: api.ModuleDesc) !ModuleHandle {
-        const module_handle = try self.addModuleDesc(id, module_desc);
-        try self.recordModuleDelta(module_desc.name, id);
-        return module_handle;
+    /// Register a module repository. The pipeline keeps a non-owning list and
+    /// uses it to resolve module names for `addModule`, history replay and
+    /// serdes. Multiple repos are searched in registration order; the first to
+    /// define a name wins. Repos must outlive the pipeline.
+    pub fn addRepo(self: *Pipeline, repo: *Modules.Repository) !void {
+        try self.repos.append(self.allocator, repo);
     }
 
-    pub fn addModuleFromRepo(self: *Pipeline, repository: *Modules.Repository, name: []const u8, id: []const u8) !ModuleHandle {
-        const module_desc = repository.get(name) orelse return error.ModuleNotFound;
-        return self.addModule(id, module_desc);
+    /// Look up a module descriptor by name across all registered repos.
+    pub fn getModuleDesc(self: *Pipeline, name: []const u8) ?api.ModuleDesc {
+        for (self.repos.items) |repo| {
+            if (repo.get(name)) |desc| return desc;
+        }
+        return null;
+    }
+
+    /// Public edit op: resolve `name` from the registered repos, add the
+    /// module (instance `id`), and record a `module:` delta in history.
+    pub fn addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
+        const module_desc = self.getModuleDesc(name) orelse return error.ModuleNotFound;
+        const module_handle = try self.addModuleDesc(id, module_desc);
+        try self.recordModuleDelta(name, id);
+        return module_handle;
     }
 
     /// Add a node to a module. Nodes are fully derived state (rebuilt by each
@@ -468,11 +492,11 @@ pub const Pipeline = struct {
     // History undo / redo / rollback
     // ================================================
 
-    /// Roll back to the given committed step (exclusive index). Reconstructs
-    /// the graph from scratch by replaying every recorded delta up to `target`
-    /// onto a cleared pipeline — the same model vkdt uses. Use `history.undo()`
-    /// / `history.redo()` to move the cursor, then call this to apply it.
-    pub fn replayHistory(self: *Pipeline, repository: *Modules.Repository, target: usize) !void {
+    /// Roll back to the given committed step (exclusive index). Reconstructs the
+    /// graph from scratch by replaying every recorded delta up to `target`
+    /// onto a cleared pipeline — the same model vkdt uses. Module names resolve
+    /// against the registered repos. `history.setCursor(end)` mirrors the target.
+    pub fn replayHistory(self: *Pipeline, target: usize) !void {
         const target_clamped = @min(target, self.history.count());
 
         // tear down the live graph
@@ -484,23 +508,22 @@ pub const Pipeline = struct {
         const all = self.history.all();
         const end = @min(target_clamped, all.len);
         for (all[0..end], 0..) |item, i| {
-            try serdes.apply(self, repository, scratch.allocator(), item.line, i);
+            try serdes.apply(self, scratch.allocator(), item.line, i);
         }
 
         self.history.setCursor(end);
     }
 
     /// Undo one edit step and apply it to the live pipeline.
-    pub fn undo(self: *Pipeline, repository: *Modules.Repository) !void {
+    pub fn undo(self: *Pipeline) !void {
         if (!self.history.canUndo()) return;
-        const target = self.history.cursor - 1;
-        try self.replayHistory(repository, target);
+        try self.replayHistory(self.history.cursor - 1);
     }
 
     /// Redo one edit step and apply it to the live pipeline.
-    pub fn redo(self: *Pipeline, repository: *Modules.Repository) !void {
+    pub fn redo(self: *Pipeline) !void {
         if (!self.history.canRedo()) return;
-        try self.replayHistory(repository, self.history.cursor + 1);
+        try self.replayHistory(self.history.cursor + 1);
     }
 
     // ================================================

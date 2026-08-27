@@ -247,7 +247,6 @@ pub const TargetConfig = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         pipeline: *Pipeline,
-        modules: *pie.modules.Repository,
         input_filename: []const u8,
         output_filename: []const u8,
     ) anyerror!void = null,
@@ -263,8 +262,8 @@ test "test targets" {
     var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
-    var modules = try pie.modules.Repository.init(allocator);
-    defer modules.deinit();
+    var repo = try pie.modules.Repository.init(allocator);
+    defer repo.deinit();
 
     var arena_instance = std.heap.ArenaAllocator.init(allocator);
     defer arena_instance.deinit();
@@ -278,6 +277,8 @@ test "test targets" {
     var pipeline = Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
+    try pipeline.addRepo(&repo);
+
     const config: TargetConfig = @import("001_DSC_6765/target.zig").config;
     const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";
     const input_filename = config.input_filename;
@@ -286,7 +287,7 @@ test "test targets" {
     try libraw_dcraw_process(allocator, io, input_filename, target_filename, false);
 
     if (config.build) |build_fn| {
-        try build_fn(allocator, io, &pipeline, &modules, input_filename, output_filename);
+        try build_fn(allocator, io, &pipeline, input_filename, output_filename);
     } else {
         return error.NoBuildFunction;
     }

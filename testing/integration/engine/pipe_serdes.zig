@@ -6,16 +6,17 @@ const Modules = pie.modules;
 
 /// Darkroom-style chain: i-raw -> format -> denoise -> demosaic -> crop ->
 /// color -> filmcurv -> o-display, all instances "01", with darkroom's exact
-/// params set (several non-default).
-fn buildChain(p: *Pipeline, repository: *Modules.Repository) !void {
-    const iraw = try p.addModuleDesc("01", repository.get("i-raw").?);
-    const format = try p.addModuleDesc("01", repository.get("format").?);
-    const denoise = try p.addModuleDesc("01", repository.get("denoise").?);
-    const demosaic = try p.addModuleDesc("01", repository.get("demosaic").?);
-    const crop = try p.addModuleDesc("01", repository.get("crop").?);
-    const color = try p.addModuleDesc("01", repository.get("color").?);
-    const filmcurv = try p.addModuleDesc("01", repository.get("filmcurv").?);
-    const odisplay = try p.addModuleDesc("01", repository.get("o-display").?);
+/// params set (several non-default). Uses the non-recording primitives so the
+/// serdes round-trip exercises the raw pipeline (not the history).
+fn buildChain(p: *Pipeline) !void {
+    const iraw = try p.addModule("01", "i-raw");
+    const format = try p.addModule("01", "format");
+    const denoise = try p.addModule("01", "denoise");
+    const demosaic = try p.addModule("01", "demosaic");
+    const crop = try p.addModule("01", "crop");
+    const color = try p.addModule("01", "color");
+    const filmcurv = try p.addModule("01", "filmcurv");
+    const odisplay = try p.addModule("01", "o-display");
 
     try p.setModuleParam(iraw, "filename", []const u8, "testing/images/DSC_6765.NEF");
     try p.setModuleParam(iraw, "wb_mode", i32, 0);
@@ -46,8 +47,9 @@ test "preset serialize emits vkdt-style lines" {
 
     var pipeline = try Pipeline.init(allocator, io, null, null);
     defer pipeline.deinit();
+    try pipeline.addRepo(&repository);
 
-    try buildChain(&pipeline, &repository);
+    try buildChain(&pipeline);
 
     var w = std.Io.Writer.Allocating.init(allocator);
     defer w.deinit();
@@ -70,7 +72,8 @@ test "preset round trip preserves pipeline state" {
 
     var pipe_a = try Pipeline.init(allocator, io, null, null);
     defer pipe_a.deinit();
-    try buildChain(&pipe_a, &repository);
+    try pipe_a.addRepo(&repository);
+    try buildChain(&pipe_a);
 
     var w_a = std.Io.Writer.Allocating.init(allocator);
     defer w_a.deinit();
@@ -82,7 +85,8 @@ test "preset round trip preserves pipeline state" {
 
     var pipe_b = try Pipeline.init(allocator, io, null, null);
     defer pipe_b.deinit();
-    try pie.serdes.deserialize(&pipe_b, &repository, arena.allocator(), text_a);
+    try pipe_b.addRepo(&repository);
+    try pie.serdes.deserialize(&pipe_b, arena.allocator(), text_a);
 
     var w_b = std.Io.Writer.Allocating.init(allocator);
     defer w_b.deinit();
@@ -112,6 +116,7 @@ test "preset deserialize accepts vkdt syntax" {
 
     var pipeline = try Pipeline.init(allocator, io, null, null);
     defer pipeline.deinit();
+    try pipeline.addRepo(&repository);
 
     const text =
         \\# a vkdt-style comment line
@@ -125,7 +130,7 @@ test "preset deserialize accepts vkdt syntax" {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    try pie.serdes.deserialize(&pipeline, &repository, arena.allocator(), text);
+    try pie.serdes.deserialize(&pipeline, arena.allocator(), text);
 
     // duplicate module line is deduped
     try std.testing.expectEqual(@as(usize, 2), pipeline.module_name_map.count());
@@ -152,6 +157,7 @@ test "preset deserialize skips bad lines leniently" {
 
     var pipeline = try Pipeline.init(allocator, io, null, null);
     defer pipeline.deinit();
+    try pipeline.addRepo(&repository);
 
     const text =
         \\module:format:01
@@ -167,7 +173,7 @@ test "preset deserialize skips bad lines leniently" {
     defer arena.deinit();
 
     // no error return: bad lines are warned and skipped
-    try pie.serdes.deserialize(&pipeline, &repository, arena.allocator(), text);
+    try pie.serdes.deserialize(&pipeline, arena.allocator(), text);
 
     try std.testing.expect(pipeline.module_name_map.contains("format:01"));
     try std.testing.expect(!pipeline.module_name_map.contains("draw:01"));

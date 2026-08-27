@@ -66,14 +66,16 @@ fn build_image(
 
     const input_filename = "testing/images/DSC_6765.NEF";
 
-    const mod_i_raw = try pipeline.addModuleFromRepo(repo, "i-raw");
-    const mod_format = try pipeline.addModuleFromRepo(repo, "format");
-    const mod_denoise = try pipeline.addModuleFromRepo(repo, "denoise");
-    const mod_demosaic = try pipeline.addModuleFromRepo(repo, "demosaic");
-    const mod_crop = try pipeline.addModuleFromRepo(repo, "crop");
-    const mod_color = try pipeline.addModuleFromRepo(repo, "color");
-    const mod_filmcurv = try pipeline.addModuleFromRepo(repo, "filmcurv");
-    const mod_o_display = try pipeline.addModuleFromRepo(repo, "o-display");
+    try pipeline.addRepo(repo);
+
+    const mod_i_raw = try pipeline.addModule("01", "i-raw");
+    const mod_format = try pipeline.addModule("01", "format");
+    const mod_denoise = try pipeline.addModule("01", "denoise");
+    const mod_demosaic = try pipeline.addModule("01", "demosaic");
+    const mod_crop = try pipeline.addModule("01", "crop");
+    const mod_color = try pipeline.addModule("01", "color");
+    const mod_filmcurv = try pipeline.addModule("01", "filmcurv");
+    const mod_o_display = try pipeline.addModule("01", "o-display");
 
     try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, input_filename);
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 0);

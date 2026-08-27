@@ -11,16 +11,16 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
 const pipeline = @import("pipeline.zig");
-const Modules = @import("modules/modules.zig");
 const Param = @import("Param.zig");
 const slog = std.log.scoped(.serdes);
 
 /// Apply a single `.pst` grammar line to the pipeline. This is the same
 /// warn-and-continue handler `deserialize` uses per line, extracted so the
-/// history log can replay a single recorded delta. Unknown commands, unknown
-/// modules/params and failed connects log a warning and are skipped; only
-/// allocator errors propagate.
-pub fn apply(pipe: *pipeline.Pipeline, repository: *Modules.Repository, arena: std.mem.Allocator, line_in: []const u8, line_no: usize) !void {
+/// history log can replay a recorded delta. Module names resolve against the
+/// pipeline's registered repos. Unknown commands, unknown modules/params and
+/// failed connects log a warning and are skipped; only allocator errors
+/// propagate.
+pub fn apply(pipe: *pipeline.Pipeline, arena: std.mem.Allocator, line_in: []const u8, line_no: usize) !void {
     const line = std.mem.trimEnd(u8, line_in, "\r");
     if (line.len == 0) return;
     if (line[0] == '#') return;
@@ -29,7 +29,7 @@ pub fn apply(pipe: *pipeline.Pipeline, repository: *Modules.Repository, arena: s
     const cmd = tokens.next() orelse return;
 
     if (std.mem.eql(u8, cmd, "module")) {
-        return applyModule(pipe, repository, arena, &tokens, line_no);
+        return applyModule(pipe, arena, &tokens, line_no);
     } else if (std.mem.eql(u8, cmd, "connect") or std.mem.eql(u8, cmd, "feedback")) {
         return applyConnect(pipe, &tokens, line_no);
     } else if (std.mem.eql(u8, cmd, "param")) {
@@ -53,7 +53,6 @@ pub fn apply(pipe: *pipeline.Pipeline, repository: *Modules.Repository, arena: s
 
 fn applyModule(
     pipe: *pipeline.Pipeline,
-    repository: *Modules.Repository,
     arena: std.mem.Allocator,
     tokens: *std.mem.SplitIterator(u8, .scalar),
     line_no: usize,
@@ -66,15 +65,15 @@ fn applyModule(
         slog.warn("line {d}: missing module instance, skipping", .{line_no});
         return;
     };
-    if (repository.get(name) == null) {
+    const module_desc = pipe.getModuleDesc(name) orelse {
         slog.warn("line {d}: unknown module type '{s}', skipping", .{ line_no, name });
         return;
-    }
+    };
     const fullname = try std.mem.concat(pipe.allocator, u8, &.{ name, ":", inst });
     defer pipe.allocator.free(fullname);
     if (pipe.module_name_map.contains(fullname)) return; // dedup
     const id_copy = try arena.dupe(u8, inst);
-    _ = try pipe.addModuleDesc(id_copy, repository.get(name).?);
+    _ = try pipe.addModuleDesc(id_copy, module_desc);
 }
 
 fn applyRemoveModule(
@@ -312,11 +311,11 @@ pub fn paramToLine(pipe: *pipeline.Pipeline, mod_handle: pipeline.ModuleHandle, 
     return al.toOwnedSlice(pipe.allocator);
 }
 
-pub fn deserialize(pipe: *pipeline.Pipeline, repository: *Modules.Repository, arena: std.mem.Allocator, text: []const u8) !void {
+pub fn deserialize(pipe: *pipeline.Pipeline, arena: std.mem.Allocator, text: []const u8) !void {
     var line_no: usize = 0;
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |raw| {
         line_no += 1;
-        try apply(pipe, repository, arena, raw, line_no);
+        try apply(pipe, arena, raw, line_no);
     }
 }

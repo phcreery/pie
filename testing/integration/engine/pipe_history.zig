@@ -6,14 +6,15 @@ const P = pie.pipeline;
 const CoalesceConfig = pie.history.CoalesceConfig;
 
 /// Build a small chain through the history-aware ops so every step is recorded.
-fn buildChain(p: *Pipeline, r: *pie.modules.Repository) !struct {
+/// Relies on the given repo being registered on the pipeline already.
+fn buildChain(p: *Pipeline) !struct {
     iraw: P.ModuleHandle,
     multiply: P.ModuleHandle,
     nop: P.ModuleHandle,
 } {
-    const iraw = try p.addModule("01", r.get("test-i-1234").?);
-    const multiply = try p.addModule("01", r.get("test-multiply").?);
-    const nop = try p.addModule("01", r.get("test-nop-glsl").?);
+    const iraw = try p.addModule("01", "test-i-1234");
+    const multiply = try p.addModule("01", "test-multiply");
+    const nop = try p.addModule("01", "test-nop-glsl");
 
     try p.setModuleParamWithHistory(multiply, "multiplier", f32, 1.0, .{});
     try p.setModuleParamWithHistory(multiply, "multiplier", f32, 2.0, .{});
@@ -24,20 +25,30 @@ fn buildChain(p: *Pipeline, r: *pie.modules.Repository) !struct {
     return .{ .iraw = iraw, .multiply = multiply, .nop = nop };
 }
 
+fn newPipelineWithRepo(allocator: std.mem.Allocator) !struct {
+    pipeline: Pipeline,
+    repository: pie.modules.Repository,
+} {
+    var repository = try pie.modules.Repository.init(allocator);
+    var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
+    try pipeline.addRepo(&repository);
+    return .{ .pipeline = pipeline, .repository = repository };
+}
+
 test "recorded history is an append-only delta log" {
     const allocator = std.testing.allocator;
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
+    var repository = try pie.modules.Repository.init(allocator);
+    defer repository.deinit();
+    try pipeline.addRepo(&repository);
 
     const h = &pipeline.history;
     try std.testing.expectEqual(@as(usize, 0), h.count());
     try std.testing.expect(!h.canUndo());
     try std.testing.expect(!h.canRedo());
 
-    _ = try buildChain(&pipeline, &repository);
+    _ = try buildChain(&pipeline);
 
     // 3 modules + 2 params + 2 connects = 7 steps
     try std.testing.expectEqual(@as(usize, 7), h.count());
@@ -55,7 +66,7 @@ test "recorded history is an append-only delta log" {
     try std.testing.expectEqualStrings("connect:test-multiply:01:output:test-nop-glsl:01:input", h.committed()[6].line);
 }
 
-test "addNode/addModule primality: addNodeDesc records nothing" {
+test "addRepo/getModuleDesc resolve names, addModule records" {
     const allocator = std.testing.allocator;
     var repository = try pie.modules.Repository.init(allocator);
     defer repository.deinit();
@@ -63,25 +74,32 @@ test "addNode/addModule primality: addNodeDesc records nothing" {
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
 
+    // unknown before a repo (or with an empty repo) is not resolvable
+    try std.testing.expect(pipeline.getModuleDesc("test-i-1234") == null);
+    try std.testing.expectError(error.ModuleNotFound, pipeline.addModule("01", "test-i-1234"));
+
+    try pipeline.addRepo(&repository);
+    try std.testing.expect(pipeline.getModuleDesc("test-i-1234") != null);
+
     // addModuleDesc (internal primitive) does NOT record
-    _ = try pipeline.addModuleDesc("01", repository.get("test-i-1234").?);
+    _ = try pipeline.addModuleDesc("01", pipeline.getModuleDesc("test-i-1234").?);
     try std.testing.expectEqual(@as(usize, 0), pipeline.history.count());
 
     // addModule (public edit op) DOES record
-    _ = try pipeline.addModule("02", repository.get("test-i-1234").?);
+    _ = try pipeline.addModule("02", "test-i-1234");
     try std.testing.expectEqual(@as(usize, 1), pipeline.history.count());
     try std.testing.expectEqualStrings("module:test-i-1234:02", pipeline.history.committed()[0].line);
 }
 
 test "coalescing merges repeated edits of the same param" {
     const allocator = std.testing.allocator;
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
+    var repository = try pie.modules.Repository.init(allocator);
+    defer repository.deinit();
+    try pipeline.addRepo(&repository);
 
-    const m = try pipeline.addModule("01", repository.get("test-multiply").?);
+    const m = try pipeline.addModule("01", "test-multiply");
 
     // with coalesce enabled, two quick edits of 'multiplier' collapse to one step
     const cfg = CoalesceConfig{ .window_secs = 60.0 };
@@ -109,13 +127,13 @@ fn multiplyInputConnected(p: *Pipeline) bool {
 
 test "undo/redo rebuild pipeline state via replay" {
     const allocator = std.testing.allocator;
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
+    var repository = try pie.modules.Repository.init(allocator);
+    defer repository.deinit();
+    try pipeline.addRepo(&repository);
 
-    const chain = try buildChain(&pipeline, &repository);
+    const chain = try buildChain(&pipeline);
     _ = chain;
     const full_count = pipeline.history.count();
 
@@ -125,7 +143,7 @@ test "undo/redo rebuild pipeline state via replay" {
     try std.testing.expect(multiplyInputConnected(&pipeline));
 
     // undo one step (the last connect multiply->nop), replay
-    try pipeline.undo(&repository);
+    try pipeline.undo();
     try std.testing.expectEqual(full_count - 1, pipeline.history.cursor);
     // there should be two connects left total; the last (multiply->nop) is undone,
     // but the earlier i1234->multiply connect is preserved.
@@ -138,7 +156,7 @@ test "undo/redo rebuild pipeline state via replay" {
     try std.testing.expect(multiplyInputConnected(&pipeline));
 
     // redo restores it
-    try pipeline.redo(&repository);
+    try pipeline.redo();
     try std.testing.expectEqual(full_count, pipeline.history.cursor);
     const nop_after = pipeline.module_name_map.get("test-nop-glsl:01").?;
     const modop2 = try pipeline.module_pool.getPtr(nop_after);
@@ -150,19 +168,19 @@ test "undo/redo rebuild pipeline state via replay" {
 
 test "replayHistory to arbitrary index yields that exact configuration" {
     const allocator = std.testing.allocator;
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
+    var repository = try pie.modules.Repository.init(allocator);
+    defer repository.deinit();
+    try pipeline.addRepo(&repository);
 
-    const chain = try buildChain(&pipeline, &repository);
+    const chain = try buildChain(&pipeline);
     _ = chain;
     const full_count = pipeline.history.count();
 
     // jump back to index 4: the three modules are present (items 0..2), the
     // two param edits are replayed (items 3..4), but neither connect has run.
-    try pipeline.replayHistory(&repository, 4);
+    try pipeline.replayHistory(4);
     try std.testing.expectEqual(@as(usize, 4), pipeline.history.cursor);
     try std.testing.expect(!multiplyInputConnected(&pipeline));
     const multiply_handle = pipeline.module_name_map.get("test-multiply:01").?;
@@ -171,7 +189,7 @@ test "replayHistory to arbitrary index yields that exact configuration" {
     try std.testing.expectEqual(@as(f32, 1.0), (try mod.getParamPtr("multiplier")).get(f32));
 
     // roll forward past the second param and both connects back to the tip
-    try pipeline.replayHistory(&repository, full_count);
+    try pipeline.replayHistory(full_count);
     try std.testing.expectEqual(full_count, pipeline.history.cursor);
     try std.testing.expect(multiplyInputConnected(&pipeline));
     const mod2_handle = pipeline.module_name_map.get("test-multiply:01").?;
@@ -181,21 +199,21 @@ test "replayHistory to arbitrary index yields that exact configuration" {
 
 test "replay invalidates redo tail on new edits" {
     const allocator = std.testing.allocator;
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
+    var repository = try pie.modules.Repository.init(allocator);
+    defer repository.deinit();
+    try pipeline.addRepo(&repository);
 
-    const chain = try buildChain(&pipeline, &repository);
+    const chain = try buildChain(&pipeline);
     _ = chain;
     const full = pipeline.history.count();
 
-    try pipeline.undo(&repository);
+    try pipeline.undo();
     try std.testing.expectEqual(full - 1, pipeline.history.cursor);
 
     // a new edit after undo drops the redo tail
-    const m = try pipeline.addModule("09", repository.get("test-i-1234").?);
+    const m = try pipeline.addModule("09", "test-i-1234");
     _ = m;
     try std.testing.expectEqual(full, pipeline.history.cursor);
     try std.testing.expectEqual(full, pipeline.history.count()); // nothing beyond cursor
@@ -204,12 +222,13 @@ test "replay invalidates redo tail on new edits" {
 
 test "history round-trips through serdes serialize output" {
     const allocator = std.testing.allocator;
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
-    _ = try buildChain(&pipeline, &repository);
+    var repository = try pie.modules.Repository.init(allocator);
+    defer repository.deinit();
+    try pipeline.addRepo(&repository);
+
+    _ = try buildChain(&pipeline);
 
     var w = std.Io.Writer.Allocating.init(allocator);
     defer w.deinit();
