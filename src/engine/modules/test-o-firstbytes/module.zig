@@ -18,7 +18,7 @@ pub const desc: api.ModuleDesc = .{
     .createNodes = createNodes,
 };
 
-pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
+pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     _ = allocator;
     _ = io;
     const sock = try api.getModSocket(pipe, mod, "input");
@@ -27,7 +27,7 @@ pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, 
     std.debug.print("Downloaded buffer [0..4]: {any}\n", .{download_buffer_slice[0..4]});
 }
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "input");
     const node_desc: api.NodeDesc = .{
         .type = .sink,
@@ -39,6 +39,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     };
-    const node = try pipe.addNodeDesc(mod, node_desc);
-    try pipe.copyConnector(mod, "input", node, "input");
+    const node = try api.addNodeDesc(pipe, mod, node_desc);
+    try api.copyConnector(pipe, mod, "input", node, "input");
 }

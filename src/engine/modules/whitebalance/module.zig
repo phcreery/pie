@@ -22,9 +22,9 @@ pub var desc: api.ModuleDesc = .{
     .createNodes = createNodes,
 };
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_whitebalance = try pipe.addNodeDesc(mod, .{
+    const node_whitebalance = try api.addNodeDesc(pipe, mod, .{
         .type = .compute,
         .shader = .{ .wgsl = @embedFile("./whitebalance.wgsl") },
         .name = "whitebalance",
@@ -46,6 +46,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try pipe.copyConnector(mod, "input", node_whitebalance, "input");
-    try pipe.copyConnector(mod, "output", node_whitebalance, "output");
+    try api.copyConnector(pipe, mod, "input", node_whitebalance, "input");
+    try api.copyConnector(pipe, mod, "output", node_whitebalance, "output");
 }

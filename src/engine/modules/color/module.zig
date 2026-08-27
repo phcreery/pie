@@ -37,7 +37,7 @@ const default_wb_temp: f32 = 6500.0; // D65 daylight
 const default_wb_tint: f32 = 0.0;
 const default_wb_coeff: [3]f32 = .{ 1.0, 1.0, 1.0 }; // hardcoded from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
 
-pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "wb_temp", default_wb_temp);
     try api.initParamNamed(pipe, mod, "wb_tint", default_wb_tint);
 
@@ -48,7 +48,7 @@ pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "wb_coeff", default_wb_coeff);
 }
 
-pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     // Propagate ROI from input to output (normally done by pipeline when modifyROIOut is absent)
     const input_socket = try api.getModSocket(pipe, mod, "input");
     var output_socket = try api.getModSocket(pipe, mod, "output");
@@ -84,9 +84,9 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     }
 }
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_color = try pipe.addNodeDesc(mod, .{
+    const node_color = try api.addNodeDesc(pipe, mod, .{
         .type = .compute,
         .shader = .{ .wgsl = @embedFile("./color.wgsl") },
         .name = "color",
@@ -108,6 +108,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try pipe.copyConnector(mod, "input", node_color, "input");
-    try pipe.copyConnector(mod, "output", node_color, "output");
+    try api.copyConnector(pipe, mod, "input", node_color, "input");
+    try api.copyConnector(pipe, mod, "output", node_color, "output");
 }

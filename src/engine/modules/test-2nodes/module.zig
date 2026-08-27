@@ -32,7 +32,7 @@ pub var desc: api.ModuleDesc = .{
     .modifyROIOut = null,
 };
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_add_desc: api.NodeDesc = .{
         .type = .compute,
@@ -56,7 +56,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     };
-    const node_add = try pipe.addNodeDesc(mod, node_add_desc);
+    const node_add = try api.addNodeDesc(pipe, mod, node_add_desc);
     const node_sub_desc: api.NodeDesc = .{
         .type = .compute,
         .shader = @embedFile("sub.wgsl"),
@@ -79,9 +79,9 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     };
-    const node_sub = try pipe.addNodeDesc(mod, node_sub_desc);
+    const node_sub = try api.addNodeDesc(pipe, mod, node_sub_desc);
 
-    try pipe.copyConnector(mod, "input", node_add, "input");
-    try pipe.connectNodesName(node_add, "output", node_sub, "input");
-    try pipe.copyConnector(mod, "output", node_sub, "output");
+    try api.copyConnector(pipe, mod, "input", node_add, "input");
+    try api.connectNodesName(pipe, node_add, "output", node_sub, "input");
+    try api.copyConnector(pipe, mod, "output", node_sub, "output");
 }

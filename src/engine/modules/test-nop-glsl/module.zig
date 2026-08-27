@@ -41,7 +41,7 @@ const shader_code: []const u8 =
     \\}
 ;
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .compute,
@@ -65,7 +65,7 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     };
-    const node = try pipe.addNodeDesc(mod, node_desc);
-    try pipe.copyConnector(mod, "input", node, "input");
-    try pipe.copyConnector(mod, "output", node, "output");
+    const node = try api.addNodeDesc(pipe, mod, node_desc);
+    try api.copyConnector(pipe, mod, "input", node, "input");
+    try api.copyConnector(pipe, mod, "output", node, "output");
 }

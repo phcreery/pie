@@ -27,7 +27,7 @@ const expected = [_]f16{ 2.0, 4.0, 6.0, 8.0 };
 pub fn writeSink(
     allocator: std.mem.Allocator,
     io: std.Io,
-    pipe: *api.Pipeline,
+    pipe: api.PipelineHandle,
     mod: api.ModuleHandle,
     mapped: *anyopaque,
 ) !void {
@@ -40,9 +40,9 @@ pub fn writeSink(
     try std.testing.expectEqualSlices(f16, &expected, download_buffer_slice);
 }
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "input");
-    const node = try pipe.addNodeDesc(mod, .{
+    const node = try api.addNodeDesc(pipe, mod, .{
         .type = .sink,
         .name = "sink",
         .run_size = null,
@@ -52,5 +52,5 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try pipe.copyConnector(mod, "input", node, "input");
+    try api.copyConnector(pipe, mod, "input", node, "input");
 }

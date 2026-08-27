@@ -66,14 +66,14 @@ const shader_code: []const u8 =
     \\}
 ;
 
-pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "multiplier", @as(f32, 3.0));
     try api.initParamNamed(pipe, mod, "adder", @as(f32, 3.0));
 }
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node = try pipe.addNodeDesc(mod, .{
+    const node = try api.addNodeDesc(pipe, mod, .{
         .type = .compute,
         .shader = .{ .wgsl = shader_code },
         .name = "multiply",
@@ -95,6 +95,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try pipe.copyConnector(mod, "input", node, "input");
-    try pipe.copyConnector(mod, "output", node, "output");
+    try api.copyConnector(pipe, mod, "input", node, "input");
+    try api.copyConnector(pipe, mod, "output", node, "output");
 }

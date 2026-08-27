@@ -13,6 +13,8 @@ pub const Pipeline = pipeline.Pipeline;
 pub const ModuleHandle = pipeline.ModuleHandle;
 pub const NodeHandle = pipeline.NodeHandle;
 
+pub const PipelineHandle = *Pipeline; // sneaky
+
 pub const ImgParam = @import("../ImgParam.zig");
 
 pub const CFA = @import("./shared/CFA.zig");
@@ -82,31 +84,31 @@ pub const ModuleDesc = struct {
     data: ?*anyopaque = null,
 
     // https://github.com/hanatos/vkdt/blob/1921eabfa2c87b90042dee676d5d3e34d8cbd5e1/src/pipe/global.c#L106
-    initParams: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
-    init: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
-    deinit: ?*const fn (allocator: std.mem.Allocator, pipe: *Pipeline, mod: ModuleHandle) void = null,
-    modifyROIOut: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
-    createNodes: ?*const fn (pipe: *Pipeline, mod: ModuleHandle) anyerror!void = null,
-    readSource: ?*const fn (pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
-    writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *Pipeline, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
+    initParams: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
+    init: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
+    deinit: ?*const fn (allocator: std.mem.Allocator, pipe: PipelineHandle, mod: ModuleHandle) void = null,
+    modifyROIOut: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
+    createNodes: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
+    readSource: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
+    writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: PipelineHandle, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
 };
 
 // ================
 // PIPELINE HELPERS
 // ================
 
-pub fn compileShader(pipe: *Pipeline, shader_source: gpu.ShaderSource) !gpu.Shader {
+pub fn compileShader(pipe: PipelineHandle, shader_source: gpu.ShaderSource) !gpu.Shader {
     const gpu_inst = pipe.gpu orelse return error.GPUNotInitialized;
     // return gpu.Shader.compile(gpu_inst, shader_source);
     return gpu_inst.compileShader(shader_source);
 }
 
-pub fn initParam(pipe: *Pipeline, desc: ParamDesc, value: anytype) !Param {
+pub fn initParam(pipe: PipelineHandle, desc: ParamDesc, value: anytype) !Param {
     const param = try Param.init(pipe.allocator, desc, value);
     return param;
 }
 
-pub fn initParamNamed(pipe: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
+pub fn initParamNamed(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     const idx = try mod.getParamIndex(param_name);
     const desc = mod.desc.params[idx].?; // TODO: handle null case better
@@ -114,31 +116,42 @@ pub fn initParamNamed(pipe: *Pipeline, mod_handle: ModuleHandle, param_name: []c
     mod.params[idx] = param;
 }
 
-pub fn getParam(pipe: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type) !T {
+pub fn getParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type) !T {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     const idx = try mod.getParamIndex(param_name);
     const param = mod.params[idx].?; // TODO: handle null case better
     return param.get(T);
 }
 
-pub fn setParam(pipe: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) !void {
+pub fn setParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) !void {
     try pipe.setModuleParam(mod_handle, param_name, T, value);
 }
 
-pub fn copyConnector(pipe: *Pipeline, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
+pub fn copyConnector(pipe: PipelineHandle, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
     return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
 }
 
-pub fn getModule(pipe: *Pipeline, mod_handle: ModuleHandle) !*Module {
+/// Add a derived node to a module. Nodes are not recorded in history; this
+/// forwards to the internal (non-recording) `addNodeDesc`.
+pub fn addNodeDesc(pipe: PipelineHandle, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
+    return pipe.addNodeDesc(mod, node_desc);
+}
+
+/// Connect two nodes by socket name. Forwards to `connectNodesName`.
+pub fn connectNodesName(pipe: PipelineHandle, src_node: NodeHandle, src_socket: []const u8, dst_node: NodeHandle, dst_socket: []const u8) !void {
+    return pipe.connectNodesName(src_node, src_socket, dst_node, dst_socket);
+}
+
+pub fn getModule(pipe: PipelineHandle, mod_handle: ModuleHandle) !*Module {
     return pipe.module_pool.getPtr(mod_handle);
 }
 
-pub fn getModSocket(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !*SocketDesc {
+pub fn getModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !*SocketDesc {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     return mod.getSocketPtr(socket_name);
 }
 
-pub fn getSocketIndex(pipe: *Pipeline, mod_handle: ModuleHandle, socket_name: []const u8) !usize {
+pub fn getSocketIndex(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !usize {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     return mod.getSocketIndex(socket_name);
 }

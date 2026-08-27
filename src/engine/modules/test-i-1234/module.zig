@@ -27,7 +27,7 @@ const roi: api.ROI = .{
     .h = 1,
 };
 
-pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;
 
@@ -55,7 +55,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     };
 }
 
-pub fn readSource(pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
+pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     _ = pipe;
     _ = mod;
 
@@ -64,9 +64,9 @@ pub fn readSource(pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque
     @memcpy(upload_buffer_ptr, &source);
 }
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node = try pipe.addNodeDesc(mod, .{
+    const node = try api.addNodeDesc(pipe, mod, .{
         .type = .source,
         .name = "source",
         .run_size = null,

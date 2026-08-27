@@ -31,11 +31,11 @@ pub var desc: api.ModuleDesc = .{
     .createNodes = createNodes,
 };
 
-pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "rotation_deg", @as(f32, 0.0));
 }
 
-pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
     const input_sock = try api.getModSocket(pipe, mod, "input");
 
@@ -62,10 +62,10 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     try api.setParam(pipe, mod, "rotation_deg", f32, rotation_deg);
 }
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
 
-    const node = try pipe.addNodeDesc(mod, .{
+    const node = try api.addNodeDesc(pipe, mod, .{
         .type = .compute,
         .shader = .{ .wgsl = @embedFile("./rotate_center.wgsl") },
         .name = "rotate_center",
@@ -87,6 +87,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try pipe.copyConnector(mod, "input", node, "input");
-    try pipe.copyConnector(mod, "output", node, "output");
+    try api.copyConnector(pipe, mod, "input", node, "input");
+    try api.copyConnector(pipe, mod, "output", node, "output");
 }

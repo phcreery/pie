@@ -37,7 +37,7 @@ pub var desc: api.ModuleDesc = .{
     .readSource = readSource,
 };
 
-pub fn init(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, mod_handle: api.ModuleHandle) !void {
+pub fn init(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHandle, mod_handle: api.ModuleHandle) !void {
     var raw_image = try allocator.create(RawImage);
     errdefer raw_image.deinit();
 
@@ -51,7 +51,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, pipe: *api.Pipeline, mod_h
     mod.desc.data = raw_image;
 }
 
-pub fn deinit(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.ModuleHandle) void {
+pub fn deinit(allocator: std.mem.Allocator, pipe: api.PipelineHandle, mod: api.ModuleHandle) void {
     const m = api.getModule(pipe, mod) catch return;
     const data_ptr = m.desc.data orelse return;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
@@ -59,7 +59,7 @@ pub fn deinit(allocator: std.mem.Allocator, pipe: *api.Pipeline, mod: api.Module
     allocator.destroy(raw_image);
 }
 
-pub fn initParams(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "input.raw"));
     try api.initParamNamed(pipe, mod, "wb_mode", @intFromEnum(WbMode.pre_mul));
 }
@@ -96,7 +96,7 @@ fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
     return out;
 }
 
-pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
@@ -176,7 +176,7 @@ pub fn modifyROIOut(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
     socket.roi = roi;
 }
 
-pub fn readSource(pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque) !void {
+pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     const m = try api.getModule(pipe, mod);
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
@@ -185,9 +185,9 @@ pub fn readSource(pipe: *api.Pipeline, mod: api.ModuleHandle, mapped: *anyopaque
     @memcpy(upload_buffer_ptr, raw_image.raw_image);
 }
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node = try pipe.addNodeDesc(
+    const node = try api.addNodeDesc(pipe, 
         mod,
         .{
             .type = .source,

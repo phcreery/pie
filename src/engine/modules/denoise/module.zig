@@ -22,9 +22,9 @@ pub var desc: api.ModuleDesc = .{
     .createNodes = createNodes,
 };
 
-pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
+pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_interpolation = try pipe.addNodeDesc(mod, .{
+    const node_interpolation = try api.addNodeDesc(pipe, mod, .{
         .type = .compute,
         .shader = .{ .wgsl = @embedFile("./interpolation.wgsl") },
         .name = "interpolation",
@@ -46,6 +46,6 @@ pub fn createNodes(pipe: *api.Pipeline, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try pipe.copyConnector(mod, "input", node_interpolation, "input");
-    try pipe.copyConnector(mod, "output", node_interpolation, "output");
+    try api.copyConnector(pipe, mod, "input", node_interpolation, "input");
+    try api.copyConnector(pipe, mod, "output", node_interpolation, "output");
 }
