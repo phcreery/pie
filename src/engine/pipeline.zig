@@ -1534,7 +1534,7 @@ pub const Pipeline = struct {
                     {
                         // wgpu requires bytes per row to be aligned to 256 bytes, so we need to remove the padding bytes if they exist
                         const bytes_per_row = sock.roi.?.w * sock.format.bpp();
-                        const aligned_bytes_per_row = ((bytes_per_row + api.gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / api.gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * api.gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
+                        const aligned_bytes_per_row = ((bytes_per_row + gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
 
                         const aligned_size_bytes = aligned_bytes_per_row * sock.roi.?.h;
                         const download_buffer_padded_ptr: [*]u8 = @ptrCast(@alignCast(mapped_ptr));

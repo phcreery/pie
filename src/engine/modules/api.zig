@@ -1,33 +1,25 @@
-/// API definitions for engine pipeline modules and nodes
+//! API definitions for engine pipeline modules and nodes
 const std = @import("std");
-pub const gpu = @import("../gpu.zig"); // TODO: we shouldn't need to expose this
+const gpu = @import("../gpu.zig"); // TODO: we shouldn't need to expose this
 pub const math = @import("../math/root.zig");
 
 pub const ROI = @import("../ROI.zig");
+pub const ImgParam = @import("../ImgParam.zig");
+pub const CFA = @import("./shared/CFA.zig");
+
 pub const pipeline = @import("../pipeline.zig");
+pub const Pipeline = pipeline.Pipeline;
+pub const PipelineHandle = *Pipeline; // sneaky
+pub const ModuleHandle = pipeline.ModuleHandle;
+pub const NodeHandle = pipeline.NodeHandle;
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
 pub const Socket = @import("../Socket.zig");
+pub const SocketConnection = Socket.SocketConnection;
 pub const Param = @import("../Param.zig");
-pub const Pipeline = pipeline.Pipeline;
-pub const ModuleHandle = pipeline.ModuleHandle;
-pub const NodeHandle = pipeline.NodeHandle;
-
-pub const PipelineHandle = *Pipeline; // sneaky
-
-pub const ImgParam = @import("../ImgParam.zig");
-
-pub const CFA = @import("./shared/CFA.zig");
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 pub const MAX_PARAMS_PER_MODULE = 16;
-
-pub fn SocketConnection(comptime TItem: type) type {
-    return struct {
-        item: TItem,
-        socket_idx: usize,
-    };
-}
 
 pub const SocketDesc = struct {
     name: []const u8,
@@ -99,7 +91,6 @@ pub const ModuleDesc = struct {
 
 pub fn compileShader(pipe: PipelineHandle, shader_source: gpu.ShaderSource) !gpu.Shader {
     const gpu_inst = pipe.gpu orelse return error.GPUNotInitialized;
-    // return gpu.Shader.compile(gpu_inst, shader_source);
     return gpu_inst.compileShader(shader_source);
 }
 
