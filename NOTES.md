@@ -74,7 +74,54 @@
     - https://github.com/a-day-old-bagel/zgpu
   - https://github.com/akunaakwei/zig-dawn
   - Note: dawn provides a couple pre-compiled static libs, but the linux does not work since it is compiled with gnu, and according to a llm:
-```
+
+
+
+
+- Shader stuff
+  - https://codeberg.org/Games-by-Mason/mr_glsl
+  - https://codeberg.org/Mr_Nobody/HowToVulkan_zig
+  - https://codeberg.org/andrewkraevskii/howtovulkan-zig
+
+- Zig spirv backend
+  - https://alichraghi.github.io/blog/zig-gpu/
+  - https://gist.github.com/alichraghi/cc4b1db0a0a556de4f85cf06f0e7a400
+  - https://github.com/snektron/shallenge/
+  - https://codeberg.org/shahwali/knots/src/branch/main/src/gpu/backend/vulkan/shaders
+  - https://github.com/q-uint/molten-zig
+  - https://codeberg.org/7Games/zig-sdl3/src/branch/master-gpu/gpu_examples/shaders/zig
+
+  - sokol: currently there's no way to get the data back to the CPU ... but we can create and injecting the storage buffer ourself
+    - https://github.com/floooh/sokol/issues/1246
+    - https://github.com/floooh/sokol/pull/1326
+
+- Examples
+  - https://github.com/riverwm/river/
+    - files are structs
+    - one global allocator, similar to C
+    - interfaces with external c dependencies
+  - https://github.com/tigerbeetle/tigerbeetle/
+    - Construct larger structs in-place by passing an out pointer during initialization.
+    - https://github.com/tigerbeetle/tigerbeetle/blob/5b485508373f5eed99cb52a75ec692ec569a6990/docs/TIGER_STYLE.md#cache-invalidation
+    - large build.zig
+  - https://github.com/foxnne/pixi
+  - https://github.com/ghostty-org/ghostty
+  - https://github.com/karlseguin/zul
+
+- Documentation
+  - style standards: https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md
+  - Interfaces in zig
+    - ["raw doggin' interfaces"](https://www.youtube.com/watch?v=ZOllg8C3ows): https://www.openmymind.net/Zig-Interfaces/
+    - https://github.com/permutationlock/ztrait
+    - https://github.com/permutationlock/zimpl
+    - https://github.com/nilslice/zig-interface
+    - https://github.com/yglcode/zig_interfaces
+    - https://williamw520.github.io/2025/07/13/zig-interface-revisited.html
+  - https://ziggit.dev/t/convention-for-init-deinit/4865/2
+  - [Zig cheatsheet](https://gist.github.com/jdmichaud/b75ee234bfa87283a6337e06a3b70767)
+
+
+
 The facts:
 - libwebgpu_dawn.a prebuilt was compiled with GCC → needs libstdc++ (__cxx11) symbols.
 - Zig can only link its bundled libc++ (clang ABI) — linkSystemLibrary("stdc++") is intercepted and redirected there (with std.zig.target.isLibCxxLibName()).
@@ -131,47 +178,4 @@ Verdict: Yes — sokol-zig will work with wgpu-zig (wgpu-native v29.0.1.1), with
  - Your wgpu_dawn module import points get replaced by wgpu-zig's idiomatic Zig bindings (Instance.init, requestAdapterSync, etc.), and you pass the resulting
    instance/adapter/device into sokol via sg_environment / sapp wgpu hooks — type-compatible since both follow the same 2025 webgpu.h lineage.
  - Bonus: no more libstdc++/libc++ ABI fight — libwgpu_native is Rust, C ABI only.
-```
 
-
-- Shader stuff
-  - https://codeberg.org/Games-by-Mason/mr_glsl
-  - https://codeberg.org/Mr_Nobody/HowToVulkan_zig
-  - https://codeberg.org/andrewkraevskii/howtovulkan-zig
-
-- Zig spirv backend
-  - https://alichraghi.github.io/blog/zig-gpu/
-  - https://gist.github.com/alichraghi/cc4b1db0a0a556de4f85cf06f0e7a400
-  - https://github.com/snektron/shallenge/
-  - https://codeberg.org/shahwali/knots/src/branch/main/src/gpu/backend/vulkan/shaders
-  - https://github.com/q-uint/molten-zig
-  - https://codeberg.org/7Games/zig-sdl3/src/branch/master-gpu/gpu_examples/shaders/zig
-
-  - sokol: currently there's no way to get the data back to the CPU ... but we can create and injecting the storage buffer ourself
-    - https://github.com/floooh/sokol/issues/1246
-    - https://github.com/floooh/sokol/pull/1326
-
-- Examples
-  - https://github.com/riverwm/river/
-    - files are structs
-    - one global allocator, similar to C
-    - interfaces with external c dependencies
-  - https://github.com/tigerbeetle/tigerbeetle/
-    - Construct larger structs in-place by passing an out pointer during initialization.
-    - https://github.com/tigerbeetle/tigerbeetle/blob/5b485508373f5eed99cb52a75ec692ec569a6990/docs/TIGER_STYLE.md#cache-invalidation
-    - large build.zig
-  - https://github.com/foxnne/pixi
-  - https://github.com/ghostty-org/ghostty
-  - https://github.com/karlseguin/zul
-
-- Documentation
-  - style standards: https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md
-  - Interfaces in zig
-    - ["raw doggin' interfaces"](https://www.youtube.com/watch?v=ZOllg8C3ows): https://www.openmymind.net/Zig-Interfaces/
-    - https://github.com/permutationlock/ztrait
-    - https://github.com/permutationlock/zimpl
-    - https://github.com/nilslice/zig-interface
-    - https://github.com/yglcode/zig_interfaces
-    - https://williamw520.github.io/2025/07/13/zig-interface-revisited.html
-  - https://ziggit.dev/t/convention-for-init-deinit/4865/2
-  - [Zig cheatsheet](https://gist.github.com/jdmichaud/b75ee234bfa87283a6337e06a3b70767)
