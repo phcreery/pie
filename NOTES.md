@@ -2,6 +2,7 @@
 
 - https://yuhaozhu.com/blog/cmf.html
 - https://medium.com/hipster-color-science/a-beginners-guide-to-colorimetry-401f1830b65a
+- https://ekunazanu.foo/lab/quantifying-colour/
 
 ## Raw Processing
 
