@@ -59,6 +59,37 @@ pub const ParamDesc = struct {
     typ: Param.Type,
 };
 
+/// UI hint for a module parameter. `name` must match the `ParamDesc` at the
+/// same index in `ModuleDesc.params`, and the control must match the param
+/// type (`slider`/`combo`/`checkbox` for i32/f32, `text` for str).
+pub const ParamUI = struct {
+    name: []const u8,
+    control: Control,
+
+    pub const Slider = struct {
+        min: f32,
+        max: f32,
+        step: f32 = 0.0, // 0 = full precision (1/tick-resolution)
+        /// optional unit suffix shown to the right of the value, e.g. " deg"
+        suffix: ?[]const u8 = null,
+    };
+
+    pub const Control = union(enum) {
+        /// float/int scalar slider (i32 values are truncated/stepped)
+        slider: Slider,
+        /// drop-down of string labels; value is the selected index (i32)
+        combo: struct {
+            items: []const []const u8,
+        },
+        /// boolean checkbox; value is 0/1 (i32)
+        checkbox: void,
+        /// single-line text input (str params)
+        text: void,
+        /// no interactive control, just a label showing the current value
+        readonly: void,
+    };
+};
+
 /// A module can have multiple nodes.
 /// They can have source and sink connectors as well, but the module must have
 /// respective read_source and write_sink functions to handle them.
@@ -68,6 +99,10 @@ pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
     params: [MAX_PARAMS_PER_MODULE]?ParamDesc = @splat(null),
+
+    /// UI hints for the editor; index-aligned with `params`. Entries may be
+    /// null (params without a UI spec are shown read-only).
+    params_ui: [MAX_PARAMS_PER_MODULE]?ParamUI = @splat(null),
 
     // The sockets describe the module's input and output interface
     // they can be null if the module has no input or output (sink or source only)

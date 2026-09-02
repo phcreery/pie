@@ -6,11 +6,9 @@
     .dependencies = .{
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         .sokol = .{
-            // .url = "git+https://github.com/floooh/sokol-zig#20f2e2cd3249098093770ea20f6d8b00703bddb3",
-            // .hash = "sokol-0.1.0-pb1HK-DmNwC58_M1ri4psw-QW3xPMZs2JoS3tPkFJC7q",
+            .url = "git+https://github.com/phcreery/sokol-zig#2b29778ba82d076d70bf45c1900239f8148de328",
+            .hash = "sokol-0.1.0-pb1HK-QiQABqAKRI8mjH2oYS4lTIRzZTaSsjyuGLqLYJ",
             // .path = "../sokol-zig",
-            .url = "git+https://github.com/phcreery/sokol-zig#b4e1fb9c7517bbf7447e4b0a19b12b776e8acaf5",
-            .hash = "sokol-0.1.0-pb1HKz3yNwDda3-6oO20hdETC7cmertKSWngUg9xaDZz",
         },
         .cimgui = .{
             // zig 0.17.0

@@ -107,7 +107,7 @@ export fn init_fn(ptr: ?*anyopaque) void {
     // initialize pie pipeline
     const ext_device = wgpu.Device{ .device = @ptrCast(@constCast(sg.wgpuDevice().?)) };
     const ext_queue = wgpu.Queue{ .queue = @ptrCast(@constCast(sg.wgpuQueue().?)) };
-    state.gpu = pie.GPU.initExternal(ext_device, ext_queue) catch unreachable;
+    state.gpu = pie.GPU.initExternal(state.allocator, state.io, ext_device, ext_queue) catch unreachable;
     // state.pipeline = pie.Pipeline.init(state.allocator, state.io, &state.gpu, null) catch unreachable;
     state.gui = .init(state.allocator, state.io, &state.gpu, &state.repo);
 }
