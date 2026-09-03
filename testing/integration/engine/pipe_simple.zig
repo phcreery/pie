@@ -56,11 +56,7 @@ test "simple test modules" {
     var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-
-    try pie.modules.populateRepository(&repository);
-
+    
     const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 1024,
         .download_buffer_size_bytes = 1024,
@@ -68,7 +64,6 @@ test "simple test modules" {
 
     var pipeline = try Pipeline.init(allocator, io, &gpu_instance, pipeline_config);
     defer pipeline.deinit();
-    try pipeline.addRepo(&repository);
 
     const mod_test_i_1234 = try pipeline.addModule("01", "test-i-1234");
     const mod_test_multiply = try pipeline.addModule("01", "test-multiply");

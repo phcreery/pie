@@ -12,6 +12,13 @@ pub var desc: api.ModuleDesc = .{
         p[2] = .{ .name = "wb_coeff", .len = 3, .typ = .f32 };
         break :init p;
     },
+    .params_ui = init: {
+        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
+        ui[0] = .{ .name = "wb_temp", .control = .{ .slider = .{ .min = 1000, .max = 12000, .step = 100, .suffix = " K" } } };
+        ui[1] = .{ .name = "wb_tint", .control = .{ .slider = .{ .min = -2, .max = 2, .step = 0.01 } } };
+        ui[2] = .{ .name = "wb_coeff", .control = .{ .readonly = {} } };
+        break :init ui;
+    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{

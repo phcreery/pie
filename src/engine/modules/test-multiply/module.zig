@@ -10,6 +10,12 @@ pub var desc: api.ModuleDesc = .{
         p[1] = .{ .name = "adder", .len = 1, .typ = .f32 };
         break :init p;
     },
+    .params_ui = init: {
+        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
+        ui[0] = .{ .name = "multiplier", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } };
+        ui[1] = .{ .name = "adder", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } };
+        break :init ui;
+    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{

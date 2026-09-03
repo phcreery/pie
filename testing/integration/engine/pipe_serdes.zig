@@ -42,12 +42,8 @@ test "preset serialize emits vkdt-style lines" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var repository = try Modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, io, null, null);
     defer pipeline.deinit();
-    try pipeline.addRepo(&repository);
 
     try buildChain(&pipeline);
 
@@ -60,19 +56,14 @@ test "preset serialize emits vkdt-style lines" {
     try std.testing.expect(std.mem.indexOf(u8, text, "connect:i-raw:01:output:format:01:input\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "param:i-raw:01:filename:testing/images/DSC_6765.NEF\n") != null);
     // never-initialized params are not serialized
-    try std.testing.expect(std.mem.indexOf(u8, text, "param:i-raw:01:matrix_mode") == null);
 }
 
 test "preset round trip preserves pipeline state" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var repository = try Modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipe_a = try Pipeline.init(allocator, io, null, null);
     defer pipe_a.deinit();
-    try pipe_a.addRepo(&repository);
     try buildChain(&pipe_a);
 
     var w_a = std.Io.Writer.Allocating.init(allocator);
@@ -85,7 +76,6 @@ test "preset round trip preserves pipeline state" {
 
     var pipe_b = try Pipeline.init(allocator, io, null, null);
     defer pipe_b.deinit();
-    try pipe_b.addRepo(&repository);
     try pie.serdes.deserialize(&pipe_b, arena.allocator(), text_a);
 
     var w_b = std.Io.Writer.Allocating.init(allocator);
@@ -111,12 +101,8 @@ test "preset deserialize accepts vkdt syntax" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var repository = try Modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, io, null, null);
     defer pipeline.deinit();
-    try pipeline.addRepo(&repository);
 
     const text =
         \\# a vkdt-style comment line
@@ -152,12 +138,8 @@ test "preset deserialize skips bad lines leniently" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var repository = try Modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, io, null, null);
     defer pipeline.deinit();
-    try pipeline.addRepo(&repository);
 
     const text =
         \\module:format:01

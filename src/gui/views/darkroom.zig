@@ -5,6 +5,7 @@ const sapp = sokol.app;
 const std = @import("std");
 const pie = @import("pie");
 const Image = @import("../components/image.zig").Image;
+const ModulesPanel = @import("../components/modules_panel.zig").ModulesPanel;
 
 const GUI = @import("../root.zig").GUI;
 // const AppState = @import("../../app/app.zig").AppState;
@@ -13,12 +14,15 @@ pub const Darkroom = struct {
     image: Image,
     image_loaded: bool = false,
 
+    /// set by the modules panel when a param changed; consumed each update
+    rerun_requested: bool = false,
+
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU, repo: *pie.modules.Repository) Self {
-        _ = repo;
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU) !Self {
+        const image = try Image.init(allocator, io, gpu);
         return .{
-            .image = .init(allocator, io, gpu),
+            .image = image,
         };
     }
     pub fn deinit(self: *Self) void {
@@ -32,32 +36,36 @@ pub const Darkroom = struct {
 
         if (!self.image_loaded) {
             std.debug.print("building texture", .{});
-            // run pipeline and webgpu inject texture
-            const texture = build_image(
-                gui.allocator,
-                gui.io,
-                &self.image.pipeline,
-                gui.repo,
-            ) catch unreachable;
+            // set up the pipeline graph once, run it, and inject the texture
+            const texture = build_image(gui.allocator, gui.io, &self.image.pipeline) catch unreachable;
             std.debug.print("texture: {any}\n", .{texture});
             self.image.createFrom(texture);
             self.image_loaded = true;
         }
+
+        // consume any param edits from the modules panel
+        if (self.rerun_requested) {
+            self.rerun_requested = false;
+            var arena_instance = std.heap.ArenaAllocator.init(gui.allocator);
+            defer arena_instance.deinit();
+            self.image.pipeline.run(arena_instance.allocator()) catch {};
+            const texture = self.image.pipeline.getDisplaySinkTexture() catch null;
+            if (texture) |t| {
+                // re-inject (texture may have been reallocated on a rerouted run)
+                self.image.refreshFrom(t);
+            }
+        }
     }
     pub fn draw(self: *Self) void {
         self.image.draw();
+        ModulesPanel.draw(&self.image.pipeline, &self.rerun_requested);
     }
     pub fn event(self: *Self, ev: [*c]const sapp.Event) void {
         self.image.event(ev);
     }
 };
 
-fn build_image(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    pipeline: *pie.pipeline.Pipeline,
-    repo: *pie.modules.Repository,
-) !*pie.gpu.Texture {
+fn build_image(allocator: std.mem.Allocator, io: std.Io, pipeline: *pie.pipeline.Pipeline) !*pie.gpu.Texture {
     _ = io;
 
     var arena_instance = std.heap.ArenaAllocator.init(allocator);
@@ -65,8 +73,6 @@ fn build_image(
     const arena = arena_instance.allocator();
 
     const input_filename = "testing/images/DSC_6765.NEF";
-
-    try pipeline.addRepo(repo);
 
     const mod_i_raw = try pipeline.addModule("01", "i-raw");
     const mod_format = try pipeline.addModule("01", "format");

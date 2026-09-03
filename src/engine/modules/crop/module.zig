@@ -10,6 +10,11 @@ pub var desc: api.ModuleDesc = .{
         p[0] = .{ .name = "rotation_deg", .len = 1, .typ = .f32 };
         break :init p;
     },
+    .params_ui = init: {
+        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
+        ui[0] = .{ .name = "rotation_deg", .control = .{ .slider = .{ .min = -180, .max = 180, .step = 0.5, .suffix = " deg" } } };
+        break :init ui;
+    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{

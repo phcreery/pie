@@ -262,9 +262,7 @@ test "test targets" {
     var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
-    var repo = try pie.modules.Repository.init(allocator);
-    defer repo.deinit();
-
+    
     var arena_instance = std.heap.ArenaAllocator.init(allocator);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
@@ -277,7 +275,6 @@ test "test targets" {
     var pipeline = Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    try pipeline.addRepo(&repo);
 
     const config: TargetConfig = @import("001_DSC_6765/target.zig").config;
     const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";

@@ -61,11 +61,13 @@ pub const Image = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU) Self {
-        var self: Self = .{
-            .pipeline = pie.Pipeline.init(allocator, io, gpu, null) catch unreachable,
-        };
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU) !Self {
+        var pipeline = try pie.Pipeline.init(allocator, io, gpu, null);
+        errdefer pipeline.deinit();
 
+        var self: Self = .{
+            .pipeline = pipeline,
+        };
         // initialize state.image
         self.smp = sg.makeSampler(.{
             .mag_filter = .NEAREST,
@@ -99,6 +101,7 @@ pub const Image = struct {
         if (self.smp.id != sg.invalid_id) sg.destroySampler(self.smp);
         if (self.pip.id != sg.invalid_id) sg.destroyPipeline(self.pip);
         if (self.shd.id != sg.invalid_id) sg.destroyShader(self.shd);
+        self.pipeline.deinit();
     }
 
     pub fn createFrom(self: *Self, texture: *pie.gpu.Texture) void {
@@ -118,6 +121,14 @@ pub const Image = struct {
         });
         self.width = @floatFromInt(texture.roi.w);
         self.height = @floatFromInt(texture.roi.h);
+    }
+
+    /// Re-inject a (potentially new) display texture after a pipeline re-run.
+    /// Destroys the previous sokol image/view first so we don't leak handles.
+    pub fn refreshFrom(self: *Self, texture: *pie.gpu.Texture) void {
+        if (self.img.id != sg.invalid_id) sg.destroyImage(self.img);
+        if (self.tex_view.id != sg.invalid_id) sg.destroyView(self.tex_view);
+        self.createFrom(texture);
     }
 
     /// Handle a sokol_app event. Returns nothing; mutates `view`.

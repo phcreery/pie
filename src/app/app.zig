@@ -7,7 +7,7 @@ const slog = sokol.log;
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
-// const simgui = sokol.imgui;
+const simgui = sokol.imgui;
 // const zr = @import("zr");
 
 const pie = @import("pie");
@@ -16,7 +16,6 @@ const wgpu = @import("wgpu_zig");
 
 const gui = @import("gui");
 
-// const window = @import("app_windows.zig");
 const util = @import("../mem.zig");
 
 // Configured plugin type. This will hold the symbols we wish to hot-reload.
@@ -50,40 +49,25 @@ pub const AppState = struct {
 
     // pie
     gpu: pie.gpu.GPU,
-    repo: pie.modules.Repository,
 
     // app
     // these are initted and deinitted in the sokol calls
     gui: gui.GUI,
 
-    // hot relaod
-    // plugin_gui: PluginGUI,
-    // gui_draw: @TypeOf(gui.gui_draw),
-    // gui_draw: *anytype,
-    // gui_update: *fn (*gui.GUI) callconv(.c) void,
-    // gui_draw: *fn (*gui.GUI) callconv(.c) void,
-
     const Self = @This();
 
     fn init(allocator: std.mem.Allocator, io: std.Io) AppState {
-        // const windowmgr = gui.window.WindowManager.init(allocator);
-
         return .{
             .allocator = allocator,
             .io = io,
             .pass_action = .{},
             .gpu = undefined,
             .gui = undefined, // will init in sokol init fn
-            .repo = pie.modules.Repository.init(allocator) catch unreachable, // assigned in run()
-            // .window = windowmgr,
-            // .plugin_gui = undefined,
-            // .gui_update = undefined,
-            // .gui_draw = undefined,
         };
     }
 
     fn deinit(self: *Self) void {
-        self.repo.deinit();
+        self.gui.deinit();
     }
 };
 
@@ -94,6 +78,12 @@ export fn init_fn(ptr: ?*anyopaque) void {
     // initialize sokol-gfx
     sg.setup(.{
         .environment = sglue.environment(),
+        .logger = .{ .func = slog.func },
+    });
+
+    // initialize sokol-imgui
+    simgui.setup(.{
+        .ini_filename = null,
         .logger = .{ .func = slog.func },
     });
 
@@ -108,42 +98,28 @@ export fn init_fn(ptr: ?*anyopaque) void {
     const ext_device = wgpu.Device{ .device = @ptrCast(@constCast(sg.wgpuDevice().?)) };
     const ext_queue = wgpu.Queue{ .queue = @ptrCast(@constCast(sg.wgpuQueue().?)) };
     state.gpu = pie.GPU.initExternal(state.allocator, state.io, ext_device, ext_queue) catch unreachable;
-    // state.pipeline = pie.Pipeline.init(state.allocator, state.io, &state.gpu, null) catch unreachable;
-    state.gui = .init(state.allocator, state.io, &state.gpu, &state.repo);
+    state.gui = gui.GUI.init(state.allocator, state.io, &state.gpu) catch unreachable;
 }
 
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
 
-    // const has_reloaded = state.plugin_gui.reload() catch blk: {
-    //     std.debug.print("Hot-reload error: {s}\n", .{zr.err.load(.seq_cst) orelse "<none>"});
-    //     break :blk false;
-    // };
-    // if (has_reloaded) {
-    //     // If a reload has been performed, `zr` calls `registry.backup_variables` automatically,
-    //     // patching in the static/globals and function pointers.
-    //     //
-    //     // For static/global variable hot-reloading to work, you need to have a function in your
-    //     // plugin to call every time `has_reloaded` is `true`.
-    //     //
-    //     // This function can take a `zr.Registry` and call `restore_variables()` on it.
-    //     // Calling it host-side may work but it may also bug out.
-    //     // reload_test(&plugin.registry);
-    //     std.debug.print("Hot-reload successful\n", .{});
-    // }
+    // Run logic + compute (may submit to the WebGPU queue) BEFORE the render pass
+    state.gui.update();
 
-    // Run logic + compute (may submit to the WebGPU queue) BEFORE the render
-    // pass: Dawn disallows buffer mapAsync/queue.submit while a render command
-    // encoder is open ("Concurrent buffer operations are not allowed").
-    // state.gui_update(&state.gui);
+    // start the imgui frame (needs the framebuffer size + frame delta)
+    simgui.newFrame(.{
+        .width = sapp.width(),
+        .height = sapp.height(),
+        .delta_time = sapp.frameDuration(),
+        .dpi_scale = sapp.dpiScale(),
+    });
 
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
 
-    // Render only.
-    // state.gui.draw();
-    // state.gui_draw(&state.gui);
-    state.gui.update();
     state.gui.draw();
+
+    simgui.render();
 
     sg.endPass();
     sg.commit();
@@ -153,12 +129,20 @@ export fn cleanup(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
     state.gui.deinit();
     state.gpu.deinit();
+    simgui.shutdown();
     sg.shutdown();
 }
 
 export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
-    state.gui.event(ev);
+    // sokol-imgui returns true when it wants mouse/keyboard input (e.g. the
+    // cursor is over an imgui window or a widget is being dragged). When that
+    // happens don't forward the event to the GUI so the image pan/zoom and
+    // other app-level input handlers don't fight the imgui widgets.
+    const imgui_consumed = simgui.handleEvent(ev.*);
+    if (!imgui_consumed) {
+        state.gui.event(ev);
+    }
 }
 
 pub fn run(init: std.process.Init) !void {

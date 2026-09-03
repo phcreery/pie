@@ -16,8 +16,13 @@ pub var desc: api.ModuleDesc = .{
         var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
         p[0] = .{ .name = "filename", .len = 256, .typ = .str };
         p[1] = .{ .name = "wb_mode", .len = 1, .typ = .i32 };
-        p[2] = .{ .name = "matrix_mode", .len = 1, .typ = .i32 };
         break :init p;
+    },
+    .params_ui = init: {
+        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
+        ui[0] = .{ .name = "filename", .control = .{ .readonly = {} } };
+        ui[1] = .{ .name = "wb_mode", .control = .{ .combo = .{ .items = &.{ "cam_mul", "pre_mul" } } } };
+        break :init ui;
     },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
@@ -61,7 +66,7 @@ pub fn deinit(allocator: std.mem.Allocator, pipe: api.PipelineHandle, mod: api.M
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "input.raw"));
-    try api.initParamNamed(pipe, mod, "wb_mode", @intFromEnum(WbMode.pre_mul));
+    try api.initParamNamed(pipe, mod, "wb_mode", @backingInt(WbMode.pre_mul));
 }
 
 fn computeCamToSrgb(raw_image: *RawImage) [3][3]f32 {
@@ -100,7 +105,7 @@ pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
-    const wb_mode: WbMode = @enumFromInt(try api.getParam(pipe, mod, "wb_mode", i32));
+    const wb_mode: WbMode = @fromBackingInt(@intCast(try api.getParam(pipe, mod, "wb_mode", i32)));
 
     var roi: api.ROI = .{
         .w = @intCast(raw_image.width),
@@ -187,7 +192,8 @@ pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyo
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node = try api.addNodeDesc(pipe, 
+    const node = try api.addNodeDesc(
+        pipe,
         mod,
         .{
             .type = .source,

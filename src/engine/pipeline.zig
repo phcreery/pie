@@ -70,10 +70,7 @@ pub const Pipeline = struct {
     module_name_map: std.StringHashMap(ModuleHandle), // stored as name:id, ex. "i-raw:01"
     module_execution_order: std.ArrayList(ModuleHandle),
 
-    /// Module repositories the pipeline can resolve names from. Non-owning:
-    /// the caller keeps these alive (typically for the pipeline's lifetime)
-    /// and deinits them. Replayed history resolves module names through here.
-    repos: std.ArrayList(*Modules.Repository),
+    repo: Modules.Repository,
 
     node_pool: NodePool,
     node_execution_order: std.ArrayList(NodeHandle),
@@ -125,8 +122,8 @@ pub const Pipeline = struct {
         var module_execution_order = std.ArrayList(ModuleHandle).initCapacity(allocator, 2) catch unreachable;
         errdefer module_execution_order.deinit(allocator);
 
-        var repos: std.ArrayList(*Modules.Repository) = .empty;
-        errdefer repos.deinit(allocator);
+        var repo: Modules.Repository = try .init(allocator);
+        errdefer repo.deinit();
 
         var node_pool: NodePool = .init(allocator);
         errdefer node_pool.deinit();
@@ -158,8 +155,7 @@ pub const Pipeline = struct {
             .module_pool = module_pool,
             .module_name_map = module_name_map,
             .module_execution_order = module_execution_order,
-
-            .repos = repos,
+            .repo = repo,
 
             .node_pool = node_pool,
             .node_execution_order = node_execution_order,
@@ -178,7 +174,7 @@ pub const Pipeline = struct {
         self.deinitParams();
         // the pool deinit will take care of deallocating the textures
         self.module_execution_order.deinit(self.allocator);
-        self.repos.deinit(self.allocator);
+        self.repo.deinit();
         var module_name_map_it = self.module_name_map.iterator();
         while (module_name_map_it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
@@ -222,20 +218,9 @@ pub const Pipeline = struct {
         return module_handle;
     }
 
-    /// Register a module repository. The pipeline keeps a non-owning list and
-    /// uses it to resolve module names for `addModule`, history replay and
-    /// serdes. Multiple repos are searched in registration order; the first to
-    /// define a name wins. Repos must outlive the pipeline.
-    pub fn addRepo(self: *Pipeline, repo: *Modules.Repository) !void {
-        try self.repos.append(self.allocator, repo);
-    }
-
-    /// Look up a module descriptor by name across all registered repos.
+    /// Look up a module descriptor by name from the pipeline's repo.
     pub fn getModuleDesc(self: *Pipeline, name: []const u8) ?api.ModuleDesc {
-        for (self.repos.items) |repo| {
-            if (repo.get(name)) |desc| return desc;
-        }
-        return null;
+        return self.repo.get(name);
     }
 
     /// Public edit op: resolve `name` from the registered repos, add the
@@ -413,6 +398,8 @@ pub const Pipeline = struct {
         const mod = try self.module_pool.getPtr(mod_handle);
         const param = try mod.getParamPtr(param_name);
         try param.set(value);
+        // param changes only need the upload/recompute path, not a re-route
+        self.dirty = true;
     }
 
     // ================================================

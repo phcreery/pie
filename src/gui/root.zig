@@ -18,7 +18,6 @@ pub const GUI = struct {
 
     // pie
     gpu: *pie.GPU,
-    repo: *pie.modules.Repository,
 
     // view
     current_view: CurrentView = .darkroom,
@@ -32,15 +31,14 @@ pub const GUI = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         gpu: *pie.GPU,
-        repo: *pie.modules.Repository,
-    ) Self {
+    ) !Self {
+        const darkroom = try Darkroom.init(allocator, io, gpu);
         return .{
             .allocator = allocator,
             .io = io,
             .gpu = gpu,
-            .repo = repo,
             .current_view = .darkroom,
-            .darkroom = .init(allocator, io, gpu, repo),
+            .darkroom = darkroom,
         };
     }
 

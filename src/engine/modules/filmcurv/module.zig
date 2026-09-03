@@ -11,6 +11,14 @@ pub var desc: api.ModuleDesc = .{
         p[3] = .{ .name = "colormode", .len = 1, .typ = .i32 }; // 4 = AgX-like mode from vkdt filmcurv
         break :init p;
     },
+    .params_ui = init: {
+        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
+        ui[0] = .{ .name = "brightness", .control = .{ .slider = .{ .min = -4, .max = 4, .step = 0.01 } } };
+        ui[1] = .{ .name = "contrast", .control = .{ .slider = .{ .min = -4, .max = 4, .step = 0.01 } } };
+        ui[2] = .{ .name = "bias", .control = .{ .slider = .{ .min = -4, .max = 4, .step = 0.01 } } };
+        ui[3] = .{ .name = "colormode", .control = .{ .combo = .{ .items = &.{ "standard", "mode-1", "mode-2", "mode-3", "AgX" } } } };
+        break :init ui;
+    },
     .sockets = init: {
         var s: api.Sockets = @splat(null);
         s[0] = .{

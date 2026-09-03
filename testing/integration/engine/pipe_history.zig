@@ -25,23 +25,14 @@ fn buildChain(p: *Pipeline) !struct {
     return .{ .iraw = iraw, .multiply = multiply, .nop = nop };
 }
 
-fn newPipelineWithRepo(allocator: std.mem.Allocator) !struct {
-    pipeline: Pipeline,
-    repository: pie.modules.Repository,
-} {
-    var repository = try pie.modules.Repository.init(allocator);
-    var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
-    try pipeline.addRepo(&repository);
-    return .{ .pipeline = pipeline, .repository = repository };
+fn newPipeline(allocator: std.mem.Allocator) !Pipeline {
+    return try Pipeline.init(allocator, std.testing.io, null, null);
 }
 
 test "recorded history is an append-only delta log" {
     const allocator = std.testing.allocator;
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-    try pipeline.addRepo(&repository);
 
     const h = &pipeline.history;
     try std.testing.expectEqual(@as(usize, 0), h.count());
@@ -66,20 +57,16 @@ test "recorded history is an append-only delta log" {
     try std.testing.expectEqualStrings("connect:test-multiply:01:output:test-nop-glsl:01:input", h.committed()[6].line);
 }
 
-test "addRepo/getModuleDesc resolve names, addModule records" {
+test "getModuleDesc resolves names from owned repo, addModule records" {
     const allocator = std.testing.allocator;
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
 
-    // unknown before a repo (or with an empty repo) is not resolvable
-    try std.testing.expect(pipeline.getModuleDesc("test-i-1234") == null);
-    try std.testing.expectError(error.ModuleNotFound, pipeline.addModule("01", "test-i-1234"));
-
-    try pipeline.addRepo(&repository);
+    // the owned repo is auto-populated by init, so all built-in modules resolve
     try std.testing.expect(pipeline.getModuleDesc("test-i-1234") != null);
+    // unknown names are not resolvable
+    try std.testing.expect(pipeline.getModuleDesc("does-not-exist") == null);
+    try std.testing.expectError(error.ModuleNotFound, pipeline.addModule("01", "does-not-exist"));
 
     // addModuleDesc (internal primitive) does NOT record
     _ = try pipeline.addModuleDesc("01", pipeline.getModuleDesc("test-i-1234").?);
@@ -95,9 +82,6 @@ test "coalescing merges repeated edits of the same param" {
     const allocator = std.testing.allocator;
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-    try pipeline.addRepo(&repository);
 
     const m = try pipeline.addModule("01", "test-multiply");
 
@@ -129,9 +113,6 @@ test "undo/redo rebuild pipeline state via replay" {
     const allocator = std.testing.allocator;
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-    try pipeline.addRepo(&repository);
 
     const chain = try buildChain(&pipeline);
     _ = chain;
@@ -170,9 +151,6 @@ test "replayHistory to arbitrary index yields that exact configuration" {
     const allocator = std.testing.allocator;
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-    try pipeline.addRepo(&repository);
 
     const chain = try buildChain(&pipeline);
     _ = chain;
@@ -201,9 +179,6 @@ test "replay invalidates redo tail on new edits" {
     const allocator = std.testing.allocator;
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-    try pipeline.addRepo(&repository);
 
     const chain = try buildChain(&pipeline);
     _ = chain;
@@ -224,9 +199,6 @@ test "history round-trips through serdes serialize output" {
     const allocator = std.testing.allocator;
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
-    var repository = try pie.modules.Repository.init(allocator);
-    defer repository.deinit();
-    try pipeline.addRepo(&repository);
 
     _ = try buildChain(&pipeline);
 

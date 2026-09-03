@@ -19,9 +19,7 @@ test "fullsize through pipeline" {
     var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
-    var repo = try pie.modules.Repository.init(allocator);
-    defer repo.deinit();
-
+    
     const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
         .download_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
@@ -30,7 +28,6 @@ test "fullsize through pipeline" {
     var pipeline = Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    try pipeline.addRepo(&repo);
     const mod_i_raw = try pipeline.addModule("01", "i-raw");
     const mod_format = try pipeline.addModule("01", "format");
     const mod_denoise = try pipeline.addModule("01", "denoise");
