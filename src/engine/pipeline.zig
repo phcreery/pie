@@ -6,6 +6,7 @@ const print = @import("print.zig");
 const Module = @import("Module.zig");
 const Node = @import("Node.zig");
 const Socket = @import("Socket.zig");
+const Connector = @import("Connector.zig");
 const Param = @import("Param.zig");
 const ImgParam = @import("ImgParam.zig");
 const Modules = @import("modules/modules.zig");

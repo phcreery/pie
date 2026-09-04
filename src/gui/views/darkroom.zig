@@ -8,11 +8,11 @@ const Image = @import("../components/image.zig").Image;
 const ModulesPanel = @import("../components/modules_panel.zig").ModulesPanel;
 
 const GUI = @import("../root.zig").GUI;
-// const AppState = @import("../../app/app.zig").AppState;
 
 pub const Darkroom = struct {
     image: Image,
     image_loaded: bool = false,
+    modules_panel: ModulesPanel,
 
     /// set by the modules panel when a param changed; consumed each update
     rerun_requested: bool = false,
@@ -21,18 +21,19 @@ pub const Darkroom = struct {
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU) !Self {
         const image = try Image.init(allocator, io, gpu);
+        const modules_panel = ModulesPanel.init();
         return .{
             .image = image,
+            .modules_panel = modules_panel,
         };
     }
     pub fn deinit(self: *Self) void {
         self.image.deinit();
     }
-    pub fn update(self: *Self) void {
+    pub fn update(self: *Self, gui: *GUI) void {
         // Logic + compute (pipeline run) must happen *outside* the sokol
         // render pass: WebGPU disallows buffer mapAsync/queue.submit while a
         // render command encoder is open ("Concurrent buffer operations").
-        const gui: *GUI = @fieldParentPtr("darkroom", self);
 
         if (!self.image_loaded) {
             std.debug.print("building texture", .{});
@@ -56,11 +57,13 @@ pub const Darkroom = struct {
             }
         }
     }
-    pub fn draw(self: *Self) void {
+    pub fn draw(self: *Self, gui: *GUI) void {
+        _ = gui;
         self.image.draw();
-        ModulesPanel.draw(&self.image.pipeline, &self.rerun_requested);
+        self.modules_panel.draw(&self.image.pipeline, &self.rerun_requested);
     }
-    pub fn event(self: *Self, ev: [*c]const sapp.Event) void {
+    pub fn event(self: *Self, gui: *GUI, ev: [*c]const sapp.Event) void {
+        _ = gui;
         self.image.event(ev);
     }
 };

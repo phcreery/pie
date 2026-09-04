@@ -7,13 +7,16 @@ const ig = @import("cimgui");
 /// When a control changes value it writes through to the pipeline param and
 /// signals the owner (via `rerun_requested`) to re-run the pipeline.
 pub const ModulesPanel = struct {
-    fn bufPrintZ(buf: []u8, comptime fmt: []const u8, args: anytype) ![:0]u8 {
-        return std.mem.printSentinel(buf, fmt, args, 0);
+    is_open: bool = true,
+
+    const Self = @This();
+
+    pub fn init() Self {
+        return Self{};
     }
 
-    pub fn draw(pipeline: *pie.Pipeline, rerun_requested: *bool) void {
-        var is_open = true;
-        if (!ig.igBegin("Modules", &is_open, ig.ImGuiWindowFlags_MenuBar)) {
+    pub fn draw(self: *Self, pipeline: *pie.Pipeline, rerun_requested: *bool) void {
+        if (!ig.igBegin("Modules", &self.is_open, ig.ImGuiWindowFlags_MenuBar)) {
             ig.igEnd();
             return;
         }
@@ -40,11 +43,7 @@ pub const ModulesPanel = struct {
 
         // header row: name + type
         var header_buf: [128]u8 = undefined;
-        const header = bufPrintZ(
-            &header_buf,
-            "{s}##{x}",
-            .{ mod.desc.name, mod_handle.id },
-        ) catch return;
+        const header = std.mem.printSentinel(&header_buf, "{s}##{x}", .{ mod.desc.name, mod_handle.id }, 0) catch return;
         const open = ig.igCollapsingHeader(
             header.ptr,
             ig.ImGuiTreeNodeFlags_OpenOnArrow | ig.ImGuiTreeNodeFlags_OpenOnDoubleClick | ig.ImGuiTreeNodeFlags_DefaultOpen,
@@ -82,7 +81,12 @@ pub const ModulesPanel = struct {
         param_idx: usize,
     ) void {
         var label_buf: [128]u8 = undefined;
-        const label = bufPrintZ(&label_buf, "{s}##{d}", .{ param_name, param_idx }) catch return;
+        const label = std.mem.printSentinel(
+            &label_buf,
+            "{s}##{d}",
+            .{ param_name, param_idx },
+            0,
+        ) catch return;
 
         ig.igPushIDInt(@intCast(param_idx));
         defer ig.igPopID();
@@ -92,10 +96,11 @@ pub const ModulesPanel = struct {
             .f32 => {
                 var v = param.get(f32);
                 var format_buf: [32]u8 = undefined;
-                const format = bufPrintZ(
+                const format = std.mem.printSentinel(
                     &format_buf,
                     "%.2f{s}",
                     .{slider.suffix orelse ""},
+                    0,
                 ) catch "%.2f";
                 const changed = ig.igSliderFloatEx(label.ptr, &v, slider.min, slider.max, format.ptr, 0);
                 if (changed) {
@@ -125,7 +130,12 @@ pub const ModulesPanel = struct {
         param_idx: usize,
     ) void {
         var label_buf: [128]u8 = undefined;
-        const label = bufPrintZ(&label_buf, "{s}##{d}", .{ param_name, param_idx }) catch return;
+        const label = std.mem.printSentinel(
+            &label_buf,
+            "{s}##{d}",
+            .{ param_name, param_idx },
+            0,
+        ) catch return;
 
         // build the zero-separated items string imgui wants ("a\x00b\x00\x00")
         var items_buf: [512]u8 = undefined;
@@ -165,7 +175,12 @@ pub const ModulesPanel = struct {
         param_idx: usize,
     ) void {
         var label_buf: [128]u8 = undefined;
-        const label = bufPrintZ(&label_buf, "{s}##{d}", .{ param_name, param_idx }) catch return;
+        const label = std.mem.printSentinel(
+            &label_buf,
+            "{s}##{d}",
+            .{ param_name, param_idx },
+            0,
+        ) catch return;
 
         var value = param.get(i32) != 0;
         const changed = ig.igCheckbox(label.ptr, &value);
@@ -184,7 +199,12 @@ pub const ModulesPanel = struct {
         param_idx: usize,
     ) void {
         var label_buf: [128]u8 = undefined;
-        const label = bufPrintZ(&label_buf, "{s}##{d}", .{ param_name, param_idx }) catch return;
+        const label = std.mem.printSentinel(
+            &label_buf,
+            "{s}##{d}",
+            .{ param_name, param_idx },
+            0,
+        ) catch return;
 
         var buf: [256]u8 = @splat(0);
         const cur = param.get([]const u8);
@@ -205,9 +225,9 @@ pub const ModulesPanel = struct {
     fn drawReadonly(param_name: []const u8, param: *pie.api.Param) void {
         var buf: [256]u8 = undefined;
         const text = switch (param.desc.typ) {
-            .f32 => bufPrintZ(&buf, "{s}: {d:.2}", .{ param_name, param.get(f32) }) catch return,
-            .i32 => bufPrintZ(&buf, "{s}: {d}", .{ param_name, param.get(i32) }) catch return,
-            .str => bufPrintZ(&buf, "{s}: {s}", .{ param_name, param.get([]const u8) }) catch return,
+            .f32 => std.mem.printSentinel(&buf, "{s}: {d:.2}", .{ param_name, param.get(f32) }, 0) catch return,
+            .i32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ param_name, param.get(i32) }, 0) catch return,
+            .str => std.mem.printSentinel(&buf, "{s}: {s}", .{ param_name, param.get([]const u8) }, 0) catch return,
         };
         ig.igText("%s", text.ptr);
     }

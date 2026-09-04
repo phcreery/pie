@@ -17,6 +17,7 @@ pub const Node = @import("../Node.zig");
 pub const Socket = @import("../Socket.zig");
 pub const SocketConnection = Socket.SocketConnection;
 pub const Param = @import("../Param.zig");
+pub const Connector = @import("../Connector.zig");
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 pub const MAX_PARAMS_PER_MODULE = 16;
@@ -26,6 +27,7 @@ pub const SocketDesc = struct {
     type: Socket.SocketType,
     format: gpu.TextureFormat,
     roi: ?ROI = null,
+    color_profile: ?Connector.ColorProfile = null,
 
     private: Socket.PrivateMembers = .{},
 };

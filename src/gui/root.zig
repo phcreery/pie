@@ -19,10 +19,8 @@ pub const GUI = struct {
     // pie
     gpu: *pie.GPU,
 
-    // view
-    current_view: CurrentView = .darkroom,
-
     // views
+    current_view: CurrentView = .darkroom,
     darkroom: Darkroom,
 
     const Self = @This();
@@ -49,21 +47,21 @@ pub const GUI = struct {
     pub fn update(self: *Self) void {
         switch (self.current_view) {
             .darkroom => {
-                self.darkroom.update();
+                self.darkroom.update(self);
             },
         }
     }
     pub fn draw(self: *Self) void {
         switch (self.current_view) {
             .darkroom => {
-                self.darkroom.draw();
+                self.darkroom.draw(self);
             },
         }
     }
     pub fn event(self: *Self, ev: [*c]const sapp.Event) void {
         switch (self.current_view) {
             .darkroom => {
-                self.darkroom.event(ev);
+                self.darkroom.event(self, ev);
             },
         }
     }

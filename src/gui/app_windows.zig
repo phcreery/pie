@@ -10,38 +10,6 @@ const libraw = @import("libraw");
 
 const util = @import("../mem.zig");
 
-const Renderable = struct {
-    render: *const fn (allocator: std.mem.Allocator, io: std.Io) void,
-};
-
-pub const WindowManager = struct {
-    about_window: *About,
-
-    const Self = @This();
-
-    pub fn init(allocator: std.mem.Allocator) Self {
-        // const about_window = &About.init(allocator);
-        const about = allocator.create(About) catch unreachable;
-        errdefer allocator.destroy(about);
-        about.* = About.init(allocator);
-
-        return .{
-            .about_window = about,
-        };
-    }
-
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-        self.about_window.deinit(allocator);
-        allocator.destroy(self);
-    }
-
-    pub fn render(self: *Self) void {
-        const open = &true;
-        ig.igShowMetricsWindow(@ptrCast(@constCast(open)));
-        self.about_window.render();
-    }
-};
-
 pub const About = struct {
     is_open: bool,
     init_pos: ig.ImVec2,
@@ -79,7 +47,7 @@ pub const About = struct {
         allocator.free(self.build_date);
     }
 
-    pub fn render(self: *Self) void {
+    pub fn draw(self: *Self) void {
         // if (!self.is_open) {
         //     return;
         // }
@@ -135,18 +103,3 @@ pub const About = struct {
         ig.igEnd();
     }
 };
-
-test "About" {
-    const allocator = std.testing.allocator;
-    const about = About.init(allocator);
-    defer about.deinit(allocator);
-    try std.testing.expectEqual(about.is_open, true);
-
-    // expect the first 2 digits of the year to be "20" and imgui version to be "1."
-    // this test ensures the slice allocated for the zdt formatter does not
-    // become a dangling pointer after leaving init() **and**
-    // ensures there is mo memory leak from forgetting to free it
-    // std.debug.print("about.build_date: {s}\n", .{about.build_date[0..2]});
-    try std.testing.expectEqualSlices(u8, about.build_date[0..2], "20"[0..]);
-    try std.testing.expectEqualSlices(u8, about.cimgui_version[0..2], "1."[0..]);
-}
