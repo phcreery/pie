@@ -11,20 +11,22 @@ pub var desc: api.ModuleDesc = .{
             .type = .read,
             .format = .rggb16float,
             .roi = null,
+            .color_profile = .any,
         };
         s[1] = .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
             .roi = null,
+            .color_profile = .any,
         };
         break :init s;
     },
     .createNodes = createNodes,
-    .modifyROIOut = modifyROIOut,
+    .modifyOut = modifyOut,
 };
 
-fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
+fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const input_sock = try api.getModSocket(pipe, mod, "input");
     var roi: api.ROI = input_sock.roi.?;
     // const roi_half = roi.div(2, 2);

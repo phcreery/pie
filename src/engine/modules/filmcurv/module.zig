@@ -26,12 +26,14 @@ pub var desc: api.ModuleDesc = .{
             .type = .read,
             .format = .rgba16float,
             .roi = null,
+            .color_profile = .any,
         };
         s[1] = .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
             .roi = null,
+            .color_profile = .any,
         };
         break :init s;
     },

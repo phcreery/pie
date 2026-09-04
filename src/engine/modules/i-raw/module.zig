@@ -31,13 +31,15 @@ pub var desc: api.ModuleDesc = .{
             .type = .source,
             .format = .rggb16uint,
             .roi = null,
+            // the raw output is in the camera's color space, WB unknown/as-shot
+            .color_profile = .{ .white_point = .any, .primaries = .camera },
         };
         break :init s;
     },
     .initParams = initParams,
     .init = init,
     .deinit = deinit,
-    .modifyROIOut = modifyROIOut,
+    .modifyOut = modifyOut,
     .createNodes = createNodes,
     .readSource = readSource,
 };
@@ -101,7 +103,7 @@ fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
     return out;
 }
 
-pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
+pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));

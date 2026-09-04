@@ -18,7 +18,7 @@ pub const desc: api.ModuleDesc = .{
     .readSource = readSource,
     .writeSink = null,
     .createNodes = createNodes,
-    .modifyROIOut = modifyROIOut,
+    .modifyOut = modifyOut,
 };
 
 const source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
@@ -27,7 +27,7 @@ const roi: api.ROI = .{
     .h = 1,
 };
 
-pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
+pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;
 

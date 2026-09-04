@@ -29,7 +29,7 @@ pub var desc: api.ModuleDesc = .{
     .readSource = null,
     .writeSink = null,
     .createNodes = createNodes,
-    .modifyROIOut = null,
+    .modifyOut = null,
 };
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

@@ -79,7 +79,18 @@ pub fn areCompatible(output: *api.SocketDesc, input: *api.SocketDesc) bool {
             return false;
         }
     }
+    // color profile: the emitted profile must be accepted by the input
+    // socket. Null/absent on either side means "don't care" -> compatible.
+    if (compatibleColorProfiles(output.color_profile, input.color_profile)) |ok| {
+        if (!ok) return false;
+    }
     return true;
+}
+
+fn compatibleColorProfiles(a: ?api.Connector.ColorProfile, b: ?api.Connector.ColorProfile) ?bool {
+    const pa = a orelse return null;
+    const pb = b orelse return null;
+    return pa.acceptedBy(pb);
 }
 
 /// check if two socket descriptors are similar
@@ -88,6 +99,11 @@ pub fn areCompatible(output: *api.SocketDesc, input: *api.SocketDesc) bool {
 pub fn areSimilar(sock_a: *api.SocketDesc, sock_b: *api.SocketDesc) bool {
     if (sock_a.type != sock_b.type) return false;
     if (sock_a.format != sock_b.format) return false;
+    // color profile is part of the socket identity; "any" on either side
+    // (or absent) matches. exact mismatches are not similar.
+    if (compatibleColorProfiles(sock_a.color_profile, sock_b.color_profile)) |ok| {
+        if (!ok) return false;
+    }
     // check that ROI are the same
     // if (sock_a.roi) |a_roi| {
     //     if (sock_b.roi) |b_roi| {

@@ -22,17 +22,19 @@ pub var desc: api.ModuleDesc = .{
             .type = .read,
             .format = .rgba16float,
             .roi = null,
+            .color_profile = .any,
         };
         s[1] = .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
             .roi = null,
+            .color_profile = .any,
         };
         break :init s;
     },
     .initParams = initParams,
-    .modifyROIOut = modifyROIOut,
+    .modifyOut = modifyOut,
     .createNodes = createNodes,
 };
 
@@ -40,7 +42,7 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "rotation_deg", @as(f32, 0.0));
 }
 
-pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
+pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
     const input_sock = try api.getModSocket(pipe, mod, "input");
 

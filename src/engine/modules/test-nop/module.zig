@@ -24,7 +24,7 @@ pub var desc: api.ModuleDesc = .{
     .readSource = null,
     .writeSink = null,
     .createNodes = createNodes,
-    .modifyROIOut = null,
+    .modifyOut = null,
 };
 
 const shader_code: []const u8 =

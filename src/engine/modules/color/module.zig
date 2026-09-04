@@ -26,17 +26,21 @@ pub var desc: api.ModuleDesc = .{
             .type = .read,
             .format = .rgba16float,
             .roi = null,
+            // accepts camera primaries with any white balance (computed from temp/tint)
+            .color_profile = .{ .white_point = .any, .primaries = .camera },
         };
         s[1] = .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
             .roi = null,
+            // emits linear rec2020 with D65 white point
+            .color_profile = .{ .white_point = .d65, .primaries = .rec2020 },
         };
         break :init s;
     },
     .initParams = initParams,
-    .modifyROIOut = modifyROIOut,
+    .modifyOut = modifyOut,
     .createNodes = createNodes,
 };
 
@@ -55,8 +59,8 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "wb_coeff", default_wb_coeff);
 }
 
-pub fn modifyROIOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    // Propagate ROI from input to output (normally done by pipeline when modifyROIOut is absent)
+pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
+    // Propagate ROI from input to output (normally done by pipeline when modifyOut is absent)
     const input_socket = try api.getModSocket(pipe, mod, "input");
     var output_socket = try api.getModSocket(pipe, mod, "output");
     output_socket.roi = input_socket.roi;

@@ -24,7 +24,7 @@ pub var desc: api.ModuleDesc = .{
     .readSource = null,
     .writeSink = null,
     .createNodes = createNodes,
-    .modifyROIOut = null,
+    .modifyOut = null,
 };
 
 // In GLSL, this input must be a texture-only binding, not a combined sampler.

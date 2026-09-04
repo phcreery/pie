@@ -19,7 +19,7 @@ pub const desc: api.ModuleDesc = .{
     .readSource = null,
     .writeSink = writeSink,
     .createNodes = createNodes,
-    .modifyROIOut = null,
+    .modifyOut = null,
 };
 
 const expected = [_]f16{ 2.0, 4.0, 6.0, 8.0 };

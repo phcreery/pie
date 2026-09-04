@@ -17,6 +17,7 @@ pub const desc: api.ModuleDesc = .{
             .type = .sink,
             .format = .rgba16float,
             .roi = null,
+            .color_profile = .any,
         };
         break :init s;
     },

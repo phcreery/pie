@@ -6,7 +6,7 @@ const print = @import("print.zig");
 const Module = @import("Module.zig");
 const Node = @import("Node.zig");
 const Socket = @import("Socket.zig");
-const Connector = @import("Connector.zig");
+const Connector = @import("Connector.zig").Connector;
 const Param = @import("Param.zig");
 const ImgParam = @import("ImgParam.zig");
 const Modules = @import("modules/modules.zig");
@@ -25,7 +25,7 @@ pub const ModuleHandle = ModulePool.Handle;
 pub const NodePool = Pool(Node);
 pub const NodeHandle = NodePool.Handle;
 
-pub const ConnectorPool = Pool(?gpu.Texture);
+pub const ConnectorPool = Pool(Connector);
 pub const ConnectorHandle = ConnectorPool.Handle;
 
 pub const ParamBufferPool = Pool(?gpu.Buffer);
@@ -696,8 +696,8 @@ pub const Pipeline = struct {
 
             try self.runModulesCreateParamBufferHandles();
             try self.perf.timerLap("runModulesCreateParamBufferHandles");
-            try self.runModulesModifyROIOut();
-            try self.perf.timerLap("runModulesModifyROIOut");
+            try self.runModulesModifyOut();
+            try self.perf.timerLap("runModulesModifyOut");
             try self.runModulesInitParamBuffers();
             try self.perf.timerLap("runModulesInitParamBuffers");
             try self.runModulesAllocateUploadBufferForParams();
@@ -756,7 +756,7 @@ pub const Pipeline = struct {
         const sock = last_node.desc.sockets[0] orelse return error.NodeOutputSocketMissingConnectorHandle;
         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
         const display_texture = try self.connector_pool.getPtr(connector_handle);
-        if (display_texture.*) |*tex| {
+        if (display_texture.*.texture) |*tex| {
             return tex;
         } else {
             return error.PipelineMissingDisplaySinkTexture;
@@ -780,7 +780,7 @@ pub const Pipeline = struct {
                         if (sock.type.direction() == .output) {
                             var this_sock = try module.getSocketPtr(sock.name);
                             if (this_sock.private.connector_handle == null) {
-                                this_sock.private.connector_handle = try self.connector_pool.add(null);
+                                this_sock.private.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
                                 slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.private.connector_handle.?, module.desc.name, sock.name });
                             }
                         }
@@ -794,7 +794,7 @@ pub const Pipeline = struct {
                         if (sock.type.direction() == .output) {
                             var this_sock = try node.getSocketPtr(sock.name);
                             if (this_sock.private.connector_handle == null) {
-                                this_sock.private.connector_handle = try self.connector_pool.add(null);
+                                this_sock.private.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
                                 slog.debug("Created output connector handle {any} for node '{s} > {s}'", .{ this_sock.private.connector_handle.?, node.desc.name, sock.name });
                             }
                             // NOTE: this most likely gets discarded when we copy the connector from the module to the node, but we need to create it here in case we do a node-to-node connection without a module in between
@@ -943,12 +943,12 @@ pub const Pipeline = struct {
     }
 
     /// set roi out for each module based on connected modules
-    /// and call modifyROIOut if defined
-    /// we also propagate img_param down the pipeline here
-    fn runModulesModifyROIOut(self: *Pipeline) !void {
+    /// and call modifyOut if defined
+    /// we also propagate img_param and color_profile down the pipeline here
+    fn runModulesModifyOut(self: *Pipeline) !void {
         for (self.module_execution_order.items) |module_handle| {
             const module = try self.module_pool.getPtr(module_handle);
-            // set roi in based on connected module roi out
+            // set roi/color_profile in based on connected module out
             for (module.desc.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .input) {
@@ -958,6 +958,8 @@ pub const Pipeline = struct {
                             // slog.debug("Setting input ROI for module '{s} > {s}' from previous connected module '{s}'", .{ module.desc.name, sock.name, connected_to_module.desc.name });
                             const connected_to_socket = connected_to_module.desc.sockets[connection.socket_idx] orelse unreachable;
                             socket_ptr.roi = connected_to_socket.roi;
+                            // carry the actual color profile of what is flowing in
+                            socket_ptr.color_profile = connected_to_socket.color_profile;
 
                             // propagate img_param from connected module to this module
                             module.img_param = connected_to_module.img_param;
@@ -966,15 +968,60 @@ pub const Pipeline = struct {
                 }
             }
 
-            // modify roi out
-            if (module.desc.modifyROIOut) |modifyROIOutFn| {
-                try modifyROIOutFn(self, module_handle);
+            // modify out
+            if (module.desc.modifyOut) |modifyOutFn| {
+                try modifyOutFn(self, module_handle);
             } else {
                 // auto propagate roi from input to output
                 if (module.desc.type != .source and module.desc.type != .sink) {
                     const input_socket = try module.getSocketPtr("input");
                     const output_socket = try module.getSocketPtr("output");
                     output_socket.roi = input_socket.roi;
+                }
+            }
+
+            // resolve color profiles: if an output socket declares "any" for
+            // white point and/or primaries, inherit the corresponding field
+            // from the connected input's actual profile ("pass along the
+            // previous profile if unchanged"). Modules that emit an explicit
+            // profile (e.g. color -> rec2020/d65) keep it. Source modules have
+            // no input, so their "any" fields stay "any".
+            const input_profile = blk: {
+                var prof: ?api.Connector.ColorProfile = null;
+                for (module.desc.sockets) |socket| {
+                    if (socket) |sock| {
+                        if (sock.type.direction() == .input) {
+                            if (sock.private.connected_to_module) |connection| {
+                                const connected_to_module = try self.module_pool.getPtr(connection.item);
+                                const connected_to_socket = connected_to_module.desc.sockets[connection.socket_idx] orelse continue;
+                                prof = connected_to_socket.color_profile;
+                                break;
+                            }
+                        }
+                    }
+                }
+                break :blk prof;
+            };
+            if (input_profile) |incoming| {
+                for (module.desc.sockets) |socket| {
+                    if (socket) |sock| {
+                        if (sock.type.direction() == .output) {
+                            const output_socket = try module.getSocketPtr(sock.name);
+                            if (output_socket.color_profile) |declared| {
+                                output_socket.color_profile = .{
+                                    .white_point = if (declared.white_point == .any) incoming.white_point else declared.white_point,
+                                    .primaries = if (declared.primaries == .any) incoming.primaries else declared.primaries,
+                                };
+                            } else {
+                                output_socket.color_profile = incoming;
+                            }
+                            // keep any already-created connector on this socket in sync
+                            if (sock.private.connector_handle) |ch| {
+                                const conn = self.connector_pool.getPtr(ch) catch continue;
+                                conn.*.color_profile = output_socket.color_profile.?;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1173,7 +1220,7 @@ pub const Pipeline = struct {
                         // defer texture.deinit();
                         // store texture in connector pool
                         const conn = try self.connector_pool.getPtr(connector_handle);
-                        conn.* = texture;
+                        conn.*.texture = texture;
                     }
                 }
             }
@@ -1230,7 +1277,7 @@ pub const Pipeline = struct {
 
                         const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
                         const conn = try self.connector_pool.getPtr(connector_handle);
-                        const texture = conn.* orelse return error.NodeSocketMissingConnectorTexture;
+                        const texture = conn.*.texture orelse return error.NodeSocketMissingConnectorTexture;
                         bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
                             .texture = texture,
                         };
@@ -1474,7 +1521,7 @@ pub const Pipeline = struct {
                     slog.debug("Enqueueing source node '{s}' buffer to texture copy", .{node.desc.name});
                     const connector_handle = self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle;
                     const connector = try self.connector_pool.getPtr(connector_handle);
-                    var tex = connector.* orelse return error.PipelineMissingSourceNodeTexture;
+                    var tex = connector.*.texture orelse return error.PipelineMissingSourceNodeTexture;
                     const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
                     const roi = node.desc.sockets[0].?.roi orelse unreachable;
                     slog.debug("Source node staging offset: {d}", .{staging_offset});
@@ -1483,7 +1530,7 @@ pub const Pipeline = struct {
                 .sink => {
                     slog.debug("Enqueueing sink node '{s}' texture to buffer copy", .{node.desc.name});
                     const connector = try self.connector_pool.getPtr(self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle);
-                    var tex = connector.* orelse return error.PipelineMissingSinkNodeTexture;
+                    var tex = connector.*.texture orelse return error.PipelineMissingSinkNodeTexture;
                     const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
                     slog.debug("Sink node staging offset: {d}", .{staging_offset});
                     const roi = node.desc.sockets[0].?.roi orelse unreachable;
@@ -1603,10 +1650,7 @@ pub const Pipeline = struct {
 
             if (!found) {
                 slog.debug("Freeing unused connector {any}", .{connector_handle});
-                const conn = try self.connector_pool.getPtr(connector_handle);
-                if (conn.*) |*tex| {
-                    tex.deinit();
-                }
+                // removing from the pool deinits the Connector (and its texture)
                 self.connector_pool.remove(connector_handle);
             }
         }
