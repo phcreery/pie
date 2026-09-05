@@ -1333,7 +1333,7 @@ pub const Pipeline = struct {
                     // but I think the stride is aligned to COPY_BYTES_PER_ROW_ALIGNMENT
                     // need to review if this is needed. it initially seemed to work without it
                     const bytes_per_row = sock.roi.?.w * sock.format.bpp();
-                    const aligned_bytes_per_row = ((bytes_per_row + gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
+                    const aligned_bytes_per_row = gpu.alignBytesPerRow(bytes_per_row);
                     const size_bytes = aligned_bytes_per_row * sock.roi.?.h;
 
                     slog.debug("Allocating {d} bytes upload buffer for source socket '{s} > {s}'", .{ size_bytes, first_node_ptr.desc.name, sock.name });
@@ -1366,7 +1366,7 @@ pub const Pipeline = struct {
                     // but I think the stride is aligned to COPY_BYTES_PER_ROW_ALIGNMENT
                     // need to review if this is needed. it initially seemed to work without it
                     const bytes_per_row = sock.roi.?.w * sock.format.bpp();
-                    const aligned_bytes_per_row = ((bytes_per_row + gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
+                    const aligned_bytes_per_row = gpu.alignBytesPerRow(bytes_per_row);
                     const size_bytes = aligned_bytes_per_row * sock.roi.?.h;
                     slog.debug("Allocating {d} bytes download buffer for sink socket '{s} > {s}'", .{ size_bytes, last_node_ptr.desc.name, sock.name });
                     slog.debug("Sink socket ROI {any}", .{.{ .w = sock.roi.?.w, .h = sock.roi.?.h }});
@@ -1569,7 +1569,7 @@ pub const Pipeline = struct {
                     {
                         // wgpu requires bytes per row to be aligned to 256 bytes, so we need to remove the padding bytes if they exist
                         const bytes_per_row = sock.roi.?.w * sock.format.bpp();
-                        const aligned_bytes_per_row = ((bytes_per_row + gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
+                        const aligned_bytes_per_row = gpu.alignBytesPerRow(bytes_per_row);
 
                         const aligned_size_bytes = aligned_bytes_per_row * sock.roi.?.h;
                         const download_buffer_padded_ptr: [*]u8 = @ptrCast(@alignCast(mapped_ptr));

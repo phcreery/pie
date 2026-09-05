@@ -131,6 +131,14 @@ pub fn compileShader(pipe: PipelineHandle, shader_source: gpu.ShaderSource) !gpu
     return gpu_inst.compileShader(shader_source);
 }
 
+/// Copy dense pixel data into the padded staging upload region for a texture.
+/// `mapped` is the staging pointer handed to `readSource`; `src` is the dense
+/// source; width/height/bpp describe the source image (the padded stride is
+/// derived from wgpu's 256-byte row alignment).
+pub fn copyToStaging(mapped: *anyopaque, src: []const u8, width: u32, height: u32, bpp: u32) void {
+    gpu.copyDenseToStaging(mapped, src, width, height, bpp);
+}
+
 pub fn initParam(pipe: PipelineHandle, desc: ParamDesc, value: anytype) !Param {
     const param = try Param.init(pipe.allocator, desc, value);
     return param;

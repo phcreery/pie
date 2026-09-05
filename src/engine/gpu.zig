@@ -16,6 +16,30 @@ const slog = std.log.scoped(.gpu);
 pub const COPY_BUFFER_ALIGNMENT: std.mem.Alignment = .@"8";
 pub const COPY_BYTES_PER_ROW_ALIGNMENT: u32 = 256; // wgpu.COPY_BYTES_PER_ROW_ALIGNMENT
 
+/// Copy a dense (row-contiguous) pixel buffer into a GPU staging region that
+/// uses wgpu's required padded row stride (bytesPerRow multiple of 256).
+/// `dst` is the mapped staging pointer (already sized by the caller for the
+/// padded layout); `src` is the dense source slice; `width`/`height` are the
+/// texel dimensions and `bpp` the bytes per texel of the source.
+///
+/// This is the inverse of reading `enqueueTexToBuf` output, and is what source
+/// modules should use in `readSource` when the raw buffer is row-contiguous.
+pub fn copyDenseToStaging(dst: *anyopaque, src: []const u8, width: u32, height: u32, bpp: u32) void {
+    const bytes_per_row = width * bpp;
+    const padded_bytes_per_row = alignBytesPerRow(bytes_per_row);
+    const dst_ptr: [*]u8 = @ptrCast(@alignCast(dst));
+    for (0..height) |row| {
+        const d = dst_ptr[row * padded_bytes_per_row ..][0..bytes_per_row];
+        const s = src[row * bytes_per_row ..][0..bytes_per_row];
+        @memcpy(d, s);
+    }
+}
+
+/// Round `bytes_per_row` up to a multiple of `COPY_BYTES_PER_ROW_ALIGNMENT`.
+pub fn alignBytesPerRow(bytes_per_row: u32) u32 {
+    return ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT;
+}
+
 pub const MAX_BIND_GROUPS: usize = 4;
 pub const MAX_BINDINGS: usize = 8;
 

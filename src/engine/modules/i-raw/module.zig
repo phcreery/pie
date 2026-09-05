@@ -188,17 +188,14 @@ pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyo
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
 
-    // copy the raw photosite data into the padded upload buffer row by row.
-    // wgpu requires bytesPerRow aligned to 256; the upload region was sized
-    // with that padding, so stride past the padding each row.
-    const w = raw_image.width;
-    const bytes_per_row = w * @sizeOf(u16);
-    const aligned_bytes_per_row = ((bytes_per_row + 256 - 1) / 256) * 256;
-    const upload_ptr: [*]u8 = @ptrCast(@alignCast(mapped));
-    const src: [*]const u8 = @ptrCast(raw_image.raw_image.ptr);
-    for (0..raw_image.height) |row| {
-        @memcpy(upload_ptr[row * aligned_bytes_per_row ..][0..bytes_per_row], src[row * bytes_per_row ..][0..bytes_per_row]);
-    }
+    // raw_image is row-contiguous u16; stage it into the padded upload layout
+    api.copyToStaging(
+        mapped,
+        std.mem.sliceAsBytes(raw_image.raw_image),
+        @intCast(raw_image.width),
+        @intCast(raw_image.height),
+        @sizeOf(u16),
+    );
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
