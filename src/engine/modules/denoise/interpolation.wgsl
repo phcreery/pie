@@ -10,40 +10,36 @@ struct ImgParams {
 
 @group(0) @binding(0) var<uniform>  img_params: ImgParams;
 @group(1) @binding(0) var           input:  texture_2d<f32>;
-@group(1) @binding(1) var           output: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(1) var           output: texture_storage_2d<r16float, write>;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let coords = vec2<i32>(global_id.xy);
-    let px = textureLoad(input, coords, 0);
-    let pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a));
+    // single-channel rggb mosaic: each texel is exactly one photosite
+    let v = textureLoad(input, coords, 0).r;
 
-    // NOTE: white balance should be applied before interpolation.
-    let r_denom = max(1.0, img_params.white.r - img_params.black.r);
-    let g_denom = max(1.0, img_params.white.g - img_params.black.g);
-    let b_denom = max(1.0, img_params.white.b - img_params.black.b);
-    let g2_denom = max(1.0, img_params.white.a - img_params.black.a);
+    // bayer phase of this photosite:
+    // (0,0) = R, (1,0) = G1, (0,1) = G2, (1,1) = B
+    let phase_x = coords.x % 2;
+    let phase_y = coords.y % 2;
 
-    // Packed raw layout:
-    // even rows: [R, G1, R, G1]
-    // odd rows : [G2, B, G2, B]
-    let is_even_y = (coords.y % 2) == 0;
-
-    var values: vec4<f32>;
-    if (is_even_y) {
-        values = vec4<f32>(
-            clamp(((pxf.r - img_params.black.r) / r_denom), 0.0, 1.0),
-            clamp(((pxf.g - img_params.black.g) / g_denom), 0.0, 1.0),
-            clamp(((pxf.b - img_params.black.r) / r_denom), 0.0, 1.0),
-            clamp(((pxf.a - img_params.black.g) / g_denom), 0.0, 1.0),
-        );
+    // pick the black/white per-channel values for this photosite's color
+    var black: f32;
+    var white: f32;
+    if (phase_x == 0 && phase_y == 0) {
+        black = img_params.black.r;
+        white = img_params.white.r;
+    } else if (phase_x == 1 && phase_y == 0) {
+        black = img_params.black.g;
+        white = img_params.white.g;
+    } else if (phase_x == 0 && phase_y == 1) {
+        black = img_params.black.a;
+        white = img_params.white.a;
     } else {
-        values = vec4<f32>(
-            clamp(((pxf.r - img_params.black.a) / g2_denom), 0.0, 1.0),
-            clamp(((pxf.g - img_params.black.b) / b_denom), 0.0, 1.0),
-            clamp(((pxf.b - img_params.black.a) / g2_denom), 0.0, 1.0),
-            clamp(((pxf.a - img_params.black.b) / b_denom), 0.0, 1.0),
-        );
+        black = img_params.black.b;
+        white = img_params.white.b;
     }
 
-    textureStore(output, coords, values);
+    // white balance + normalize to [0,1]
+    let norm = clamp((v - black) / max(1.0, white - black), 0.0, 1.0);
+    textureStore(output, coords, vec4<f32>(norm, 0.0, 0.0, 1.0));
 }

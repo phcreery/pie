@@ -9,11 +9,12 @@ struct ImgParams {
 };
 @group(0) @binding(0) var<uniform> img_params: ImgParams;
 @group(1) @binding(0) var input:  texture_2d<u32>;
-@group(1) @binding(1) var output: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(1) var output: texture_storage_2d<r16float, write>;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    var coords = vec2<i32>(global_id.xy);
+    let coords = vec2<i32>(global_id.xy);
+    // single-channel rggb mosaic: each texel is one photosite
     let px = textureLoad(input, coords, 0);
-    var pxf = vec4<f32>(f32(px.r), f32(px.g), f32(px.b), f32(px.a)); // raw sensor max values
-    textureStore(output, coords, pxf);
+    let v = f16(f32(px.r)); // raw sensor value stored as f16
+    textureStore(output, coords, vec4<f32>(f32(v), 0.0, 0.0, 1.0));
 }

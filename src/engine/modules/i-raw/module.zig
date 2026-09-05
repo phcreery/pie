@@ -109,12 +109,12 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
     const wb_mode: WbMode = @fromBackingInt(@intCast(try api.getParam(pipe, mod, "wb_mode", i32)));
 
-    var roi: api.ROI = .{
+    const roi: api.ROI = .{
         .w = @intCast(raw_image.width),
         .h = @intCast(raw_image.height),
     };
-
-    roi = roi.div(4, 1); // packed RG/GB workaround
+    // NOTE: single-channel rggb storage (one photosite per texel), so the
+    // ROI is the true photosite dimensions of the sensor.
 
     const selected_wb_raw = switch (wb_mode) {
         .cam_mul => raw_image.cam_mul,
@@ -188,8 +188,17 @@ pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyo
     const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
 
-    const upload_buffer_ptr: [*]u16 = @ptrCast(@alignCast(mapped));
-    @memcpy(upload_buffer_ptr, raw_image.raw_image);
+    // copy the raw photosite data into the padded upload buffer row by row.
+    // wgpu requires bytesPerRow aligned to 256; the upload region was sized
+    // with that padding, so stride past the padding each row.
+    const w = raw_image.width;
+    const bytes_per_row = w * @sizeOf(u16);
+    const aligned_bytes_per_row = ((bytes_per_row + 256 - 1) / 256) * 256;
+    const upload_ptr: [*]u8 = @ptrCast(@alignCast(mapped));
+    const src: [*]const u8 = @ptrCast(raw_image.raw_image.ptr);
+    for (0..raw_image.height) |row| {
+        @memcpy(upload_ptr[row * aligned_bytes_per_row ..][0..bytes_per_row], src[row * bytes_per_row ..][0..bytes_per_row]);
+    }
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

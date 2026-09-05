@@ -29,9 +29,8 @@ pub var desc: api.ModuleDesc = .{
 fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const input_sock = try api.getModSocket(pipe, mod, "input");
     var roi: api.ROI = input_sock.roi.?;
-    // const roi_half = roi.div(2, 2);
-    // we have packed RG/GB
-    const roi_half = roi.scaled(2, 0.5);
+    // one output pixel per 2x2 bayer cell -> true half resolution
+    const roi_half = roi.div(2, 2);
     var output_sock = try api.getModSocket(pipe, mod, "output");
     output_sock.roi = roi_half;
 }

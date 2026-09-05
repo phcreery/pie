@@ -5,9 +5,10 @@
     .fingerprint = 0x2257f47b657d2acb,
     .dependencies = .{
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
+        // zig fetch --save=sokol git+https://github.com/phcreery/sokol-zig#a21b4406d835dd4e20533fe90135d28603e92d90
         .sokol = .{
-            .url = "git+https://github.com/phcreery/sokol-zig#2b29778ba82d076d70bf45c1900239f8148de328",
-            .hash = "sokol-0.1.0-pb1HK-QiQABqAKRI8mjH2oYS4lTIRzZTaSsjyuGLqLYJ",
+            .url = "git+https://github.com/phcreery/sokol-zig#a21b4406d835dd4e20533fe90135d28603e92d90",
+            .hash = "sokol-0.1.0-pb1HK4wjQAB164WTrkWDD5TU_Npy0Fgoh_CJ6_G9eixn",
             // .path = "../sokol-zig",
         },
         .cimgui = .{
