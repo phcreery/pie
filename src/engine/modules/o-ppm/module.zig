@@ -77,5 +77,5 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         },
     };
     const node = try api.addNodeDesc(pipe, mod, node_desc);
-    try api.copyConnector(pipe, mod, "input", node, "input");
+    try api.inheritSocket(pipe, mod, "input", node, "input");
 }

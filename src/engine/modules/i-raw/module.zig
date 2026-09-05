@@ -208,5 +208,5 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             },
         },
     );
-    try api.copyConnector(pipe, mod, "output", node, "output");
+    try api.inheritSocket(pipe, mod, "output", node, "output");
 }

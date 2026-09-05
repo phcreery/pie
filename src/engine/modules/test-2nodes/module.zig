@@ -45,7 +45,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-                .roi = null, // populated with api.copyConnector()
+                .roi = null, // populated with api.inheritSocket()
             };
             s[1] = .{
                 .name = "output",
@@ -74,14 +74,14 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-                .roi = null, // populated with api.copyConnector()
+                .roi = null, // populated with api.inheritSocket()
             };
             break :init s;
         },
     };
     const node_sub = try api.addNodeDesc(pipe, mod, node_sub_desc);
 
-    try api.copyConnector(pipe, mod, "input", node_add, "input");
+    try api.inheritSocket(pipe, mod, "input", node_add, "input");
     try api.connectNodesName(pipe, node_add, "output", node_sub, "input");
-    try api.copyConnector(pipe, mod, "output", node_sub, "output");
+    try api.inheritSocket(pipe, mod, "output", node_sub, "output");
 }

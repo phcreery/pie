@@ -340,7 +340,7 @@ pub const Pipeline = struct {
         self.rerouted = true;
     }
 
-    pub fn copyConnector(
+    pub fn inheritSocket(
         self: *Pipeline,
         mod_handle: ModuleHandle,
         mod_socket_name: []const u8,
@@ -374,7 +374,7 @@ pub const Pipeline = struct {
 
         // for input sockets on nodes
         if (node_socket.type.direction() == .input) {
-            node_socket.private.associated_with_module = .{
+            node_socket.private.inherited_from_module = .{
                 .item = mod_handle,
                 .socket_idx = mod_socket_idx,
             };
@@ -382,7 +382,7 @@ pub const Pipeline = struct {
 
         // for output sockets on modules
         if (mod_socket.type.direction() == .output) {
-            mod_socket.private.associated_with_node = .{
+            mod_socket.private.inherited_by_node = .{
                 .item = node_handle,
                 .socket_idx = node_socket_idx,
             };
@@ -781,7 +781,7 @@ pub const Pipeline = struct {
                             var this_sock = try module.getSocketPtr(sock.name);
                             if (this_sock.private.connector_handle == null) {
                                 this_sock.private.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
-                                slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.private.connector_handle.?, module.desc.name, sock.name });
+                                // slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.private.connector_handle.?, module.desc.name, sock.name });
                             }
                         }
                     }
@@ -795,7 +795,7 @@ pub const Pipeline = struct {
                             var this_sock = try node.getSocketPtr(sock.name);
                             if (this_sock.private.connector_handle == null) {
                                 this_sock.private.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
-                                slog.debug("Created output connector handle {any} for node '{s} > {s}'", .{ this_sock.private.connector_handle.?, node.desc.name, sock.name });
+                                // slog.debug("Created output connector handle {any} for node '{s} > {s}'", .{ this_sock.private.connector_handle.?, node.desc.name, sock.name });
                             }
                             // NOTE: this most likely gets discarded when we copy the connector from the module to the node, but we need to create it here in case we do a node-to-node connection without a module in between
                         }
@@ -843,7 +843,7 @@ pub const Pipeline = struct {
     pub fn getConnectedNode(pipe: *Pipeline, socket: api.SocketDesc) ?Socket.SocketConnection(NodeHandle) {
         if (socket.private.connected_to_node) |src_node_handle_connection| {
             return src_node_handle_connection;
-        } else if (socket.private.associated_with_module) |assoc_mod_handle_connection| {
+        } else if (socket.private.inherited_from_module) |assoc_mod_handle_connection| {
             // if the node is not directly connected to another node,
             // check if it is linked to a module then check what that
             // module is connected to and then traverse to the node that
@@ -853,7 +853,7 @@ pub const Pipeline = struct {
             if (assoc_mod_socket.private.connected_to_module) |connected_to_mod_handle_connection| {
                 const connected_to_mod = pipe.module_pool.getPtr(connected_to_mod_handle_connection.item) catch unreachable;
                 const connected_to_mod_socket = connected_to_mod.desc.sockets[connected_to_mod_handle_connection.socket_idx] orelse unreachable;
-                if (connected_to_mod_socket.private.associated_with_node) |src_node_handle_connection| {
+                if (connected_to_mod_socket.private.inherited_by_node) |src_node_handle_connection| {
                     return src_node_handle_connection;
                 }
             }

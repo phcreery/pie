@@ -155,8 +155,8 @@ pub fn setParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []co
     try pipe.setModuleParam(mod_handle, param_name, T, value);
 }
 
-pub fn copyConnector(pipe: PipelineHandle, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
-    return pipe.copyConnector(mod, mod_socket_name, node, node_socket_name);
+pub fn inheritSocket(pipe: PipelineHandle, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
+    return pipe.inheritSocket(mod, mod_socket_name, node, node_socket_name);
 }
 
 /// Add a derived node to a module. Nodes are not recorded in history; this

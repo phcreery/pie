@@ -12,15 +12,20 @@ pub const PrivateMembers = struct {
 
     // FOR GRAPH TRAVERSAL
     // for input sockets of modules
-    connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.connectModules()
+    // populated with pipe.connectModules()
+    connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null,
 
     // for input sockets of nodes
-    connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.connectNodesName()
+    // populated with pipe.connectNodesName()
+    connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null,
 
     // for output sockets of modules
-    associated_with_node: ?SocketConnection(pipeline.NodeHandle) = null, // populated with pipe.copyConnector()
+    // populated with pipe.inheritSocket()
+    inherited_by_node: ?SocketConnection(pipeline.NodeHandle) = null,
+
     // for input sockets of nodes
-    associated_with_module: ?SocketConnection(pipeline.ModuleHandle) = null, // populated with pipe.copyConnector()
+    // populated with pipe.inheritSocket()
+    inherited_from_module: ?SocketConnection(pipeline.ModuleHandle) = null,
 
     // offset in the upload or download staging buffer
     // for source or sink sockets only
@@ -81,15 +86,15 @@ pub fn areCompatible(output: *api.SocketDesc, input: *api.SocketDesc) bool {
     }
     // color profile: the emitted profile must be accepted by the input
     // socket. Null/absent on either side means "don't care" -> compatible.
-    if (compatibleColorProfiles(output.color_profile, input.color_profile)) |ok| {
-        if (!ok) return false;
+    if (!compatibleColorProfiles(output.color_profile, input.color_profile)) {
+        return false;
     }
     return true;
 }
 
-fn compatibleColorProfiles(a: ?api.Connector.ColorProfile, b: ?api.Connector.ColorProfile) ?bool {
-    const pa = a orelse return null;
-    const pb = b orelse return null;
+fn compatibleColorProfiles(a: ?api.Connector.ColorProfile, b: ?api.Connector.ColorProfile) bool {
+    const pa = a orelse return true;
+    const pb = b orelse return true;
     return pa.acceptedBy(pb);
 }
 
@@ -101,8 +106,8 @@ pub fn areSimilar(sock_a: *api.SocketDesc, sock_b: *api.SocketDesc) bool {
     if (sock_a.format != sock_b.format) return false;
     // color profile is part of the socket identity; "any" on either side
     // (or absent) matches. exact mismatches are not similar.
-    if (compatibleColorProfiles(sock_a.color_profile, sock_b.color_profile)) |ok| {
-        if (!ok) return false;
+    if (!compatibleColorProfiles(sock_a.color_profile, sock_b.color_profile)) {
+        return false;
     }
     // check that ROI are the same
     // if (sock_a.roi) |a_roi| {

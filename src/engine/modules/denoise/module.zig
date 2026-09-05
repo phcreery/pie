@@ -48,6 +48,6 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try api.copyConnector(pipe, mod, "input", node_interpolation, "input");
-    try api.copyConnector(pipe, mod, "output", node_interpolation, "output");
+    try api.inheritSocket(pipe, mod, "input", node_interpolation, "input");
+    try api.inheritSocket(pipe, mod, "output", node_interpolation, "output");
 }

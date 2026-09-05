@@ -119,6 +119,6 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
-    try api.copyConnector(pipe, mod, "input", node_color, "input");
-    try api.copyConnector(pipe, mod, "output", node_color, "output");
+    try api.inheritSocket(pipe, mod, "input", node_color, "input");
+    try api.inheritSocket(pipe, mod, "output", node_color, "output");
 }
