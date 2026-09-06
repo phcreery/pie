@@ -6,7 +6,7 @@ const ModulePool = pipeline.ModulePool;
 const Node = @import("Node.zig");
 const NodePool = pipeline.NodePool;
 
-const Connector = @import("Connector.zig").Connector;
+const Connector = @import("Connector.zig");
 const ConnectorPool = pipeline.ConnectorPool;
 
 pub const PerfMetrics = struct {
