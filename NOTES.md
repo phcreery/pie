@@ -123,6 +123,11 @@
   - https://codeberg.org/shahwali/knots/src/branch/main/src/gpu/backend/vulkan/shaders
   - https://github.com/q-uint/molten-zig
   - https://codeberg.org/7Games/zig-sdl3/src/branch/master-gpu/gpu_examples/shaders/zig
+    - see compileZigToSpirv() for
+    - dynamic imports of shaders: https://codeberg.org/7Games/zig-sdl3/src/branch/master-gpu/build/shaders.zig
+  - https://codeberg.org/ziglang/zig/src/branch/master/lib/std/spirv.zig
+  - https://codeberg.org/ziglang/zig/src/branch/master/test/cases/callconv_spirv.zig
+  - https://codeberg.org/ziglang/zig/src/branch/master/test/cases/image_sampling_spirv.zig
 
   - sokol: currently there's no way to get the data back to the CPU ... but we can create and injecting the storage buffer ourself
     - https://github.com/floooh/sokol/issues/1246

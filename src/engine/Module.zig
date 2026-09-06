@@ -9,6 +9,8 @@ id: []const u8,
 desc: api.ModuleDesc,
 enabled: bool,
 
+dirty: bool = false,
+
 params: [api.MAX_PARAMS_PER_MODULE]?Param = @splat(null),
 // for the buffer that will live on the gpu
 // the handle is needed for gpu pipeline bindings

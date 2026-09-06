@@ -404,10 +404,8 @@ pub const Pipeline = struct {
         const mod = try self.module_pool.getPtr(mod_handle);
         const param = try mod.getParamPtr(param_name);
         try param.set(value);
-        // param changes only need the upload/recompute path, not a re-route.
-        // mark this module's nodes (and their downstream successors) dirty.
         self.dirty = true;
-        self.markModuleNodesDirty(mod_handle);
+        mod.dirty = true;
     }
 
     // ================================================
@@ -682,6 +680,7 @@ pub const Pipeline = struct {
         if (self.rerouted) {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
             try self.runModulesPreCheck();
+            try self.perf.timerLap("runModulesPreCheck");
 
             try self.runModulesBuildExecutionOrder(arena);
             try self.perf.timerLap("runModulesBuildExecutionOrder");
@@ -728,7 +727,7 @@ pub const Pipeline = struct {
             try self.runModulesModifyOut();
             try self.perf.timerLap("runModulesModifyOut");
             try self.runNodeSyncSockets();
-            try self.perf.timerLap("syncNodeSockets");
+            try self.perf.timerLap("runNodeSyncSockets");
             try self.runNodesInitConnectorTextures(.{ .refresh = true });
             try self.perf.timerLap("runNodesInitConnectorTextures(refresh)");
 
@@ -738,9 +737,8 @@ pub const Pipeline = struct {
             try self.runNodesUploadSource();
             try self.perf.timerLap("runNodesUploadSource");
             // run only the dirty nodes (params changed) + their downstream successors
-
-            try self.expandDirtyToSuccessors();
             try self.runNodesCreateBindings(.{ .only_dirty = true });
+            try self.perf.timerLap("runNodesCreateBindings");
             try self.runNodes(.{ .only_dirty = true });
             try self.perf.timerLap("runNodes");
             try self.runNodesDownloadSink();
@@ -870,19 +868,6 @@ pub const Pipeline = struct {
             }
         }
         return null;
-    }
-
-    /// Whether `node_handle` is a direct consumer of `producer_handle`'s output.
-    fn isDirectSuccessor(self: *Pipeline, producer_handle: NodeHandle, node_handle: NodeHandle) bool {
-        const node = self.node_pool.getPtr(node_handle) catch return false;
-        for (node.desc.sockets) |socket| {
-            if (socket) |sock| {
-                if (sock.private.connected_to_node) |conn| {
-                    if (conn.item.id == producer_handle.id) return true;
-                }
-            }
-        }
-        return false;
     }
 
     pub fn printPipeToStdout(self: *Pipeline) void {
@@ -1286,7 +1271,7 @@ pub const Pipeline = struct {
                         // keep the node socket in sync so run_size/bindings use the new roi
                         var sock_ptr = node.getSocketPtr(sock.name) catch continue;
                         sock_ptr.roi = expected_roi;
-                        node.dirty = true; // this node must re-run into the new texture
+                        self.markNodeDirty(node);
                     }
                     self.perf.recordConnectorTextureAllocation(conn);
                 }
@@ -1297,6 +1282,7 @@ pub const Pipeline = struct {
     /// Sync each node's socket roi/format from its module's socket (the
     /// authoritative state after runModulesModifyOut). On reroute this happens
     /// naturally via createNodes; on dirty runs nodes keep their old sockets.
+    /// O(total nodes * sockets) — cheap, but runs every dirty frame.
     fn runNodeSyncSockets(self: *Pipeline) !void {
         var node_it = self.node_pool.liveHandles();
         while (node_it.next()) |node_handle| {
@@ -1328,7 +1314,7 @@ pub const Pipeline = struct {
 
             // only rebuild bindings for dirty nodes (texture/param changed); path
             // used by runNodes(.only_dirty=true) after connector refresh/param writes
-            if (options.only_dirty and !node.dirty) continue;
+            if (options.only_dirty and !self.nodeIsDirty(node)) continue;
 
             if (node.desc.type == .compute) {
                 // CREATE DESCRIPTIONS FOR BIND GROUP LAYOUTS AND BIND GROUPS
@@ -1546,11 +1532,9 @@ pub const Pipeline = struct {
     fn runNodesUploadSource(self: *Pipeline) !void {
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
 
-        // early-out: if the source node is not dirty, its staging data is
-        // unchanged -> skip the potentially expensive readSource re-upload
         const first_node_handle = self.node_execution_order.items[0];
         const first_node = try self.node_pool.getPtr(first_node_handle);
-        if (!first_node.dirty) return;
+        if (!self.nodeIsDirty(first_node)) return;
 
         // find the source socket (the first node may also have other sockets)
         var source_sock: ?*api.SocketDesc = null;
@@ -1574,51 +1558,49 @@ pub const Pipeline = struct {
         upload_buffer.unmap();
     }
 
-    /// Mark all nodes in the module's node set dirty (params changed).
-    fn markModuleNodesDirty(self: *Pipeline, mod_handle: ModuleHandle) void {
-        var it = self.node_pool.liveHandles();
-        while (it.next()) |node_handle| {
-            const node = self.node_pool.getPtr(node_handle) catch continue;
-            if (node.mod.id == mod_handle.id) node.dirty = true;
+    /// Note: this only works when called while traversing node_execution_order
+    /// since it will only propogate downstream dirty flags if the very previous
+    /// node is dirty. The dirty flag is then memoized so that the next node
+    /// in the execution order can look back.
+    /// Amortized O(edges-per-dirty-path) thanks to the memoize-on-discover.
+    fn nodeIsDirty(self: *Pipeline, node: *Node) bool {
+        const mod = self.module_pool.getPtr(node.mod) catch return false;
+        if (mod.dirty) return true;
+
+        // walk upstream: any input socket connected to a node whose module is
+        // dirty (transitively) makes this module dirty too
+        for (node.desc.sockets) |socket| {
+            if (socket) |sock| {
+                const conn = sock.private.connected_to_node orelse continue;
+                const producer = self.node_pool.getPtr(conn.item) catch continue;
+                if (self.nodeIsDirty(producer)) {
+                    mod.dirty = true; // memoize so later checks short-circuit
+                    return true;
+                }
+            }
         }
+        return false;
+    }
+
+    fn markNodeDirty(self: *Pipeline, node: *Node) void {
+        const mod = self.module_pool.getPtr(node.mod) catch return;
+        mod.dirty = true;
     }
 
     fn markAllNodesDirty(self: *Pipeline) void {
-        var it = self.node_pool.liveHandles();
-        while (it.next()) |node_handle| {
-            const node = self.node_pool.getPtr(node_handle) catch continue;
-            node.dirty = true;
+        // full rebuild: mark every module; nodes derive dirtiness from them
+        var it = self.module_pool.liveHandles();
+        while (it.next()) |mod_handle| {
+            const mod = self.module_pool.getPtr(mod_handle) catch continue;
+            mod.dirty = true;
         }
     }
 
     fn clearAllNodesDirty(self: *Pipeline) void {
-        var it = self.node_pool.liveHandles();
-        while (it.next()) |node_handle| {
-            const node = self.node_pool.getPtr(node_handle) catch continue;
-            node.dirty = false;
-        }
-    }
-
-    /// Expand the dirty set to include every downstream successor (nodes that
-    /// transitively consume a dirty node's output connectors).
-    fn expandDirtyToSuccessors(self: *Pipeline) !void {
-        var changed = true;
-        while (changed) {
-            changed = false;
-            var it = self.node_pool.liveHandles();
-            while (it.next()) |node_handle| {
-                const node = try self.node_pool.getPtr(node_handle);
-                if (node.dirty) continue;
-                var succ_it = self.node_pool.liveHandles();
-                while (succ_it.next()) |producer_handle| {
-                    const producer = try self.node_pool.getPtr(producer_handle);
-                    if (producer.dirty and self.isDirectSuccessor(producer_handle, node_handle)) {
-                        node.dirty = true;
-                        changed = true;
-                        break;
-                    }
-                }
-            }
+        var it = self.module_pool.liveHandles();
+        while (it.next()) |mod_handle| {
+            const mod = self.module_pool.getPtr(mod_handle) catch continue;
+            mod.dirty = false;
         }
     }
 
@@ -1634,7 +1616,7 @@ pub const Pipeline = struct {
 
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
-            if (options.only_dirty and !node.dirty) continue;
+            if (options.only_dirty and !self.nodeIsDirty(node)) continue;
             slog.debug("Enqueueing node '{s}'", .{node.desc.name});
             nodes_ran += 1;
             try self.enqueueNode(&encoder, node_handle, node, &upload_buffer, &download_buffer);
@@ -1706,6 +1688,9 @@ pub const Pipeline = struct {
         }
     }
 
+    /// Download the sink texture to CPU and call the sink module's writeSink.
+    /// NOTE: allocates a full trimmed copy (`mapped_trimmed`) every dirty frame
+    /// to strip row padding — biggest per-frame allocation in the hot path.
     fn runNodesDownloadSink(self: *Pipeline) !void {
         var download_buffer = self.download_buffer orelse return error.PipelineMissingBuffer;
 
@@ -1767,6 +1752,10 @@ pub const Pipeline = struct {
         download_buffer.unmap();
     }
 
+    /// Free connectors no longer referenced by any module/node socket.
+    /// Runs on reroute only. O(connectors * (modules*nodes)) worst case — the
+    /// nested module/node scans make this quadratic-ish, but only on structural
+    /// rebuilds, not per dirty frame.
     fn freeUnusedConnectors(self: *Pipeline, arena: std.mem.Allocator) !void {
         var connector_handles = try std.ArrayList(ConnectorHandle).initCapacity(arena, self.connector_pool.len());
         defer connector_handles.deinit(arena);
@@ -1947,6 +1936,7 @@ pub fn PooledDagDfsIterator(T: type) type {
 /// Builds a DAG graph for the node by connecting nodes based on connected_to_* and associated_with_* fields,
 /// then performs a topological sort to determine execution order
 /// this used to be the default way to build the execution order for modules/nodes
+/// Runs on reroute only (module+node execution order). O(vertices + edges).
 pub fn buildGraph(
     T: type,
     pool: *Pool(T),

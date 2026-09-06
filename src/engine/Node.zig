@@ -11,10 +11,6 @@ shader: ?gpu.Shader = null,
 compute_pipeline: ?gpu.ComputePipeline = null,
 bindings: ?gpu.Bindings = null,
 
-/// true when this node (or an upstream node) has dirty parameters/changes and
-/// therefore needs to be re-run this frame. Cleared after the run completes.
-dirty: bool = false,
-
 /// debug: number of times this node has been enqueued (dispatched) by the
 /// pipeline. Useful for tests verifying dirty-region invalidation.
 run_count: u32 = 0,
