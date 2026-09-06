@@ -1,6 +1,7 @@
 enable f16;
 struct Params {
     rotation_deg: f32,
+    meta_rotation_deg: f32,
 };
 struct ImgParams {
     black:          vec4<f32>,
@@ -40,7 +41,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // of the output image to the current output pixel
     var output_coords_f32 = vec2<f32>(output_coords);
     let output_vec     = output_coords_f32 - center_output;
-    let rotation_rad   = radians(params.rotation_deg);
+    let rotation_rad   = radians(params.rotation_deg + params.meta_rotation_deg);
     let rotated_vec    = rotate2D(output_vec, -rotation_rad);
     let rotated_coords = rotated_vec + center_input;
     var input_coords   = vec2<i32>(

@@ -8,11 +8,12 @@ pub var desc: api.ModuleDesc = .{
     .params = init: {
         var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
         p[0] = .{ .name = "rotation_deg", .len = 1, .typ = .f32 };
+        p[1] = .{ .name = "meta_rotation_deg", .len = 1, .typ = .f32 };
         break :init p;
     },
     .params_ui = init: {
         var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
-        ui[0] = .{ .name = "rotation_deg", .control = .{ .slider = .{ .min = -180, .max = 360, .step = 0.5, .suffix = " deg" } } };
+        ui[0] = .{ .name = "rotation_deg", .control = .{ .slider = .{ .min = -180, .max = 180, .step = 0.5, .suffix = " deg" } } };
         break :init ui;
     },
     .sockets = init: {
@@ -40,6 +41,7 @@ pub var desc: api.ModuleDesc = .{
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParamNamed(pipe, mod, "rotation_deg", @as(f32, 0.0));
+    try api.initParamNamed(pipe, mod, "meta_rotation_deg", @as(f32, 0.0));
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
@@ -59,14 +61,13 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     var output_sock = try api.getModSocket(pipe, mod, "output");
     output_sock.roi = roi;
 
-    // set the rotation parameter based on the metadata orientation
     const rotation_deg: f32 = switch (metadata_orientation) {
         .normal => 0.0,
         .rotate180 => 180.0,
         .rotate90CW => 90.0,
         .rotate270CW => 270.0,
     };
-    try api.setParam(pipe, mod, "rotation_deg", f32, rotation_deg);
+    try api.setParam(pipe, mod, "meta_rotation_deg", f32, rotation_deg);
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

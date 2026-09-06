@@ -399,8 +399,10 @@ pub const Pipeline = struct {
         const mod = try self.module_pool.getPtr(mod_handle);
         const param = try mod.getParamPtr(param_name);
         try param.set(value);
-        // param changes only need the upload/recompute path, not a re-route
+        // param changes only need the upload/recompute path, not a re-route.
+        // mark this module's nodes (and their downstream successors) dirty.
         self.dirty = true;
+        self.markModuleNodesDirty(mod_handle);
     }
 
     // ================================================
@@ -711,11 +713,12 @@ pub const Pipeline = struct {
             // Then run nodes
             try self.runNodesBuildExecutionOrder(arena);
             try self.perf.timerLap("runNodesBuildExecutionOrder");
-            try self.runNodesInitConnectorTextures();
+
+            try self.runNodesInitConnectorTextures(.{});
             try self.perf.timerLap("runNodesInitConnectorTextures");
             try self.runNodesAllocateStagingBuffersForTextures();
             try self.perf.timerLap("runNodesAllocateStagingBuffersForTextures");
-            try self.runNodesCreateBindings();
+            try self.runNodesCreateBindings(.{ .only_dirty = true });
             try self.perf.timerLap("runNodesCreateBindings");
 
             try self.freeUnusedConnectors(arena);
@@ -724,19 +727,35 @@ pub const Pipeline = struct {
             self.printPipeToStdout();
             self.rerouted = false;
             self.dirty = true;
+            self.markAllNodesDirty(); // full rebuild: everything needs to run
         }
 
         if (self.dirty) {
+            // re-run modifyOut so modules can update output rois/format from the
+            // changed params (e.g. swap-roi); then detect stale connector textures
+            try self.runModulesModifyOut();
+            try self.perf.timerLap("runModulesModifyOut");
+            try self.runNodeSyncSockets();
+            try self.perf.timerLap("syncNodeSockets");
+            try self.runNodesInitConnectorTextures(.{ .refresh = true });
+            try self.perf.timerLap("runNodesInitConnectorTextures(refresh)");
+
+            // only upload params for modules whose nodes are dirty
             try self.runModulesUploadParams(arena);
             try self.perf.timerLap("runModulesUploadParams");
             try self.runNodesUploadSource();
             try self.perf.timerLap("runNodesUploadSource");
-            try self.runNodes();
+            // run only the dirty nodes (params changed) + their downstream successors
+
+            try self.expandDirtyToSuccessors();
+            try self.runNodesCreateBindings(.{ .only_dirty = true });
+            try self.runNodes(.{ .only_dirty = true });
             try self.perf.timerLap("runNodes");
             try self.runNodesDownloadSink();
             try self.perf.timerLap("runNodesDownloadSink");
 
             self.dirty = false;
+            self.clearAllNodesDirty();
         }
 
         {
@@ -1203,34 +1222,107 @@ pub const Pipeline = struct {
     /// also creates bindings for each shader
     ///
     /// similar to vkdt dt_graph_run_nodes_allocate()
-    fn runNodesInitConnectorTextures(self: *Pipeline) !void {
+    const InitConnectorTexturesOptions = struct {
+        /// refresh mode: only (re)create textures whose roi/format no longer
+        /// match the module socket (authoritative after modifyOut), free stale
+        /// textures, sync node socket roi/format, and mark the node dirty.
+        /// default (false): full init - always allocate, node socket is source.
+        refresh: bool = false,
+    };
+
+    fn runNodesInitConnectorTextures(self: *Pipeline, options: InitConnectorTexturesOptions) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
+            const mod = try self.module_pool.getPtr(node.mod);
             for (node.desc.sockets) |socket| {
                 if (socket) |sock| {
-                    if (sock.type.direction() == .output) {
-                        const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
-                        var buf: [256]u8 = undefined;
-                        const str = try std.fmt.bufPrint(&buf, "id: {d}", .{connector_handle.id});
-                        // slog.debug("Allocating output texture for node '{s} > {s}' with connector handle {any}", .{ node.desc.name, sock.name, connector_handle });
+                    if (sock.type.direction() != .output) continue;
+                    const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
+                    const conn = try self.connector_pool.getPtr(connector_handle);
+
+                    // resolve the authoritative roi/format: in refresh mode the
+                    // module socket (updated by modifyOut) wins; otherwise the
+                    // node socket (as created by createNodes)
+                    var roi: ?api.ROI = null;
+                    var fmt: gpu.TextureFormat = sock.format;
+                    if (options.refresh) {
+                        const mod_sock = mod.getSocketPtr(sock.name) catch continue;
+                        roi = mod_sock.roi;
+                        fmt = mod_sock.format;
+                    } else {
+                        roi = sock.roi;
+                    }
+                    const expected_roi = roi orelse continue;
+
+                    const need_alloc = blk: {
+                        const tex = conn.*.texture orelse break :blk true;
+                        if (options.refresh) {
+                            if (!std.meta.eql(tex.roi, expected_roi)) break :blk true;
+                            if (tex.format != fmt) break :blk true;
+                        }
+                        break :blk false;
+                    };
+                    if (!need_alloc) continue;
+
+                    var buf: [256]u8 = undefined;
+                    const str = try std.fmt.bufPrint(&buf, "id: {d}", .{connector_handle.id});
+                    if (options.refresh) {
+                        slog.debug("Refreshing output texture for node '{s} > {s}' (roi/format changed)", .{ node.desc.name, sock.name });
+                    } else {
                         slog.debug("Allocating output texture for node '{s} > {s}'", .{ node.desc.name, sock.name });
-                        const roi = sock.roi orelse return error.NodeOutputSocketMissingROICode;
-                        const texture = try gpu.Texture.init(gpu_inst, str, sock.format, roi);
-                        // defer texture.deinit();
-                        // store texture in connector pool
-                        const conn = try self.connector_pool.getPtr(connector_handle);
-                        conn.*.texture = texture;
+                    }
+                    // free the old texture before replacing (refresh only; full
+                    // init starts with a null texture)
+                    if (conn.*.texture) |*old| old.deinit();
+                    const texture = try gpu.Texture.init(gpu_inst, str, fmt, expected_roi);
+                    conn.*.texture = texture;
+                    if (options.refresh) {
+                        // keep the node socket in sync so run_size/bindings use the new roi
+                        var sock_ptr = node.getSocketPtr(sock.name) catch continue;
+                        sock_ptr.roi = expected_roi;
+                        node.dirty = true; // this node must re-run into the new texture
                     }
                 }
             }
         }
     }
 
-    fn runNodesCreateBindings(self: *Pipeline) !void {
+    /// Sync each node's socket roi/format from its module's socket (the
+    /// authoritative state after runModulesModifyOut). On reroute this happens
+    /// naturally via createNodes; on dirty runs nodes keep their old sockets.
+    fn runNodeSyncSockets(self: *Pipeline) !void {
+        var node_it = self.node_pool.liveHandles();
+        while (node_it.next()) |node_handle| {
+            const node = try self.node_pool.getPtr(node_handle);
+            const mod = try self.module_pool.getPtr(node.mod);
+            for (&node.desc.sockets) |*maybe_sock| {
+                if (maybe_sock.*) |*sock| {
+                    if (mod.getSocketPtr(sock.name)) |mod_sock| {
+                        sock.roi = mod_sock.roi;
+                        sock.format = mod_sock.format;
+                        sock.color_profile = mod_sock.color_profile;
+                    } else |_| {}
+                }
+            }
+        }
+    }
+
+    /// Re-run only the dirty nodes (plus their DAG successors), in topo order.
+    const RunNodesOptions = struct {
+        /// only enqueue nodes marked dirty (and their DAG successors).
+        /// default: run every node (full pass).
+        only_dirty: bool = false,
+    };
+
+    fn runNodesCreateBindings(self: *Pipeline, options: RunNodesOptions) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
+
+            // only rebuild bindings for dirty nodes (texture/param changed); path
+            // used by runNodes(.only_dirty=true) after connector refresh/param writes
+            if (options.only_dirty and !node.dirty) continue;
 
             if (node.desc.type == .compute) {
                 // CREATE DESCRIPTIONS FOR BIND GROUP LAYOUTS AND BIND GROUPS
@@ -1448,37 +1540,96 @@ pub const Pipeline = struct {
     fn runNodesUploadSource(self: *Pipeline) !void {
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
 
-        upload_buffer.map();
-
-        // we currently only support one upload in the entire pipeline
-        // so we are going check if the first node has a source connector
+        // early-out: if the source node is not dirty, its staging data is
+        // unchanged -> skip the potentially expensive readSource re-upload
         const first_node_handle = self.node_execution_order.items[0];
-        var first_node = try self.node_pool.getPtr(first_node_handle);
+        const first_node = try self.node_pool.getPtr(first_node_handle);
+        if (!first_node.dirty) return;
 
-        // TODO: support multiple source uploads in the future
-        // TODO: find the correct input socket by type
-        if (first_node.desc.sockets[0]) |*sock| {
-            if (sock.type == .source) {
-                const first_node_mod = try self.module_pool.getPtr(first_node.*.mod);
-                if (first_node_mod.desc.readSource) |readSourceFn| {
-                    slog.debug("Uploading source data for first node", .{});
-                    const mapped_ptr = sock.*.private.staging_ptr orelse unreachable;
-                    slog.debug("Calling readSource function for first node", .{});
-                    try readSourceFn(self, first_node.*.mod, mapped_ptr);
-                } else {
-                    slog.err("First node source module has no readSource function defined", .{});
-                    return error.NodeMissingReadSourceFunction;
+        // find the source socket (the first node may also have other sockets)
+        var source_sock: ?*api.SocketDesc = null;
+        for (&first_node.desc.sockets) |*maybe_sock| {
+            if (maybe_sock.*) |*sock| {
+                if (sock.type == .source) {
+                    source_sock = sock;
+                    break;
                 }
-            } else {
-                slog.err("First node input socket is not of type source, skipping upload", .{});
-                return error.FirstNodeInputSocketNotSource;
             }
         }
+        const sock = source_sock orelse return error.FirstNodeInputSocketNotSource;
+        const source_mod = try self.module_pool.getPtr(first_node.mod);
+        const readSourceFn = source_mod.desc.readSource orelse return error.NodeMissingReadSourceFunction;
 
+        upload_buffer.map();
+        slog.debug("Uploading source data for first node", .{});
+        const mapped_ptr = sock.private.staging_ptr orelse unreachable;
+        slog.debug("Calling readSource function for first node", .{});
+        try readSourceFn(self, first_node.mod, mapped_ptr);
         upload_buffer.unmap();
     }
 
-    fn runNodes(self: *Pipeline) !void {
+    /// Mark all nodes in the module's node set dirty (params changed).
+    fn markModuleNodesDirty(self: *Pipeline, mod_handle: ModuleHandle) void {
+        var it = self.node_pool.liveHandles();
+        while (it.next()) |node_handle| {
+            const node = self.node_pool.getPtr(node_handle) catch continue;
+            if (node.mod.id == mod_handle.id) node.dirty = true;
+        }
+    }
+
+    fn markAllNodesDirty(self: *Pipeline) void {
+        var it = self.node_pool.liveHandles();
+        while (it.next()) |node_handle| {
+            const node = self.node_pool.getPtr(node_handle) catch continue;
+            node.dirty = true;
+        }
+    }
+
+    fn clearAllNodesDirty(self: *Pipeline) void {
+        var it = self.node_pool.liveHandles();
+        while (it.next()) |node_handle| {
+            const node = self.node_pool.getPtr(node_handle) catch continue;
+            node.dirty = false;
+        }
+    }
+
+    /// Whether `node_handle` is a direct consumer of `producer_handle`'s output.
+    fn isDirectSuccessor(self: *Pipeline, producer_handle: NodeHandle, node_handle: NodeHandle) bool {
+        const node = self.node_pool.getPtr(node_handle) catch return false;
+        for (node.desc.sockets) |socket| {
+            if (socket) |sock| {
+                if (sock.private.connected_to_node) |conn| {
+                    if (conn.item.id == producer_handle.id) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Expand the dirty set to include every downstream successor (nodes that
+    /// transitively consume a dirty node's output connectors).
+    fn expandDirtyToSuccessors(self: *Pipeline) !void {
+        var changed = true;
+        while (changed) {
+            changed = false;
+            var it = self.node_pool.liveHandles();
+            while (it.next()) |node_handle| {
+                const node = try self.node_pool.getPtr(node_handle);
+                if (node.dirty) continue;
+                var succ_it = self.node_pool.liveHandles();
+                while (succ_it.next()) |producer_handle| {
+                    const producer = try self.node_pool.getPtr(producer_handle);
+                    if (producer.dirty and self.isDirectSuccessor(producer_handle, node_handle)) {
+                        node.dirty = true;
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn runNodes(self: *Pipeline, options: RunNodesOptions) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         var upload_buffer = self.upload_buffer orelse return error.PipelineMissingBuffer;
         var download_buffer = self.download_buffer orelse return error.PipelineMissingBuffer;
@@ -1486,60 +1637,79 @@ pub const Pipeline = struct {
         var encoder = try gpu.Encoder.start(gpu_inst);
         defer encoder.deinit();
 
-        // enqueue each node in execution order
+        var nodes_ran: i32 = 0;
+
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
-            switch (node.desc.type) {
-                .compute => {
-                    const mod = try self.module_pool.getPtr(node.*.mod);
-                    if (mod.*.param_handle) |param_handle| {
-                        const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
-                        var param_buf = param_buffer.* orelse return error.ModuleMissingParamBuffer;
-                        const param_offset = mod.*.param_offset orelse return error.ModuleMissingParamBufferOffset;
-                        const param_size_bytes = mod.*.param_size orelse return error.ModuleParamBufferSizeNotSet;
-                        slog.debug("Enqueueing param buffer at offset {d}", .{param_offset});
-                        try encoder.enqueueBufToBuf(&upload_buffer, param_offset, &param_buf, 0, param_size_bytes);
-                    }
-                    if (mod.*.img_param_handle) |img_param_handle| {
-                        const img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
-                        var img_param_buf = img_param_buffer.* orelse return error.ModuleMissingImgParamBuffer;
-                        const img_param_offset = mod.*.img_param_offset orelse return error.ModuleMissingImgParamBufferOffset;
-                        const img_param_size_bytes = mod.*.img_param_size orelse return error.ModuleImgParamBufferSizeNotSet;
-                        slog.debug("Enqueueing img param buffer at offset {d}", .{img_param_offset});
-                        try encoder.enqueueBufToBuf(&upload_buffer, img_param_offset, &img_param_buf, 0, img_param_size_bytes);
-                    }
-                    var compute_pipeline = node.compute_pipeline orelse return error.NodeMissingShader;
-                    var bindings = node.bindings orelse return error.NodeMissingBindings;
-                    slog.debug("Enqueueing compute shader for node '{s}'", .{node.desc.name});
-                    encoder.enqueueShader(
-                        &compute_pipeline,
-                        &bindings,
-                        node.desc.run_size.?,
-                    );
-                },
-                .source => {
-                    slog.debug("Enqueueing source node '{s}' buffer to texture copy", .{node.desc.name});
-                    const connector_handle = self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle;
-                    const connector = try self.connector_pool.getPtr(connector_handle);
-                    var tex = connector.*.texture orelse return error.PipelineMissingSourceNodeTexture;
-                    const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
-                    const roi = node.desc.sockets[0].?.roi orelse unreachable;
-                    slog.debug("Source node staging offset: {d}", .{staging_offset});
-                    try encoder.enqueueBufToTex(&upload_buffer, staging_offset, &tex, roi);
-                },
-                .sink => {
-                    slog.debug("Enqueueing sink node '{s}' texture to buffer copy", .{node.desc.name});
-                    const connector = try self.connector_pool.getPtr(self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle);
-                    var tex = connector.*.texture orelse return error.PipelineMissingSinkNodeTexture;
-                    const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
-                    slog.debug("Sink node staging offset: {d}", .{staging_offset});
-                    const roi = node.desc.sockets[0].?.roi orelse unreachable;
-                    try encoder.enqueueTexToBuf(&download_buffer, staging_offset, &tex, roi);
-                },
-            }
+            if (options.only_dirty and !node.dirty) continue;
+            slog.debug("Enqueueing node '{s}'", .{node.desc.name});
+            nodes_ran += 1;
+            try self.enqueueNode(&encoder, node_handle, node, &upload_buffer, &download_buffer);
         }
 
+        slog.debug("Enqueued {d} nodes", .{nodes_ran});
+
         try gpu_inst.run(encoder.finish());
+    }
+
+    fn enqueueNode(
+        self: *Pipeline,
+        encoder: *gpu.Encoder,
+        node_handle: NodeHandle,
+        node: *Node,
+        upload_buffer: *gpu.Buffer,
+        download_buffer: *gpu.Buffer,
+    ) !void {
+        _ = node_handle;
+        node.run_count += 1;
+        switch (node.desc.type) {
+            .compute => {
+                const mod = try self.module_pool.getPtr(node.*.mod);
+                if (mod.*.param_handle) |param_handle| {
+                    const param_buffer = try self.param_buffer_pool.getPtr(param_handle);
+                    var param_buf = param_buffer.* orelse return error.ModuleMissingParamBuffer;
+                    const param_offset = mod.*.param_offset orelse return error.ModuleMissingParamBufferOffset;
+                    const param_size_bytes = mod.*.param_size orelse return error.ModuleParamBufferSizeNotSet;
+                    slog.debug("Enqueueing param buffer at offset {d}", .{param_offset});
+                    try encoder.enqueueBufToBuf(upload_buffer, param_offset, &param_buf, 0, param_size_bytes);
+                }
+                if (mod.*.img_param_handle) |img_param_handle| {
+                    const img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
+                    var img_param_buf = img_param_buffer.* orelse return error.ModuleMissingImgParamBuffer;
+                    const img_param_offset = mod.*.img_param_offset orelse return error.ModuleMissingImgParamBufferOffset;
+                    const img_param_size_bytes = mod.*.img_param_size orelse return error.ModuleImgParamBufferSizeNotSet;
+                    slog.debug("Enqueueing img param buffer at offset {d}", .{img_param_offset});
+                    try encoder.enqueueBufToBuf(upload_buffer, img_param_offset, &img_param_buf, 0, img_param_size_bytes);
+                }
+                var compute_pipeline = node.compute_pipeline orelse return error.NodeMissingShader;
+                var bindings = node.bindings orelse return error.NodeMissingBindings;
+                slog.debug("Enqueueing compute shader for node '{s}'", .{node.desc.name});
+                encoder.enqueueShader(
+                    &compute_pipeline,
+                    &bindings,
+                    node.desc.run_size.?,
+                );
+            },
+            .source => {
+                slog.debug("Enqueueing source node '{s}' buffer to texture copy", .{node.desc.name});
+                const connector_handle = self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle;
+                const connector = try self.connector_pool.getPtr(connector_handle);
+                var tex = connector.*.texture orelse return error.PipelineMissingSourceNodeTexture;
+                const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
+                const roi = node.desc.sockets[0].?.roi orelse unreachable;
+                slog.debug("Source node staging offset: {d}", .{staging_offset});
+                try encoder.enqueueBufToTex(upload_buffer, staging_offset, &tex, roi);
+            },
+            .sink => {
+                slog.debug("Enqueueing sink node '{s}' texture to buffer copy", .{node.desc.name});
+                const connector = try self.connector_pool.getPtr(self.getNodeConnectorHandle(node.desc.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle);
+                var tex = connector.*.texture orelse return error.PipelineMissingSinkNodeTexture;
+                const staging_offset = node.desc.sockets[0].?.private.staging_offset orelse unreachable;
+                slog.debug("Sink node staging offset: {d}", .{staging_offset});
+                const roi = node.desc.sockets[0].?.roi orelse unreachable;
+                try encoder.enqueueTexToBuf(download_buffer, staging_offset, &tex, roi);
+            },
+        }
     }
 
     fn runNodesDownloadSink(self: *Pipeline) !void {
