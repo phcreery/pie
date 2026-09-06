@@ -1545,13 +1545,17 @@ pub const Pipeline = struct {
     fn runNodesDownloadSink(self: *Pipeline) !void {
         var download_buffer = self.download_buffer orelse return error.PipelineMissingBuffer;
 
-        download_buffer.map();
-
         // we currently only support one download in the entire pipeline
         // so we are going check if the last node has a sink connector
+        // TODO: run all o- nodes
         const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
         var last_node = try self.node_pool.getPtr(last_node_handle);
 
+        // if last node is o-display, just return
+        if (std.mem.eql(u8, last_node.desc.name, "o-display")) {
+            return;
+        }
+        download_buffer.map();
         if (last_node.desc.sockets[0]) |*sock| {
             if (sock.type == .sink) {
                 const last_node_mod = try self.module_pool.getPtr(last_node.*.mod);

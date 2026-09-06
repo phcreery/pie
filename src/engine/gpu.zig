@@ -11,6 +11,16 @@ const c = wgpu.c;
 
 const slog = std.log.scoped(.gpu);
 
+pub const MAX_BIND_GROUPS: usize = 4;
+pub const MAX_BINDINGS: usize = 8;
+
+// Workgroup size must match the compute shader
+pub const WORKGROUP_SIZE_X: u32 = 8;
+pub const WORKGROUP_SIZE_Y: u32 = 8;
+pub const WORKGROUP_SIZE_Z: u32 = 1;
+
+pub const layoutStruct = gpu_data.layoutStruct;
+
 // Copy error Buffer offset 4 is not aligned to block size or `COPY_BUFFER_ALIGNMENT`
 // https://github.com/gfx-rs/wgpu/blob/trunk/wgpu-types/src/lib.rs#L96
 pub const COPY_BUFFER_ALIGNMENT: std.mem.Alignment = .@"8";
@@ -39,16 +49,6 @@ pub fn copyDenseToStaging(dst: *anyopaque, src: []const u8, width: u32, height: 
 pub fn alignBytesPerRow(bytes_per_row: u32) u32 {
     return ((bytes_per_row + COPY_BYTES_PER_ROW_ALIGNMENT - 1) / COPY_BYTES_PER_ROW_ALIGNMENT) * COPY_BYTES_PER_ROW_ALIGNMENT;
 }
-
-pub const MAX_BIND_GROUPS: usize = 4;
-pub const MAX_BINDINGS: usize = 8;
-
-// Workgroup size must match the compute shader
-pub const WORKGROUP_SIZE_X: u32 = 8;
-pub const WORKGROUP_SIZE_Y: u32 = 8;
-pub const WORKGROUP_SIZE_Z: u32 = 1;
-
-pub const layoutStruct = gpu_data.layoutStruct;
 
 fn handleBufferMap(status: c.WGPUMapAsyncStatus, _: c.WGPUStringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
     // slog.debug("buffer_map status={x:.8}\n", .{@intFromEnum(status)});

@@ -63,6 +63,7 @@ pub const ModulesPanel = struct {
 
             switch (ui.control) {
                 .slider => |slider| drawSlider(pipeline, rerun_requested, mod_handle, param_desc.name, param, slider, param_idx),
+                .sliders => |sliders| drawSliders(pipeline, rerun_requested, mod_handle, param_desc.name, param, sliders, param_idx),
                 .combo => |combo| drawCombo(pipeline, rerun_requested, mod_handle, param_desc.name, param, combo.items, param_idx),
                 .checkbox => drawCheckbox(pipeline, rerun_requested, mod_handle, param_desc.name, param, param_idx),
                 .text => drawText(pipeline, rerun_requested, mod_handle, param_desc.name, param, param_idx),
@@ -90,7 +91,7 @@ pub const ModulesPanel = struct {
 
         ig.igPushIDInt(@intCast(param_idx));
         defer ig.igPopID();
-        ig.igSetNextItemWidth(-1); // fill the row
+        // ig.igSetNextItemWidth(-1); // fill the row
 
         switch (param.desc.typ) {
             .f32 => {
@@ -117,6 +118,66 @@ pub const ModulesPanel = struct {
                 }
             },
             .str => {},
+        }
+    }
+
+    fn drawSliders(
+        pipeline: *pie.Pipeline,
+        rerun_requested: *bool,
+        mod_handle: pie.pipeline.ModuleHandle,
+        param_name: []const u8,
+        param: *pie.api.Param,
+        sliders: pie.api.ParamUI.Sliders,
+        param_idx: usize,
+    ) void {
+        if (param.desc.typ != .f32) return; // only float arrays supported for now
+
+        // read the current value as a slice of n f32
+        ig.igPushIDInt(@intCast(param_idx));
+        defer ig.igPopID();
+
+        // header label
+        var label_buf: [128]u8 = undefined;
+        const label = std.mem.printSentinel(&label_buf, "{s}", .{param_name}, 0) catch return;
+        ig.igText("{s}", label.ptr);
+
+        // read the current value as n f32 (dispatch on the param's static len)
+        var values: [16]f32 = @splat(0);
+        const n: usize = @intCast(param.desc.len);
+        if (n > values.len or sliders.n != n) return;        switch (n) {
+            2 => @memcpy(values[0..n], &(param.get([2]f32))),
+            3 => @memcpy(values[0..n], &(param.get([3]f32))),
+            4 => @memcpy(values[0..n], &(param.get([4]f32))),
+            else => return,
+        }
+
+        var changed = false;
+        for (0..n) |i| {
+            const suffix = if (sliders.suffixes) |s| if (i < s.len) s[i] else "" else "";
+            var fmt_buf: [32]u8 = undefined;
+            const fmt = std.mem.printSentinel(&fmt_buf, "%.3f{s}", .{suffix}, 0) catch "%.3f";
+            var id_buf: [64]u8 = undefined;
+            const id = std.mem.printSentinel(&id_buf, "[{d}]", .{i}, 0) catch return;
+
+            const changed_i = ig.igSliderFloatEx(
+                id.ptr,
+                &values[i],
+                sliders.min,
+                sliders.max,
+                fmt.ptr,
+                0,
+            );
+            changed = changed or changed_i;
+        }
+
+        if (changed) {
+            switch (n) {
+                2 => pipeline.setModuleParam(mod_handle, param_name, [2]f32, values[0..2].*) catch {},
+                3 => pipeline.setModuleParam(mod_handle, param_name, [3]f32, values[0..3].*) catch {},
+                4 => pipeline.setModuleParam(mod_handle, param_name, [4]f32, values[0..4].*) catch {},
+                else => {},
+            }
+            rerun_requested.* = true;
         }
     }
 
@@ -152,7 +213,7 @@ pub const ModulesPanel = struct {
 
         ig.igPushIDInt(@intCast(param_idx));
         defer ig.igPopID();
-        ig.igSetNextItemWidth(-1);
+        // ig.igSetNextItemWidth(-1);
 
         const current_item = switch (param.desc.typ) {
             .i32 => param.get(i32),
@@ -213,7 +274,7 @@ pub const ModulesPanel = struct {
 
         ig.igPushIDInt(@intCast(param_idx));
         defer ig.igPopID();
-        ig.igSetNextItemWidth(-1);
+        // ig.igSetNextItemWidth(-1);
         const changed = ig.igInputText(label.ptr, &buf, buf.len, ig.ImGuiInputTextFlags_None);
         if (changed) {
             const s = std.mem.sliceTo(&buf, 0);

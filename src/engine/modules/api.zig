@@ -79,6 +79,9 @@ pub const ParamUI = struct {
     pub const Control = union(enum) {
         /// float/int scalar slider (i32 values are truncated/stepped)
         slider: Slider,
+        /// N sliders for a fixed-length float array param (e.g. [3]f32);
+        /// each element gets its own slider sharing min/max/step/suffix
+        sliders: Sliders,
         /// drop-down of string labels; value is the selected index (i32)
         combo: struct {
             items: []const []const u8,
@@ -89,6 +92,18 @@ pub const ParamUI = struct {
         text: void,
         /// no interactive control, just a label showing the current value
         readonly: void,
+    };
+
+    pub const Sliders = struct {
+        /// number of scalar elements (must match param len)
+        n: usize,
+        min: f32,
+        max: f32,
+        step: f32 = 0.01,
+        /// optional per-element suffixes, e.g. [ "R", "G", "B" ]; null = none
+        suffixes: ?[]const []const u8 = null,
+        /// optional per-element labels shown instead of "name[0]" etc.
+        labels: ?[]const []const u8 = null,
     };
 };
 

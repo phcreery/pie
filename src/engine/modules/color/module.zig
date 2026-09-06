@@ -14,9 +14,9 @@ pub var desc: api.ModuleDesc = .{
     },
     .params_ui = init: {
         var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
-        ui[0] = .{ .name = "wb_temp", .control = .{ .slider = .{ .min = 1000, .max = 12000, .step = 100, .suffix = " K" } } };
-        ui[1] = .{ .name = "wb_tint", .control = .{ .slider = .{ .min = -2, .max = 2, .step = 0.01 } } };
-        ui[2] = .{ .name = "wb_coeff", .control = .{ .readonly = {} } };
+        // ui[0] = .{ .name = "wb_temp", .control = .{ .slider = .{ .min = 1000, .max = 12000, .step = 100, .suffix = " K" } } };
+        // ui[1] = .{ .name = "wb_tint", .control = .{ .slider = .{ .min = -2, .max = 2, .step = 0.01 } } };
+        ui[2] = .{ .name = "wb_coeff", .control = .{ .sliders = .{ .n = 3, .min = 0.0, .max = 4.0, .suffixes = &.{ " R", " G", " B" } } } };
         break :init ui;
     },
     .sockets = init: {
@@ -67,32 +67,32 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
     // Temp/tint is now applied post-demosaic in color.wgsl as a relative
     // camera-space correction before camera->sRGB conversion.
-    const wb_temp = try api.getParam(pipe, mod, "wb_temp", f32);
-    const wb_tint = try api.getParam(pipe, mod, "wb_tint", f32);
-    const wb_coeff = try api.getParam(pipe, mod, "wb_coeff", [3]f32);
-    std.debug.print("color module: wb_temp={d:.0} wb_tint={d:.1}\n", .{ wb_temp, wb_tint });
-    std.debug.print("color module: wb_coeff=({d:.4}, {d:.4}, {d:.4})\n", .{ wb_coeff[0], wb_coeff[1], wb_coeff[2] });
+    // const wb_temp = try api.getParam(pipe, mod, "wb_temp", f32);
+    // const wb_tint = try api.getParam(pipe, mod, "wb_tint", f32);
+    // const wb_coeff = try api.getParam(pipe, mod, "wb_coeff", [3]f32);
+    // std.debug.print("color module: wb_temp={d:.0} wb_tint={d:.1}\n", .{ wb_temp, wb_tint });
+    // std.debug.print("color module: wb_coeff=({d:.4}, {d:.4}, {d:.4})\n", .{ wb_coeff[0], wb_coeff[1], wb_coeff[2] });
 
     // If we have xyz_d65_from_cam from the upstream module, just print the relative
     // correction that the shader will apply. We do not modify img_param.white_balance
     // here, because the raw-domain WB was already applied upstream.
-    const m = try api.getModule(pipe, mod);
-    if (m.img_param) |*img_param| {
-        const neutral_wb = temp_tint.computeWhiteBalanceFromTempTint(default_wb_temp, default_wb_tint, img_param.xyz_d65_from_cam);
-        const target_wb = temp_tint.computeWhiteBalanceFromTempTint(wb_temp, wb_tint, img_param.xyz_d65_from_cam);
-        const rel_r = std.math.clamp(target_wb[0] / @max(neutral_wb[0], 1e-6), 1e-4, 64.0);
-        const rel_g = std.math.clamp(target_wb[1] / @max(neutral_wb[1], 1e-6), 1e-4, 64.0);
-        const rel_b = std.math.clamp(target_wb[2] / @max(neutral_wb[2], 1e-6), 1e-4, 64.0);
-        std.debug.print("color module: wb_temp={d:.0} wb_tint={d:.1} rel_post_demosaic=({d:.4}, {d:.4}, {d:.4})\n", .{
-            wb_temp,
-            wb_tint,
-            rel_r,
-            rel_g,
-            rel_b,
-        });
-    } else {
-        std.debug.print("color module: no img_param propagated yet (sink_after_color path?)\n", .{});
-    }
+    // const m = try api.getModule(pipe, mod);
+    // if (m.img_param) |*img_param| {
+    //     const neutral_wb = temp_tint.computeWhiteBalanceFromTempTint(default_wb_temp, default_wb_tint, img_param.xyz_d65_from_cam);
+    //     const target_wb = temp_tint.computeWhiteBalanceFromTempTint(wb_temp, wb_tint, img_param.xyz_d65_from_cam);
+    //     const rel_r = std.math.clamp(target_wb[0] / @max(neutral_wb[0], 1e-6), 1e-4, 64.0);
+    //     const rel_g = std.math.clamp(target_wb[1] / @max(neutral_wb[1], 1e-6), 1e-4, 64.0);
+    //     const rel_b = std.math.clamp(target_wb[2] / @max(neutral_wb[2], 1e-6), 1e-4, 64.0);
+    //     std.debug.print("color module: wb_temp={d:.0} wb_tint={d:.1} rel_post_demosaic=({d:.4}, {d:.4}, {d:.4})\n", .{
+    //         wb_temp,
+    //         wb_tint,
+    //         rel_r,
+    //         rel_g,
+    //         rel_b,
+    //     });
+    // } else {
+    //     std.debug.print("color module: no img_param propagated yet (sink_after_color path?)\n", .{});
+    // }
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

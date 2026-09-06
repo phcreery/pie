@@ -47,7 +47,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "input");
     const node_desc: api.NodeDesc = .{
         .type = .sink,
-        .name = "sink",
+        .name = "o-display",
         .run_size = null,
         .sockets = init: {
             var s: api.Sockets = @splat(null);

@@ -12,7 +12,7 @@ pub var desc: api.ModuleDesc = .{
     },
     .params_ui = init: {
         var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
-        ui[0] = .{ .name = "rotation_deg", .control = .{ .slider = .{ .min = -180, .max = 180, .step = 0.5, .suffix = " deg" } } };
+        ui[0] = .{ .name = "rotation_deg", .control = .{ .slider = .{ .min = -180, .max = 360, .step = 0.5, .suffix = " deg" } } };
         break :init ui;
     },
     .sockets = init: {
