@@ -144,7 +144,8 @@ pub const ModulesPanel = struct {
         // read the current value as n f32 (dispatch on the param's static len)
         var values: [16]f32 = @splat(0);
         const n: usize = @intCast(param.desc.len);
-        if (n > values.len or sliders.n != n) return;        switch (n) {
+        if (n > values.len or sliders.n != n) return;
+        switch (n) {
             2 => @memcpy(values[0..n], &(param.get([2]f32))),
             3 => @memcpy(values[0..n], &(param.get([3]f32))),
             4 => @memcpy(values[0..n], &(param.get([4]f32))),
@@ -157,7 +158,13 @@ pub const ModulesPanel = struct {
             var fmt_buf: [32]u8 = undefined;
             const fmt = std.mem.printSentinel(&fmt_buf, "%.3f{s}", .{suffix}, 0) catch "%.3f";
             var id_buf: [64]u8 = undefined;
-            const id = std.mem.printSentinel(&id_buf, "[{d}]", .{i}, 0) catch return;
+
+            // per-element label if provided (e.g. "R", "G", "B"), else "[i]"
+            const elem_label = if (sliders.labels) |l| if (i < l.len) l[i] else "" else "";
+            const id = if (elem_label.len > 0)
+                std.mem.printSentinel(&id_buf, "{s}##{d}", .{elem_label, i}, 0) catch return
+            else
+                std.mem.printSentinel(&id_buf, "[{d}]##{d}", .{i, i}, 0) catch return;
 
             const changed_i = ig.igSliderFloatEx(
                 id.ptr,

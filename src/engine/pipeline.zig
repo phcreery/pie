@@ -3,6 +3,7 @@ const gpu = @import("gpu.zig");
 const ROI = @import("ROI.zig");
 const api = @import("modules/api.zig");
 const print = @import("print.zig");
+const perf = @import("pipeline_perf.zig");
 const Module = @import("Module.zig");
 const Node = @import("Node.zig");
 const Socket = @import("Socket.zig");
@@ -85,7 +86,7 @@ pub const Pipeline = struct {
 
     history: History,
 
-    perf: PerfMetrics,
+    perf: perf.PerfMetrics,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -685,7 +686,7 @@ pub const Pipeline = struct {
 
         slog.info("Running pipeline", .{});
 
-        try self.perf.timerStart();
+        try self.perf.startRun();
 
         if (self.rerouted) {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
@@ -878,6 +879,19 @@ pub const Pipeline = struct {
             }
         }
         return null;
+    }
+
+    /// Whether `node_handle` is a direct consumer of `producer_handle`'s output.
+    fn isDirectSuccessor(self: *Pipeline, producer_handle: NodeHandle, node_handle: NodeHandle) bool {
+        const node = self.node_pool.getPtr(node_handle) catch return false;
+        for (node.desc.sockets) |socket| {
+            if (socket) |sock| {
+                if (sock.private.connected_to_node) |conn| {
+                    if (conn.item.id == producer_handle.id) return true;
+                }
+            }
+        }
+        return false;
     }
 
     pub fn printPipeToStdout(self: *Pipeline) void {
@@ -1283,6 +1297,7 @@ pub const Pipeline = struct {
                         sock_ptr.roi = expected_roi;
                         node.dirty = true; // this node must re-run into the new texture
                     }
+                    self.perf.recordConnectorTextureAllocation(conn);
                 }
             }
         }
@@ -1593,19 +1608,6 @@ pub const Pipeline = struct {
         }
     }
 
-    /// Whether `node_handle` is a direct consumer of `producer_handle`'s output.
-    fn isDirectSuccessor(self: *Pipeline, producer_handle: NodeHandle, node_handle: NodeHandle) bool {
-        const node = self.node_pool.getPtr(node_handle) catch return false;
-        for (node.desc.sockets) |socket| {
-            if (socket) |sock| {
-                if (sock.private.connected_to_node) |conn| {
-                    if (conn.item.id == producer_handle.id) return true;
-                }
-            }
-        }
-        return false;
-    }
-
     /// Expand the dirty set to include every downstream successor (nodes that
     /// transitively consume a dirty node's output connectors).
     fn expandDirtyToSuccessors(self: *Pipeline) !void {
@@ -1645,6 +1647,7 @@ pub const Pipeline = struct {
             slog.debug("Enqueueing node '{s}'", .{node.desc.name});
             nodes_ran += 1;
             try self.enqueueNode(&encoder, node_handle, node, &upload_buffer, &download_buffer);
+            self.perf.recordNodeRun(node);
         }
 
         slog.debug("Enqueued {d} nodes", .{nodes_ran});
@@ -1984,144 +1987,3 @@ pub fn buildGraph(
         }
     }
 }
-
-pub const PerfMetrics = struct {
-    allocator: std.mem.Allocator,
-    io: std.Io,
-
-    start_time: std.Io.Timestamp,
-    time_keys: std.ArrayList([]const u8),
-    times: std.StringHashMap(u64),
-
-    upload_buffer_size_bytes: ?usize,
-    upload_buffer_usage_size_bytes: ?usize,
-    download_buffer_size_bytes: ?usize,
-    download_buffer_usage_size_bytes: ?usize,
-
-    number_of_modules: ?usize,
-    number_of_nodes: ?usize,
-    number_of_connectors: ?usize,
-
-    const Self = @This();
-
-    fn init(allocator: std.mem.Allocator, io: std.Io) !PerfMetrics {
-        return PerfMetrics{
-            .allocator = allocator,
-            .io = io,
-            // .timer = undefined,
-            .start_time = .zero,
-            .time_keys = try std.ArrayList([]const u8).initCapacity(allocator, 16),
-            .times = std.StringHashMap(u64).init(allocator),
-            .upload_buffer_size_bytes = null,
-            .upload_buffer_usage_size_bytes = null,
-            .download_buffer_size_bytes = null,
-            .download_buffer_usage_size_bytes = null,
-            .number_of_modules = null,
-            .number_of_nodes = null,
-            .number_of_connectors = null,
-        };
-    }
-
-    fn deinit(self: *PerfMetrics) void {
-        self.times.deinit();
-        self.time_keys.deinit(self.allocator);
-    }
-
-    /// TIMER
-    fn timerStart(self: *PerfMetrics) !void {
-        self.time_keys.clearAndFree(self.allocator);
-        self.times.clearAndFree();
-        self.start_time = std.Io.Clock.awake.now(self.io);
-    }
-
-    fn timerLap(self: *PerfMetrics, name: []const u8) !void {
-        const elapsed_ns = self.start_time.untilNow(self.io, .awake).toNanoseconds();
-        _ = try self.times.put(name, @intCast(elapsed_ns));
-        try self.time_keys.append(self.allocator, name);
-        self.start_time = std.Io.Clock.awake.now(self.io);
-    }
-
-    /// BUFFER
-    fn recordUploadBufferUsage(self: *PerfMetrics, upload_fba: ?gpu.Buffer.Allocator) void {
-        self.upload_buffer_size_bytes = if (upload_fba) |*fba| fba.size else 0;
-        self.upload_buffer_usage_size_bytes = if (upload_fba) |*fba| fba.size - fba.totalFreeSpace() else 0;
-    }
-    fn recordDownloadBufferUsage(self: *PerfMetrics, download_fba: ?gpu.Buffer.Allocator) void {
-        self.download_buffer_size_bytes = if (download_fba) |*fba| fba.size else 0;
-        self.download_buffer_usage_size_bytes = if (download_fba) |*fba| fba.size - fba.totalFreeSpace() else 0;
-    }
-
-    /// POOL
-    fn countModules(self: *PerfMetrics, module_pool: *ModulePool) void {
-        self.number_of_modules = 0;
-        var mod_pool_handles = module_pool.liveHandles();
-        while (mod_pool_handles.next()) |_| {
-            self.number_of_modules.? += 1;
-        }
-    }
-
-    fn countNodes(self: *PerfMetrics, node_pool: *NodePool) void {
-        self.number_of_nodes = 0;
-        var node_pool_handles = node_pool.liveHandles();
-        while (node_pool_handles.next()) |_| {
-            self.number_of_nodes.? += 1;
-        }
-    }
-
-    fn countConnectors(self: *PerfMetrics, connector_pool: *ConnectorPool) void {
-        self.number_of_connectors = 0;
-        var conn_pool_handles = connector_pool.liveHandles();
-        while (conn_pool_handles.next()) |_| {
-            self.number_of_connectors.? += 1;
-        }
-    }
-
-    fn printReportPrintFn(comptime fmt: []const u8, args: anytype) void {
-        std.debug.print(fmt ++ "\n", args);
-    }
-
-    fn printReport(self: *PerfMetrics) void {
-        // const printFn = std.debug.print;
-        // const printFn = slog.info;
-        const printFn = printReportPrintFn;
-
-        var total_time_ns: f64 = 0;
-
-        var it = self.times.iterator();
-        while (it.next()) |entry| {
-            total_time_ns += @as(f64, @floatFromInt(entry.value_ptr.*));
-        }
-
-        printFn("Pipeline Performance Report:", .{});
-        for (self.time_keys.items) |key| {
-            const entry = self.times.getPtr(key) orelse continue;
-            printFn(" {d: >5.2}% {d: >8.2} ms  {s}", .{
-                @as(f64, @floatFromInt(entry.*)) / total_time_ns * 100.0,
-                @as(f64, @floatFromInt(entry.*)) / std.time.ns_per_ms,
-                key,
-            });
-        }
-        printFn(" Total time: {d:.2} ms  (<33.33 ms for 30fps, <16.67 ms for 60fps)", .{total_time_ns / std.time.ns_per_ms});
-
-        const upload_buffer_usage_size_bytes = self.upload_buffer_usage_size_bytes orelse 0;
-        const upload_buffer_size_bytes = self.upload_buffer_size_bytes orelse 0;
-        const download_buffer_usage_size_bytes = self.download_buffer_usage_size_bytes orelse 0;
-        const download_buffer_size_bytes = self.download_buffer_size_bytes orelse 0;
-        printFn(" {d: >5.2}% {B:>6.2}/{B:.2}  {s}", .{
-            @as(f64, @floatFromInt(upload_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(upload_buffer_size_bytes)) * 100.0,
-            upload_buffer_usage_size_bytes,
-            upload_buffer_size_bytes,
-            "upload_buffer_size_bytes",
-        });
-        printFn(" {d: >5.2}% {B:>6.2}/{B:.2}  {s}", .{
-            @as(f64, @floatFromInt(download_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(download_buffer_size_bytes)) * 100.0,
-            download_buffer_usage_size_bytes,
-            download_buffer_size_bytes,
-            "download_buffer_size_bytes",
-        });
-
-        printFn(" {d} modules", .{self.number_of_modules orelse 0});
-        printFn(" {d} nodes", .{self.number_of_nodes orelse 0});
-        printFn(" {d} connectors", .{self.number_of_connectors orelse 0});
-    }
-};

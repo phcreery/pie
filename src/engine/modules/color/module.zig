@@ -16,7 +16,7 @@ pub var desc: api.ModuleDesc = .{
         var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
         // ui[0] = .{ .name = "wb_temp", .control = .{ .slider = .{ .min = 1000, .max = 12000, .step = 100, .suffix = " K" } } };
         // ui[1] = .{ .name = "wb_tint", .control = .{ .slider = .{ .min = -2, .max = 2, .step = 0.01 } } };
-        ui[2] = .{ .name = "wb_coeff", .control = .{ .sliders = .{ .n = 3, .min = 0.0, .max = 4.0, .suffixes = &.{ " R", " G", " B" } } } };
+        ui[2] = .{ .name = "wb_coeff", .control = .{ .sliders = .{ .n = 3, .min = 0.0, .max = 4.0, .labels = &.{ "R", "G", "B" } } } };
         break :init ui;
     },
     .sockets = init: {
