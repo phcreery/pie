@@ -8,22 +8,21 @@ const Pipeline = pie.Pipeline;
 
 const PipeBench = struct {
     pipeline: *Pipeline,
-    arena: std.mem.Allocator,
 
     const Self = @This();
 
-    fn init(p: *Pipeline, arena: std.mem.Allocator) Self {
-        return .{ .pipeline = p, .arena = arena };
+    fn init(p: *Pipeline) Self {
+        return .{ .pipeline = p };
     }
 
     pub fn run(self: Self, _: std.mem.Allocator) void {
         // self.pipeline.rerouted = true;
         self.pipeline.dirty = true;
-        self.pipeline.run(self.arena) catch unreachable;
+        self.pipeline.run() catch unreachable;
     }
 };
 
-fn runPipeBench(allocator: std.mem.Allocator, arena: std.mem.Allocator, pipeline: *Pipeline) !void {
+fn runPipeBench(allocator: std.mem.Allocator, pipeline: *Pipeline) !void {
     const config: zbench.Config = .{
         // .iterations = 0,
         .max_iterations = 100,
@@ -31,7 +30,7 @@ fn runPipeBench(allocator: std.mem.Allocator, arena: std.mem.Allocator, pipeline
     };
     var bench = zbench.Benchmark.init(allocator, config);
     defer bench.deinit();
-    try bench.addParam("Pipeline Benchmark", &PipeBench.init(pipeline, arena), .{});
+    try bench.addParam("Pipeline Benchmark", &PipeBench.init(pipeline), .{});
 
     var buf: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(std.testing.io, &buf);
@@ -44,19 +43,12 @@ test "simple test modules" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    // const aa = allocator;
-
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
-
     const cp_out = console.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
     var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
-    
     const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 1024,
         .download_buffer_size_bytes = 1024,
@@ -83,10 +75,10 @@ test "simple test modules" {
     try pipeline.connectModules(mod_test_multiply, "output", mod_test_nop_glsl, "input");
     try pipeline.connectModules(mod_test_nop_glsl, "output", mod_test_o_2468, "input");
 
-    try pipeline.run(aa);
+    try pipeline.run();
     // pipeline.rerouted = true;
     // pipeline.dirty = true;
-    // try pipeline.run(aa);
+    // try pipeline.run();
 
-    // try runPipeBench(allocator, aa, &pipeline);
+    // try runPipeBench(allocator, &pipeline);
 }

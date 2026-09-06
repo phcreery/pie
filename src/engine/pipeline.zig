@@ -86,6 +86,8 @@ pub const Pipeline = struct {
 
     history: History,
 
+    run_arena: std.heap.ArenaAllocator,
+
     perf: perf.PerfMetrics,
 
     pub fn init(
@@ -147,6 +149,7 @@ pub const Pipeline = struct {
             .gpu = gpu_instance,
 
             .history = history,
+            .run_arena = std.heap.ArenaAllocator.init(allocator),
 
             .upload_buffer = upload_buffer,
             .upload_fba = upload_fba,
@@ -189,6 +192,7 @@ pub const Pipeline = struct {
         self.param_buffer_pool.deinit();
         self.history.deinit();
         self.perf.deinit();
+        self.run_arena.deinit();
 
         if (self.upload_buffer) |*upload_buffer| {
             upload_buffer.deinit();
@@ -661,28 +665,15 @@ pub const Pipeline = struct {
         self.module_pool.remove(mod_handle);
     }
 
-    /// arena is a small memory pool used for temporary allocations during pipeline execution.
-    pub fn run(self: *Pipeline, arena: std.mem.Allocator) !void {
+    /// Run the pipeline. Uses the pipeline-owned `run_arena` for temporary
+    /// allocations; it is reset at the start of each run, so callers don't
+    /// need to manage a scratch arena.
+    pub fn run(self: *Pipeline) !void {
 
-        // Order of Operations:
-        // dt_graph_run_modules
-        // - modify_roi_out
-        // - modify_roi_in
-        // - create_nodes
-        //   - module.create_nodes() called here
-        //   - handles bypassing disabled nodes
-        // - init_connector_images
-        //   - // only allocate memory for output connectors ("write" or "source" types)
-        //
-        // dt_graph_run_nodes_allocate     (potentially free/re-allocate memory, create buffers, images, image_views, and descriptor sets)
-        // - 1. alloc_outputs()  allocate output buffers and create compute shaders for each node
-        // - 2. alloc_outputs2() bind_buffers_to_memory (vkBindImageMemory)
-        // - 3. alloc_outputs3() create_descriptor_sets for each node
-        // dt_graph_run_nodes_upload       (upload all source data to staging memory) (read_source called here)
-        // dt_graph_run_modules_upload_uniforms
-        // dt_graph_run_nodes_record_cmd
-        // (submit queue)
-        // dt_graph_run_nodes_download     (download sink data from GPU to CPU)
+        // reset the scratch arena: all per-run temporaries (graphs, ordering,
+        // staging lists) are freed and reused
+        _ = self.run_arena.reset(.retain_capacity);
+        const arena = self.run_arena.allocator();
 
         slog.info("Running pipeline", .{});
 

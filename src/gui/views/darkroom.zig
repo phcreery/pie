@@ -47,9 +47,7 @@ pub const Darkroom = struct {
         // consume any param edits from the modules panel
         if (self.rerun_requested) {
             self.rerun_requested = false;
-            var arena_instance = std.heap.ArenaAllocator.init(gui.allocator);
-            defer arena_instance.deinit();
-            self.image.pipeline.run(arena_instance.allocator()) catch {};
+            self.image.pipeline.run() catch {};
             const texture = self.image.pipeline.getDisplaySinkTexture() catch null;
             if (texture) |t| {
                 // re-inject (texture may have been reallocated on a rerouted run)
@@ -69,11 +67,8 @@ pub const Darkroom = struct {
 };
 
 fn build_image(allocator: std.mem.Allocator, io: std.Io, pipeline: *pie.pipeline.Pipeline) !*pie.gpu.Texture {
+    _ = allocator;
     _ = io;
-
-    var arena_instance = std.heap.ArenaAllocator.init(allocator);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
 
     const input_filename = "testing/images/DSC_6765.NEF";
 
@@ -103,7 +98,7 @@ fn build_image(allocator: std.mem.Allocator, io: std.Io, pipeline: *pie.pipeline
     try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input");
     try pipeline.connectModules(mod_filmcurv, "output", mod_o_display, "input");
 
-    try pipeline.run(arena);
+    try pipeline.run();
 
     const disp_tex = try pipeline.getDisplaySinkTexture();
     // Use the display texture for rendering

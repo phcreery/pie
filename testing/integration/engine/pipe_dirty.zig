@@ -19,9 +19,6 @@ test "param change only re-runs the dirty module node and its downstream success
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
 
     var gpu_instance = try pie.gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
@@ -45,7 +42,7 @@ test "param change only re-runs the dirty module node and its downstream success
     try pipeline.connectModules(mod_nop, "output", mod_o, "input");
 
     // ---- first run: everything runs once ----
-    try pipeline.run(aa);
+    try pipeline.run();
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source"));
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "multiply"));
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "test-nop-glsl"));
@@ -54,7 +51,7 @@ test "param change only re-runs the dirty module node and its downstream success
     // ---- change 'adder' on multiply (does not affect sink output which expects 2x) ----
     // only multiply + downstream (nop-glsl, sink) should re-run; source must NOT.
     try pipeline.setModuleParam(mod_mult, "adder", f32, 5.0);
-    try pipeline.run(aa);
+    try pipeline.run();
 
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source")); // source must not re-run
     try std.testing.expectEqual(@as(u32, 2), runCount(&pipeline, "multiply")); // multiply must re-run
@@ -63,7 +60,7 @@ test "param change only re-runs the dirty module node and its downstream success
 
     // ---- a param change that doesn't touch anything: same dirty count ----
     try pipeline.setModuleParam(mod_mult, "adder", f32, 6.0);
-    try pipeline.run(aa);
+    try pipeline.run();
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source"));
     try std.testing.expectEqual(@as(u32, 3), runCount(&pipeline, "multiply"));
     try std.testing.expectEqual(@as(u32, 3), runCount(&pipeline, "test-nop-glsl"));
@@ -74,9 +71,6 @@ test "changing a mid-chain param does not re-run upstream nodes" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
 
     var gpu_instance = try pie.gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
@@ -97,14 +91,14 @@ test "changing a mid-chain param does not re-run upstream nodes" {
     try pipeline.connectModules(mod_i, "output", mod_mult, "input");
     try pipeline.connectModules(mod_mult, "output", mod_o, "input");
 
-    try pipeline.run(aa);
+    try pipeline.run();
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source"));
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "multiply"));
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "sink"));
 
     // change adder on multiply; source (i-1234) must stay at 1 run
     try pipeline.setModuleParam(mod_mult, "adder", f32, 4.0);
-    try pipeline.run(aa);
+    try pipeline.run();
 
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source")); // source upstream not re-run
     try std.testing.expectEqual(@as(u32, 2), runCount(&pipeline, "multiply"));
@@ -115,9 +109,6 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
 
     var gpu_instance = try pie.gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
@@ -144,7 +135,7 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
     try pipeline.connectModules(mod_demosaic, "output", mod_disp, "input");
 
     // run 1: swap off -> output roi == raw sensor dims 4016x6016
-    try pipeline.run(aa);
+    try pipeline.run();
     const first_roi = blk: {
         var node_it = pipeline.node_pool.liveHandles();
         while (node_it.next()) |h| {
@@ -162,7 +153,7 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
 
     // run 2: swap on -> output roi becomes 6016x4016 (w/h swapped) -> texture refresh
     try pipeline.setModuleParam(mod_swap, "swap_roi", i32, 1);
-    try pipeline.run(aa);
+    try pipeline.run();
     const second_roi = blk: {
         var node_it = pipeline.node_pool.liveHandles();
         while (node_it.next()) |h| {

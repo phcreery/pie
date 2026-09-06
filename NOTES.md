@@ -38,6 +38,39 @@
 - https://ansel.photos/en/resources/white-balances/#fnref:2
 - https://jackchou00.com/en/posts/cat16-reversibility/
 
+### vkdt
+
+#### order of operations
+
+```
+// Order of Operations:
+// dt_graph_run_modules
+// - modify_roi_out
+// - modify_roi_in
+// - create_nodes
+//   - module.create_nodes() called here
+//   - handles bypassing disabled nodes
+// - init_connector_images
+//   - // only allocate memory for output connectors ("write" or "source" types)
+//
+// dt_graph_run_nodes_allocate     (potentially free/re-allocate memory, create buffers, images, image_views, and descriptor sets)
+// - 1. alloc_outputs()  allocate output buffers and create compute shaders for each node
+// - 2. alloc_outputs2() bind_buffers_to_memory (vkBindImageMemory)
+// - 3. alloc_outputs3() create_descriptor_sets for each node
+// dt_graph_run_nodes_upload       (upload all source data to staging memory) (read_source called here)
+// dt_graph_run_modules_upload_uniforms
+// dt_graph_run_nodes_record_cmd
+// (submit queue)
+// dt_graph_run_nodes_download     (download sink data from GPU to CPU)
+```
+
+- Module
+  - /// vkdt dt_module_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/module.h#L107
+  - /// vkdt dt_module_so_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/global.h#L62
+
+- Node
+  - // vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
+
 ### Misc
 
 - https://www.photonstophotos.net/

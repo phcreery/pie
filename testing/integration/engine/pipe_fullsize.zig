@@ -9,9 +9,6 @@ test "fullsize through pipeline" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
 
     const cp_out = console.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
@@ -52,5 +49,5 @@ test "fullsize through pipeline" {
     try pipeline.connectModules(mod_demosaic, "output", mod_color, "input");
     try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input");
     try pipeline.connectModules(mod_filmcurv, "output", mod_o_png, "input");
-    try pipeline.run(aa);
+    try pipeline.run();
 }

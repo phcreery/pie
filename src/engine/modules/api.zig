@@ -1,6 +1,6 @@
 //! API definitions for engine pipeline modules and nodes
 const std = @import("std");
-const gpu = @import("../gpu.zig"); // TODO: we shouldn't need to expose this
+const gpu = @import("../gpu.zig");
 pub const math = @import("../math/root.zig");
 
 pub const ROI = @import("../ROI.zig");
@@ -40,7 +40,6 @@ pub const NodeType = enum {
     sink,
 };
 
-// vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
 pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
     shader: ?gpu.ShaderSource = null,
@@ -72,25 +71,17 @@ pub const ParamUI = struct {
         min: f32,
         max: f32,
         step: f32 = 0.0, // 0 = full precision (1/tick-resolution)
-        /// optional unit suffix shown to the right of the value, e.g. " deg"
         suffix: ?[]const u8 = null,
     };
 
     pub const Control = union(enum) {
-        /// float/int scalar slider (i32 values are truncated/stepped)
         slider: Slider,
-        /// N sliders for a fixed-length float array param (e.g. [3]f32);
-        /// each element gets its own slider sharing min/max/step/suffix
         sliders: Sliders,
-        /// drop-down of string labels; value is the selected index (i32)
         combo: struct {
             items: []const []const u8,
         },
-        /// boolean checkbox; value is 0/1 (i32)
         checkbox: void,
-        /// single-line text input (str params)
         text: void,
-        /// no interactive control, just a label showing the current value
         readonly: void,
     };
 
@@ -100,7 +91,6 @@ pub const ParamUI = struct {
         min: f32,
         max: f32,
         step: f32 = 0.01,
-        /// optional per-element suffixes, e.g. [ "R", "G", "B" ]; null = none
         suffixes: ?[]const []const u8 = null,
         /// optional per-element labels shown instead of "name[0]" etc.
         labels: ?[]const []const u8 = null,
@@ -110,8 +100,6 @@ pub const ParamUI = struct {
 /// A module can have multiple nodes.
 /// They can have source and sink connectors as well, but the module must have
 /// respective read_source and write_sink functions to handle them.
-/// vkdt dt_module_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/module.h#L107
-/// vkdt dt_module_so_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/global.h#L62
 pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
@@ -146,10 +134,6 @@ pub fn compileShader(pipe: PipelineHandle, shader_source: gpu.ShaderSource) !gpu
     return gpu_inst.compileShader(shader_source);
 }
 
-/// Copy dense pixel data into the padded staging upload region for a texture.
-/// `mapped` is the staging pointer handed to `readSource`; `src` is the dense
-/// source; width/height/bpp describe the source image (the padded stride is
-/// derived from wgpu's 256-byte row alignment).
 pub fn copyToStaging(mapped: *anyopaque, src: []const u8, width: u32, height: u32, bpp: u32) void {
     gpu.copyDenseToStaging(mapped, src, width, height, bpp);
 }
