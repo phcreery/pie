@@ -417,11 +417,15 @@ pub const TextureFormat = enum {
     r16float,
 
     // special cases
-    // NOTE: rggb16* are *semantic* formats: the data is RGGB bayer mosaic, but
-    // it is stored single-channel (one photosite per texel) as r16_uint/r16_float
-    // on the GPU. ROI is the true photosite size (w x h). Shaders decode the
-    // bayer phase from coords; WGSL declares r16uint/r16float (not "rggb").
-    rggb16float,
+    // NOTE: rggb* are *semantic* formats: the data is RGGB bayer mosaic, but
+    // it is stored single-channel (one photosite per texel) on the GPU. ROI is
+    // the true photosite size (w x h). Shaders decode the bayer phase from
+    // coords; WGSL declares the underlying storage type (not "rggb").
+    //
+    // The float bayer stage is stored as r32_float, not r16_float: r16float is
+    // not a WebGPU core storage-texture format while r32float is. The
+    // u16 raw input stays rggb16uint (r16_uint, which IS core-spec).
+    rggb32float,
     rggb16uint,
 
     pub fn toWGPUFormat(self: TextureFormat) wgpu.Texture.Format {
@@ -433,7 +437,7 @@ pub const TextureFormat = enum {
             .r16float => .r16_float,
 
             // special cases: bayer mosaic stored single-channel
-            .rggb16float => .r16_float,
+            .rggb32float => .r32_float,
             .rggb16uint => .r16_uint,
         };
     }
@@ -447,7 +451,7 @@ pub const TextureFormat = enum {
             .r16float => .float,
 
             // special cases: single-channel bayer
-            .rggb16float => .float,
+            .rggb32float => .float,
             .rggb16uint => .uint,
         };
     }
@@ -469,7 +473,7 @@ pub const TextureFormat = enum {
             .r16float => 1,
 
             // special cases: single-channel bayer mosaic
-            .rggb16float => 1,
+            .rggb32float => 1,
             .rggb16uint => 1,
         };
     }
@@ -483,7 +487,7 @@ pub const TextureFormat = enum {
             .r16float => @sizeOf(f16),
 
             // special cases
-            .rggb16float => @sizeOf(f16),
+            .rggb32float => @sizeOf(f32),
             .rggb16uint => @sizeOf(u16),
         };
     }
@@ -508,14 +512,6 @@ pub const Texture = struct {
         // r16uint/float does not support storage binding if
         // WGPUNativeFeature TextureAdapterSpecificFormatFeatures is not set
         // and the adapter doesn't support it
-        // if (format == .r16uint or format == .r16float or format == .rggb16float or format == .rggb16uint) {
-        // if (format.toWGPUFormat() == .r16uint or format.toWGPUFormat() == .r16float) {
-        //     usage = .{
-        //         .texture_binding = true,
-        //         .copy_src = true,
-        //         .copy_dst = true,
-        //     };
-        // }
 
         const texture = try gpu.device.createTexture(.{
             .label = name,

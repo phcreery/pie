@@ -22,13 +22,13 @@ pub var desc: api.ModuleDesc = .{
         s[0] = .{
             .name = "input",
             .type = .read,
-            .format = .rggb16float,
+            .format = .rggb32float,
             .roi = null,
         };
         s[1] = .{
             .name = "output",
             .type = .write,
-            .format = .rggb16float,
+            .format = .rggb32float,
             .roi = null,
         };
         break :init s;
@@ -57,9 +57,8 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 }
 
 const shader_code: []const u8 =
-    \\enable f16;
     \\@group(1) @binding(0) var input: texture_2d<f32>;
-    \\@group(1) @binding(1) var output: texture_storage_2d<r16float, write>;
+    \\@group(1) @binding(1) var output: texture_storage_2d<r32float, write>;
     \\@compute @workgroup_size(8, 8, 1)
     \\fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     \\    let coords = vec2<i32>(global_id.xy);
@@ -79,13 +78,13 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             s[0] = .{
                 .name = "input",
                 .type = .read,
-                .format = .rggb16float,
+                .format = .rggb32float,
                 .roi = null,
             };
             s[1] = .{
                 .name = "output",
                 .type = .write,
-                .format = .rggb16float,
+                .format = .rggb32float,
                 .roi = null,
             };
             break :init s;

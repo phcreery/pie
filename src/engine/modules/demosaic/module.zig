@@ -9,7 +9,7 @@ pub var desc: api.ModuleDesc = .{
         s[0] = .{
             .name = "input",
             .type = .read,
-            .format = .rggb16float,
+            .format = .rggb32float,
             .roi = null,
             .color_profile = .any,
         };
@@ -47,7 +47,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             s[0] = .{
                 .name = "input",
                 .type = .read,
-                .format = .rggb16float,
+                .format = .rggb32float,
                 .roi = null,
             };
             s[1] = .{

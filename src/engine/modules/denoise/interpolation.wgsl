@@ -1,4 +1,3 @@
-enable f16;
 struct ImgParams {
     black:  vec4<f32>,
     white:  vec4<f32>,
@@ -10,7 +9,7 @@ struct ImgParams {
 
 @group(0) @binding(0) var<uniform>  img_params: ImgParams;
 @group(1) @binding(0) var           input:  texture_2d<f32>;
-@group(1) @binding(1) var           output: texture_storage_2d<r16float, write>;
+@group(1) @binding(1) var           output: texture_storage_2d<r32float, write>;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let coords = vec2<i32>(global_id.xy);

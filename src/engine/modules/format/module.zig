@@ -15,7 +15,7 @@ pub var desc: api.ModuleDesc = .{
         s[1] = .{
             .name = "output",
             .type = .write,
-            .format = .rggb16float,
+            .format = .rggb32float,
             .roi = null,
             .color_profile = .any,
         };
@@ -42,7 +42,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             s[1] = .{
                 .name = "output",
                 .type = .write,
-                .format = .rggb16float,
+                .format = .rggb32float,
                 .roi = mod_output_sock.roi,
             };
             break :init s;
