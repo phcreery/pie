@@ -40,8 +40,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader = @embedFile("./compute.spv"),
-        .temp_shader_language = .spirv, // TODO: remove this once we have a proper shader compilation pipeline
+        .shader = .{ .spirv = @embedFile("./nop.comp.spv") },
         .name = "test-nop-zig",
         .run_size = mod_output_sock.roi,
         .sockets = init: {

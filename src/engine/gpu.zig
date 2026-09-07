@@ -652,7 +652,7 @@ pub const ShaderLanguage = enum {
 
 pub const ShaderSource = union(ShaderLanguage) {
     wgsl: []const u8,
-    spirv: []const u32,
+    spirv: []const u8,
     glsl: []const u8,
 };
 
@@ -852,7 +852,7 @@ pub const ShaderSourceContext = struct {
         return switch (a) {
             .wgsl => std.mem.eql(u8, a.wgsl, b.wgsl),
             .glsl => std.mem.eql(u8, a.glsl, b.glsl),
-            .spirv => std.mem.eql(u32, a.spirv, b.spirv),
+            .spirv => std.mem.eql(u8, a.spirv, b.spirv),
         };
     }
 };
