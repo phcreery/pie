@@ -160,16 +160,17 @@ pub fn build(b: *Build) !void {
     integration_test_step.dependOn(&run_integration_tests.step);
 
     // from here on different handling for native vs wasm builds
-    if (target.result.cpu.arch.isWasm()) {
-        try buildWasm(b, .{
-            .mod_main = mod_app,
-            .dep_sokol = dep_sokol,
-            .dep_cimgui = dep_cimgui,
-            .cimgui_clib_name = cimgui_conf.clib_name,
-        });
-    } else {
-        try buildNative(b, mod_app);
-    }
+    // if (target.result.cpu.arch.isWasm()) {
+    //     try buildWasm(b, .{
+    //         .mod_main = mod_app,
+    //         .dep_sokol = dep_sokol,
+    //         .dep_cimgui = dep_cimgui,
+    //         .cimgui_clib_name = cimgui_conf.clib_name,
+    //     });
+    // } else {
+    //     try buildNative(b, mod_app);
+    // }
+    try buildNative(b, mod_app);
 }
 
 fn buildNative(b: *Build, mod: *Build.Module) !void {

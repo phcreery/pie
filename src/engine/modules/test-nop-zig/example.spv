@@ -1,0 +1,50 @@
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %gl_GlobalInvocationID %inp %outp
+               OpExecutionMode %main LocalSize 8 8 1
+
+               OpSource GLSL 450
+               OpSourceExtension "GL_EXT_samplerless_texture_functions"
+               OpName %main "main"                  ; id %4
+               OpName %gl_GlobalInvocationID "gl_GlobalInvocationID"    ; id %13
+               OpName %inp "inp"                                        ; id %24
+               OpName %outp "outp"                                      ; id %31
+
+               OpDecorate %gl_GlobalInvocationID BuiltIn GlobalInvocationId
+               OpDecorate %inp Binding 0
+               OpDecorate %inp DescriptorSet 1
+               OpDecorate %outp NonReadable
+               OpDecorate %outp Binding 1
+               OpDecorate %outp DescriptorSet 1
+
+       %void = OpTypeVoid
+          %3 = OpTypeFunction %void
+        %int = OpTypeInt 32 1
+      %v2int = OpTypeVector %int 2
+       %uint = OpTypeInt 32 0
+     %v3uint = OpTypeVector %uint 3
+%_ptr_Input_v3uint = OpTypePointer Input %v3uint
+%gl_GlobalInvocationID = OpVariable %_ptr_Input_v3uint Input    ; BuiltIn GlobalInvocationId
+     %v2uint = OpTypeVector %uint 2
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+         %22 = OpTypeImage %float 2D 0 0 0 1 Unknown
+%_ptr_UniformConstant_22 = OpTypePointer UniformConstant %22
+        %inp = OpVariable %_ptr_UniformConstant_22 UniformConstant  ; Binding 0, DescriptorSet 1
+      %int_0 = OpConstant %int 0
+         %29 = OpTypeImage %float 2D 0 0 0 2 Rgba16f
+%_ptr_UniformConstant_29 = OpTypePointer UniformConstant %29
+       %outp = OpVariable %_ptr_UniformConstant_29 UniformConstant  ; NonReadable, Binding 1, DescriptorSet 1
+
+       %main = OpFunction %void None %3
+          %5 = OpLabel
+         %15 = OpLoad %v3uint %gl_GlobalInvocationID
+         %16 = OpVectorShuffle %v2uint %15 %15 0 1
+         %17 = OpBitcast %v2int %16
+         %25 = OpLoad %22 %inp
+         %28 = OpImageFetch %v4float %25 %17 Lod %int_0
+         %32 = OpLoad %29 %outp
+               OpImageWrite %32 %17 %28
+               OpReturn
+               OpFunctionEnd

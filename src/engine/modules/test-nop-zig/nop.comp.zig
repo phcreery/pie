@@ -1,19 +1,12 @@
-// zig build-obj ./src/engine/modules/test-nop-zig/nop.comp.zig -target spirv32-vulkan -ofmt=spirv -mcpu vulkan_v1_2 -fno-llvm -femit-bin='./src/engine/modules/test-nop-zig/nop.comp.spv'
+// zig build-obj -freference-trace=6 ./src/engine/modules/test-nop-zig/nop.comp.zig -target spirv32-vulkan -ofmt=spirv -mcpu vulkan_v1_2 -fno-llvm -femit-bin='./src/engine/modules/test-nop-zig/nop.comp.spv'
+// spirv-link --target-env=spv1.1 ./src/engine/modules/test-nop-zig/nop.comp.spv -o ./src/engine/modules/test-nop-zig/nopopt.comp.spv
 
-// using zig 0.16/0.17-master syntax
-// see https://codeberg.org/7Games/zig-sdl3/src/commit/efe71e6e05324535dd46e06fd0b3fb557d5fdf14/gpu_examples/shaders/zig
-
-// const spirv = @import("spirv.zig");
 const std = @import("std");
 const spirv = std.spirv;
 
-// std.spirv
-
-// const options: std.lang.Type.Spirv = .{};
-
 pub const InputImage = @SpirvType(.{ .image = .{
-    .usage = .{ .storage = f32 },
-    .format = .rgba16f,
+    .usage = .{ .sampled = f32 },
+    .format = .unknown,
     .dim = .@"2d",
     .depth = .not_depth,
     .arrayed = false,
@@ -30,21 +23,33 @@ pub const OutputImage = @SpirvType(.{ .image = .{
     .access = .unknown,
 } });
 
-const input_image = @extern(*addrspace(.input) const InputImage, .{
-    .name = "image",
+const input_image = @extern(*addrspace(.constant) const InputImage, .{
+    .name = "input",
     .decoration = .{ .descriptor = .{ .set = 1, .binding = 0 } },
 });
-const output_image = @extern(*addrspace(.output) const OutputImage, .{
-    .name = "image",
+const output_image = @extern(*addrspace(.constant) const OutputImage, .{
+    .name = "output",
     .decoration = .{ .descriptor = .{ .set = 1, .binding = 1 } },
 });
 
+pub const Vec4f32 = @Vector(4, f32);
+pub const Vec2u32 = @Vector(2, u32);
+
 export fn main() callconv(.{ .spirv_kernel = .{ .x = 8, .y = 8, .z = 1 } }) void {
-    // TODO!!!
-    spirv.imageWrite(
-        output_image,
-        u32,
-        .{ std.spirv.global_invocation_id[0], std.spirv.global_invocation_id[1] },
-        .{ 1, 1, 0, 1 },
+    const coord = @as(Vec2u32, .{ 0, 0 });
+    const lod: i32 = 0;
+    asm volatile (
+        \\%in = OpLoad %InputImage %input_image
+        \\%pix = OpImageFetch %Vec4f32 %in %coord Lod %lod
+        \\%out = OpLoad %OutputImage %output_image
+        \\      OpImageWrite %out %coord %pix
+        :
+        : [InputImage] "t" (InputImage),
+          [input_image] "" (input_image),
+          [Vec4f32] "t" (Vec4f32),
+          [OutputImage] "t" (OutputImage),
+          [output_image] "" (output_image),
+          [coord] "" (coord),
+          [lod] "" (lod),
     );
 }

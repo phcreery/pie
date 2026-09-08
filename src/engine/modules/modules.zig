@@ -24,7 +24,7 @@ pub fn populateRepository(repo: *Repository) !void {
     // try repo.add(@import("test-nop/module.zig").desc);
     try repo.add(@import("test-nop-glsl/module.zig").desc);
     try repo.add(@import("test-swap-roi/module.zig").desc);
-    // try repo.add(@import("test-nop-zig/module.zig").desc);
+    try repo.add(@import("test-nop-zig/module.zig").desc);
     // try repo.add(@import("test-text/module.zig").desc);
 }
 
