@@ -40,3 +40,5 @@ testing/**/*.tiff
 
 # misc
 .DS_Store
+.vscode/
+*.spv

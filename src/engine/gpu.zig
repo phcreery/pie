@@ -667,31 +667,6 @@ pub const Shader = struct {
         const shader_module = switch (shader_source) {
             .wgsl => |code| try gpu.device.createShaderModule(.{ .wgsl = code }),
             .glsl => |code| try gpu.device.createShaderModule(.{ .glsl = .{ .code = code, .stage = .compute } }),
-            // .spirv => |code| blk: {
-            //     // wgpu-0.0.3's ShaderModule.init sends native SPIR-V down the
-            //     // "passthrough" path (wgpuDeviceCreateShaderModuleSpirV), which
-            //     // demands a PASSTHROUGH_SHADERS device feature that this
-            //     // wgpu-native build cannot enable (the enum value in wgpu.h and
-            //     // the feature mapping in conv.rs are both "TODO: requires
-            //     // wgpu.h api change" stubs). Route SPIR-V through the generic
-            //     // chained-source path instead: wgpu-native's map_shader_module
-            //     // parses it with naga (compiled in) and applies no device
-            //     // feature gate. Same path the binding uses for WGSL and for
-            //     // SPIR-V on emscripten.
-            //     const code_ptr: [*]const u32 = @ptrCast(@alignCast(code.ptr));
-            //     const spirv_code = code_ptr[0 .. code.len / @sizeOf(u32)];
-            //     var spirv_source = c.WGPUShaderSourceSPIRV{
-            //         .chain = .{ .sType = c.WGPUSType_ShaderSourceSPIRV },
-            //         .codeSize = @intCast(spirv_code.len),
-            //         .code = spirv_code.ptr,
-            //     };
-            //     const desc = c.WGPUShaderModuleDescriptor{
-            //         .nextInChain = @ptrCast(&spirv_source),
-            //     };
-            //     break :blk wgpu.ShaderModule{
-            //         .shader_module = (c.wgpuDeviceCreateShaderModule(gpu.device.device, &desc) orelse return error.ShaderModuleCreationFailed),
-            //     };
-            // },
             .spirv => |code| blk: {
                 const code_ptr: [*]const u32 = @ptrCast(@alignCast(code.ptr));
                 break :blk try gpu.device.createShaderModule(.{
