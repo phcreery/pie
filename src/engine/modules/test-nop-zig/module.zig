@@ -31,16 +31,18 @@ pub var desc: api.ModuleDesc = .{
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
     // const compute_spv = @embedFile("./compute.spv");
-    // std.debug.print("compute.spv size: {any}\n", .{compute_spv.len});
-    // std.debug.print("compute.spv first 16 bytes: ", .{});
-    // for (compute_spv[0..8]) |b| {
-    //     std.debug.print("{x} ", .{b});
-    // }
+    const compute_spv = @embedFile("nop.comp.zig.embed");
+    std.debug.print("nop.comp.zig size: {any}\n", .{compute_spv.len});
+    std.debug.print("nop.comp.zig first 16 bytes: ", .{});
+    for (compute_spv[0..16]) |b| {
+        std.debug.print("{x} ", .{b});
+    }
+    std.debug.print("\n", .{});
 
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader = .{ .spirv = @embedFile("./nopopt.comp.spv") },
+        .shader = .{ .spirv = @embedFile("nop.comp.zig.embed") },
         .name = "test-nop-zig",
         .run_size = mod_output_sock.roi,
         .sockets = init: {

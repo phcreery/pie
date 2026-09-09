@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const Build = std.Build;
 const sokol = @import("sokol");
 const cimgui = @import("cimgui");
+const spv = @import("build/spirv.zig");
 
 pub fn build(b: *Build) !void {
     // CONFIGURATION
@@ -90,6 +91,8 @@ pub fn build(b: *Build) !void {
         },
     });
 
+    try spv.compileAndEmbedZigSpirVModules(b, mod_pie, optimize);
+
     // GUI MODULE
     const mod_gui = b.createModule(.{
         .root_source_file = b.path("src/gui/root.zig"),
@@ -124,7 +127,6 @@ pub fn build(b: *Build) !void {
 
     // TESTS
     // UNIT TESTS
-    const test_step = b.step("test", "Run unit tests");
     const unit_tests = b.addTest(.{
         .name = "unit tests",
         .use_llvm = true,
@@ -132,6 +134,7 @@ pub fn build(b: *Build) !void {
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
+    const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
 
     // INTEGRATION TESTS
@@ -149,7 +152,6 @@ pub fn build(b: *Build) !void {
         },
     });
 
-    const integration_test_step = b.step("integration", "Run integration tests");
     const integration_tests = b.addTest(.{
         .name = "integration tests",
         .use_llvm = true,
@@ -157,7 +159,14 @@ pub fn build(b: *Build) !void {
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
     const run_integration_tests = b.addRunArtifact(integration_tests);
+    // const install_integration_tests = b.addInstallArtifact(integration_tests, .{});
+    // run_integration_tests.step.dependOn(&install_integration_tests.step);
+
+    const integration_test_step = b.step("integration", "Run integration tests");
     integration_test_step.dependOn(&run_integration_tests.step);
+
+    // Force the test runner to wait until everything is installed in zig-out/
+    // integration_test_step.dependOn(b.getInstallStep());
 
     // from here on different handling for native vs wasm builds
     // if (target.result.cpu.arch.isWasm()) {
