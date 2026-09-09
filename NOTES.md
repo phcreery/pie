@@ -101,6 +101,7 @@
   - https://github.com/bronter/wgpu_native_zig
     - https://github.com/carrot-sticks/wgpu_native_zig
   - https://codeberg.org/shahwali/wgpu-zig
+  - wgpu-native & dawn: https://codeberg.org/scriblz/wgpuz
 
 - dawn bindings
   - https://github.com/zig-gamedev/zgpu
