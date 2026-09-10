@@ -38,18 +38,33 @@ pub fn compileZigToSpirv(
 pub fn embedObject(
     b: *std.Build,
     mod: *std.Build.Module,
-    obj: *std.Build.Step.Compile,
+    bin: std.Build.LazyPath,
     name: []const u8,
     dir: []const u8,
 ) void {
-    const install_obj = b.addInstallArtifact(obj, .{ .dest_dir = .{ .override = .{ .custom = dir } } });
-    b.getInstallStep().dependOn(&install_obj.step);
+    _ = dir; // no longer installing the raw artifact; the patched binary is embedded instead
+    _ = b;
 
-    // b.installArtifact(obj);
-    // const spirv = obj.getEmittedBin();
-    // _ = b.addInstallBinFile(spirv, "out");
+    mod.addAnonymousImport(name, .{ .root_source_file = bin });
+}
 
-    mod.addAnonymousImport(name, .{ .root_source_file = obj.getEmittedBin() });
+/// Run the naga-compatibility patcher (see spirv_naga_patch.zig) over the
+/// SPIR-V emitted by the Zig compiler and return the patched binary.
+fn patchForNaga(
+    b: *std.Build,
+    obj: *std.Build.Step.Compile,
+) std.Build.LazyPath {
+    const patcher = b.addExecutable(.{
+        .name = "spirv-naga-patch",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("build/spirv_naga_patch.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    const run = b.addRunArtifact(patcher);
+    run.addFileArg(obj.getEmittedBin());
+    return run.addOutputFileArg("patched.spv");
 }
 
 pub fn compileAndEmbedModuleSpirVShader(
@@ -64,7 +79,7 @@ pub fn compileAndEmbedModuleSpirVShader(
     const file_path_str = try std.fmt.bufPrint(&buffer, "src/engine/modules/{s}/{s}", .{ module_name, file_name });
     const file_name_path = b.path(file_path_str);
     const spv = compileZigToSpirv(b, optimize, file_name, file_name_path, &[_]std.Target.spirv.Feature{});
-    embedObject(b, mod, spv, embed_name, "shaders");
+    embedObject(b, mod, patchForNaga(b, spv), embed_name, "shaders");
 }
 
 pub fn compileAndEmbedZigSpirVModules(b: *std.Build, mod: *std.Build.Module, optimize: std.builtin.OptimizeMode) !void {

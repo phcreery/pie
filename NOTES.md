@@ -118,7 +118,7 @@
   - https://codeberg.org/Mr_Nobody/HowToVulkan_zig
   - https://codeberg.org/andrewkraevskii/howtovulkan-zig
 
-- Zig spirv backend 
+- Zig spirv backend
   - https://alichraghi.github.io/blog/zig-gpu/
   - https://gist.github.com/alichraghi/cc4b1db0a0a556de4f85cf06f0e7a400
   - https://github.com/snektron/shallenge/
@@ -162,3 +162,4 @@
     - https://williamw520.github.io/2025/07/13/zig-interface-revisited.html
   - https://ziggit.dev/t/convention-for-init-deinit/4865/2
   - [Zig cheatsheet](https://gist.github.com/jdmichaud/b75ee234bfa87283a6337e06a3b70767)
+  - https://matklad.github.io/2025/08/16/reserve-first.html

@@ -668,13 +668,17 @@ pub const Shader = struct {
             .wgsl => |code| try gpu.device.createShaderModule(.{ .wgsl = code }),
             .glsl => |code| try gpu.device.createShaderModule(.{ .glsl = .{ .code = code, .stage = .compute } }),
             .spirv => |code| blk: {
-                const code_ptr: [*]const u32 = @ptrCast(@alignCast(code.ptr));
+                if (code.len == 0 or code.len % @sizeOf(u32) != 0) return error.InvalidSpirvLength;
+                // SPIR-V is an array of u32 words, but the source bytes may only
+                // be 1-byte aligned (@embedFile guarantees no more, and file reads
+                // can return unaligned buffers), so copy into aligned memory that
+                // lives for the duration of this call.
+                const words = std.heap.page_allocator.alloc(u32, code.len / @sizeOf(u32)) catch return error.OutOfMemory;
+                defer std.heap.page_allocator.free(words);
+                @memcpy(std.mem.sliceAsBytes(words), code);
                 break :blk try gpu.device.createShaderModule(.{
-                    .spirv = .{ .code = code_ptr[0 .. code.len / @sizeOf(u32)], .method = .@"chained-source" },
+                    .spirv = .{ .code = words, .method = .@"chained-source" },
                 });
-                // break :blk try gpu.device.createShaderModule(.{
-                //     .spirv = .{ .code = code.ptr[0 .. code.len / @sizeOf(u32)], .method = .@"chained-source" },
-                // });
             },
         };
 

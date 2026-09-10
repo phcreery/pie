@@ -5,7 +5,7 @@ const sokol = @import("sokol");
 const cimgui = @import("cimgui");
 const spv = @import("build/spirv.zig");
 
-pub fn build(b: *Build) !void {
+pub fn build(b: *Build) !void { // $ls root_id 1
     // CONFIGURATION
     const target = b.standardTargetOptions(.{});
     // for testing only, forces a native build
