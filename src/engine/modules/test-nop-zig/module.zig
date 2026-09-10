@@ -42,7 +42,9 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader = .{ .spirv = @embedFile("nop.comp.zig.embed") },
+
+        .shader = .{ .spirv = @embedFile("nopopt.comp.spv") },
+        // .shader = .{ .spirv = @embedFile("nop.comp.zig.embed") },
         .name = "test-nop-zig",
         .run_size = mod_output_sock.roi,
         .sockets = init: {

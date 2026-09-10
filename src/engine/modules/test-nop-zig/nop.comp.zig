@@ -1,12 +1,13 @@
 // zig build-obj -freference-trace=6 ./src/engine/modules/test-nop-zig/nop.comp.zig -target spirv32-vulkan -ofmt=spirv -mcpu vulkan_v1_2 -fno-llvm -femit-bin='./src/engine/modules/test-nop-zig/nop.comp.spv'
 // spirv-link --target-env=spv1.1 ./src/engine/modules/test-nop-zig/nop.comp.spv -o ./src/engine/modules/test-nop-zig/nopopt.comp.spv
+// diff -u --color <(spirv-dis src/engine/modules/test-nop-zig/nop.comp.spv) <(spirv-dis src/engine/modules/test-nop-zig/nopopt.comp.spv)
 
 const std = @import("std");
 const spirv = std.spirv;
 
 pub const InputImage = @SpirvType(.{ .image = .{
     .usage = .{ .sampled = f32 },
-    .format = .unknown,
+    .format = .rgba16f,
     .dim = .@"2d",
     .depth = .not_depth,
     .arrayed = false,
@@ -36,7 +37,8 @@ pub const Vec4f32 = @Vector(4, f32);
 pub const Vec2u32 = @Vector(2, u32);
 
 export fn main() callconv(.{ .spirv_kernel = .{ .x = 8, .y = 8, .z = 1 } }) void {
-    const coord = @as(Vec2u32, .{ 0, 0 });
+    const coord = @as(Vec2u32, .{ std.spirv.global_invocation_id[0], std.spirv.global_invocation_id[1] });
+    // const coord = std.spirv.global_invocation_id;
     const lod: i32 = 0;
     asm volatile (
         \\%in = OpLoad %InputImage %input_image

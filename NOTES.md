@@ -101,7 +101,6 @@
   - https://github.com/bronter/wgpu_native_zig
     - https://github.com/carrot-sticks/wgpu_native_zig
   - https://codeberg.org/shahwali/wgpu-zig
-  - wgpu-native & dawn: https://codeberg.org/scriblz/wgpuz
 
 - dawn bindings
   - https://github.com/zig-gamedev/zgpu
@@ -111,6 +110,8 @@
     - https://github.com/a-day-old-bagel/zgpu
   - https://github.com/akunaakwei/zig-dawn
   - Note: dawn provides a couple pre-compiled static libs, but the linux does not work since it is compiled with gnu, and according to a llm:
+
+- wgpu-native & dawn bindings: https://codeberg.org/scriblz/wgpuz
 
 - Shader stuff
   - https://codeberg.org/Games-by-Mason/mr_glsl

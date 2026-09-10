@@ -1205,7 +1205,7 @@ pub const Pipeline = struct {
         //     slog.debug("Error during DAG traversal: {any}\n", .{err});
         // }
 
-        slog.debug("Topological sorted order of nodes: {any}", .{self.node_execution_order.items});
+        // slog.debug("Topological sorted order of nodes: {any}", .{self.node_execution_order.items});
     }
 
     /// Allocates output textures and creates compute shaders for each node

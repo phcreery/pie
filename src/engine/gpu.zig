@@ -672,6 +672,9 @@ pub const Shader = struct {
                 break :blk try gpu.device.createShaderModule(.{
                     .spirv = .{ .code = code_ptr[0 .. code.len / @sizeOf(u32)], .method = .@"chained-source" },
                 });
+                // break :blk try gpu.device.createShaderModule(.{
+                //     .spirv = .{ .code = code.ptr[0 .. code.len / @sizeOf(u32)], .method = .@"chained-source" },
+                // });
             },
         };
 

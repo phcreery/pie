@@ -166,7 +166,7 @@ pub fn build(b: *Build) !void {
     integration_test_step.dependOn(&run_integration_tests.step);
 
     // Force the test runner to wait until everything is installed in zig-out/
-    // integration_test_step.dependOn(b.getInstallStep());
+    integration_test_step.dependOn(b.getInstallStep());
 
     // from here on different handling for native vs wasm builds
     // if (target.result.cpu.arch.isWasm()) {
