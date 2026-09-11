@@ -1,8 +1,8 @@
 const std = @import("std");
-const gpu = @import("gpu.zig");
+const gpu = @import("gpu/root.zig");
 const ROI = @import("ROI.zig");
 const api = @import("modules/api.zig");
-const print = @import("print.zig");
+const print = @import("pipeline_print.zig");
 const perf = @import("pipeline_perf.zig");
 const Module = @import("Module.zig");
 const Node = @import("Node.zig");
@@ -194,6 +194,12 @@ pub const Pipeline = struct {
         self.perf.deinit();
         self.run_arena.deinit();
 
+        if (self.upload_fba) |*upload_fba| {
+            upload_fba.deinit(self.allocator);
+        }
+        if (self.download_fba) |*download_fba| {
+            download_fba.deinit(self.allocator);
+        }
         if (self.upload_buffer) |*upload_buffer| {
             upload_buffer.deinit();
         }

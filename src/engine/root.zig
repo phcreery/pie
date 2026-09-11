@@ -3,7 +3,7 @@ pub const std = @import("std");
 pub const ROI = @import("ROI.zig");
 pub const Module = @import("Module.zig");
 pub const Node = @import("Node.zig");
-pub const gpu = @import("gpu.zig");
+pub const gpu = @import("gpu/root.zig");
 pub const pipeline = @import("pipeline.zig");
 pub const history = @import("history.zig");
 pub const serdes = @import("serdes.zig");
@@ -34,7 +34,7 @@ pub const Pipeline = pipeline.Pipeline;
 
 // test {
 //     // _ = @import("engine/gpu.zig");
-//     // _ = @import("engine/gpu_data.zig");
+//     // _ = @import("engine/gpu/data.zig");
 //     // _ = @import("engine/modules/shared/CFA.zig");
 //     // _ = @import("engine/modules/i-raw/i-raw.zig");
 //     // _ = @import("engine/zig-graph/graph.zig");

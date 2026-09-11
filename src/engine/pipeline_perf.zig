@@ -1,6 +1,6 @@
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
-const gpu = @import("gpu.zig");
+const gpu = @import("gpu/root.zig");
 
 const ModulePool = pipeline.ModulePool;
 const Node = @import("Node.zig");

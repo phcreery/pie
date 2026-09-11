@@ -1,8 +1,8 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
 const Module = @import("Module.zig");
-const gpu = @import("gpu.zig");
-const gpu_data = @import("gpu_data.zig");
+const gpu = @import("gpu/root.zig");
+const gpu_data = @import("gpu/data.zig");
 const pipeline = @import("pipeline.zig");
 const slog = std.log.scoped(.param);
 

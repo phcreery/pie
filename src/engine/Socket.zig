@@ -1,6 +1,6 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
-const gpu = @import("gpu.zig");
+const gpu = @import("gpu/root.zig");
 pub const ROI = @import("ROI.zig");
 const pipeline = @import("pipeline.zig");
 

@@ -1,6 +1,6 @@
 /// A connector is the image data flowing between modules/nodes plus the color
 /// profile it carries. The pipeline owns the texture; `deinit` frees it.
-const gpu = @import("gpu.zig");
+const gpu = @import("gpu/root.zig");
 const ROI = @import("ROI.zig");
 const api = @import("modules/api.zig");
 
