@@ -61,6 +61,8 @@ The pipeline does basic raw -> srgb. Thats just about it.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+you can write compute shaders in wgsl, glsl, or zig (with the new spir-v backend)
+
 ## Development
 
 ```
@@ -78,8 +80,6 @@ This may require changing the default allocator.
 ## Build Requirements
 
 zig 0.17.0-dev.1464+6aff551f1
-
-To use 0.16.0 zls on master, `ln ~/.local/share/zvm/0.16.0/zls ~/.local/share/zvm/bin/zls` or `ln ~/.zvm/0.16.0/zls ~/.zvm/bin/zls`
 
 ### Linux
 
