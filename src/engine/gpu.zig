@@ -204,14 +204,14 @@ pub const Buffer = struct {
     // pub const BufferAllocator = std.heap.FixedBufferAllocator;
     pub const Allocator = zuballoc.SubAllocator;
 
-    pub fn fixedBufferAllocator(self: *Self) !Allocator {
+    pub fn fixedBufferAllocator(self: *Self, gpa: std.mem.Allocator) !Allocator {
         // slog.debug("Buffer size: {d}", .{gpu_memory.buffer_size});
         const mapped_ptr: *anyopaque = self.mapSize(self.buffer_size);
         defer self.unmap();
         const buffer_ptr: [*]u8 = @ptrCast(@alignCast(mapped_ptr));
         const buffer_slice = buffer_ptr[0..@as(usize, self.buffer_size)];
         // const buf_allocator = std.heap.FixedBufferAllocator.init(buffer_slice);
-        const buf_allocator = try zuballoc.SubAllocator.init(std.heap.smp_allocator, buffer_slice, 256);
+        const buf_allocator = try zuballoc.SubAllocator.init(gpa, buffer_slice, 256);
         return buf_allocator;
     }
 

@@ -118,10 +118,10 @@ test "load raw, demosaic, save" {
     defer download.deinit();
 
     // ALLOCATORS
-    var upload_fba = try upload.fixedBufferAllocator();
+    var upload_fba = try upload.fixedBufferAllocator(allocator);
     var upload_allocator = upload_fba.allocator();
 
-    var download_fba = try download.fixedBufferAllocator();
+    var download_fba = try download.fixedBufferAllocator(allocator);
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD

@@ -107,12 +107,12 @@ pub const Pipeline = struct {
         if (gpu_instance) |gpu_inst| {
             upload_buffer = try gpu.Buffer.init(gpu_inst, config.upload_buffer_size_bytes, .upload);
             if (upload_buffer) |*ub| {
-                upload_fba = try ub.fixedBufferAllocator();
+                upload_fba = try ub.fixedBufferAllocator(allocator);
                 errdefer ub.deinit();
             }
             download_buffer = try gpu.Buffer.init(gpu_inst, config.download_buffer_size_bytes, .download);
             if (download_buffer) |*db| {
-                download_fba = try db.fixedBufferAllocator();
+                download_fba = try db.fixedBufferAllocator(allocator);
                 errdefer db.deinit();
             }
         }

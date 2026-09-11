@@ -94,14 +94,14 @@ test "simple compute test with parameters" {
     defer multiply_compute_pipeline_bindings.deinit();
 
     // ALLOCATORS
-    var upload_fba = try upload.fixedBufferAllocator();
+    var upload_fba = try upload.fixedBufferAllocator(allocator);
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
     const induced_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
     const induced_offset = @intFromPtr(induced_buf.ptr) - @intFromPtr(upload_fba.ptr);
     std.log.info("Upload induced offset: {d}", .{induced_offset});
 
-    var download_fba = try download.fixedBufferAllocator();
+    var download_fba = try download.fixedBufferAllocator(allocator);
     var download_allocator = download_fba.allocator();
 
     // PREP PARAMS

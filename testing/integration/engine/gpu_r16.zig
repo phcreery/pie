@@ -91,9 +91,9 @@ test "r16uint -> r16float -> double -> download" {
     const texel_count_per_row = padded_bytes_per_row / TextureFormat.r16uint.bpp();
 
     // ALLOCATORS
-    var upload_fba = try upload.fixedBufferAllocator();
+    var upload_fba = try upload.fixedBufferAllocator(allocator);
     var upload_allocator = upload_fba.allocator();
-    var download_fba = try download.fixedBufferAllocator();
+    var download_fba = try download.fixedBufferAllocator(allocator);
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD (padded rows of u16)

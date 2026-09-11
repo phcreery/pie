@@ -12,6 +12,8 @@ const TextureFormat = pie.gpu.TextureFormat;
 const Bindings = pie.gpu.Bindings;
 
 test "simple compute double buffer test" {
+    const allocator = std.testing.allocator;
+
     var gpu = try GPU.init(std.testing.io);
     defer gpu.deinit();
 
@@ -80,12 +82,12 @@ test "simple compute double buffer test" {
     defer bindings_b_to_a.deinit();
 
     // ALLOCATORS
-    var upload_fba = try upload.fixedBufferAllocator();
+    var upload_fba = try upload.fixedBufferAllocator(allocator);
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
     _ = try upload_allocator.alloc(f16, roi.w * roi.h * format.nchannels());
 
-    var download_fba = try download.fixedBufferAllocator();
+    var download_fba = try download.fixedBufferAllocator(allocator);
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD
