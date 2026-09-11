@@ -731,7 +731,7 @@ pub const Pipeline = struct {
             // re-run modifyOut so modules can update output rois/format from the
             // changed params (e.g. swap-roi); then detect stale connector textures
             try self.runModulesModifyOut();
-            try self.perf.timerLap("runModulesModifyOut");
+            try self.perf.timerLap("runModulesModifyOut2");
             try self.runNodeSyncSockets();
             try self.perf.timerLap("runNodeSyncSockets");
             try self.runNodesInitConnectorTextures(.{ .refresh = true });
@@ -744,7 +744,7 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runNodesUploadSource");
             // run only the dirty nodes (params changed) + their downstream successors
             try self.runNodesCreateBindings(.{ .only_dirty = true });
-            try self.perf.timerLap("runNodesCreateBindings");
+            try self.perf.timerLap("runNodesCreateBindings2");
             try self.runNodes(.{ .only_dirty = true });
             try self.perf.timerLap("runNodes");
             try self.runNodesDownloadSink();
