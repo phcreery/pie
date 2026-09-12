@@ -5,7 +5,7 @@ const sokol = @import("sokol");
 const cimgui = @import("cimgui");
 const spv = @import("build/spirv.zig");
 
-pub fn build(b: *Build) !void { // $ls root_id 1
+pub fn build(b: *Build) !void { // $ls root_id 2
     // CONFIGURATION
     const target = b.standardTargetOptions(.{});
     // for testing only, forces a native build
@@ -166,7 +166,7 @@ pub fn build(b: *Build) !void { // $ls root_id 1
     integration_test_step.dependOn(&run_integration_tests.step);
 
     // Force the test runner to wait until everything is installed in zig-out/
-    integration_test_step.dependOn(b.getInstallStep());
+    // integration_test_step.dependOn(b.getInstallStep());
 
     // from here on different handling for native vs wasm builds
     // if (target.result.cpu.arch.isWasm()) {

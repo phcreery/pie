@@ -7,14 +7,7 @@ pub fn compileZigToSpirv(
     name: []const u8,
     file: std.Build.LazyPath,
     comptime features: []const std.Target.spirv.Feature,
-) *std.Build.Step.Compile {
-    // _ = features;
-
-    // const target = b.resolveTargetQuery(.{
-    //     .cpu_arch = .spirv32,
-    //     .cpu_model = .{ .explicit = &std.Target.spirv.cpu.vulkan_v1_2 },
-    //     .os_tag = .vulkan,
-    // });
+) std.Build.LazyPath {
     const target = b.resolveTargetQuery(.{
         .cpu_arch = .spirv32,
         .cpu_model = .{ .explicit = &std.Target.spirv.cpu.generic },
@@ -22,38 +15,34 @@ pub fn compileZigToSpirv(
         .os_tag = .vulkan,
         .ofmt = .spirv,
     });
+    const mod_spirv = b.createModule(.{
+        .root_source_file = b.path("src/engine/modules/spirv.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const obj = b.addExecutable(.{
         .name = name,
         .root_module = b.createModule(.{
             .root_source_file = file,
-            .optimize = optimize,
             .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "spirv", .module = mod_spirv },
+            },
         }),
         .use_llvm = false,
         .use_lld = false,
     });
-    return obj;
-}
-
-pub fn embedObject(
-    b: *std.Build,
-    mod: *std.Build.Module,
-    bin: std.Build.LazyPath,
-    name: []const u8,
-    dir: []const u8,
-) void {
-    _ = dir; // no longer installing the raw artifact; the patched binary is embedded instead
-    _ = b;
-
-    mod.addAnonymousImport(name, .{ .root_source_file = bin });
+    return obj.getEmittedBin();
 }
 
 /// Run the naga-compatibility patcher (see spirv_naga_patch.zig) over the
 /// SPIR-V emitted by the Zig compiler and return the patched binary.
-fn patchForNaga(
+fn patchSpirvForNaga(
     b: *std.Build,
-    obj: *std.Build.Step.Compile,
-) std.Build.LazyPath {
+    obj: std.Build.LazyPath,
+    file_name: []const u8,
+) !std.Build.LazyPath {
     const patcher = b.addExecutable(.{
         .name = "spirv-naga-patch",
         .root_module = b.createModule(.{
@@ -63,8 +52,10 @@ fn patchForNaga(
         }),
     });
     const run = b.addRunArtifact(patcher);
-    run.addFileArg(obj.getEmittedBin());
-    return run.addOutputFileArg("patched.spv");
+    run.addFileArg(obj);
+    var buf: [64]u8 = undefined;
+    const output_file_name = try std.fmt.bufPrint(&buf, "{s}.patched.spv", .{file_name});
+    return run.addOutputFileArg(output_file_name);
 }
 
 pub fn compileAndEmbedModuleSpirVShader(
@@ -79,7 +70,8 @@ pub fn compileAndEmbedModuleSpirVShader(
     const file_path_str = try std.fmt.bufPrint(&buffer, "src/engine/modules/{s}/{s}", .{ module_name, file_name });
     const file_name_path = b.path(file_path_str);
     const spv = compileZigToSpirv(b, optimize, file_name, file_name_path, &[_]std.Target.spirv.Feature{});
-    embedObject(b, mod, patchForNaga(b, spv), embed_name, "shaders");
+    const spv_patched = try patchSpirvForNaga(b, spv, file_name);
+    mod.addAnonymousImport(embed_name, .{ .root_source_file = spv_patched });
 }
 
 pub fn compileAndEmbedZigSpirVModules(b: *std.Build, mod: *std.Build.Module, optimize: std.builtin.OptimizeMode) !void {

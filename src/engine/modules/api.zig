@@ -32,7 +32,8 @@ pub const SocketDesc = struct {
     private: Socket.PrivateMembers = .{},
 };
 
-pub const Sockets = [MAX_SOCKETS]?SocketDesc;
+// pub const Sockets = [MAX_SOCKETS]?SocketDesc;
+pub const Sockets = []const SocketDesc;
 
 pub const NodeType = enum {
     compute,

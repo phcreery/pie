@@ -1,7 +1,7 @@
 const api = @import("../api.zig");
 const std = @import("std");
 
-pub var desc: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "test-nop-zig",
     .type = .compute,
     .sockets = init: {
@@ -29,30 +29,35 @@ pub var desc: api.ModuleDesc = .{
 };
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
+    const zon = @import("nop.comp.zon");
+    // print zon
+    std.debug.print("nop.comp.zon: {any}\n", .{zon});
+
+    const sockets: api.Sockets = zon;
+
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .compute,
-
-        // .shader = .{ .spirv = @embedFile("nopopt.comp.spv") },
         .shader = .{ .spirv = @embedFile("nop.comp.zig.spv.embed") },
         .name = "test-nop-zig",
         .run_size = mod_output_sock.roi,
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = .{
-                .name = "input",
-                .type = .read,
-                .format = .rgba16float,
-                .roi = null,
-            };
-            s[1] = .{
-                .name = "output",
-                .type = .write,
-                .format = .rgba16float,
-                .roi = null,
-            };
-            break :init s;
-        },
+        // .sockets = init: {
+        //     var s: api.Sockets = @splat(null);
+        //     s[0] = .{
+        //         .name = "input",
+        //         .type = .read,
+        //         .format = .rgba16float,
+        //         .roi = null,
+        //     };
+        //     s[1] = .{
+        //         .name = "output",
+        //         .type = .write,
+        //         .format = .rgba16float,
+        //         .roi = null,
+        //     };
+        //     break :init s;
+        // },
+        .sockets = sockets,
     };
     const node = try api.addNodeDesc(pipe, mod, node_desc);
     try api.inheritSocket(pipe, mod, "input", node, "input");

@@ -1,0 +1,12 @@
+.{
+    .{
+        .name = "input",
+        .type = .read,
+        .format = .rgba16float,
+    },
+    .{
+        .name = "output",
+        .type = .write,
+        .format = .rgba16float,
+    },
+}
