@@ -32,8 +32,8 @@ pub const SocketDesc = struct {
     private: Socket.PrivateMembers = .{},
 };
 
-// pub const Sockets = [MAX_SOCKETS]?SocketDesc;
-pub const Sockets = []const SocketDesc;
+pub const Sockets = [MAX_SOCKETS]?SocketDesc;
+// pub const Sockets = []const SocketDesc;
 
 pub const NodeType = enum {
     compute,
@@ -190,4 +190,61 @@ pub fn getModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name:
 pub fn getSocketIndex(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !usize {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     return mod.getSocketIndex(socket_name);
+}
+
+pub fn socketsFromZon(comptime zon: anytype) Sockets {
+    var sockets: Sockets = @splat(null);
+    inline for (@typeInfo(@TypeOf(zon)).@"struct".field_names, 0..) |field_name, i| {
+        var s: SocketDesc = coerceStruct(SocketDesc, @field(zon, field_name));
+        s.name = field_name;
+        sockets[i] = s;
+    }
+    return sockets;
+}
+
+fn coerceStruct(comptime T: type, comptime source: anytype) T {
+    var result: T = undefined;
+    inline for (@typeInfo(@TypeOf(source)).@"struct".field_names) |field_name| {
+        @field(result, field_name) = @field(source, field_name);
+    }
+    return result;
+}
+
+const ShaderSourceFileName = union(gpu.ShaderLanguage) {
+    wgsl: []const u8,
+    spirv: []const u8,
+    glsl: []const u8,
+};
+
+const SocketDescZon = struct {
+    name: []const u8,
+    type: Socket.SocketType,
+    format: gpu.TextureFormat,
+};
+
+const NodeDescZon = struct {
+    shader: ShaderSourceFileName,
+    name: []const u8,
+    sockets: []const SocketDescZon,
+};
+
+pub fn parseNodeDescZon(comptime zon: NodeDescZon) NodeDesc {
+    var node_desc: NodeDesc = undefined;
+    node_desc.type = .compute;
+    node_desc.shader = switch (zon.shader) {
+        .wgsl => |file_name| gpu.ShaderSource{ .wgsl = @embedFile(file_name) },
+        .spirv => |file_name| gpu.ShaderSource{ .spirv = @embedFile(file_name) },
+        .glsl => |file_name| gpu.ShaderSource{ .glsl = @embedFile(file_name) },
+    };
+    node_desc.name = zon.name;
+    var sockets: Sockets = @splat(null);
+    inline for (zon.sockets, 0..) |socket_zon, i| {
+        var s: SocketDesc = undefined;
+        s.name = socket_zon.name;
+        s.type = socket_zon.type;
+        s.format = socket_zon.format;
+        sockets[i] = s;
+    }
+    node_desc.sockets = sockets;
+    return node_desc;
 }

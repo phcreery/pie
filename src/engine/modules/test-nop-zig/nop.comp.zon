@@ -1,12 +1,8 @@
 .{
-    .{
-        .name = "input",
-        .type = .read,
-        .format = .rgba16float,
-    },
-    .{
-        .name = "output",
-        .type = .write,
-        .format = .rgba16float,
+    .shader = .{ .spirv = "nop.comp.zig.spv.embed" },
+    .name = "test-nop-zig",
+    .sockets = .{
+        .{ .name = "input", .type = .read, .format = .rgba16float },
+        .{ .name = "output", .type = .write, .format = .rgba16float },
     },
 }
