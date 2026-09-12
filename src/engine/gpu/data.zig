@@ -1,5 +1,6 @@
 const std = @import("std");
 const slog = std.log.scoped(.gpu);
+const gpu = @import("root.zig");
 
 // https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
 // see: https://github.com/greggman/webgpu-utils/blob/3f1a4561622ea53e160b91de0d2a196443722dfd/src/wgsl-types.ts#L22
@@ -84,7 +85,7 @@ pub fn alignment(T: type) usize {
 pub fn writeBytes(buf: []u8, item: anytype) void {
     // if t is enum, we need to get the alignment of the underlying value (e.g. i32)
     if (@typeInfo(@TypeOf(item)) == .@"enum") {
-        const underlying = @intFromEnum(item);
+        const underlying = @backingInt(item);
         writeBytes(buf, underlying);
         return;
     }
@@ -202,4 +203,23 @@ test "layoutStruct" {
 
     const expect_mat3x3_r2: [3]f32 = .{ 0.0, 1.0, 0.0 };
     try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r2)[0..12], bytes_buf[48..60]);
+}
+
+/// Copy a dense (row-contiguous) pixel buffer into a GPU staging region that
+/// uses wgpu's required padded row stride (bytesPerRow multiple of 256).
+/// `dst` is the mapped staging pointer (already sized by the caller for the
+/// padded layout); `src` is the dense source slice; `width`/`height` are the
+/// texel dimensions and `bpp` the bytes per texel of the source.
+///
+/// This is the inverse of reading `enqueueTexToBuf` output, and is what source
+/// modules should use in `readSource` when the raw buffer is row-contiguous.
+pub fn copyDenseToStaging(dst: *anyopaque, src: []const u8, width: u32, height: u32, bpp: u32) void {
+    const bytes_per_row = width * bpp;
+    const padded_bytes_per_row = gpu.alignBytesPerRow(bytes_per_row);
+    const dst_ptr: [*]u8 = @ptrCast(@alignCast(dst));
+    for (0..height) |row| {
+        const d = dst_ptr[row * padded_bytes_per_row ..][0..bytes_per_row];
+        const s = src[row * bytes_per_row ..][0..bytes_per_row];
+        @memcpy(d, s);
+    }
 }

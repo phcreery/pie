@@ -3,7 +3,7 @@ const wgpu = @import("wgpu_zig");
 const root = @import("root.zig");
 const GPU = @import("GPU.zig");
 const Shader = @import("Shader.zig");
-const BindGroupLayoutEntry = @import("BindGroupLayoutEntry.zig");
+const TextureFormat = @import("Texture.zig").TextureFormat;
 
 const slog = std.log.scoped(.gpu);
 
@@ -13,6 +13,39 @@ pipeline_layout: wgpu.PipelineLayout,
 pipeline: wgpu.ComputePipeline,
 
 const Self = @This();
+
+pub const BindGroupLayoutEntry = struct {
+    texture: ?BindGroupLayoutTextureEntry = null,
+    buffer: ?BindGroupLayoutBufferEntry = null,
+
+    pub const BindGroupLayoutEntryAccess = enum {
+        read,
+        write,
+    };
+
+    pub const BindGroupLayoutTextureEntry = struct {
+        format: TextureFormat,
+        access: BindGroupLayoutEntryAccess,
+    };
+
+    pub const BindGroupLayoutBufferEntryType = enum {
+        storage,
+        uniform,
+        // read_only_storage,
+
+        pub fn toWGPUBufferBindingType(self: BindGroupLayoutBufferEntryType) wgpu.BindGroupLayout.BufferBindingType {
+            return switch (self) {
+                .storage => .storage,
+                .uniform => .uniform,
+                // .read_only_storage => .read_only_storage,
+            };
+        }
+    };
+
+    pub const BindGroupLayoutBufferEntry = struct {
+        binding_type: BindGroupLayoutBufferEntryType,
+    };
+};
 
 pub fn init(
     gpu: *GPU,

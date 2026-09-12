@@ -6,7 +6,6 @@ const wgpu = @import("wgpu_zig");
 const root = @import("root.zig");
 const GPU = @import("GPU.zig");
 const ComputePipeline = @import("ComputePipeline.zig");
-// const BindGroupEntry = @import("BindGroupEntry.zig");
 const Texture = @import("Texture.zig");
 const Buffer = @import("Buffer.zig");
 

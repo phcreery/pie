@@ -83,5 +83,5 @@ pub fn compileAndEmbedModuleSpirVShader(
 }
 
 pub fn compileAndEmbedZigSpirVModules(b: *std.Build, mod: *std.Build.Module, optimize: std.builtin.OptimizeMode) !void {
-    try compileAndEmbedModuleSpirVShader(b, optimize, mod, "test-nop-zig", "nop.comp.zig", "nop.comp.zig.embed");
+    try compileAndEmbedModuleSpirVShader(b, optimize, mod, "test-nop-zig", "nop.comp.zig", "nop.comp.zig.spv.embed");
 }

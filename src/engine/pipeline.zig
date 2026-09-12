@@ -1072,7 +1072,7 @@ pub const Pipeline = struct {
                 { // IMG PARAM BUFFER INIT
                     var size_bytes: usize = 0;
                     if (module.img_param) |img_param| {
-                        size_bytes = try gpu.layoutStruct(null, img_param);
+                        size_bytes = try gpu.data.layoutStruct(null, img_param);
                     }
                     const img_param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .uniform);
                     if (module.img_param_handle) |img_param_handle| {
@@ -1519,9 +1519,9 @@ pub const Pipeline = struct {
                 // upload img params
                 if (module.img_param) |img_param| {
                     slog.debug("Uploading img params for module '{s}':", .{module.desc.name});
-                    var buf = try arena.alloc(u8, try gpu.layoutStruct(null, img_param));
+                    var buf = try arena.alloc(u8, try gpu.data.layoutStruct(null, img_param));
                     defer arena.free(buf);
-                    const used_len = try gpu.layoutStruct(buf, img_param);
+                    const used_len = try gpu.data.layoutStruct(buf, img_param);
 
                     const img_param_mapped_slice_ptr = module.img_param_mapped_slice_ptr orelse return error.ModuleMissingImgParamMappedSlicePtr;
                     const mapped_ptr: [*]u8 = @ptrCast(@alignCast(img_param_mapped_slice_ptr));

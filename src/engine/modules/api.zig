@@ -135,7 +135,7 @@ pub fn compileShader(pipe: PipelineHandle, shader_source: gpu.ShaderSource) !gpu
 }
 
 pub fn copyToStaging(mapped: *anyopaque, src: []const u8, width: u32, height: u32, bpp: u32) void {
-    gpu.copyDenseToStaging(mapped, src, width, height, bpp);
+    gpu.data.copyDenseToStaging(mapped, src, width, height, bpp);
 }
 
 pub fn initParam(pipe: PipelineHandle, desc: ParamDesc, value: anytype) !Param {

@@ -6,7 +6,7 @@ const zuballoc = @import("zuballoc");
 const ROI = @import("../ROI.zig");
 const GPU = @import("GPU.zig");
 const Texture = @import("Texture.zig");
-const TextureFormat = @import("TextureFormat.zig").TextureFormat;
+const TextureFormat = Texture.TextureFormat;
 
 const c = wgpu.c;
 const slog = std.log.scoped(.gpu);
