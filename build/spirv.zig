@@ -16,7 +16,7 @@ pub fn compileZigToSpirv(
         .ofmt = .spirv,
     });
     const mod_spirv = b.createModule(.{
-        .root_source_file = b.path("src/engine/modules/spirv.zig"),
+        .root_source_file = b.path("src/spirv/spirv.zig"),
         .target = target,
         .optimize = optimize,
     });

@@ -55,6 +55,6 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             break :init s;
         },
     };
-    const node = try api.addNodeDesc(pipe, mod, node_desc);
+    const node = try api.addNode(pipe, mod, node_desc);
     try api.inheritSocket(pipe, mod, "input", node, "input");
 }

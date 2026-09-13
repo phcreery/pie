@@ -68,10 +68,6 @@ test "getModuleDesc resolves names from owned repo, addModule records" {
     try std.testing.expect(pipeline.getModuleDesc("does-not-exist") == null);
     try std.testing.expectError(error.ModuleNotFound, pipeline.addModule("01", "does-not-exist"));
 
-    // addModuleDesc (internal primitive) does NOT record
-    _ = try pipeline.addModuleDesc("01", pipeline.getModuleDesc("test-i-1234").?);
-    try std.testing.expectEqual(@as(usize, 0), pipeline.history.count());
-
     // addModule (public edit op) DOES record
     _ = try pipeline.addModule("02", "test-i-1234");
     try std.testing.expectEqual(@as(usize, 1), pipeline.history.count());

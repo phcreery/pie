@@ -249,7 +249,7 @@ pub const Pipeline = struct {
     /// history — matching vkdt, only module-level config (module/connect/param)
     /// is recorded. Modules' `createNodes` call this; there is no separate
     /// public recording variant because no node edit is a history event.
-    pub fn addNodeDesc(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
+    pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
         slog.debug("Adding node to pipeline: '{s}'", .{node_desc.name});
         var node = try Node.init(self, mod_handle, node_desc);
         try self.initOutputConnectorHandles(&node);
@@ -418,7 +418,7 @@ pub const Pipeline = struct {
     // History-aware editing ops
     // ================================================
     // The public editing surface records a delta in `history` after mutating
-    // the pipeline. The primitives above (`addModuleDesc`, `addNodeDesc`,
+    // the pipeline. The primitives above (`addModuleDesc`, `addNode`,
     // `connectModules`, `setModuleParam`) do not, so replay (which must be
     // side-effect free) can rebuild concrete state without re-recording.
 

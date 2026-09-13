@@ -167,13 +167,10 @@ pub fn inheritSocket(pipe: PipelineHandle, mod: ModuleHandle, mod_socket_name: [
     return pipe.inheritSocket(mod, mod_socket_name, node, node_socket_name);
 }
 
-/// Add a derived node to a module. Nodes are not recorded in history; this
-/// forwards to the internal (non-recording) `addNodeDesc`.
-pub fn addNodeDesc(pipe: PipelineHandle, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
-    return pipe.addNodeDesc(mod, node_desc);
+pub fn addNode(pipe: PipelineHandle, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
+    return pipe.addNode(mod, node_desc);
 }
 
-/// Connect two nodes by socket name. Forwards to `connectNodesName`.
 pub fn connectNodesName(pipe: PipelineHandle, src_node: NodeHandle, src_socket: []const u8, dst_node: NodeHandle, dst_socket: []const u8) !void {
     return pipe.connectNodesName(src_node, src_socket, dst_node, dst_socket);
 }
@@ -210,7 +207,7 @@ const NodeDescZon = struct {
     sockets: []const SocketDescZon,
 };
 
-pub fn parseNodeDescZon(comptime zon: NodeDescZon) NodeDesc {
+pub fn parseNodeDescFromZon(comptime zon: NodeDescZon) NodeDesc {
     var node_desc: NodeDesc = undefined;
     node_desc.type = .compute;
     node_desc.shader = switch (zon.shader) {

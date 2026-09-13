@@ -56,7 +56,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             break :init s;
         },
     };
-    const node_add = try api.addNodeDesc(pipe, mod, node_add_desc);
+    const node_add = try api.addNode(pipe, mod, node_add_desc);
     const node_sub_desc: api.NodeDesc = .{
         .type = .compute,
         .shader = @embedFile("sub.wgsl"),
@@ -79,7 +79,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             break :init s;
         },
     };
-    const node_sub = try api.addNodeDesc(pipe, mod, node_sub_desc);
+    const node_sub = try api.addNode(pipe, mod, node_sub_desc);
 
     try api.inheritSocket(pipe, mod, "input", node_add, "input");
     try api.connectNodesName(pipe, node_add, "output", node_sub, "input");

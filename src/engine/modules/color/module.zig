@@ -97,7 +97,7 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_color = try api.addNodeDesc(pipe, mod, .{
+    const node_color = try api.addNode(pipe, mod, .{
         .type = .compute,
         .shader = .{ .wgsl = @embedFile("./color.wgsl") },
         .name = "color",

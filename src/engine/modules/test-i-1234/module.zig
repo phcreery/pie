@@ -66,7 +66,7 @@ pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyo
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node = try api.addNodeDesc(pipe, mod, .{
+    const node = try api.addNode(pipe, mod, .{
         .type = .source,
         .name = "source",
         .run_size = null,
