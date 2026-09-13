@@ -1,11 +1,11 @@
 const api = @import("../api.zig");
 
-pub var desc: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "test-2nodes",
     .type = .compute,
     .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.Param = @splat(null);
-        p[0] = .{ .name = "value", .value = .{ .i32 = 1 } };
+        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
+        p[0] = .{ .name = "value", .len = 1, .typ = .i32 };
         break :init p;
     },
     .sockets = init: {

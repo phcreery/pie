@@ -32,10 +32,10 @@ pub fn printModules(self: *pipeline.Pipeline) void {
         const input_socket = module.getSocketPtr("input") catch null;
         const input_socket_traverse = blk: {
             if (input_socket) |sock| {
-                if (sock.private.connected_to_module) |connected| {
+                if (sock.connected_to_module) |connected| {
                     // break :blk connected;
                     const connected_module = self.module_pool.getPtr(connected.item) catch break :blk null;
-                    break :blk connected_module.desc.sockets[connected.socket_idx];
+                    break :blk connected_module.sockets[connected.socket_idx];
                 } else {
                     break :blk null;
                 }
@@ -44,10 +44,10 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             }
         };
         const output_socket = module.getSocketPtr("output") catch null;
-        const input_texture_traverse = if (input_socket_traverse) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) else null else null;
-        const output_texture = if (output_socket) |sock| if (sock.private.connector_handle) |h| self.connector_pool.get(h) else null else null;
+        const input_texture_traverse = if (input_socket_traverse) |sock| if (sock.connector_handle) |h| self.connector_pool.get(h) else null else null;
+        const output_texture = if (output_socket) |sock| if (sock.connector_handle) |h| self.connector_pool.get(h) else null else null;
         std.debug.print(module_text, .{
-            if (input_socket_traverse) |sock| if (sock.private.connector_handle) |h| h.id else null else null,
+            if (input_socket_traverse) |sock| if (sock.connector_handle) |h| h.id else null else null,
             if (input_texture_traverse) |input_tex| if (input_tex.*.texture) |tex| tex.roi.w else null else null,
             if (input_texture_traverse) |input_tex| if (input_tex.*.texture) |tex| tex.roi.h else null else null,
             if (input_texture_traverse) |input_tex| if (input_tex.*.texture) |tex| tex.texture else null else null,
@@ -65,7 +65,7 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             // if (module.desc.output_socket) |output_socket| output_socket.roi else null,
             if (output_socket) |sock| if (sock.roi) |roi| roi.w else null else null,
             if (output_socket) |sock| if (sock.roi) |roi| roi.h else null else null,
-            if (output_socket) |sock| if (sock.private.connector_handle) |h| h.id else null else null,
+            if (output_socket) |sock| if (sock.connector_handle) |h| h.id else null else null,
             if (output_texture) |input_tex| if (input_tex.*.texture) |tex| tex.roi.w else null else null,
             if (output_texture) |input_tex| if (input_tex.*.texture) |tex| tex.roi.h else null else null,
             if (output_texture) |output_tex| if (output_tex.*.texture) |tex| tex.texture else null else null,
@@ -81,8 +81,8 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
 
         std.debug.print("==== NODE ========================================\n", .{});
         std.debug.print(" ID:                {d}\n", .{node_handle.id});
-        std.debug.print(" Entry Point:       \"{s}\" ({s})\n", .{ node.desc.name, @tagName(node.desc.type) });
-        for (node.desc.sockets) |sock| {
+        std.debug.print(" Entry Point:       \"{s}\" ({s})\n", .{ node.name, @tagName(node.type) });
+        for (node.sockets) |sock| {
             if (sock) |s| {
                 const connector_text = switch (s.type.direction()) {
                     .input => input: {
@@ -167,7 +167,7 @@ pub fn printNodeExecutionOrder(self: *pipeline.Pipeline) void {
     std.debug.print("NODE EXECUTION ORDER\n", .{});
     for (self.node_execution_order.items, 0..) |node_handle, idx| {
         const node = self.node_pool.getPtr(node_handle) catch unreachable;
-        std.debug.print(" {d}. ({d}) {s}\n", .{ idx + 1, node_handle.id, node.desc.name });
+        std.debug.print(" {d}. ({d}) {s}\n", .{ idx + 1, node_handle.id, node.name });
     }
 }
 
@@ -192,6 +192,6 @@ fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []
     if (node_mod.enabled) {
         enabled_str = "[x]";
     }
-    const res = std.fmt.bufPrint(buf, "{s} {s} | {s} : {s}", .{ enabled_str, @tagName(node_mod.desc.type), node_mod.desc.name, node.desc.name }) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} {s} | {s} : {s}", .{ enabled_str, @tagName(node_mod.desc.type), node_mod.desc.name, node.name }) catch "<error>";
     return @constCast(res);
 }

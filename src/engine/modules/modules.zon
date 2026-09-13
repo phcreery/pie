@@ -1,0 +1,3 @@
+.{
+    .{ .name = "test-nop-zig", .zig_shader = "nop.comp.zig" },
+}

@@ -9,7 +9,7 @@ const WbMode = enum(i32) {
     pre_mul = 1, // White balance coefficients for daylight (daylight balance). Either read from file, or calculated on the basis of file data, or taken from hardcoded constants.
 };
 
-pub var desc: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "i-raw",
     .type = .source,
     .params = init: {
@@ -55,12 +55,12 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHandle, 
     errdefer raw_image.deinit();
 
     var mod = try api.getModule(pipe, mod_handle);
-    mod.desc.data = raw_image;
+    mod.data = raw_image;
 }
 
 pub fn deinit(allocator: std.mem.Allocator, pipe: api.PipelineHandle, mod: api.ModuleHandle) void {
     const m = api.getModule(pipe, mod) catch return;
-    const data_ptr = m.desc.data orelse return;
+    const data_ptr = m.data orelse return;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
     raw_image.deinit();
     allocator.destroy(raw_image);
@@ -105,7 +105,7 @@ fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
-    const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
+    const data_ptr = m.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
     const wb_mode: WbMode = @fromBackingInt(@intCast(try api.getParam(pipe, mod, "wb_mode", i32)));
 
@@ -185,7 +185,7 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
 pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     const m = try api.getModule(pipe, mod);
-    const data_ptr = m.desc.data orelse return error.ModuleDataMissing;
+    const data_ptr = m.data orelse return error.ModuleDataMissing;
     const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
 
     // raw_image is row-contiguous u16; stage it into the padded upload layout
@@ -199,7 +199,6 @@ pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyo
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    const same_as_mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node = try api.addNode(
         pipe,
         mod,
@@ -209,7 +208,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             .run_size = null,
             .sockets = init: {
                 var s: api.Sockets = @splat(null);
-                s[0] = same_as_mod_output_sock.*;
+                s[0] = try api.copyModSocket(pipe, mod, "output");
                 break :init s;
             },
         },

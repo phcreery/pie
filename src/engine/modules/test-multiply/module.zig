@@ -1,7 +1,7 @@
 const api = @import("../api.zig");
 const std = @import("std");
 
-pub var desc: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "test-multiply",
     .type = .compute,
     .params = init: {

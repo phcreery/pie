@@ -2,7 +2,7 @@ const api = @import("../api.zig");
 const std = @import("std");
 const slog = std.log.scoped(.crop);
 
-pub var desc: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "test-text",
     .type = .compute,
     .params = init: {

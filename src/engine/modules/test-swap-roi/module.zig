@@ -4,7 +4,7 @@ const api = @import("../api.zig");
 /// ROI is `input_roi` when `swap_roi == 0`, or `(h, w)` when `swap_roi == 1`.
 /// Used to exercise the pipeline's connector-texture refresh path when an output
 /// roi changes (modifyOut).
-pub var desc: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "test-swap-roi",
     .type = .compute,
     .params = init: {

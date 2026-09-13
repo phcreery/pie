@@ -74,6 +74,24 @@ pub fn compileAndEmbedModuleSpirVShader(
     mod.addAnonymousImport(embed_name, .{ .root_source_file = spv_patched });
 }
 
-pub fn compileAndEmbedZigSpirVModules(b: *std.Build, mod: *std.Build.Module, optimize: std.builtin.OptimizeMode) !void {
-    try compileAndEmbedModuleSpirVShader(b, optimize, mod, "test-nop-zig", "nop.comp.zig", "nop.comp.zig.spv.embed");
+/// Compile and embed the Zig->SPIR-V compute shaders declared in the
+/// build-side module manifest (src/engine/modules/modules.zon).
+pub fn compileAndEmbedZigSpirVModules(
+    b: *std.Build,
+    mod: *std.Build.Module,
+    optimize: std.builtin.OptimizeMode,
+    comptime modules: anytype, // parsed modules.zon
+) !void {
+    inline for (modules) |m| {
+        if (@hasField(@TypeOf(m), "zig_shader")) {
+            try compileAndEmbedModuleSpirVShader(
+                b,
+                optimize,
+                mod,
+                m.name,
+                m.zig_shader,
+                m.zig_shader ++ ".spv.embed",
+            );
+        }
+    }
 }

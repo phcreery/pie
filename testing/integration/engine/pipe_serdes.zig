@@ -93,7 +93,7 @@ test "preset round trip preserves pipeline state" {
 
     const crop_handle = pipe_b.module_name_map.get("crop:01").?;
     const crop_mod = try pipe_b.module_pool.getPtr(crop_handle);
-    const crop_conn = crop_mod.desc.sockets[0].?.private.connected_to_module.?;
+    const crop_conn = crop_mod.sockets[0].?.connected_to_module.?;
     try std.testing.expectEqual(pipe_b.module_name_map.get("demosaic:01").?, crop_conn.item);
 }
 
@@ -125,7 +125,7 @@ test "preset deserialize accepts vkdt syntax" {
 
     const format_handle = pipeline.module_name_map.get("format:01").?;
     const format_mod = try pipeline.module_pool.getPtr(format_handle);
-    const format_conn = format_mod.desc.sockets[0].?.private.connected_to_module.?;
+    const format_conn = format_mod.sockets[0].?.connected_to_module.?;
     try std.testing.expectEqual(pipeline.module_name_map.get("i-raw:main").?, format_conn.item);
 
     const iraw_handle = pipeline.module_name_map.get("i-raw:main").?;

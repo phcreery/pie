@@ -1,9 +1,5 @@
 const std = @import("std");
-const api = @import("modules/api.zig");
-const Module = @import("Module.zig");
-const gpu = @import("gpu/root.zig");
-const pipeline = @import("pipeline.zig");
-const CFA = @import("modules/shared/CFA.zig");
+// const CFA = @import("modules/shared/CFA.zig");
 const slog = std.log.scoped(.imgparam);
 
 // see: https://github.com/hanatos/vkdt/blob/master/src/pipe/module.h#L52

@@ -2,43 +2,44 @@ const std = @import("std");
 const api = @import("modules/api.zig");
 const gpu = @import("gpu/root.zig");
 pub const ROI = @import("ROI.zig");
+const Connector = @import("Connector.zig");
 const pipeline = @import("pipeline.zig");
 
-pub const PrivateMembers = struct {
-    // FOR PIPELINE OPERATION
+name: []const u8,
+type: SocketType,
+format: gpu.TextureFormat,
+roi: ?ROI = null,
+color_profile: ?Connector.ColorProfile = null,
 
-    // for output sockets of modules
-    connector_handle: ?pipeline.ConnectorHandle = null,
+// FOR PIPELINE OPERATION
 
-    // FOR GRAPH TRAVERSAL
-    // for input sockets of modules
-    // populated with pipe.connectModules()
-    connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null,
+// for output sockets of modules
+connector_handle: ?pipeline.ConnectorHandle = null,
 
-    // for input sockets of nodes
-    // populated with pipe.connectNodesName()
-    connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null,
+// FOR GRAPH TRAVERSAL
 
-    // for output sockets of modules
-    // populated with pipe.inheritSocket()
-    inherited_by_node: ?SocketConnection(pipeline.NodeHandle) = null,
+// for input sockets of modules
+// populated with pipe.connectModules()
+connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null,
 
-    // for input sockets of nodes
-    // populated with pipe.inheritSocket()
-    inherited_from_module: ?SocketConnection(pipeline.ModuleHandle) = null,
+// for input sockets of nodes
+// populated with pipe.connectNodesName()
+connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null,
 
-    // offset in the upload or download staging buffer
-    // for source or sink sockets only
-    staging_offset: ?usize = null,
-    staging_ptr: ?*anyopaque = null,
-};
+// for output sockets of modules
+// populated with pipe.inheritSocket()
+inherited_by_node: ?SocketConnection(pipeline.NodeHandle) = null,
 
-pub fn SocketConnection(comptime TItem: type) type {
-    return struct {
-        item: TItem,
-        socket_idx: usize,
-    };
-}
+// for input sockets of nodes
+// populated with pipe.inheritSocket()
+inherited_from_module: ?SocketConnection(pipeline.ModuleHandle) = null,
+
+// offset in the upload or download staging buffer
+// for source or sink sockets only
+staging_offset: ?usize = null,
+staging_ptr: ?*anyopaque = null,
+
+const Self = @This();
 
 pub const Direction = enum {
     input,
@@ -69,9 +70,41 @@ pub const SocketType = enum {
     }
 };
 
-/// check if two socket descriptors are compatible for connection
+pub fn SocketConnection(comptime TItem: type) type {
+    return struct {
+        item: TItem,
+        socket_idx: usize,
+    };
+}
+
+/// A live socket: the declared interface (copied from a `SocketDesc` when the
+/// module is registered or the node is created) plus pipeline-owned runtime
+/// state. Descriptors are never mutated at runtime; all state lives here.
+pub fn fromDesc(desc: api.SocketDesc) Self {
+    return .{
+        .name = desc.name,
+        .type = desc.type,
+        .format = desc.format,
+        .roi = desc.roi,
+        .color_profile = desc.color_profile,
+    };
+}
+
+/// Back to descriptor form, e.g. to seed a `NodeDesc` socket from a
+/// module socket. Runtime state is dropped.
+pub fn toDesc(self: Self) api.SocketDesc {
+    return .{
+        .name = self.name,
+        .type = self.type,
+        .format = self.format,
+        .roi = self.roi,
+        .color_profile = self.color_profile,
+    };
+}
+
+/// check if two sockets are compatible for connection
 /// that is, if the output socket can be connected to the input socket
-pub fn areCompatible(output: *api.SocketDesc, input: *api.SocketDesc) bool {
+pub fn areCompatible(output: *const Self, input: *const Self) bool {
     if (output.type.direction() != .output) return false;
     if (input.type.direction() != .input) return false;
     if (output.format != input.format) return false;
@@ -92,16 +125,16 @@ pub fn areCompatible(output: *api.SocketDesc, input: *api.SocketDesc) bool {
     return true;
 }
 
-fn compatibleColorProfiles(a: ?api.Connector.ColorProfile, b: ?api.Connector.ColorProfile) bool {
+fn compatibleColorProfiles(a: ?Connector.ColorProfile, b: ?Connector.ColorProfile) bool {
     const pa = a orelse return true;
     const pb = b orelse return true;
     return pa.acceptedBy(pb);
 }
 
-/// check if two socket descriptors are similar
+/// check if two sockets are similar
 /// that is, if they have the same type, format, and ROI
 /// used for copying socket descriptors between modules and nodes
-pub fn areSimilar(sock_a: *api.SocketDesc, sock_b: *api.SocketDesc) bool {
+pub fn areSimilar(sock_a: *const Self, sock_b: *const Self) bool {
     if (sock_a.type != sock_b.type) return false;
     if (sock_a.format != sock_b.format) return false;
     // color profile is part of the socket identity; "any" on either side

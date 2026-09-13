@@ -102,7 +102,7 @@ test "coalescing merges repeated edits of the same param" {
 fn multiplyInputConnected(p: *Pipeline) bool {
     const m = p.module_name_map.get("test-multiply:01").?;
     const mod = p.module_pool.getPtr(m) catch return false;
-    return mod.desc.sockets[0].?.private.connected_to_module != null;
+    return mod.sockets[0].?.connected_to_module != null;
 }
 
 test "undo/redo rebuild pipeline state via replay" {
@@ -127,7 +127,7 @@ test "undo/redo rebuild pipeline state via replay" {
     const nop_connected = blk: {
         const nop = pipeline.module_name_map.get("test-nop-glsl:01") orelse break :blk false;
         const mod = try pipeline.module_pool.getPtr(nop);
-        break :blk mod.desc.sockets[0].?.private.connected_to_module != null;
+        break :blk mod.sockets[0].?.connected_to_module != null;
     };
     try std.testing.expect(!nop_connected);
     try std.testing.expect(multiplyInputConnected(&pipeline));
@@ -137,7 +137,7 @@ test "undo/redo rebuild pipeline state via replay" {
     try std.testing.expectEqual(full_count, pipeline.history.cursor);
     const nop_after = pipeline.module_name_map.get("test-nop-glsl:01").?;
     const modop2 = try pipeline.module_pool.getPtr(nop_after);
-    try std.testing.expect(modop2.desc.sockets[0].?.private.connected_to_module != null);
+    try std.testing.expect(modop2.sockets[0].?.connected_to_module != null);
     const mod_after_handle = pipeline.module_name_map.get("test-multiply:01").?;
     const mod_after = try pipeline.module_pool.getPtr(mod_after_handle);
     try std.testing.expectEqual(@as(f32, 2.0), (try mod_after.getParamPtr("multiplier")).get(f32));

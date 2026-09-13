@@ -3,6 +3,7 @@ const api = @import("modules/api.zig");
 const pipeline = @import("pipeline.zig");
 const Param = @import("Param.zig");
 const ImgParam = @import("ImgParam.zig");
+const Socket = api.Socket;
 const slog = std.log.scoped(.mod);
 
 id: []const u8,
@@ -10,6 +11,14 @@ desc: api.ModuleDesc,
 enabled: bool,
 
 dirty: bool = false,
+
+/// Live sockets, copied from `desc.sockets` at registration. All runtime
+/// socket state (roi, private members) lives here; the desc is never mutated.
+sockets: [api.MAX_SOCKETS]?Socket = @splat(null),
+
+/// Module-private data (e.g. a source module's loaded image). Owned by the
+/// module implementation; moved off `ModuleDesc` so descriptors stay POD.
+data: ?*anyopaque = null,
 
 params: [api.MAX_PARAMS_PER_MODULE]?Param = @splat(null),
 // for the buffer that will live on the gpu
@@ -31,17 +40,24 @@ img_param_size: ?usize = null,
 const Self = @This();
 
 pub fn init(id: []const u8, desc: api.ModuleDesc) !Self {
-    return Self{
+    var self = Self{
         .id = id,
         .desc = desc,
         .enabled = true,
     };
+    // copy the declared interface into live sockets
+    for (desc.sockets, 0..) |maybe_sock, i| {
+        if (maybe_sock) |sock| {
+            self.sockets[i] = Socket.fromDesc(sock);
+        }
+    }
+    return self;
 }
 
 // HELPER FUNCTIONS
 
 pub fn getSocketIndex(mod: *const Self, name: []const u8) !usize {
-    for (mod.desc.sockets, 0..) |sock, idx| {
+    for (mod.sockets, 0..) |sock, idx| {
         if (sock) |s| {
             if (std.mem.eql(u8, s.name, name)) {
                 return idx;
@@ -51,9 +67,9 @@ pub fn getSocketIndex(mod: *const Self, name: []const u8) !usize {
     return error.ModuleSocketNotFound;
 }
 
-pub fn getSocketPtr(mod: *Self, name: []const u8) !*api.SocketDesc {
+pub fn getSocketPtr(mod: *Self, name: []const u8) !*Socket {
     const idx = try mod.getSocketIndex(name);
-    if (mod.desc.sockets[idx]) |*sock| {
+    if (mod.sockets[idx]) |*sock| {
         return sock;
     }
     return error.ModuleSocketNotFound;

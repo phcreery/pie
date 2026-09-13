@@ -2,7 +2,7 @@ const api = @import("../api.zig");
 const std = @import("std");
 const temp_tint = @import("./temp_tint.zig");
 
-pub var desc: api.ModuleDesc = .{
+pub const desc: api.ModuleDesc = .{
     .name = "color",
     .type = .compute,
     .params = init: {

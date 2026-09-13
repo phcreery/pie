@@ -2,7 +2,6 @@
 /// profile it carries. The pipeline owns the texture; `deinit` frees it.
 const gpu = @import("gpu/root.zig");
 const ROI = @import("ROI.zig");
-const api = @import("modules/api.zig");
 
 /// White point of the working/connection color space.
 pub const WhitePoint = enum(i32) {

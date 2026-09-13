@@ -1,4 +1,5 @@
 //! API definitions for engine pipeline modules and nodes
+
 const std = @import("std");
 const gpu = @import("../gpu/root.zig");
 pub const math = @import("../math/root.zig");
@@ -14,7 +15,10 @@ pub const ModuleHandle = pipeline.ModuleHandle;
 pub const NodeHandle = pipeline.NodeHandle;
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
+/// The runtime socket type. `Socket.zig` is a file-as-struct, like
+/// `Module.zig`/`Node.zig`, so the file itself is the struct.
 pub const Socket = @import("../Socket.zig");
+pub const SocketType = Socket.SocketType;
 pub const SocketConnection = Socket.SocketConnection;
 pub const Param = @import("../Param.zig");
 pub const Connector = @import("../Connector.zig");
@@ -24,16 +28,13 @@ pub const MAX_PARAMS_PER_MODULE = 16;
 
 pub const SocketDesc = struct {
     name: []const u8,
-    type: Socket.SocketType,
+    type: SocketType,
     format: gpu.TextureFormat,
     roi: ?ROI = null,
     color_profile: ?Connector.ColorProfile = null,
-
-    private: Socket.PrivateMembers = .{},
 };
 
 pub const Sockets = [MAX_SOCKETS]?SocketDesc;
-// pub const Sockets = []const SocketDesc;
 
 pub const NodeType = enum {
     compute,
@@ -114,8 +115,6 @@ pub const ModuleDesc = struct {
     // they can be null if the module has no input or output (sink or source only)
     sockets: Sockets,
 
-    data: ?*anyopaque = null,
-
     // https://github.com/hanatos/vkdt/blob/1921eabfa2c87b90042dee676d5d3e34d8cbd5e1/src/pipe/global.c#L106
     initParams: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
     init: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
@@ -179,9 +178,16 @@ pub fn getModule(pipe: PipelineHandle, mod_handle: ModuleHandle) !*Module {
     return pipe.module_pool.getPtr(mod_handle);
 }
 
-pub fn getModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !*SocketDesc {
+pub fn getModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !*Socket {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     return mod.getSocketPtr(socket_name);
+}
+
+/// Copy a module socket's declared interface as a `SocketDesc`, e.g. to seed
+/// a node's socket list in `createNodes`. Runtime state is not copied.
+pub fn copyModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !SocketDesc {
+    const sock = try getModSocket(pipe, mod_handle, socket_name);
+    return sock.toDesc();
 }
 
 pub fn getSocketIndex(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !usize {
@@ -197,7 +203,7 @@ const ShaderSourceFileName = union(gpu.ShaderLanguage) {
 
 const SocketDescZon = struct {
     name: []const u8,
-    type: Socket.SocketType,
+    type: SocketType,
     format: gpu.TextureFormat,
 };
 

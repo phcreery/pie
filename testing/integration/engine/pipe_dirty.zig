@@ -10,7 +10,7 @@ fn runCount(p: *Pipeline, name: []const u8) u32 {
     var it = p.node_pool.liveHandles();
     while (it.next()) |h| {
         const n = p.node_pool.getPtr(h) catch continue;
-        if (std.mem.eql(u8, n.desc.name, name)) return n.run_count;
+        if (std.mem.eql(u8, n.name, name)) return n.run_count;
     }
     return 0;
 }
@@ -140,8 +140,8 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
         var node_it = pipeline.node_pool.liveHandles();
         while (node_it.next()) |h| {
             const n = try pipeline.node_pool.getPtr(h);
-            if (std.mem.eql(u8, n.desc.name, "swap-roi")) {
-                const ch = pipeline.getNodeConnectorHandle(n.desc.sockets[1].?) orelse return error.TestUnexpectedResult;
+            if (std.mem.eql(u8, n.name, "swap-roi")) {
+                const ch = pipeline.getNodeConnectorHandle(n.sockets[1].?) orelse return error.TestUnexpectedResult;
                 const c = try pipeline.connector_pool.getPtr(ch);
                 break :blk c.texture.?.roi;
             }
@@ -158,8 +158,8 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
         var node_it = pipeline.node_pool.liveHandles();
         while (node_it.next()) |h| {
             const n = try pipeline.node_pool.getPtr(h);
-            if (std.mem.eql(u8, n.desc.name, "swap-roi")) {
-                const ch = pipeline.getNodeConnectorHandle(n.desc.sockets[1].?) orelse return error.TestUnexpectedResult;
+            if (std.mem.eql(u8, n.name, "swap-roi")) {
+                const ch = pipeline.getNodeConnectorHandle(n.sockets[1].?) orelse return error.TestUnexpectedResult;
                 const c = try pipeline.connector_pool.getPtr(ch);
                 break :blk c.texture.?.roi;
             }

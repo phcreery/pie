@@ -147,12 +147,12 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
     it = pipe.module_pool.liveHandles();
     while (it.next()) |handle| {
         const mod = try pipe.module_pool.getPtr(handle);
-        for (mod.desc.sockets) |maybe_sock| {
+        for (mod.sockets) |maybe_sock| {
             const sock = maybe_sock orelse continue;
             if (sock.type.direction() != .input) continue;
-            const conn = sock.private.connected_to_module orelse continue;
+            const conn = sock.connected_to_module orelse continue;
             const src_mod = try pipe.module_pool.getPtr(conn.item);
-            const src_sock = src_mod.desc.sockets[conn.socket_idx] orelse continue;
+            const src_sock = src_mod.sockets[conn.socket_idx] orelse continue;
             try writer.print("connect:{s}:{s}:{s}:{s}:{s}:{s}\n", .{
                 src_mod.desc.name, src_mod.id, src_sock.name,
                 mod.desc.name,     mod.id,     sock.name,
