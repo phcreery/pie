@@ -10,13 +10,11 @@ pub const desc: api.ModuleDesc = .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-            .roi = null,
         };
         s[1] = .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-            .roi = null,
         };
         break :init s;
     },
@@ -30,9 +28,11 @@ pub const desc: api.ModuleDesc = .{
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
+
     var node_desc = api.parseNodeDescFromZon(@import("nop.comp.zon"));
     node_desc.run_size = mod_output_sock.roi;
     const node = try api.addNode(pipe, mod, node_desc);
+
     try api.inheritSocket(pipe, mod, "input", node, "input");
     try api.inheritSocket(pipe, mod, "output", node, "output");
 }

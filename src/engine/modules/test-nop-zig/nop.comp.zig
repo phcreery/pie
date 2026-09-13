@@ -2,16 +2,16 @@
 // spirv-link --target-env=spv1.1 ./src/engine/modules/test-nop-zig/nop.comp.spv -o ./src/engine/modules/test-nop-zig/nopopt.comp.spv
 // diff -u --color <(spirv-dis src/engine/modules/test-nop-zig/nop.comp.spv) <(spirv-dis src/engine/modules/test-nop-zig/nopopt.comp.spv)
 
-const spirv = @import("spirv");
-const zon: spirv.NodeDescZon = @import("nop.comp.zon");
+const shd = @import("shader");
+const zon: shd.NodeDescZon = @import("nop.comp.zon");
 
-const input_image = spirv.imageFromZon(zon, "input");
-const output_image = spirv.imageFromZon(zon, "output");
+const input_image = shd.imageFromZon(zon, "input");
+const output_image = shd.imageFromZon(zon, "output");
 
-export fn main() callconv(spirv.call_conv) void {
-    const coord = spirv.coord();
-    var px = spirv.imageFetch(input_image, coord);
-    px = px + @Vector(4, f32){ 1.0, 1.0, 1.0, 2.0 };
+export fn main() callconv(shd.call_conv) void {
+    const coord = shd.coord();
+    var px = shd.imageFetch(input_image, coord);
+    // px = px + @Vector(4, f32){ 1.0, 1.0, 1.0, 2.0 };
     px = px + @Vector(4, f32){ 0.0, 0.0, 0.0, 0.0 };
-    spirv.imageWrite(output_image, coord, px);
+    shd.imageWrite(output_image, coord, px);
 }

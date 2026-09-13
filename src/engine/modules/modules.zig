@@ -48,10 +48,6 @@ pub const Repository = struct {
         try self.map.put(desc.name, desc);
     }
 
-    pub fn add2(self: *Self, name: []const u8, desc: api.ModuleDesc) !void {
-        try self.map.put(name, desc);
-    }
-
     pub fn get(self: *Self, name: []const u8) ?api.ModuleDesc {
         return self.map.get(name);
     }

@@ -27,7 +27,7 @@ pub fn compileZigToSpirv(
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "spirv", .module = mod_spirv },
+                .{ .name = "shader", .module = mod_spirv },
             },
         }),
         .use_llvm = false,
