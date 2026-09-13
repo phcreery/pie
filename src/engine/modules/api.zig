@@ -192,24 +192,6 @@ pub fn getSocketIndex(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_nam
     return mod.getSocketIndex(socket_name);
 }
 
-pub fn socketsFromZon(comptime zon: anytype) Sockets {
-    var sockets: Sockets = @splat(null);
-    inline for (@typeInfo(@TypeOf(zon)).@"struct".field_names, 0..) |field_name, i| {
-        var s: SocketDesc = coerceStruct(SocketDesc, @field(zon, field_name));
-        s.name = field_name;
-        sockets[i] = s;
-    }
-    return sockets;
-}
-
-fn coerceStruct(comptime T: type, comptime source: anytype) T {
-    var result: T = undefined;
-    inline for (@typeInfo(@TypeOf(source)).@"struct".field_names) |field_name| {
-        @field(result, field_name) = @field(source, field_name);
-    }
-    return result;
-}
-
 const ShaderSourceFileName = union(gpu.ShaderLanguage) {
     wgsl: []const u8,
     spirv: []const u8,
