@@ -9,9 +9,9 @@ const input_image = spirv.imageFromZon(zon, "input");
 const output_image = spirv.imageFromZon(zon, "output");
 
 export fn main() callconv(spirv.call_conv) void {
-    const coord = @as(spirv.Vec2u32, .{ spirv.global_invocation_id[0], spirv.global_invocation_id[1] });
+    const coord = spirv.coord();
     var px = spirv.imageFetch(input_image, coord);
-    // pix = pix + @Vector(4, f32){ 1.0, 1.0, 1.0, 1.0 };
+    px = px + @Vector(4, f32){ 1.0, 1.0, 1.0, 2.0 };
     px = px + @Vector(4, f32){ 0.0, 0.0, 0.0, 0.0 };
     spirv.imageWrite(output_image, coord, px);
 }

@@ -6,6 +6,9 @@ pub const NodeDescZon = mt.NodeDescZon;
 pub const call_conv: std.lang.CallingConvention = .{ .spirv_kernel = .{ .x = 8, .y = 8, .z = 1 } };
 
 pub extern const global_invocation_id: @Vector(3, u32) addrspace(.input);
+pub fn coord() Vec2u32 {
+    return @as(Vec2u32, .{ global_invocation_id[0], global_invocation_id[1] });
+}
 
 pub const Vec4f32 = @Vector(4, f32);
 pub const Vec2u32 = @Vector(2, u32);
