@@ -18,24 +18,24 @@ fn buildChain(p: *Pipeline) !void {
     const filmcurv = try p.addModule("01", "filmcurv");
     const odisplay = try p.addModule("01", "o-display");
 
-    try p.setModuleParam(iraw, "filename", []const u8, "testing/images/DSC_6765.NEF");
-    try p.setModuleParam(iraw, "wb_mode", i32, 0);
+    try p.setModuleParam(iraw, "filename", []const u8, "testing/images/DSC_6765.NEF", .{});
+    try p.setModuleParam(iraw, "wb_mode", i32, 0, .{});
 
-    try p.setModuleParam(color, "wb_tint", f32, 0.0);
-    try p.setModuleParam(color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 });
+    try p.setModuleParam(color, "wb_tint", f32, 0.0, .{});
+    try p.setModuleParam(color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 }, .{});
 
-    try p.setModuleParam(filmcurv, "colormode", i32, 1);
-    try p.setModuleParam(filmcurv, "brightness", f32, 3.8);
-    try p.setModuleParam(filmcurv, "contrast", f32, 1.3);
-    try p.setModuleParam(filmcurv, "bias", f32, 0.0);
+    try p.setModuleParam(filmcurv, "colormode", i32, 1, .{});
+    try p.setModuleParam(filmcurv, "brightness", f32, 3.8, .{});
+    try p.setModuleParam(filmcurv, "contrast", f32, 1.3, .{});
+    try p.setModuleParam(filmcurv, "bias", f32, 0.0, .{});
 
-    try p.connectModules(iraw, "output", format, "input");
-    try p.connectModules(format, "output", denoise, "input");
-    try p.connectModules(denoise, "output", demosaic, "input");
-    try p.connectModules(demosaic, "output", crop, "input");
-    try p.connectModules(crop, "output", color, "input");
-    try p.connectModules(color, "output", filmcurv, "input");
-    try p.connectModules(filmcurv, "output", odisplay, "input");
+    try p.connectModules(iraw, "output", format, "input", .{});
+    try p.connectModules(format, "output", denoise, "input", .{});
+    try p.connectModules(denoise, "output", demosaic, "input", .{});
+    try p.connectModules(demosaic, "output", crop, "input", .{});
+    try p.connectModules(crop, "output", color, "input", .{});
+    try p.connectModules(color, "output", filmcurv, "input", .{});
+    try p.connectModules(filmcurv, "output", odisplay, "input", .{});
 }
 
 test "preset serialize emits vkdt-style lines" {

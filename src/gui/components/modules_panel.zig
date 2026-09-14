@@ -105,7 +105,7 @@ pub const ModulesPanel = struct {
                 ) catch "%.2f";
                 const changed = ig.igSliderFloatEx(label.ptr, &v, slider.min, slider.max, format.ptr, 0);
                 if (changed) {
-                    pipeline.setModuleParam(mod_handle, param_name, f32, v) catch {};
+                    pipeline.setModuleParam(mod_handle, param_name, f32, v, .{}) catch {};
                     rerun_requested.* = true;
                 }
             },
@@ -113,7 +113,7 @@ pub const ModulesPanel = struct {
                 var v = param.get(i32);
                 const changed = ig.igSliderInt(label.ptr, &v, @intFromFloat(@floor(slider.min)), @intFromFloat(@ceil(slider.max)));
                 if (changed) {
-                    pipeline.setModuleParam(mod_handle, param_name, i32, v) catch {};
+                    pipeline.setModuleParam(mod_handle, param_name, i32, v, .{}) catch {};
                     rerun_requested.* = true;
                 }
             },
@@ -179,9 +179,9 @@ pub const ModulesPanel = struct {
 
         if (changed) {
             switch (n) {
-                2 => pipeline.setModuleParam(mod_handle, param_name, [2]f32, values[0..2].*) catch {},
-                3 => pipeline.setModuleParam(mod_handle, param_name, [3]f32, values[0..3].*) catch {},
-                4 => pipeline.setModuleParam(mod_handle, param_name, [4]f32, values[0..4].*) catch {},
+                2 => pipeline.setModuleParam(mod_handle, param_name, [2]f32, values[0..2].*, .{}) catch {},
+                3 => pipeline.setModuleParam(mod_handle, param_name, [3]f32, values[0..3].*, .{}) catch {},
+                4 => pipeline.setModuleParam(mod_handle, param_name, [4]f32, values[0..4].*, .{}) catch {},
                 else => {},
             }
             rerun_requested.* = true;
@@ -229,7 +229,7 @@ pub const ModulesPanel = struct {
         var cur: c_int = @intCast(current_item);
         const changed = ig.igCombo(label.ptr, &cur, @ptrCast(items_z.ptr));
         if (changed) {
-            pipeline.setModuleParam(mod_handle, param_name, i32, cur) catch {};
+            pipeline.setModuleParam(mod_handle, param_name, i32, cur, .{}) catch {};
             rerun_requested.* = true;
         }
     }
@@ -253,7 +253,7 @@ pub const ModulesPanel = struct {
         var value = param.get(i32) != 0;
         const changed = ig.igCheckbox(label.ptr, &value);
         if (changed) {
-            pipeline.setModuleParam(mod_handle, param_name, i32, @as(i32, if (value) 1 else 0)) catch {};
+            pipeline.setModuleParam(mod_handle, param_name, i32, @as(i32, if (value) 1 else 0), .{}) catch {};
             rerun_requested.* = true;
         }
     }
@@ -285,7 +285,7 @@ pub const ModulesPanel = struct {
         const changed = ig.igInputText(label.ptr, &buf, buf.len, ig.ImGuiInputTextFlags_None);
         if (changed) {
             const s = std.mem.sliceTo(&buf, 0);
-            pipeline.setModuleParam(mod_handle, param_name, []const u8, s) catch {};
+            pipeline.setModuleParam(mod_handle, param_name, []const u8, s, .{}) catch {};
             rerun_requested.* = true;
         }
     }

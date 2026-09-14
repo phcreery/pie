@@ -22,6 +22,7 @@ pub const SocketType = Socket.SocketType;
 pub const SocketConnection = Socket.SocketConnection;
 pub const Param = @import("../Param.zig");
 pub const Connector = @import("../Connector.zig");
+pub const HistoryConfig = @import("../history.zig").HistoryConfig;
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 pub const MAX_PARAMS_PER_MODULE = 16;
@@ -158,8 +159,8 @@ pub fn getParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []co
     return param.get(T);
 }
 
-pub fn setParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) !void {
-    try pipe.setModuleParam(mod_handle, param_name, T, value);
+pub fn setParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T, cfg: HistoryConfig) !void {
+    try pipe.setModuleParam(mod_handle, param_name, T, value, cfg);
 }
 
 pub fn inheritSocket(pipe: PipelineHandle, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {

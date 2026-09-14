@@ -3,7 +3,7 @@ const pie = @import("pie");
 
 const Pipeline = pie.Pipeline;
 const P = pie.pipeline;
-const CoalesceConfig = pie.history.CoalesceConfig;
+const HistoryConfig = pie.history.HistoryConfig;
 
 /// Build a small chain through the history-aware ops so every step is recorded.
 /// Relies on the given repo being registered on the pipeline already.
@@ -16,11 +16,11 @@ fn buildChain(p: *Pipeline) !struct {
     const multiply = try p.addModule("01", "test-multiply");
     const nop = try p.addModule("01", "test-nop-glsl");
 
-    try p.setModuleParamWithHistory(multiply, "multiplier", f32, 1.0, .{});
-    try p.setModuleParamWithHistory(multiply, "multiplier", f32, 2.0, .{});
+    try p.setModuleParam(multiply, "multiplier", f32, 1.0, .{});
+    try p.setModuleParam(multiply, "multiplier", f32, 2.0, .{});
 
-    try p.connectModulesWithHistory(iraw, "output", multiply, "input", .{});
-    try p.connectModulesWithHistory(multiply, "output", nop, "input", .{});
+    try p.connectModules(iraw, "output", multiply, "input", .{});
+    try p.connectModules(multiply, "output", nop, "input", .{});
 
     return .{ .iraw = iraw, .multiply = multiply, .nop = nop };
 }
@@ -82,10 +82,10 @@ test "coalescing merges repeated edits of the same param" {
     const m = try pipeline.addModule("01", "test-multiply");
 
     // with coalesce enabled, two quick edits of 'multiplier' collapse to one step
-    const cfg = CoalesceConfig{ .window_secs = 60.0 };
-    try pipeline.setModuleParamWithHistory(m, "multiplier", f32, 1.0, cfg);
+    const cfg = HistoryConfig{ .window_secs = 60.0 };
+    try pipeline.setModuleParam(m, "multiplier", f32, 1.0, cfg);
     const after_first = pipeline.history.count();
-    try pipeline.setModuleParamWithHistory(m, "multiplier", f32, 2.0, cfg);
+    try pipeline.setModuleParam(m, "multiplier", f32, 2.0, cfg);
     try std.testing.expectEqual(after_first, pipeline.history.count());
     // the surviving step carries the most recent value, and the live pipeline follows
     try std.testing.expectEqualStrings("param:test-multiply:01:multiplier:2", @as([]const u8, pipeline.history.committed()[pipeline.history.committed().len - 1].line));
@@ -93,7 +93,7 @@ test "coalescing merges repeated edits of the same param" {
     try std.testing.expectEqual(@as(f32, 2.0), (try mod.getParamPtr("multiplier")).get(f32));
 
     // a different param or a coalesce-disabled call appends
-    try pipeline.setModuleParamWithHistory(m, "multiplier", f32, 3.0, .{});
+    try pipeline.setModuleParam(m, "multiplier", f32, 3.0, .{});
     try std.testing.expectEqual(after_first + 1, pipeline.history.count());
 }
 

@@ -10,7 +10,10 @@
 
 const std = @import("std");
 
-pub const CoalesceConfig = struct {
+pub const HistoryConfig = struct {
+    /// Whether the edit is recorded in history at all. Replay passes
+    /// `.{ .record = false }` so rebuilding state doesn't re-record.
+    record: bool = true,
     /// Merge an edit that repeats the same recompute key within this many
     /// seconds into the previous matching step instead of appending a new one.
     /// 0 disables coalescing (every call appends).
@@ -118,7 +121,7 @@ pub const History = struct {
         self: *History,
         line: []const u8,
         key: []const u8,
-        cfg: CoalesceConfig,
+        cfg: HistoryConfig,
     ) !void {
         self.dropRedoTail();
 

@@ -125,12 +125,12 @@ fn applyConnect(
     };
     // A `-1` source encodes an explicit disconnect (vkdt grammar)
     if (std.mem.eql(u8, src_name, "-1")) {
-        pipe.disconnectModuleByName(dst_name, dst_inst, dst_sock) catch |err| {
+        pipe.disconnectModuleByName(dst_name, dst_inst, dst_sock, .{ .record = false }) catch |err| {
             slog.warn("line {d}: disconnect failed ({}), skipping", .{ line_no, err });
         };
         return;
     }
-    pipe.connectModulesByName(src_name, src_inst, src_sock, dst_name, dst_inst, dst_sock) catch |err| {
+    pipe.connectModulesByName(src_name, src_inst, src_sock, dst_name, dst_inst, dst_sock, .{ .record = false }) catch |err| {
         slog.warn("line {d}: connect failed ({}), skipping", .{ line_no, err });
     };
 }

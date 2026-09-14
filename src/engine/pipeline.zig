@@ -13,7 +13,7 @@ const ImgParam = @import("ImgParam.zig");
 const Modules = @import("modules/modules.zig");
 const Pool = @import("pool.zig").Pool;
 const History = @import("history.zig").History;
-const CoalesceConfig = @import("history.zig").CoalesceConfig;
+const HistoryConfig = @import("history.zig").HistoryConfig;
 const serdes = @import("serdes.zig");
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const slog = std.log.scoped(.pipe);
@@ -265,6 +265,7 @@ pub const Pipeline = struct {
         dst_mod_name: []const u8,
         dst_mod_id: []const u8,
         dst_mod_socket_name: []const u8,
+        cfg: HistoryConfig,
     ) !void {
         const src_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ src_mod_name, ":", src_mod_id });
         defer self.allocator.free(src_mod_fullname);
@@ -276,15 +277,18 @@ pub const Pipeline = struct {
 
         const dst_mod = self.module_name_map.get(dst_mod_fullname) orelse return error.ModuleNotFound;
 
-        return try self.connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+        return try self.connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name, cfg);
     }
 
+    /// Connect two module sockets and, unless `cfg.record` is false, record a
+    /// `connect:` delta.
     pub fn connectModules(
         self: *Pipeline,
         src_mod: ModuleHandle,
         src_mod_socket_name: []const u8,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
+        cfg: HistoryConfig,
     ) !void {
         // slog.debug("Connecting module {any} socket {s} to module {any} socket {s}", .{ src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name });
         var src_mod_ptr = try self.module_pool.getPtr(src_mod);
@@ -307,12 +311,14 @@ pub const Pipeline = struct {
             slog.err("Incompatible module socket connection from '{s} > {s}' to '{s} > {s}'", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
             return error.ModuleSocketConnectionIncompatible;
         }
-
         dst_mod_socket.connected_to_module = .{
             .item = src_mod,
             .socket_idx = src_socket_idx,
         };
         self.rerouted = true;
+        if (cfg.record) {
+            try self.recordConnectDelta(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name, cfg);
+        }
     }
 
     pub fn connectNodesName(
@@ -406,86 +412,35 @@ pub const Pipeline = struct {
         return mod.getParamPtr(param_name);
     }
 
-    pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) !void {
-        const mod = try self.module_pool.getPtr(mod_handle);
-        const param = try mod.getParamPtr(param_name);
-        try param.set(value);
-        self.dirty = true;
-        mod.dirty = true;
-    }
-
-    // ================================================
-    // History-aware editing ops
-    // ================================================
-    // The public editing surface records a delta in `history` after mutating
-    // the pipeline. The primitives above (`addModuleDesc`, `addNode`,
-    // `connectModules`, `setModuleParam`) do not, so replay (which must be
-    // side-effect free) can rebuild concrete state without re-recording.
-
-    /// Connect two module sockets and record a `connect:` delta.
-    pub fn connectModulesWithHistory(
-        self: *Pipeline,
-        src_mod: ModuleHandle,
-        src_mod_socket_name: []const u8,
-        dst_mod: ModuleHandle,
-        dst_mod_socket_name: []const u8,
-        coalesce: CoalesceConfig,
-    ) !void {
-        try self.connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
-        try self.recordConnectDelta(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name, coalesce);
-    }
-
-    pub fn connectModulesByNameWithHistory(
-        self: *Pipeline,
-        src_mod_name: []const u8,
-        src_mod_id: []const u8,
-        src_mod_socket_name: []const u8,
-        dst_mod_name: []const u8,
-        dst_mod_id: []const u8,
-        dst_mod_socket_name: []const u8,
-        coalesce: CoalesceConfig,
-    ) !void {
-        try self.connectModulesByName(src_mod_name, src_mod_id, src_mod_socket_name, dst_mod_name, dst_mod_id, dst_mod_socket_name);
-        const src_full = try std.mem.concat(self.allocator, u8, &.{ src_mod_name, ":", src_mod_id });
-        defer self.allocator.free(src_full);
-        const dst_full = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
-        defer self.allocator.free(dst_full);
-        const src_handle = self.module_name_map.get(src_full) orelse return error.ModuleNotFound;
-        const dst_handle = self.module_name_map.get(dst_full) orelse return error.ModuleNotFound;
-        try self.recordConnectDelta(src_handle, src_mod_socket_name, dst_handle, dst_mod_socket_name, coalesce);
-    }
-
-    /// Disconnect a module input socket and record a `connect:-1` delta
-    /// (disconnect, mirroring vkdt's `-1` token grammar).
-    pub fn disconnectModuleWithHistory(
-        self: *Pipeline,
-        dst_mod: ModuleHandle,
-        dst_mod_socket_name: []const u8,
-        coalesce: CoalesceConfig,
-    ) !void {
-        try self.disconnectModule(dst_mod, dst_mod_socket_name);
-        try self.recordDisconnectDelta(dst_mod, dst_mod_socket_name, coalesce);
-    }
-
-    /// Remove a module and record a `removemodule:` delta.
-    pub fn removeModuleWithHistory(self: *Pipeline, module_handle: ModuleHandle) !void {
-        const mod = try self.module_pool.getPtr(module_handle);
-        try self.recordRemoveDelta(mod.desc.name, mod.id);
-        try self.removeModuleByName(mod.desc.name, mod.id);
-    }
-
-    /// Set a module param and record a coalesceable `param:` delta.
-    pub fn setModuleParamWithHistory(
+    /// Set a module param and, unless `cfg.record` is false, record a
+    /// coalesceable `param:` delta.
+    pub fn setModuleParam(
         self: *Pipeline,
         mod_handle: ModuleHandle,
         param_name: []const u8,
         T: type,
         value: T,
-        coalesce: CoalesceConfig,
+        cfg: HistoryConfig,
     ) !void {
-        try self.setModuleParam(mod_handle, param_name, T, value);
-        try self.recordParamDelta(mod_handle, param_name, coalesce);
+        const mod = try self.module_pool.getPtr(mod_handle);
+        const param = try mod.getParamPtr(param_name);
+        try param.set(value);
+        self.dirty = true;
+        mod.dirty = true;
+        if (cfg.record) {
+            try self.recordParamDelta(mod_handle, param_name, cfg);
+        }
     }
+
+    // ================================================
+    // History-aware editing ops
+    // ================================================
+    // The editing ops above record a delta in `history` after mutating the
+    // pipeline unless `cfg.record` is false — replay (which must be
+    // side-effect free) passes `.{ .record = false }` so rebuilding concrete
+    // state doesn't re-record. `addModuleDesc` and `addNode` are internal
+    // primitives that never record.
+
 
     // ================================================
     // History undo / redo / rollback
@@ -529,7 +484,7 @@ pub const Pipeline = struct {
     // History delta recorders
     // ================================================
 
-    fn recordParamDelta(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, coalesce: CoalesceConfig) !void {
+    fn recordParamDelta(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, coalesce: HistoryConfig) !void {
         const mod = try self.module_pool.getPtr(mod_handle);
         const line = try serdes.paramToLine(self, mod_handle, param_name);
         defer self.allocator.free(line);
@@ -557,7 +512,7 @@ pub const Pipeline = struct {
         src_mod_socket_name: []const u8,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
-        coalesce: CoalesceConfig,
+        coalesce: HistoryConfig,
     ) !void {
         const src = try self.module_pool.getPtr(src_mod);
         const dst = try self.module_pool.getPtr(dst_mod);
@@ -575,7 +530,7 @@ pub const Pipeline = struct {
         self: *Pipeline,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
-        coalesce: CoalesceConfig,
+        coalesce: HistoryConfig,
     ) !void {
         const dst = try self.module_pool.getPtr(dst_mod);
         const buf = try std.mem.concat(self.allocator, u8, &.{
@@ -632,9 +587,15 @@ pub const Pipeline = struct {
         }
         return handles;
     }
-
-    /// Disconnect a module input socket by handle.
-    pub fn disconnectModule(self: *Pipeline, dst_mod: ModuleHandle, dst_mod_socket_name: []const u8) !void {
+    /// Disconnect a module input socket and, unless `cfg.record` is false,
+    /// record a `connect:-1` delta (disconnect, mirroring vkdt's `-1` token
+    /// grammar).
+    pub fn disconnectModule(
+        self: *Pipeline,
+        dst_mod: ModuleHandle,
+        dst_mod_socket_name: []const u8,
+        cfg: HistoryConfig,
+    ) !void {
         const dst = try self.module_pool.getPtr(dst_mod);
         const idx = try dst.getSocketIndex(dst_mod_socket_name);
         if (dst.sockets[idx]) |*sock| {
@@ -643,14 +604,27 @@ pub const Pipeline = struct {
             return error.ModuleSocketNotFound;
         }
         self.rerouted = true;
+        if (cfg.record) {
+            try self.recordDisconnectDelta(dst_mod, dst_mod_socket_name, cfg);
+        }
     }
 
     /// Disconnect a module input socket by name+instance (used by replay).
-    pub fn disconnectModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) !void {
+    pub fn disconnectModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8, cfg: HistoryConfig) !void {
         const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
         defer self.allocator.free(fullname);
         const dst_mod = self.module_name_map.get(fullname) orelse return error.ModuleNotFound;
-        try self.disconnectModule(dst_mod, dst_mod_socket);
+        try self.disconnectModule(dst_mod, dst_mod_socket, cfg);
+    }
+
+    /// Remove a module and, unless `cfg.record` is false, record a
+    /// `removemodule:` delta.
+    pub fn removeModule(self: *Pipeline, module_handle: ModuleHandle, cfg: HistoryConfig) !void {
+        const mod = try self.module_pool.getPtr(module_handle);
+        if (cfg.record) {
+            try self.recordRemoveDelta(mod.desc.name, mod.id);
+        }
+        try self.removeModuleByName(mod.desc.name, mod.id);
     }
 
     /// Remove a module by name+instance (used by replay), freeing its map key,

@@ -63,19 +63,19 @@ test "simple test modules" {
     const mod_test_nop_zig = try pipeline.addModule("01", "test-nop-zig");
     const mod_test_o_2468 = try pipeline.addModule("01", "test-o-2468");
 
-    try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0);
-    // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0));
+    try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0, .{});
+    // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0), .{});
 
-    // pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input") catch unreachable;
-    // pipeline.connectModules(mod_test_multiply, "output", mod_test_2nodes, "input") catch unreachable;
-    // pipeline.connectModules(mod_test_2nodes, "output", mod_test_nop_1, "input") catch unreachable;
-    // pipeline.connectModules(mod_test_nop_1, "output", mod_test_nop_2, "input") catch unreachable;
-    // pipeline.connectModules(mod_test_nop_2, "output", mod_test_o_2468, "input") catch unreachable;
+    // pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input", .{}) catch unreachable;
+    // pipeline.connectModules(mod_test_multiply, "output", mod_test_2nodes, "input", .{}) catch unreachable;
+    // pipeline.connectModules(mod_test_2nodes, "output", mod_test_nop_1, "input", .{}) catch unreachable;
+    // pipeline.connectModules(mod_test_nop_1, "output", mod_test_nop_2, "input", .{}) catch unreachable;
+    // pipeline.connectModules(mod_test_nop_2, "output", mod_test_o_2468, "input", .{}) catch unreachable;
 
-    try pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input");
-    try pipeline.connectModules(mod_test_multiply, "output", mod_test_nop_glsl, "input");
-    try pipeline.connectModules(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
-    try pipeline.connectModules(mod_test_nop_zig, "output", mod_test_o_2468, "input");
+    try pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input", .{});
+    try pipeline.connectModules(mod_test_multiply, "output", mod_test_nop_glsl, "input", .{});
+    try pipeline.connectModules(mod_test_nop_glsl, "output", mod_test_nop_zig, "input", .{});
+    try pipeline.connectModules(mod_test_nop_zig, "output", mod_test_o_2468, "input", .{});
 
     try pipeline.run();
     // pipeline.rerouted = true;
