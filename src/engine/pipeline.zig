@@ -84,7 +84,7 @@ pub const Pipeline = struct {
     rerouted: bool = true,
     dirty: bool = true,
 
-    history: History,
+    history: History([]const u8, []const u8),
 
     run_arena: std.heap.ArenaAllocator,
 
@@ -141,7 +141,7 @@ pub const Pipeline = struct {
         var param_buffer_pool: ParamBufferPool = .init(allocator);
         errdefer param_buffer_pool.deinit();
 
-        const history = History.init(allocator, io);
+        const history = History([]const u8, []const u8).init(allocator, io);
 
         return Pipeline{
             .allocator = allocator,
@@ -440,7 +440,6 @@ pub const Pipeline = struct {
     // side-effect free) passes `.{ .record = false }` so rebuilding concrete
     // state doesn't re-record. `addModuleDesc` and `addNode` are internal
     // primitives that never record.
-
 
     // ================================================
     // History undo / redo / rollback

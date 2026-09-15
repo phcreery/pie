@@ -15,8 +15,6 @@ pub const ModuleHandle = pipeline.ModuleHandle;
 pub const NodeHandle = pipeline.NodeHandle;
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
-/// The runtime socket type. `Socket.zig` is a file-as-struct, like
-/// `Module.zig`/`Node.zig`, so the file itself is the struct.
 pub const Socket = @import("../Socket.zig");
 pub const SocketType = Socket.SocketType;
 pub const SocketConnection = Socket.SocketConnection;
