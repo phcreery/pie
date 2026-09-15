@@ -23,7 +23,7 @@ connector_handle: ?pipeline.ConnectorHandle = null,
 connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null,
 
 // for input sockets of nodes
-// populated with pipe.connectNodesName()
+// populated with pipe.connectNodesByName()
 connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null,
 
 // for output sockets of modules

@@ -1,11 +1,9 @@
-//! Plaintext (de)serialization of pipeline state in the vkdt `.pst` line
+//! Plaintext (de)serialization of pipeline state in the
 //! grammar: `module:`, `connect:`, `param:` records, `:`-delimited, no
 //! whitespace trimming, `#` full-line comments.
 //!
 //! `serialize` writes modules, then connects (destination-side only), then
-//! params. `deserialize` applies onto an existing pipeline and mirrors vkdt's
-//! warn-and-continue loader: unknown modules/params/commands, failed connects,
-//! and unparseable numbers log a warning with the line number and are skipped;
+//! params. `deserialize` applies onto an existing pipeline
 //! only allocator errors propagate.
 
 const std = @import("std");
@@ -65,7 +63,7 @@ fn applyModule(
         slog.warn("line {d}: missing module instance, skipping", .{line_no});
         return;
     };
-    const module_desc = pipe.getModuleDesc(name) orelse {
+    const module_desc = pipe.repo.get(name) orelse {
         slog.warn("line {d}: unknown module type '{s}', skipping", .{ line_no, name });
         return;
     };
@@ -73,7 +71,7 @@ fn applyModule(
     defer pipe.allocator.free(fullname);
     if (pipe.module_name_map.contains(fullname)) return; // dedup
     const id_copy = try arena.dupe(u8, inst);
-    _ = try pipe.addModuleDesc(id_copy, module_desc);
+    _ = try pipe.addModuleDescNoRecord(id_copy, module_desc);
 }
 
 fn applyRemoveModule(
@@ -123,14 +121,14 @@ fn applyConnect(
         slog.warn("line {d}: missing connect destination socket, skipping", .{line_no});
         return;
     };
-    // A `-1` source encodes an explicit disconnect (vkdt grammar)
+    // A `-1` source encodes an explicit disconnect
     if (std.mem.eql(u8, src_name, "-1")) {
-        pipe.disconnectModuleByName(dst_name, dst_inst, dst_sock, .{ .record = false }) catch |err| {
+        pipe.disconnectModuleByNameNoRecord(dst_name, dst_inst, dst_sock) catch |err| {
             slog.warn("line {d}: disconnect failed ({}), skipping", .{ line_no, err });
         };
         return;
     }
-    pipe.connectModulesByName(src_name, src_inst, src_sock, dst_name, dst_inst, dst_sock, .{ .record = false }) catch |err| {
+    pipe.connectModulesByNameNoRecord(src_name, src_inst, src_sock, dst_name, dst_inst, dst_sock) catch |err| {
         slog.warn("line {d}: connect failed ({}), skipping", .{ line_no, err });
     };
 }

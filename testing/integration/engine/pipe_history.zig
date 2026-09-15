@@ -3,7 +3,6 @@ const pie = @import("pie");
 
 const Pipeline = pie.Pipeline;
 const P = pie.pipeline;
-const HistoryConfig = pie.history.HistoryConfig;
 
 /// Build a small chain through the history-aware ops so every step is recorded.
 /// Relies on the given repo being registered on the pipeline already.
@@ -16,11 +15,11 @@ fn buildChain(p: *Pipeline) !struct {
     const multiply = try p.addModule("01", "test-multiply");
     const nop = try p.addModule("01", "test-nop-glsl");
 
-    try p.setModuleParam(multiply, "multiplier", f32, 1.0, .{});
-    try p.setModuleParam(multiply, "multiplier", f32, 2.0, .{});
+    try p.setModuleParam(multiply, "multiplier", f32, 1.0);
+    try p.setModuleParam(multiply, "multiplier", f32, 2.0);
 
-    try p.connectModules(iraw, "output", multiply, "input", .{});
-    try p.connectModules(multiply, "output", nop, "input", .{});
+    try p.connectModules(iraw, "output", multiply, "input");
+    try p.connectModules(multiply, "output", nop, "input");
 
     return .{ .iraw = iraw, .multiply = multiply, .nop = nop };
 }
@@ -57,15 +56,15 @@ test "recorded history is an append-only delta log" {
     try std.testing.expectEqualStrings("connect:test-multiply:01:output:test-nop-glsl:01:input", h.committed()[6].line);
 }
 
-test "getModuleDesc resolves names from owned repo, addModule records" {
+test "resolves names from owned repo, addModule records" {
     const allocator = std.testing.allocator;
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
 
     // the owned repo is auto-populated by init, so all built-in modules resolve
-    try std.testing.expect(pipeline.getModuleDesc("test-i-1234") != null);
+    try std.testing.expect(pipeline.repo.get("test-i-1234") != null);
     // unknown names are not resolvable
-    try std.testing.expect(pipeline.getModuleDesc("does-not-exist") == null);
+    try std.testing.expect(pipeline.repo.get("does-not-exist") == null);
     try std.testing.expectError(error.ModuleNotFound, pipeline.addModule("01", "does-not-exist"));
 
     // addModule (public edit op) DOES record
@@ -82,10 +81,10 @@ test "coalescing merges repeated edits of the same param" {
     const m = try pipeline.addModule("01", "test-multiply");
 
     // with coalesce enabled, two quick edits of 'multiplier' collapse to one step
-    const cfg = HistoryConfig{ .window_secs = 60.0 };
-    try pipeline.setModuleParam(m, "multiplier", f32, 1.0, cfg);
+    pipeline.history_cfg = .{ .window_secs = 60.0 };
+    try pipeline.setModuleParam(m, "multiplier", f32, 1.0);
     const after_first = pipeline.history.count();
-    try pipeline.setModuleParam(m, "multiplier", f32, 2.0, cfg);
+    try pipeline.setModuleParam(m, "multiplier", f32, 2.0);
     try std.testing.expectEqual(after_first, pipeline.history.count());
     // the surviving step carries the most recent value, and the live pipeline follows
     try std.testing.expectEqualStrings("param:test-multiply:01:multiplier:2", @as([]const u8, pipeline.history.committed()[pipeline.history.committed().len - 1].line));
@@ -93,7 +92,8 @@ test "coalescing merges repeated edits of the same param" {
     try std.testing.expectEqual(@as(f32, 2.0), (try mod.getParamPtr("multiplier")).get(f32));
 
     // a different param or a coalesce-disabled call appends
-    try pipeline.setModuleParam(m, "multiplier", f32, 3.0, .{});
+    pipeline.history_cfg = .{};
+    try pipeline.setModuleParam(m, "multiplier", f32, 3.0);
     try std.testing.expectEqual(after_first + 1, pipeline.history.count());
 }
 

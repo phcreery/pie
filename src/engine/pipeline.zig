@@ -85,6 +85,10 @@ pub const Pipeline = struct {
     dirty: bool = true,
 
     history: History([]const u8, []const u8),
+    /// Coalescing config applied when recording edit deltas (see
+    /// `HistoryConfig.window_secs`). Mutate to change how subsequent edits
+    /// merge into history.
+    history_cfg: HistoryConfig = .{},
 
     run_arena: std.heap.ArenaAllocator,
 
@@ -212,9 +216,18 @@ pub const Pipeline = struct {
     // Public Pipeline functions
     // ================================================
 
+    /// Public edit op: resolve `name` from the registered repos, add the
+    /// module (instance `id`), and record a `module:` delta in history.
+    pub fn addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
+        const module_desc = self.repo.get(name) orelse return error.ModuleNotFound;
+        const module_handle = try self.addModuleDescNoRecord(id, module_desc);
+        try self.recordModuleDelta(name, id);
+        return module_handle;
+    }
+
     /// Internal primitive: add a module, no history recorded.
     /// Prefer `addModule` (which records a delta) from user-facing editing code.
-    pub fn addModuleDesc(self: *Pipeline, id: []const u8, module_desc: api.ModuleDesc) !ModuleHandle {
+    pub fn addModuleDescNoRecord(self: *Pipeline, id: []const u8, module_desc: api.ModuleDesc) !ModuleHandle {
         slog.debug("Adding module to pipeline: '{s}'", .{module_desc.name});
         var module = try Module.init(id, module_desc);
         try self.initOutputConnectorHandles(&module);
@@ -230,25 +243,6 @@ pub const Pipeline = struct {
         return module_handle;
     }
 
-    /// Look up a module descriptor by name from the pipeline's repo.
-    pub fn getModuleDesc(self: *Pipeline, name: []const u8) ?api.ModuleDesc {
-        return self.repo.get(name);
-    }
-
-    /// Public edit op: resolve `name` from the registered repos, add the
-    /// module (instance `id`), and record a `module:` delta in history.
-    pub fn addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
-        const module_desc = self.getModuleDesc(name) orelse return error.ModuleNotFound;
-        const module_handle = try self.addModuleDesc(id, module_desc);
-        try self.recordModuleDelta(name, id);
-        return module_handle;
-    }
-
-    /// Add a node to a module. Nodes are fully derived state (rebuilt by each
-    /// module's `createNodes` on every pipeline run), so this never touches
-    /// history — matching vkdt, only module-level config (module/connect/param)
-    /// is recorded. Modules' `createNodes` call this; there is no separate
-    /// public recording variant because no node edit is a history event.
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
         slog.debug("Adding node to pipeline: '{s}'", .{node_desc.name});
         var node = try Node.init(self, mod_handle, node_desc);
@@ -265,7 +259,6 @@ pub const Pipeline = struct {
         dst_mod_name: []const u8,
         dst_mod_id: []const u8,
         dst_mod_socket_name: []const u8,
-        cfg: HistoryConfig,
     ) !void {
         const src_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ src_mod_name, ":", src_mod_id });
         defer self.allocator.free(src_mod_fullname);
@@ -277,18 +270,52 @@ pub const Pipeline = struct {
 
         const dst_mod = self.module_name_map.get(dst_mod_fullname) orelse return error.ModuleNotFound;
 
-        return try self.connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name, cfg);
+        try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+
+        try self.recordConnectDelta(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+        return;
     }
 
-    /// Connect two module sockets and, unless `cfg.record` is false, record a
-    /// `connect:` delta.
+    pub fn connectModulesByNameNoRecord(
+        self: *Pipeline,
+        src_mod_name: []const u8,
+        src_mod_id: []const u8,
+        src_mod_socket_name: []const u8,
+        dst_mod_name: []const u8,
+        dst_mod_id: []const u8,
+        dst_mod_socket_name: []const u8,
+    ) !void {
+        const src_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ src_mod_name, ":", src_mod_id });
+        defer self.allocator.free(src_mod_fullname);
+
+        const src_mod = self.module_name_map.get(src_mod_fullname) orelse return error.ModuleNotFound;
+
+        const dst_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
+        defer self.allocator.free(dst_mod_fullname);
+
+        const dst_mod = self.module_name_map.get(dst_mod_fullname) orelse return error.ModuleNotFound;
+
+        return try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+    }
+
     pub fn connectModules(
         self: *Pipeline,
         src_mod: ModuleHandle,
         src_mod_socket_name: []const u8,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
-        cfg: HistoryConfig,
+    ) !void {
+        try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+        try self.recordConnectDelta(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+        return;
+    }
+
+    fn _connectModules(
+        self: *Pipeline,
+        src_mod: ModuleHandle,
+        src_mod_socket_name: []const u8,
+        dst_mod: ModuleHandle,
+        dst_mod_socket_name: []const u8,
     ) !void {
         // slog.debug("Connecting module {any} socket {s} to module {any} socket {s}", .{ src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name });
         var src_mod_ptr = try self.module_pool.getPtr(src_mod);
@@ -316,12 +343,9 @@ pub const Pipeline = struct {
             .socket_idx = src_socket_idx,
         };
         self.rerouted = true;
-        if (cfg.record) {
-            try self.recordConnectDelta(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name, cfg);
-        }
     }
 
-    pub fn connectNodesName(
+    pub fn connectNodesByName(
         self: *Pipeline,
         src_node: NodeHandle,
         src_node_socket_name: []const u8,
@@ -412,34 +436,79 @@ pub const Pipeline = struct {
         return mod.getParamPtr(param_name);
     }
 
-    /// Set a module param and, unless `cfg.record` is false, record a
-    /// coalesceable `param:` delta.
-    pub fn setModuleParam(
-        self: *Pipeline,
-        mod_handle: ModuleHandle,
-        param_name: []const u8,
-        T: type,
-        value: T,
-        cfg: HistoryConfig,
-    ) !void {
+    /// Set a module param and record a coalesceable `param:` delta (coalescing
+    /// controlled by `history_cfg`).
+    pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) !void {
         const mod = try self.module_pool.getPtr(mod_handle);
         const param = try mod.getParamPtr(param_name);
         try param.set(value);
         self.dirty = true;
         mod.dirty = true;
-        if (cfg.record) {
-            try self.recordParamDelta(mod_handle, param_name, cfg);
-        }
+        try self.recordParamDelta(mod_handle, param_name);
     }
 
-    // ================================================
-    // History-aware editing ops
-    // ================================================
-    // The editing ops above record a delta in `history` after mutating the
-    // pipeline unless `cfg.record` is false — replay (which must be
-    // side-effect free) passes `.{ .record = false }` so rebuilding concrete
-    // state doesn't re-record. `addModuleDesc` and `addNode` are internal
-    // primitives that never record.
+    pub fn disconnectModule(self: *Pipeline, dst_mod: ModuleHandle, dst_mod_socket_name: []const u8) !void {
+        try self._disconnectModule(dst_mod, dst_mod_socket_name);
+        try self.recordDisconnectDelta(dst_mod, dst_mod_socket_name);
+        return;
+    }
+
+    pub fn disconnectModuleByNameNoRecord(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) !void {
+        return self._disconnectModuleByName(dst_mod_name, dst_mod_id, dst_mod_socket);
+    }
+
+    fn _disconnectModule(
+        self: *Pipeline,
+        dst_mod: ModuleHandle,
+        dst_mod_socket_name: []const u8,
+    ) !void {
+        const dst = try self.module_pool.getPtr(dst_mod);
+        const idx = try dst.getSocketIndex(dst_mod_socket_name);
+        if (dst.sockets[idx]) |*sock| {
+            sock.connected_to_module = null;
+        } else {
+            return error.ModuleSocketNotFound;
+        }
+        self.rerouted = true;
+    }
+
+    /// Disconnect a module input socket by name+instance (used by replay).
+    pub fn disconnectModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) !void {
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
+        defer self.allocator.free(fullname);
+        const dst_mod = self.module_name_map.get(fullname) orelse return error.ModuleNotFound;
+        try self.disconnectModule(dst_mod, dst_mod_socket);
+    }
+
+    fn _disconnectModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) !void {
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
+        defer self.allocator.free(fullname);
+        const dst_mod = self.module_name_map.get(fullname) orelse return error.ModuleNotFound;
+        try self._disconnectModule(dst_mod, dst_mod_socket);
+    }
+
+    /// Remove a module and record a `removemodule:` delta.
+    pub fn removeModule(self: *Pipeline, module_handle: ModuleHandle) !void {
+        const mod = try self.module_pool.getPtr(module_handle);
+        try self.recordRemoveDelta(mod.desc.name, mod.id);
+        try self.removeModuleByName(mod.desc.name, mod.id);
+    }
+
+    /// Remove a module by name+instance (used by replay), freeing its map key,
+    /// params, deinit hook and pool slot.
+    pub fn removeModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8) !void {
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
+        defer self.allocator.free(fullname);
+        const kv = self.module_name_map.fetchRemove(fullname) orelse return error.ModuleNotFound;
+        self.allocator.free(kv.key);
+        const mod_handle = kv.value;
+        const mod = self.module_pool.getPtr(mod_handle) catch return error.ModuleNotFound;
+        for (&mod.params) |*maybe_param_ptr| {
+            if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
+        }
+        if (mod.desc.deinit) |deinitFn| deinitFn(self.allocator, self, mod_handle);
+        self.module_pool.remove(mod_handle);
+    }
 
     // ================================================
     // History undo / redo / rollback
@@ -477,169 +546,6 @@ pub const Pipeline = struct {
     pub fn redo(self: *Pipeline) !void {
         if (!self.history.canRedo()) return;
         try self.replayHistory(self.history.cursor + 1);
-    }
-
-    // ================================================
-    // History delta recorders
-    // ================================================
-
-    fn recordParamDelta(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, coalesce: HistoryConfig) !void {
-        const mod = try self.module_pool.getPtr(mod_handle);
-        const line = try serdes.paramToLine(self, mod_handle, param_name);
-        defer self.allocator.free(line);
-        // key prefixes the value so repeated edits of the same param coalesce
-        const key = try std.mem.concat(self.allocator, u8, &.{ "param:", mod.desc.name, ":", mod.id, ":", param_name });
-        defer self.allocator.free(key);
-        try self.history.appendKeyed(line, key, coalesce);
-    }
-
-    fn recordModuleDelta(self: *Pipeline, name: []const u8, id: []const u8) !void {
-        const buf = try std.mem.concat(self.allocator, u8, &.{ "module:", name, ":", id });
-        defer self.allocator.free(buf);
-        try self.history.append(buf);
-    }
-
-    fn recordRemoveDelta(self: *Pipeline, name: []const u8, id: []const u8) !void {
-        const buf = try std.mem.concat(self.allocator, u8, &.{ "removemodule:", name, ":", id });
-        defer self.allocator.free(buf);
-        try self.history.append(buf);
-    }
-
-    fn recordConnectDelta(
-        self: *Pipeline,
-        src_mod: ModuleHandle,
-        src_mod_socket_name: []const u8,
-        dst_mod: ModuleHandle,
-        dst_mod_socket_name: []const u8,
-        coalesce: HistoryConfig,
-    ) !void {
-        const src = try self.module_pool.getPtr(src_mod);
-        const dst = try self.module_pool.getPtr(dst_mod);
-        const buf = try std.mem.concat(self.allocator, u8, &.{
-            "connect:",    src.desc.name, ":",    src.id, ":",                 src_mod_socket_name, ":",
-            dst.desc.name, ":",           dst.id, ":",    dst_mod_socket_name,
-        });
-        defer self.allocator.free(buf);
-        const key = try std.mem.concat(self.allocator, u8, &.{ "connect:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name });
-        defer self.allocator.free(key);
-        try self.history.appendKeyed(buf, key, coalesce);
-    }
-
-    fn recordDisconnectDelta(
-        self: *Pipeline,
-        dst_mod: ModuleHandle,
-        dst_mod_socket_name: []const u8,
-        coalesce: HistoryConfig,
-    ) !void {
-        const dst = try self.module_pool.getPtr(dst_mod);
-        const buf = try std.mem.concat(self.allocator, u8, &.{
-            "connect:-1:-1:-1:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name,
-        });
-        defer self.allocator.free(buf);
-        const key = try std.mem.concat(self.allocator, u8, &.{ "connect:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name });
-        defer self.allocator.free(key);
-        try self.history.appendKeyed(buf, key, coalesce);
-    }
-
-    // ================================================
-    // Destructive build gestures (used by history replay)
-    // ================================================
-
-    /// Tear down every module (freeing params, name-map keys and module deinit
-    /// hooks) and node (freeing shaders/bindings). Connectors are left alone:
-    /// they are a growth pool shared by modules and get recycled lazily.
-    fn clear(self: *Pipeline) void {
-        // free every module name-map key (allocated in addModuleDesc), then drop
-        // all key/value pairs and the module pool slot so replay-state is clean.
-        var mod_handles = self.removeAllModules();
-        defer mod_handles.deinit(self.allocator);
-
-        var node_handles = std.ArrayList(NodeHandle).empty;
-        defer node_handles.deinit(self.allocator);
-        var it = self.node_pool.liveHandles();
-        while (it.next()) |h| node_handles.append(self.allocator, h) catch unreachable;
-        for (node_handles.items) |h| self.node_pool.remove(h);
-
-        self.rerouted = true;
-    }
-
-    /// Free every module name-map key, clear the map, remove every module
-    /// (params + deinit hook + pool slot), and return the handles (already
-    /// removed) for the caller's convenience.
-    fn removeAllModules(self: *Pipeline) std.ArrayList(ModuleHandle) {
-        var handles = std.ArrayList(ModuleHandle).empty;
-        var map_it = self.module_name_map.iterator();
-        while (map_it.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-        }
-        self.module_name_map.clearRetainingCapacity();
-
-        var mod_it = self.module_pool.liveHandles();
-        while (mod_it.next()) |h| {
-            const mod = self.module_pool.getPtr(h) catch continue;
-            for (&mod.params) |*maybe_param_ptr| {
-                if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
-            }
-            if (mod.desc.deinit) |deinitFn| deinitFn(self.allocator, self, h);
-            self.module_pool.remove(h);
-            handles.append(self.allocator, h) catch unreachable;
-        }
-        return handles;
-    }
-    /// Disconnect a module input socket and, unless `cfg.record` is false,
-    /// record a `connect:-1` delta (disconnect, mirroring vkdt's `-1` token
-    /// grammar).
-    pub fn disconnectModule(
-        self: *Pipeline,
-        dst_mod: ModuleHandle,
-        dst_mod_socket_name: []const u8,
-        cfg: HistoryConfig,
-    ) !void {
-        const dst = try self.module_pool.getPtr(dst_mod);
-        const idx = try dst.getSocketIndex(dst_mod_socket_name);
-        if (dst.sockets[idx]) |*sock| {
-            sock.connected_to_module = null;
-        } else {
-            return error.ModuleSocketNotFound;
-        }
-        self.rerouted = true;
-        if (cfg.record) {
-            try self.recordDisconnectDelta(dst_mod, dst_mod_socket_name, cfg);
-        }
-    }
-
-    /// Disconnect a module input socket by name+instance (used by replay).
-    pub fn disconnectModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8, cfg: HistoryConfig) !void {
-        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
-        defer self.allocator.free(fullname);
-        const dst_mod = self.module_name_map.get(fullname) orelse return error.ModuleNotFound;
-        try self.disconnectModule(dst_mod, dst_mod_socket, cfg);
-    }
-
-    /// Remove a module and, unless `cfg.record` is false, record a
-    /// `removemodule:` delta.
-    pub fn removeModule(self: *Pipeline, module_handle: ModuleHandle, cfg: HistoryConfig) !void {
-        const mod = try self.module_pool.getPtr(module_handle);
-        if (cfg.record) {
-            try self.recordRemoveDelta(mod.desc.name, mod.id);
-        }
-        try self.removeModuleByName(mod.desc.name, mod.id);
-    }
-
-    /// Remove a module by name+instance (used by replay), freeing its map key,
-    /// params, deinit hook and pool slot.
-    pub fn removeModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8) !void {
-        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
-        defer self.allocator.free(fullname);
-        const kv = self.module_name_map.fetchRemove(fullname) orelse return error.ModuleNotFound;
-        self.allocator.free(kv.key);
-        const mod_handle = kv.value;
-        const mod = self.module_pool.getPtr(mod_handle) catch return error.ModuleNotFound;
-        for (&mod.params) |*maybe_param_ptr| {
-            if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
-        }
-        if (mod.desc.deinit) |deinitFn| deinitFn(self.allocator, self, mod_handle);
-        self.module_pool.remove(mod_handle);
     }
 
     /// Run the pipeline. Uses the pipeline-owned `run_arena` for temporary
@@ -755,6 +661,110 @@ pub const Pipeline = struct {
     // ================================================
     // Private Pipeline functions
     // ================================================
+
+    // ================================================
+    // History delta recorders
+    // ================================================
+
+    fn recordParamDelta(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8) !void {
+        const mod = try self.module_pool.getPtr(mod_handle);
+        const line = try serdes.paramToLine(self, mod_handle, param_name);
+        defer self.allocator.free(line);
+        // key prefixes the value so repeated edits of the same param coalesce
+        const key = try std.mem.concat(self.allocator, u8, &.{ "param:", mod.desc.name, ":", mod.id, ":", param_name });
+        defer self.allocator.free(key);
+        try self.history.appendKeyed(line, key, self.history_cfg);
+    }
+
+    fn recordModuleDelta(self: *Pipeline, name: []const u8, id: []const u8) !void {
+        const buf = try std.mem.concat(self.allocator, u8, &.{ "module:", name, ":", id });
+        defer self.allocator.free(buf);
+        try self.history.append(buf);
+    }
+
+    fn recordRemoveDelta(self: *Pipeline, name: []const u8, id: []const u8) !void {
+        const buf = try std.mem.concat(self.allocator, u8, &.{ "removemodule:", name, ":", id });
+        defer self.allocator.free(buf);
+        try self.history.append(buf);
+    }
+
+    fn recordConnectDelta(
+        self: *Pipeline,
+        src_mod: ModuleHandle,
+        src_mod_socket_name: []const u8,
+        dst_mod: ModuleHandle,
+        dst_mod_socket_name: []const u8,
+    ) !void {
+        const src = try self.module_pool.getPtr(src_mod);
+        const dst = try self.module_pool.getPtr(dst_mod);
+        const buf = try std.mem.concat(self.allocator, u8, &.{
+            "connect:",    src.desc.name, ":",    src.id, ":",                 src_mod_socket_name, ":",
+            dst.desc.name, ":",           dst.id, ":",    dst_mod_socket_name,
+        });
+        defer self.allocator.free(buf);
+        const key = try std.mem.concat(self.allocator, u8, &.{ "connect:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name });
+        defer self.allocator.free(key);
+        try self.history.appendKeyed(buf, key, self.history_cfg);
+    }
+
+    fn recordDisconnectDelta(
+        self: *Pipeline,
+        dst_mod: ModuleHandle,
+        dst_mod_socket_name: []const u8,
+    ) !void {
+        const dst = try self.module_pool.getPtr(dst_mod);
+        const buf = try std.mem.concat(self.allocator, u8, &.{
+            "connect:-1:-1:-1:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name,
+        });
+        defer self.allocator.free(buf);
+        const key = try std.mem.concat(self.allocator, u8, &.{ "connect:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name });
+        defer self.allocator.free(key);
+        try self.history.appendKeyed(buf, key, self.history_cfg);
+    }
+
+    // ================================================
+    // Destructive build gestures (used by history replay)
+    // ================================================
+
+    /// Tear down every module (freeing params, name-map keys and module deinit
+    /// hooks) and node (freeing shaders/bindings). Connectors are left alone:
+    /// they are a growth pool shared by modules and get recycled lazily.
+    fn clear(self: *Pipeline) void {
+        var mod_handles = self.removeAllModules();
+        defer mod_handles.deinit(self.allocator);
+
+        var node_handles = std.ArrayList(NodeHandle).empty;
+        defer node_handles.deinit(self.allocator);
+        var it = self.node_pool.liveHandles();
+        while (it.next()) |h| node_handles.append(self.allocator, h) catch unreachable;
+        for (node_handles.items) |h| self.node_pool.remove(h);
+
+        self.rerouted = true;
+    }
+
+    /// Free every module name-map key, clear the map, remove every module
+    /// (params + deinit hook + pool slot), and return the handles (already
+    /// removed) for the caller's convenience.
+    fn removeAllModules(self: *Pipeline) std.ArrayList(ModuleHandle) {
+        var handles = std.ArrayList(ModuleHandle).empty;
+        var map_it = self.module_name_map.iterator();
+        while (map_it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.module_name_map.clearRetainingCapacity();
+
+        var mod_it = self.module_pool.liveHandles();
+        while (mod_it.next()) |h| {
+            const mod = self.module_pool.getPtr(h) catch continue;
+            for (&mod.params) |*maybe_param_ptr| {
+                if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
+            }
+            if (mod.desc.deinit) |deinitFn| deinitFn(self.allocator, self, h);
+            self.module_pool.remove(h);
+            handles.append(self.allocator, h) catch unreachable;
+        }
+        return handles;
+    }
 
     /// initialize connector handles for output sockets
     fn initOutputConnectorHandles(self: *Pipeline, item: anytype) !void {
@@ -1195,7 +1205,6 @@ pub const Pipeline = struct {
         /// refresh mode: only (re)create textures whose roi/format no longer
         /// match the module socket (authoritative after modifyOut), free stale
         /// textures, sync node socket roi/format, and mark the node dirty.
-        /// default (false): full init - always allocate, node socket is source.
         refresh: bool = false,
     };
 

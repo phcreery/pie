@@ -35,11 +35,11 @@ test "param change only re-runs the dirty module node and its downstream success
     const mod_nop = try pipeline.addModule("01", "test-nop-glsl");
     const mod_o = try pipeline.addModule("01", "test-o-2468");
 
-    try pipeline.setModuleParam(mod_mult, "multiplier", f32, 2.0, .{});
+    try pipeline.setModuleParam(mod_mult, "multiplier", f32, 2.0);
 
-    try pipeline.connectModules(mod_i, "output", mod_mult, "input", .{});
-    try pipeline.connectModules(mod_mult, "output", mod_nop, "input", .{});
-    try pipeline.connectModules(mod_nop, "output", mod_o, "input", .{});
+    try pipeline.connectModules(mod_i, "output", mod_mult, "input");
+    try pipeline.connectModules(mod_mult, "output", mod_nop, "input");
+    try pipeline.connectModules(mod_nop, "output", mod_o, "input");
 
     // ---- first run: everything runs once ----
     try pipeline.run();
@@ -50,7 +50,7 @@ test "param change only re-runs the dirty module node and its downstream success
 
     // ---- change 'adder' on multiply (does not affect sink output which expects 2x) ----
     // only multiply + downstream (nop-glsl, sink) should re-run; source must NOT.
-    try pipeline.setModuleParam(mod_mult, "adder", f32, 5.0, .{});
+    try pipeline.setModuleParam(mod_mult, "adder", f32, 5.0);
     try pipeline.run();
 
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source")); // source must not re-run
@@ -59,7 +59,7 @@ test "param change only re-runs the dirty module node and its downstream success
     try std.testing.expectEqual(@as(u32, 2), runCount(&pipeline, "sink")); // downstream must re-run
 
     // ---- a param change that doesn't touch anything: same dirty count ----
-    try pipeline.setModuleParam(mod_mult, "adder", f32, 6.0, .{});
+    try pipeline.setModuleParam(mod_mult, "adder", f32, 6.0);
     try pipeline.run();
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source"));
     try std.testing.expectEqual(@as(u32, 3), runCount(&pipeline, "multiply"));
@@ -86,10 +86,10 @@ test "changing a mid-chain param does not re-run upstream nodes" {
     const mod_mult = try pipeline.addModule("01", "test-multiply");
     const mod_o = try pipeline.addModule("01", "test-o-2468");
 
-    try pipeline.setModuleParam(mod_mult, "multiplier", f32, 2.0, .{});
+    try pipeline.setModuleParam(mod_mult, "multiplier", f32, 2.0);
 
-    try pipeline.connectModules(mod_i, "output", mod_mult, "input", .{});
-    try pipeline.connectModules(mod_mult, "output", mod_o, "input", .{});
+    try pipeline.connectModules(mod_i, "output", mod_mult, "input");
+    try pipeline.connectModules(mod_mult, "output", mod_o, "input");
 
     try pipeline.run();
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source"));
@@ -97,7 +97,7 @@ test "changing a mid-chain param does not re-run upstream nodes" {
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "sink"));
 
     // change adder on multiply; source (i-1234) must stay at 1 run
-    try pipeline.setModuleParam(mod_mult, "adder", f32, 4.0, .{});
+    try pipeline.setModuleParam(mod_mult, "adder", f32, 4.0);
     try pipeline.run();
 
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source")); // source upstream not re-run
@@ -127,12 +127,12 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
     const mod_disp = try pipeline.addModule("01", "o-display");
     const mod_swap = try pipeline.addModule("01", "test-swap-roi"); // todo: swap with crop module
 
-    try pipeline.setModuleParam(mod_raw, "filename", []const u8, "testing/images/DSC_6765.NEF", .{});
+    try pipeline.setModuleParam(mod_raw, "filename", []const u8, "testing/images/DSC_6765.NEF");
 
-    try pipeline.connectModules(mod_raw, "output", mod_format, "input", .{});
-    try pipeline.connectModules(mod_format, "output", mod_swap, "input", .{});
-    try pipeline.connectModules(mod_swap, "output", mod_demosaic, "input", .{});
-    try pipeline.connectModules(mod_demosaic, "output", mod_disp, "input", .{});
+    try pipeline.connectModules(mod_raw, "output", mod_format, "input");
+    try pipeline.connectModules(mod_format, "output", mod_swap, "input");
+    try pipeline.connectModules(mod_swap, "output", mod_demosaic, "input");
+    try pipeline.connectModules(mod_demosaic, "output", mod_disp, "input");
 
     // run 1: swap off -> output roi == raw sensor dims 4016x6016
     try pipeline.run();
@@ -152,7 +152,7 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
     try std.testing.expectEqual(@as(u32, 4016), first_roi.h);
 
     // run 2: swap on -> output roi becomes 6016x4016 (w/h swapped) -> texture refresh
-    try pipeline.setModuleParam(mod_swap, "swap_roi", i32, 1, .{});
+    try pipeline.setModuleParam(mod_swap, "swap_roi", i32, 1);
     try pipeline.run();
     const second_roi = blk: {
         var node_it = pipeline.node_pool.liveHandles();

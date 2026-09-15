@@ -157,8 +157,8 @@ pub fn getParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []co
     return param.get(T);
 }
 
-pub fn setParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T, cfg: HistoryConfig) !void {
-    try pipe.setModuleParam(mod_handle, param_name, T, value, cfg);
+pub fn setParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) !void {
+    try pipe.setModuleParam(mod_handle, param_name, T, value);
 }
 
 pub fn inheritSocket(pipe: PipelineHandle, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {
@@ -169,8 +169,8 @@ pub fn addNode(pipe: PipelineHandle, mod: ModuleHandle, node_desc: NodeDesc) !No
     return pipe.addNode(mod, node_desc);
 }
 
-pub fn connectNodesName(pipe: PipelineHandle, src_node: NodeHandle, src_socket: []const u8, dst_node: NodeHandle, dst_socket: []const u8) !void {
-    return pipe.connectNodesName(src_node, src_socket, dst_node, dst_socket);
+pub fn connectNodesByName(pipe: PipelineHandle, src_node: NodeHandle, src_socket: []const u8, dst_node: NodeHandle, dst_socket: []const u8) !void {
+    return pipe.connectNodesByName(src_node, src_socket, dst_node, dst_socket);
 }
 
 pub fn getModule(pipe: PipelineHandle, mod_handle: ModuleHandle) !*Module {

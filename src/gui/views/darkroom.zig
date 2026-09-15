@@ -81,22 +81,22 @@ fn build_image(allocator: std.mem.Allocator, io: std.Io, pipeline: *pie.pipeline
     const mod_filmcurv = try pipeline.addModule("01", "filmcurv");
     const mod_o_display = try pipeline.addModule("01", "o-display");
 
-    try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, input_filename, .{});
-    try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 0, .{});
-    try pipeline.setModuleParam(mod_color, "wb_tint", f32, 0.0, .{});
-    try pipeline.setModuleParam(mod_color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 }, .{}); // from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
-    try pipeline.setModuleParam(mod_filmcurv, "colormode", i32, 1, .{});
-    try pipeline.setModuleParam(mod_filmcurv, "brightness", f32, 3.8, .{});
-    try pipeline.setModuleParam(mod_filmcurv, "contrast", f32, 1.3, .{});
-    try pipeline.setModuleParam(mod_filmcurv, "bias", f32, 0.0, .{});
+    try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, input_filename);
+    try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 0);
+    try pipeline.setModuleParam(mod_color, "wb_tint", f32, 0.0);
+    try pipeline.setModuleParam(mod_color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 }); // from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
+    try pipeline.setModuleParam(mod_filmcurv, "colormode", i32, 1);
+    try pipeline.setModuleParam(mod_filmcurv, "brightness", f32, 3.8);
+    try pipeline.setModuleParam(mod_filmcurv, "contrast", f32, 1.3);
+    try pipeline.setModuleParam(mod_filmcurv, "bias", f32, 0.0);
 
-    try pipeline.connectModules(mod_i_raw, "output", mod_format, "input", .{});
-    try pipeline.connectModules(mod_format, "output", mod_denoise, "input", .{});
-    try pipeline.connectModules(mod_denoise, "output", mod_demosaic, "input", .{});
-    try pipeline.connectModules(mod_demosaic, "output", mod_crop, "input", .{});
-    try pipeline.connectModules(mod_crop, "output", mod_color, "input", .{});
-    try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input", .{});
-    try pipeline.connectModules(mod_filmcurv, "output", mod_o_display, "input", .{});
+    try pipeline.connectModules(mod_i_raw, "output", mod_format, "input");
+    try pipeline.connectModules(mod_format, "output", mod_denoise, "input");
+    try pipeline.connectModules(mod_denoise, "output", mod_demosaic, "input");
+    try pipeline.connectModules(mod_demosaic, "output", mod_crop, "input");
+    try pipeline.connectModules(mod_crop, "output", mod_color, "input");
+    try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input");
+    try pipeline.connectModules(mod_filmcurv, "output", mod_o_display, "input");
 
     try pipeline.run();
 
