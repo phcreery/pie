@@ -51,7 +51,9 @@ pub fn History(comptime TKey: type, comptime TValue: type) type {
             time: i64 = 0,
         };
 
-        pub fn init(allocator: std.mem.Allocator, io: std.Io) History(TKey, TValue) {
+        const Self = @This();
+
+        pub fn init(allocator: std.mem.Allocator, io: std.Io) Self {
             const arena = std.heap.ArenaAllocator.init(allocator);
             return .{
                 .allocator = allocator,
@@ -61,7 +63,7 @@ pub fn History(comptime TKey: type, comptime TValue: type) type {
             };
         }
 
-        pub fn deinit(self: *History(TKey, TValue)) void {
+        pub fn deinit(self: *Self) void {
             self.arena.deinit();
             self.* = undefined;
         }
@@ -69,48 +71,48 @@ pub fn History(comptime TKey: type, comptime TValue: type) type {
         // ----- introspection -----
 
         /// Committed, undoable edits (index < cursor).
-        pub fn committed(self: *const History(TKey, TValue)) []const Item {
+        pub fn committed(self: *const Self) []const Item {
             return self.items.items[0..self.cursor];
         }
 
         /// Every recorded step, including the redo tail (index < count).
-        pub fn all(self: *const History(TKey, TValue)) []const Item {
+        pub fn all(self: *const Self) []const Item {
             return self.items.items;
         }
 
         /// Total recorded steps including the redo tail.
-        pub fn count(self: *const History(TKey, TValue)) usize {
+        pub fn count(self: *const Self) usize {
             return self.items.items.len;
         }
 
-        pub fn canUndo(self: *const History(TKey, TValue)) bool {
+        pub fn canUndo(self: *const Self) bool {
             return self.cursor > 0;
         }
 
-        pub fn canRedo(self: *const History(TKey, TValue)) bool {
+        pub fn canRedo(self: *const Self) bool {
             return self.cursor < self.items.items.len;
         }
 
         // ----- editing the list -----
 
         /// Undo one step: shrink the committed cursor (keeps the redo tail).
-        pub fn undo(self: *History(TKey, TValue)) void {
+        pub fn undo(self: *Self) void {
             if (self.cursor > 0) self.cursor -= 1;
         }
 
         /// Redo one step: grow the commit cursor toward the tip.
-        pub fn redo(self: *History(TKey, TValue)) void {
+        pub fn redo(self: *Self) void {
             if (self.cursor < self.items.items.len) self.cursor += 1;
         }
 
         /// Jump to an arbitrary commit point (0 = before everything).
         /// The caller is responsible for actually rebuilding pipeline state.
-        pub fn setCursor(self: *History(TKey, TValue), n: usize) void {
+        pub fn setCursor(self: *Self, n: usize) void {
             self.cursor = @min(n, self.items.items.len);
         }
 
         /// Append a delta line without coalescing.
-        pub fn append(self: *History(TKey, TValue), line: TValue) !void {
+        pub fn append(self: *Self, line: TValue) !void {
             self.dropRedoTail();
             const owned = try self.arena.allocator().dupe(BaseType(TValue), line);
             try self.items.append(self.arena.allocator(), .{
@@ -123,7 +125,7 @@ pub fn History(comptime TKey: type, comptime TValue: type) type {
         /// Append a delta line, coalescing into the most recent step with the same
         /// `key` when it happened within `window_secs` (in-place replacement).
         pub fn appendKeyed(
-            self: *History(TKey, TValue),
+            self: *Self,
             line: TValue,
             key: TKey,
             cfg: HistoryConfig,

@@ -453,8 +453,20 @@ pub const Pipeline = struct {
         return;
     }
 
+    /// Disconnect a module input socket by name+instance (used by replay).
+    pub fn disconnectModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) !void {
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
+        defer self.allocator.free(fullname);
+        const dst_mod = self.module_name_map.get(fullname) orelse return error.ModuleNotFound;
+        try self._disconnectModule(dst_mod, dst_mod_socket);
+        try self.recordDisconnectDelta(dst_mod_name, dst_mod_id, dst_mod_socket);
+    }
+
     pub fn disconnectModuleByNameNoRecord(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) !void {
-        return self._disconnectModuleByName(dst_mod_name, dst_mod_id, dst_mod_socket);
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
+        defer self.allocator.free(fullname);
+        const dst_mod = self.module_name_map.get(fullname) orelse return error.ModuleNotFound;
+        try self._disconnectModule(dst_mod, dst_mod_socket);
     }
 
     fn _disconnectModule(
@@ -472,26 +484,11 @@ pub const Pipeline = struct {
         self.rerouted = true;
     }
 
-    /// Disconnect a module input socket by name+instance (used by replay).
-    pub fn disconnectModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) !void {
-        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
-        defer self.allocator.free(fullname);
-        const dst_mod = self.module_name_map.get(fullname) orelse return error.ModuleNotFound;
-        try self.disconnectModule(dst_mod, dst_mod_socket);
-    }
-
-    fn _disconnectModuleByName(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) !void {
-        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
-        defer self.allocator.free(fullname);
-        const dst_mod = self.module_name_map.get(fullname) orelse return error.ModuleNotFound;
-        try self._disconnectModule(dst_mod, dst_mod_socket);
-    }
-
     /// Remove a module and record a `removemodule:` delta.
     pub fn removeModule(self: *Pipeline, module_handle: ModuleHandle) !void {
         const mod = try self.module_pool.getPtr(module_handle);
+        try self._removeModule(module_handle);
         try self.recordRemoveDelta(mod.desc.name, mod.id);
-        try self.removeModuleByName(mod.desc.name, mod.id);
     }
 
     /// Remove a module by name+instance (used by replay), freeing its map key,
@@ -502,6 +499,14 @@ pub const Pipeline = struct {
         const kv = self.module_name_map.fetchRemove(fullname) orelse return error.ModuleNotFound;
         self.allocator.free(kv.key);
         const mod_handle = kv.value;
+        try self._removeModule(mod_handle);
+        try self.recordRemoveDelta(dst_mod_name, dst_mod_id);
+    }
+
+    fn _removeModule(
+        self: *Pipeline,
+        mod_handle: ModuleHandle,
+    ) !void {
         const mod = self.module_pool.getPtr(mod_handle) catch return error.ModuleNotFound;
         for (&mod.params) |*maybe_param_ptr| {
             if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
