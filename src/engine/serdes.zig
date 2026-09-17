@@ -63,15 +63,11 @@ fn applyModule(
         slog.warn("line {d}: missing module instance, skipping", .{line_no});
         return;
     };
-    const module_desc = pipe.repo.get(name) orelse {
-        slog.warn("line {d}: unknown module type '{s}', skipping", .{ line_no, name });
-        return;
-    };
     const fullname = try std.mem.concat(pipe.allocator, u8, &.{ name, ":", inst });
     defer pipe.allocator.free(fullname);
     if (pipe.module_name_map.contains(fullname)) return; // dedup
     const id_copy = try arena.dupe(u8, inst);
-    _ = try pipe.addModuleDescNoRecord(id_copy, module_desc);
+    _ = try pipe.addModuleNoRecord(id_copy, name);
 }
 
 fn applyRemoveModule(

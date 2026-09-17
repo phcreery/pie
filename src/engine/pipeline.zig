@@ -219,24 +219,26 @@ pub const Pipeline = struct {
     /// Public edit op: resolve `name` from the registered repos, add the
     /// module (instance `id`), and record a `module:` delta in history.
     pub fn addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
-        const module_desc = self.repo.get(name) orelse return error.ModuleNotFound;
-        const module_handle = try self.addModuleDescNoRecord(id, module_desc);
+        const module_handle = try self._addModule(id, name);
         try self.recordModuleDelta(name, id);
         return module_handle;
     }
 
     /// Internal primitive: add a module, no history recorded.
     /// Prefer `addModule` (which records a delta) from user-facing editing code.
-    pub fn addModuleDescNoRecord(self: *Pipeline, id: []const u8, module_desc: api.ModuleDesc) !ModuleHandle {
-        slog.debug("Adding module to pipeline: '{s}'", .{module_desc.name});
+    pub fn addModuleNoRecord(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
+        return self._addModule(id, name);
+    }
+
+    fn _addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
+        slog.debug("Adding module to pipeline: '{s}'", .{name});
+        const module_desc = self.repo.get(name) orelse return error.ModuleNotFound;
         var module = try Module.init(id, module_desc);
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
         const module_handle = try self.module_pool.add(module);
 
         const fullname = try std.mem.concat(self.allocator, u8, &.{ module.desc.name, ":", id });
-
-        // std.debug.print("Adding module to name map: {s} -> {any}", .{ fullname, module_handle });
 
         try self.module_name_map.put(fullname, module_handle);
         try self.initParams(module_handle);
@@ -587,14 +589,13 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runModulesAllocateUploadBufferForParams");
 
             try self.runModulesReCreateNodes(arena);
-            try self.perf.timerLap("runModulesCreateNodes");
-            try self.runNodesCompileShaders();
-            try self.perf.timerLap("runNodesCompileShaders");
+            try self.perf.timerLap("runModulesReCreateNodes");
 
             // Then run nodes
+            try self.runNodesCompileShaders();
+            try self.perf.timerLap("runNodesCompileShaders");
             try self.runNodesBuildExecutionOrder(arena);
             try self.perf.timerLap("runNodesBuildExecutionOrder");
-
             try self.runNodesInitConnectorTextures(.{});
             try self.perf.timerLap("runNodesInitConnectorTextures");
             try self.runNodesAllocateStagingBuffersForTextures();
