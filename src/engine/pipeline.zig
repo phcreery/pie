@@ -537,37 +537,34 @@ pub const Pipeline = struct {
 
         if (self.rerouted) {
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
-            try self.runModulesPreCheck();
-            try self.perf.timerLap("runModulesPreCheck");
-
             try self.runModulesBuildExecutionOrder(arena);
             try self.perf.timerLap("runModulesBuildExecutionOrder");
-            try self.runModulesInit();
-            try self.perf.timerLap("runModulesInit");
 
-            try self.runModulesCreateParamBufferHandles();
-            try self.perf.timerLap("runModulesCreateParamBufferHandles");
-            try self.runModulesModifyOut();
-            try self.perf.timerLap("runModulesModifyOut");
-            try self.runModulesInitParamBuffers();
-            try self.perf.timerLap("runModulesInitParamBuffers");
-            try self.runModulesAllocateUploadBufferForParams();
-            try self.perf.timerLap("runModulesAllocateUploadBufferForParams");
+            for (self.module_execution_order.items) |module_handle| {
+                const module = try self.module_pool.getPtr(module_handle);
+                try self.runModulePreCheck(module);
+                try self.runModuleInit(module_handle, module);
+                try self.runModuleCreateParamBufferHandles(module);
+                try self.runModuleModifyOut(module_handle, module);
+                try self.runModuleInitParamBuffers(module);
+                try self.runModuleAllocateUploadBufferForParams(module);
+            }
+            try self.perf.timerLap("runModules");
 
             try self.runModulesReCreateNodes(arena);
             try self.perf.timerLap("runModulesReCreateNodes");
 
             // Then run nodes
-            try self.runNodesCompileShaders();
-            try self.perf.timerLap("runNodesCompileShaders");
             try self.runNodesBuildExecutionOrder(arena);
             try self.perf.timerLap("runNodesBuildExecutionOrder");
+            try self.runNodesCompileShaders();
+            try self.perf.timerLap("runNodesCompileShaders");
             try self.runNodesInitConnectorTextures(.{});
             try self.perf.timerLap("runNodesInitConnectorTextures");
-            try self.runNodesAllocateStagingBuffersForTextures();
-            try self.perf.timerLap("runNodesAllocateStagingBuffersForTextures");
             try self.runNodesCreateBindings(.{ .only_dirty = true });
             try self.perf.timerLap("runNodesCreateBindings");
+            try self.runNodesAllocateStagingBuffersForTextures();
+            try self.perf.timerLap("runNodesAllocateStagingBuffersForTextures");
 
             try self.freeUnusedConnectors(arena);
             try self.perf.timerLap("freeUnusedConnectors");
@@ -575,7 +572,7 @@ pub const Pipeline = struct {
             self.printPipeToStdout();
             self.rerouted = false;
             self.dirty = true;
-            self.markAllNodesDirty(); // full rebuild: everything needs to run
+            self.runModulesMarkDirty(); // full rebuild: everything needs to run
         }
 
         if (self.dirty) {
@@ -588,12 +585,10 @@ pub const Pipeline = struct {
             try self.runNodesInitConnectorTextures(.{ .refresh = true });
             try self.perf.timerLap("runNodesInitConnectorTextures(refresh)");
 
-            // only upload params for modules whose nodes are dirty
             try self.runModulesUploadParams(arena);
             try self.perf.timerLap("runModulesUploadParams");
             try self.runNodesUploadSource();
             try self.perf.timerLap("runNodesUploadSource");
-            // run only the dirty nodes (params changed) + their downstream successors
             try self.runNodesCreateBindings(.{ .only_dirty = true });
             try self.perf.timerLap("runNodesCreateBindings2");
             try self.runNodes(.{ .only_dirty = true });
@@ -602,7 +597,7 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runNodesDownloadSink");
 
             self.dirty = false;
-            self.clearAllNodesDirty();
+            self.runModulesClearDirtyFlag();
         }
 
         {
@@ -774,28 +769,25 @@ pub const Pipeline = struct {
         return null;
     }
 
-    fn runModulesPreCheck(self: *Pipeline) !void {
-        var mod_pool_handles = self.module_pool.liveHandles();
-        while (mod_pool_handles.next()) |module_handle| {
-            var module = try self.module_pool.getPtr(module_handle);
-            if (module.desc.type == .source) {
-                const input_socket = module.getSocketPtr("input") catch null;
-                if (input_socket != null) {
-                    slog.err("Source module '{s}' has an input socket defined", .{module.desc.name});
-                    return error.ModuleSourceHasInputSocket;
-                }
+    fn runModulePreCheck(self: *Pipeline, module: *Module) !void {
+        _ = self;
+        if (module.desc.type == .source) {
+            const input_socket = module.getSocketPtr("input") catch null;
+            if (input_socket != null) {
+                slog.err("Source module '{s}' has an input socket defined", .{module.desc.name});
+                return error.ModuleSourceHasInputSocket;
             }
-            if (module.desc.type == .compute) {
-                const input_socket = module.getSocketPtr("input") catch null;
-                if (input_socket == null) {
-                    slog.err("Compute module '{s}' has no input socket defined", .{module.desc.name});
-                    return error.ModuleComputeMissingInputSocket;
-                }
-                const output_socket = module.getSocketPtr("output") catch null;
-                if (output_socket == null) {
-                    slog.err("Compute module '{s}' has no output socket defined", .{module.desc.name});
-                    return error.ModuleComputeMissingOutputSocket;
-                }
+        }
+        if (module.desc.type == .compute) {
+            const input_socket = module.getSocketPtr("input") catch null;
+            if (input_socket == null) {
+                slog.err("Compute module '{s}' has no input socket defined", .{module.desc.name});
+                return error.ModuleComputeMissingInputSocket;
+            }
+            const output_socket = module.getSocketPtr("output") catch null;
+            if (output_socket == null) {
+                slog.err("Compute module '{s}' has no output socket defined", .{module.desc.name});
+                return error.ModuleComputeMissingOutputSocket;
             }
         }
     }
@@ -828,23 +820,17 @@ pub const Pipeline = struct {
         // slog.debug("Topological sorted order of modules: {any}", .{self.module_execution_order.items});
     }
 
-    fn runModulesInit(self: *Pipeline) !void {
-        for (self.module_execution_order.items) |module_handle| {
-            const module = try self.module_pool.getPtr(module_handle);
-            if (module.desc.init) |initFn| {
-                try initFn(self.allocator, self.io, self, module_handle);
-            }
+    fn runModuleInit(self: *Pipeline, module_handle: ModuleHandle, module: *Module) !void {
+        if (module.desc.init) |initFn| {
+            try initFn(self.allocator, self.io, self, module_handle);
         }
     }
 
     /// configure connectors only for module output connectors
-    fn runModulesCreateParamBufferHandles(self: *Pipeline) !void {
-        for (self.module_execution_order.items) |module_handle| {
-            var module = try self.module_pool.getPtr(module_handle);
-            module.img_param_handle = try self.param_buffer_pool.add(null);
-            if (module.params_len() != 0) {
-                module.param_handle = try self.param_buffer_pool.add(null);
-            }
+    fn runModuleCreateParamBufferHandles(self: *Pipeline, module: *Module) !void {
+        module.img_param_handle = try self.param_buffer_pool.add(null);
+        if (module.params_len() != 0) {
+            module.param_handle = try self.param_buffer_pool.add(null);
         }
     }
 
@@ -854,78 +840,85 @@ pub const Pipeline = struct {
     fn runModulesModifyOut(self: *Pipeline) !void {
         for (self.module_execution_order.items) |module_handle| {
             const module = try self.module_pool.getPtr(module_handle);
-            // set roi/color_profile in based on connected module out
+            try self.runModuleModifyOut(module_handle, module);
+        }
+    }
+
+    /// set roi out for each module based on connected modules
+    /// and call modifyOut if defined
+    /// we also propagate img_param and color_profile down the pipeline here
+    fn runModuleModifyOut(self: *Pipeline, module_handle: ModuleHandle, module: *Module) !void {
+        // set roi/color_profile in based on connected module out
+        for (module.sockets) |socket| {
+            if (socket) |sock| {
+                if (sock.type.direction() == .input) {
+                    if (sock.connected_to_module) |connection| {
+                        const connected_to_module = try self.module_pool.getPtr(connection.item);
+                        var socket_ptr = try module.getSocketPtr(sock.name);
+                        // slog.debug("Setting input ROI for module '{s} > {s}' from previous connected module '{s}'", .{ module.desc.name, sock.name, connected_to_module.desc.name });
+                        const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse unreachable;
+                        socket_ptr.roi = connected_to_socket.roi;
+                        // carry the actual color profile of what is flowing in
+                        socket_ptr.color_profile = connected_to_socket.color_profile;
+
+                        // propagate img_param from connected module to this module
+                        module.img_param = connected_to_module.img_param;
+                    }
+                }
+            }
+        }
+
+        // modify out
+        if (module.desc.modifyOut) |modifyOutFn| {
+            try modifyOutFn(self, module_handle);
+        } else {
+            // auto propagate roi from input to output
+            if (module.desc.type != .source and module.desc.type != .sink) {
+                const input_socket = try module.getSocketPtr("input");
+                const output_socket = try module.getSocketPtr("output");
+                output_socket.roi = input_socket.roi;
+            }
+        }
+
+        // resolve color profiles: if an output socket declares "any" for
+        // white point and/or primaries, inherit the corresponding field
+        // from the connected input's actual profile ("pass along the
+        // previous profile if unchanged"). Modules that emit an explicit
+        // profile (e.g. color -> rec2020/d65) keep it. Source modules have
+        // no input, so their "any" fields stay "any".
+        const input_profile = blk: {
+            var prof: ?api.Connector.ColorProfile = null;
             for (module.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .input) {
                         if (sock.connected_to_module) |connection| {
                             const connected_to_module = try self.module_pool.getPtr(connection.item);
-                            var socket_ptr = try module.getSocketPtr(sock.name);
-                            // slog.debug("Setting input ROI for module '{s} > {s}' from previous connected module '{s}'", .{ module.desc.name, sock.name, connected_to_module.desc.name });
-                            const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse unreachable;
-                            socket_ptr.roi = connected_to_socket.roi;
-                            // carry the actual color profile of what is flowing in
-                            socket_ptr.color_profile = connected_to_socket.color_profile;
-
-                            // propagate img_param from connected module to this module
-                            module.img_param = connected_to_module.img_param;
+                            const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse continue;
+                            prof = connected_to_socket.color_profile;
+                            break;
                         }
                     }
                 }
             }
-
-            // modify out
-            if (module.desc.modifyOut) |modifyOutFn| {
-                try modifyOutFn(self, module_handle);
-            } else {
-                // auto propagate roi from input to output
-                if (module.desc.type != .source and module.desc.type != .sink) {
-                    const input_socket = try module.getSocketPtr("input");
-                    const output_socket = try module.getSocketPtr("output");
-                    output_socket.roi = input_socket.roi;
-                }
-            }
-
-            // resolve color profiles: if an output socket declares "any" for
-            // white point and/or primaries, inherit the corresponding field
-            // from the connected input's actual profile ("pass along the
-            // previous profile if unchanged"). Modules that emit an explicit
-            // profile (e.g. color -> rec2020/d65) keep it. Source modules have
-            // no input, so their "any" fields stay "any".
-            const input_profile = blk: {
-                var prof: ?api.Connector.ColorProfile = null;
-                for (module.sockets) |socket| {
-                    if (socket) |sock| {
-                        if (sock.type.direction() == .input) {
-                            if (sock.connected_to_module) |connection| {
-                                const connected_to_module = try self.module_pool.getPtr(connection.item);
-                                const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse continue;
-                                prof = connected_to_socket.color_profile;
-                                break;
-                            }
+            break :blk prof;
+        };
+        if (input_profile) |incoming| {
+            for (module.sockets) |socket| {
+                if (socket) |sock| {
+                    if (sock.type.direction() == .output) {
+                        const output_socket = try module.getSocketPtr(sock.name);
+                        if (output_socket.color_profile) |declared| {
+                            output_socket.color_profile = .{
+                                .white_point = if (declared.white_point == .any) incoming.white_point else declared.white_point,
+                                .primaries = if (declared.primaries == .any) incoming.primaries else declared.primaries,
+                            };
+                        } else {
+                            output_socket.color_profile = incoming;
                         }
-                    }
-                }
-                break :blk prof;
-            };
-            if (input_profile) |incoming| {
-                for (module.sockets) |socket| {
-                    if (socket) |sock| {
-                        if (sock.type.direction() == .output) {
-                            const output_socket = try module.getSocketPtr(sock.name);
-                            if (output_socket.color_profile) |declared| {
-                                output_socket.color_profile = .{
-                                    .white_point = if (declared.white_point == .any) incoming.white_point else declared.white_point,
-                                    .primaries = if (declared.primaries == .any) incoming.primaries else declared.primaries,
-                                };
-                            } else {
-                                output_socket.color_profile = incoming;
-                            }
-                            // keep any already-created connector on this socket in sync
-                            if (sock.connector_handle) |ch| {
-                                const conn = self.connector_pool.getPtr(ch) catch continue;
-                                conn.*.color_profile = output_socket.color_profile.?;
-                            }
+                        // keep any already-created connector on this socket in sync
+                        if (sock.connector_handle) |ch| {
+                            const conn = self.connector_pool.getPtr(ch) catch continue;
+                            conn.*.color_profile = output_socket.color_profile.?;
                         }
                     }
                 }
@@ -933,71 +926,65 @@ pub const Pipeline = struct {
         }
     }
 
-    fn runModulesInitParamBuffers(self: *Pipeline) !void {
+    fn runModuleInitParamBuffers(self: *Pipeline, module: *Module) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
-        for (self.module_execution_order.items) |module_handle| {
-            const module = try self.module_pool.getPtr(module_handle);
-            if (module.desc.type == .compute) {
-                if (module.enabled == false) continue;
-                params: { // PARAM BUFFER INIT
-                    var size_bytes: usize = 0;
-                    var tu: [api.MAX_PARAMS_PER_MODULE]Param = undefined;
-                    var tu_len: usize = 0;
-                    for (module.params, 0..) |param, idx| {
-                        if (param) |p| {
-                            tu[idx] = p;
-                            tu_len += 1;
-                        }
-                    }
-                    if (tu_len == 0) break :params;
-                    size_bytes = try Param.layoutTaggedUnion(null, tu[0..tu_len]);
-                    const param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
-                    // defer texture.deinit();
-                    // store texture in connector pool
-                    if (module.param_handle) |param_handle| {
-                        const mod_param_buffer = try self.param_buffer_pool.getPtr(param_handle);
-                        mod_param_buffer.* = param_buffer;
-                        module.param_size = size_bytes;
+        if (module.desc.type == .compute) {
+            if (module.enabled == false) return;
+            params: { // PARAM BUFFER INIT
+                var size_bytes: usize = 0;
+                var tu: [api.MAX_PARAMS_PER_MODULE]Param = undefined;
+                var tu_len: usize = 0;
+                for (module.params, 0..) |param, idx| {
+                    if (param) |p| {
+                        tu[idx] = p;
+                        tu_len += 1;
                     }
                 }
-                { // IMG PARAM BUFFER INIT
-                    var size_bytes: usize = 0;
-                    if (module.img_param) |img_param| {
-                        size_bytes = try gpu.data.layoutStruct(null, img_param);
-                    }
-                    const img_param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .uniform);
-                    if (module.img_param_handle) |img_param_handle| {
-                        const mod_img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
-                        mod_img_param_buffer.* = img_param_buffer;
-                        module.img_param_size = size_bytes;
-                    }
+                if (tu_len == 0) break :params;
+                size_bytes = try Param.layoutTaggedUnion(null, tu[0..tu_len]);
+                const param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .storage);
+                // defer texture.deinit();
+                // store texture in connector pool
+                if (module.param_handle) |param_handle| {
+                    const mod_param_buffer = try self.param_buffer_pool.getPtr(param_handle);
+                    mod_param_buffer.* = param_buffer;
+                    module.param_size = size_bytes;
+                }
+            }
+            { // IMG PARAM BUFFER INIT
+                var size_bytes: usize = 0;
+                if (module.img_param) |img_param| {
+                    size_bytes = try gpu.data.layoutStruct(null, img_param);
+                }
+                const img_param_buffer = try gpu.Buffer.init(gpu_inst, size_bytes, .uniform);
+                if (module.img_param_handle) |img_param_handle| {
+                    const mod_img_param_buffer = try self.param_buffer_pool.getPtr(img_param_handle);
+                    mod_img_param_buffer.* = img_param_buffer;
+                    module.img_param_size = size_bytes;
                 }
             }
         }
     }
 
-    fn runModulesAllocateUploadBufferForParams(self: *Pipeline) !void {
+    fn runModuleAllocateUploadBufferForParams(self: *Pipeline, module: *Module) !void {
         if (self.upload_fba) |*upload_fba| {
             var upload_allocator = upload_fba.allocator();
 
-            for (self.module_execution_order.items) |module_handle| {
-                var module = try self.module_pool.getPtr(module_handle);
-                if (module.desc.type == .compute) {
-                    if (module.enabled == false) continue;
-                    blk: {
-                        const size_bytes = module.param_size orelse break :blk;
-                        slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
-                        const mapped_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
-                        module.param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
-                        module.param_mapped_slice_ptr = @ptrCast(@alignCast(mapped_param_slice.ptr));
-                    }
-                    blk: {
-                        const size_bytes = module.img_param_size orelse break :blk;
-                        slog.debug("Allocating upload buffer for img params for size {d} bytes", .{size_bytes});
-                        const mapped_img_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
-                        module.img_param_offset = @intFromPtr(mapped_img_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
-                        module.img_param_mapped_slice_ptr = @ptrCast(@alignCast(mapped_img_param_slice.ptr));
-                    }
+            if (module.desc.type == .compute) {
+                if (module.enabled == false) return;
+                blk: {
+                    const size_bytes = module.param_size orelse break :blk;
+                    slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
+                    const mapped_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
+                    module.param_offset = @intFromPtr(mapped_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
+                    module.param_mapped_slice_ptr = @ptrCast(@alignCast(mapped_param_slice.ptr));
+                }
+                blk: {
+                    const size_bytes = module.img_param_size orelse break :blk;
+                    slog.debug("Allocating upload buffer for img params for size {d} bytes", .{size_bytes});
+                    const mapped_img_param_slice = try upload_allocator.alignedAlloc(u8, gpu.COPY_BUFFER_ALIGNMENT, size_bytes);
+                    module.img_param_offset = @intFromPtr(mapped_img_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
+                    module.img_param_mapped_slice_ptr = @ptrCast(@alignCast(mapped_img_param_slice.ptr));
                 }
             }
         }
@@ -1026,19 +1013,6 @@ pub const Pipeline = struct {
             if (module.enabled == false) continue;
             if (module.desc.createNodes) |createNodesFn| {
                 try createNodesFn(self, module_handle);
-            }
-        }
-    }
-    fn runNodesCompileShaders(self: *Pipeline) !void {
-        var node_pool_handles = self.node_pool.liveHandles();
-        while (node_pool_handles.next()) |node_handle| {
-            var node = try self.node_pool.getPtr(node_handle);
-            if (node.shader) |_| {
-                slog.debug("Node '{s}' already has a compiled shader, skipping compilation", .{node.name});
-                continue;
-            }
-            if (node.shader_source) |shader| {
-                node.shader = try api.compileShader(self, shader);
             }
         }
     }
@@ -1105,10 +1079,19 @@ pub const Pipeline = struct {
         // slog.debug("Topological sorted order of nodes: {any}", .{self.node_execution_order.items});
     }
 
-    /// Allocates output textures and creates compute shaders for each node
-    /// also creates bindings for each shader
-    ///
-    /// similar to vkdt dt_graph_run_nodes_allocate()
+    fn runNodesCompileShaders(self: *Pipeline) !void {
+        for (self.node_execution_order.items) |node_handle| {
+            var node = try self.node_pool.getPtr(node_handle);
+            if (node.shader) |_| {
+                slog.debug("Node '{s}' already has a compiled shader, skipping compilation", .{node.name});
+                continue;
+            }
+            if (node.shader_source) |shader| {
+                node.shader = try api.compileShader(self, shader);
+            }
+        }
+    }
+
     const InitConnectorTexturesOptions = struct {
         /// refresh mode: only (re)create textures whose roi/format no longer
         /// match the module socket (authoritative after modifyOut), free stale
@@ -1116,6 +1099,10 @@ pub const Pipeline = struct {
         refresh: bool = false,
     };
 
+    /// Allocates output textures and creates compute shaders for each node
+    /// also creates bindings for each shader
+    ///
+    /// similar to vkdt dt_graph_run_nodes_allocate()
     fn runNodesInitConnectorTextures(self: *Pipeline, options: InitConnectorTexturesOptions) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
         for (self.node_execution_order.items) |node_handle| {
@@ -1483,7 +1470,7 @@ pub const Pipeline = struct {
         mod.dirty = true;
     }
 
-    fn markAllNodesDirty(self: *Pipeline) void {
+    fn runModulesMarkDirty(self: *Pipeline) void {
         // full rebuild: mark every module; nodes derive dirtiness from them
         var it = self.module_pool.liveHandles();
         while (it.next()) |mod_handle| {
@@ -1492,7 +1479,7 @@ pub const Pipeline = struct {
         }
     }
 
-    fn clearAllNodesDirty(self: *Pipeline) void {
+    fn runModulesClearDirtyFlag(self: *Pipeline) void {
         var it = self.module_pool.liveHandles();
         while (it.next()) |mod_handle| {
             const mod = self.module_pool.getPtr(mod_handle) catch continue;
