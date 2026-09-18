@@ -33,7 +33,7 @@ test "recorded history is an append-only delta log" {
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
 
-    const h = &pipeline.history;
+    const h = &pipeline.history.histlist;
     try std.testing.expectEqual(@as(usize, 0), h.count());
     try std.testing.expect(!h.canUndo());
     try std.testing.expect(!h.canRedo());
@@ -69,8 +69,8 @@ test "resolves names from owned repo, addModule records" {
 
     // addModule (public edit op) DOES record
     _ = try pipeline.addModule("02", "test-i-1234");
-    try std.testing.expectEqual(@as(usize, 1), pipeline.history.count());
-    try std.testing.expectEqualStrings("module:test-i-1234:02", pipeline.history.committed()[0].line);
+    try std.testing.expectEqual(@as(usize, 1), pipeline.history.histlist.count());
+    try std.testing.expectEqualStrings("module:test-i-1234:02", pipeline.history.histlist.committed()[0].line);
 }
 
 test "coalescing merges repeated edits of the same param" {
@@ -81,20 +81,20 @@ test "coalescing merges repeated edits of the same param" {
     const m = try pipeline.addModule("01", "test-multiply");
 
     // with coalesce enabled, two quick edits of 'multiplier' collapse to one step
-    pipeline.history_cfg = .{ .window_secs = 60.0 };
+    pipeline.history.config = .{ .window_secs = 60.0 };
     try pipeline.setModuleParam(m, "multiplier", f32, 1.0);
-    const after_first = pipeline.history.count();
+    const after_first = pipeline.history.histlist.count();
     try pipeline.setModuleParam(m, "multiplier", f32, 2.0);
-    try std.testing.expectEqual(after_first, pipeline.history.count());
+    try std.testing.expectEqual(after_first, pipeline.history.histlist.count());
     // the surviving step carries the most recent value, and the live pipeline follows
-    try std.testing.expectEqualStrings("param:test-multiply:01:multiplier:2", @as([]const u8, pipeline.history.committed()[pipeline.history.committed().len - 1].line));
+    try std.testing.expectEqualStrings("param:test-multiply:01:multiplier:2", @as([]const u8, pipeline.history.histlist.committed()[pipeline.history.histlist.committed().len - 1].line));
     const mod = try pipeline.module_pool.getPtr(m);
     try std.testing.expectEqual(@as(f32, 2.0), (try mod.getParamPtr("multiplier")).get(f32));
 
     // a different param or a coalesce-disabled call appends
-    pipeline.history_cfg = .{};
+    pipeline.history.config = .{};
     try pipeline.setModuleParam(m, "multiplier", f32, 3.0);
-    try std.testing.expectEqual(after_first + 1, pipeline.history.count());
+    try std.testing.expectEqual(after_first + 1, pipeline.history.histlist.count());
 }
 
 /// The multiply module's input socket is connected iff the connect delta (item 5)
@@ -112,7 +112,7 @@ test "undo/redo rebuild pipeline state via replay" {
 
     const chain = try buildChain(&pipeline);
     _ = chain;
-    const full_count = pipeline.history.count();
+    const full_count = pipeline.history.histlist.count();
 
     const multiply_handle = pipeline.module_name_map.get("test-multiply:01").?;
     const mod_before = try pipeline.module_pool.getPtr(multiply_handle);
@@ -121,7 +121,7 @@ test "undo/redo rebuild pipeline state via replay" {
 
     // undo one step (the last connect multiply->nop), replay
     try pipeline.undo();
-    try std.testing.expectEqual(full_count - 1, pipeline.history.cursor);
+    try std.testing.expectEqual(full_count - 1, pipeline.history.histlist.cursor);
     // there should be two connects left total; the last (multiply->nop) is undone,
     // but the earlier i1234->multiply connect is preserved.
     const nop_connected = blk: {
@@ -134,7 +134,7 @@ test "undo/redo rebuild pipeline state via replay" {
 
     // redo restores it
     try pipeline.redo();
-    try std.testing.expectEqual(full_count, pipeline.history.cursor);
+    try std.testing.expectEqual(full_count, pipeline.history.histlist.cursor);
     const nop_after = pipeline.module_name_map.get("test-nop-glsl:01").?;
     const modop2 = try pipeline.module_pool.getPtr(nop_after);
     try std.testing.expect(modop2.sockets[0].?.connected_to_module != null);
@@ -150,12 +150,12 @@ test "replayHistory to arbitrary index yields that exact configuration" {
 
     const chain = try buildChain(&pipeline);
     _ = chain;
-    const full_count = pipeline.history.count();
+    const full_count = pipeline.history.histlist.count();
 
     // jump back to index 4: the three modules are present (items 0..2), the
     // two param edits are replayed (items 3..4), but neither connect has run.
-    try pipeline.replayHistory(4);
-    try std.testing.expectEqual(@as(usize, 4), pipeline.history.cursor);
+    try pipeline.history.replayHistory(4);
+    try std.testing.expectEqual(@as(usize, 4), pipeline.history.histlist.cursor);
     try std.testing.expect(!multiplyInputConnected(&pipeline));
     const multiply_handle = pipeline.module_name_map.get("test-multiply:01").?;
     const mod = try pipeline.module_pool.getPtr(multiply_handle);
@@ -163,8 +163,8 @@ test "replayHistory to arbitrary index yields that exact configuration" {
     try std.testing.expectEqual(@as(f32, 1.0), (try mod.getParamPtr("multiplier")).get(f32));
 
     // roll forward past the second param and both connects back to the tip
-    try pipeline.replayHistory(full_count);
-    try std.testing.expectEqual(full_count, pipeline.history.cursor);
+    try pipeline.history.replayHistory(full_count);
+    try std.testing.expectEqual(full_count, pipeline.history.histlist.cursor);
     try std.testing.expect(multiplyInputConnected(&pipeline));
     const mod2_handle = pipeline.module_name_map.get("test-multiply:01").?;
     const mod2 = try pipeline.module_pool.getPtr(mod2_handle);
@@ -178,17 +178,17 @@ test "replay invalidates redo tail on new edits" {
 
     const chain = try buildChain(&pipeline);
     _ = chain;
-    const full = pipeline.history.count();
+    const full = pipeline.history.histlist.count();
 
     try pipeline.undo();
-    try std.testing.expectEqual(full - 1, pipeline.history.cursor);
+    try std.testing.expectEqual(full - 1, pipeline.history.histlist.cursor);
 
     // a new edit after undo drops the redo tail
     const m = try pipeline.addModule("09", "test-i-1234");
     _ = m;
-    try std.testing.expectEqual(full, pipeline.history.cursor);
-    try std.testing.expectEqual(full, pipeline.history.count()); // nothing beyond cursor
-    try std.testing.expect(!pipeline.history.canRedo());
+    try std.testing.expectEqual(full, pipeline.history.histlist.cursor);
+    try std.testing.expectEqual(full, pipeline.history.histlist.count()); // nothing beyond cursor
+    try std.testing.expect(!pipeline.history.histlist.canRedo());
 }
 
 test "history round-trips through serdes serialize output" {

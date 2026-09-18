@@ -20,7 +20,7 @@ pub const SocketType = Socket.SocketType;
 pub const SocketConnection = Socket.SocketConnection;
 pub const Param = @import("../Param.zig");
 pub const Connector = @import("../Connector.zig");
-pub const HistoryConfig = @import("../history.zig").HistoryConfig;
+pub const HistoryConfig = @import("../histlist.zig").HistoryConfig;
 
 pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
 pub const MAX_PARAMS_PER_MODULE = 16;

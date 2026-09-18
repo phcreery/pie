@@ -26,7 +26,7 @@ pub const HistoryConfig = struct {
     max_steps: usize = 2,
 };
 
-pub fn History(comptime TKey: type, comptime TValue: type) type {
+pub fn HistList(comptime TKey: type, comptime TValue: type) type {
     return struct {
         allocator: std.mem.Allocator,
         /// Owns `items` storage and every `Item.line`/`Item.key` slice. Freed all
@@ -41,7 +41,6 @@ pub fn History(comptime TKey: type, comptime TValue: type) type {
         cursor: usize = 0,
 
         pub const Item = struct {
-            /// One `.pst`-style delta line, e.g. `param:i-raw:01:wb_mode:1`.
             /// Owned by `History.arena`, so it stays stable across appends.
             line: TValue,
             /// Coalescing key (e.g. `"param:i-raw:01:wb_mode"`), distinct from the
@@ -168,13 +167,13 @@ pub fn History(comptime TKey: type, comptime TValue: type) type {
 
         /// Permanently discard the redo tail (called before any append that would
         /// otherwise be overwritten by a new step).
-        fn nowNs(self: *const History(TKey, TValue)) i64 {
+        fn nowNs(self: *const HistList(TKey, TValue)) i64 {
             return @intCast(std.Io.Timestamp.now(self.io, .awake).nanoseconds);
         }
 
         /// Called inline: emulate the "shrink redo tail" invariant so that an append
         /// after an undo invalidates the discarded states.
-        fn dropRedoTail(self: *History(TKey, TValue)) void {
+        fn dropRedoTail(self: *HistList(TKey, TValue)) void {
             // Shrink the ArrayList back to where the cursor sits, permanently
             // discarding the redo tail. Uses shrinkRetainingCapacity so the backing
             // arena memory (which holds the strings) survives; we only forget items.
