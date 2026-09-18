@@ -24,8 +24,7 @@ pub const ModuleHandle = ModulePool.Handle;
 pub const NodePool = Pool(Node);
 pub const NodeHandle = NodePool.Handle;
 
-pub const ConnectorPool = Pool(Connector);
-pub const ConnectorHandle = ConnectorPool.Handle;
+pub const ConnectorHandle = Socket.SocketConnection;
 
 pub const ParamBufferPool = Pool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
@@ -75,7 +74,7 @@ pub const Pipeline = struct {
     node_pool: NodePool,
     node_execution_order: std.ArrayList(NodeHandle),
 
-    connector_pool: ConnectorPool,
+    // connector_pool: ConnectorPool,
 
     param_buffer_pool: ParamBufferPool,
 
@@ -133,8 +132,8 @@ pub const Pipeline = struct {
         var node_execution_order = std.ArrayList(NodeHandle).initCapacity(allocator, 2) catch unreachable;
         errdefer node_execution_order.deinit(allocator);
 
-        var connector_pool: ConnectorPool = .init(allocator);
-        errdefer connector_pool.deinit();
+        // var connector_pool: ConnectorPool = .init(allocator);
+        // errdefer connector_pool.deinit();
 
         var param_buffer_pool: ParamBufferPool = .init(allocator);
         errdefer param_buffer_pool.deinit();
@@ -163,7 +162,7 @@ pub const Pipeline = struct {
             .node_pool = node_pool,
             .node_execution_order = node_execution_order,
 
-            .connector_pool = connector_pool,
+            // .connector_pool = connector_pool,
 
             .param_buffer_pool = param_buffer_pool,
 
@@ -174,7 +173,7 @@ pub const Pipeline = struct {
     pub fn deinit(self: *Pipeline) void {
         slog.debug("De-initializing Pipeline", .{});
         self.runModulesDeinit();
-        self.deinitParams();
+        self.runModulesDeinitParams();
         // the pool deinit will take care of deallocating the textures
         self.module_execution_order.deinit(self.allocator);
         self.repo.deinit();
@@ -186,7 +185,7 @@ pub const Pipeline = struct {
         self.module_pool.deinit();
         self.node_execution_order.deinit(self.allocator);
         self.node_pool.deinit();
-        self.connector_pool.deinit();
+        // self.connector_pool.deinit();
         self.param_buffer_pool.deinit();
         self.history.deinit();
         self.perf.deinit();
@@ -227,8 +226,8 @@ pub const Pipeline = struct {
     fn _addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
         slog.debug("Adding module to pipeline: '{s}'", .{name});
         const module_desc = self.repo.get(name) orelse return error.ModuleNotFound;
-        var module = try Module.init(id, module_desc);
-        try self.initOutputConnectorHandles(&module);
+        const module = try Module.init(id, module_desc);
+        // try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
         const module_handle = try self.module_pool.add(module);
 
@@ -241,8 +240,8 @@ pub const Pipeline = struct {
 
     pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
         slog.debug("Adding node to pipeline: '{s}'", .{node_desc.name});
-        var node = try Node.init(self, mod_handle, node_desc);
-        try self.initOutputConnectorHandles(&node);
+        const node = try Node.init(self, mod_handle, node_desc);
+        // try self.initOutputConnectorHandles(&node);
         self.rerouted = true;
         return try self.node_pool.add(node);
     }
@@ -506,6 +505,7 @@ pub const Pipeline = struct {
             if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
         }
         if (mod.desc.deinit) |deinitFn| deinitFn(self.allocator, self, mod_handle);
+        mod.deinit(); // although module_pool.remove() will call deinit if it exists...
         self.module_pool.remove(mod_handle);
     }
 
@@ -566,7 +566,7 @@ pub const Pipeline = struct {
             try self.runNodesAllocateStagingBuffersForTextures();
             try self.perf.timerLap("runNodesAllocateStagingBuffersForTextures");
 
-            try self.freeUnusedConnectors(arena);
+            // try self.freeUnusedConnectors(arena);
             try self.perf.timerLap("freeUnusedConnectors");
 
             self.printPipeToStdout();
@@ -605,7 +605,7 @@ pub const Pipeline = struct {
             self.perf.recordDownloadBufferUsage(self.download_fba);
             self.perf.countModules(&self.module_pool);
             self.perf.countNodes(&self.node_pool);
-            self.perf.countConnectors(&self.connector_pool);
+            // self.perf.countConnectors(&self.connector_pool);
             self.perf.printReport();
         }
     }
@@ -617,19 +617,13 @@ pub const Pipeline = struct {
         // print.printNodeExecutionOrder(self);
     }
 
-    pub fn getDisplaySinkTexture(self: *Pipeline) !*gpu.Texture {
+    pub fn getDisplaySinkTexture(self: *Pipeline) !gpu.Texture {
         const last_node_handle = self.node_execution_order.items[self.node_execution_order.items.len - 1];
         const last_node = try self.node_pool.getPtr(last_node_handle);
         slog.debug("Getting display sink texture for last node '{s}'", .{last_node.name});
         const sock = last_node.sockets[0] orelse return error.NodeOutputSocketMissingConnectorHandle;
-        const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
-        const display_texture = try self.connector_pool.getPtr(connector_handle);
-        if (display_texture.*.texture) |*tex| {
-            return tex;
-        } else {
-            return error.PipelineMissingDisplaySinkTexture;
-        }
-        return error.NodeOutputSocketMissingConnectorHandle;
+        const tex = self.getNodeSocketTexture(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
+        return tex;
     }
 
     // ================================================
@@ -676,57 +670,6 @@ pub const Pipeline = struct {
         return handles;
     }
 
-    /// initialize connector handles for output sockets
-    fn initOutputConnectorHandles(self: *Pipeline, item: anytype) !void {
-        // ##### with type checking #####
-        // we could do duct typing here but this allows better lsp support
-        switch (comptime @TypeOf(item)) {
-            inline *Module => {
-                var module = @as(*Module, item);
-                for (module.sockets) |socket| {
-                    if (socket) |sock| {
-                        if (sock.type.direction() == .output) {
-                            var this_sock = try module.getSocketPtr(sock.name);
-                            if (this_sock.connector_handle == null) {
-                                this_sock.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
-                                // slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.connector_handle.?, module.desc.name, sock.name });
-                            }
-                        }
-                    }
-                }
-            },
-            inline *Node => {
-                var node = @as(*Node, item);
-                for (node.sockets) |socket| {
-                    if (socket) |sock| {
-                        if (sock.type.direction() == .output) {
-                            var this_sock = try node.getSocketPtr(sock.name);
-                            if (this_sock.connector_handle == null) {
-                                this_sock.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
-                                // slog.debug("Created output connector handle {any} for node '{s} > {s}'", .{ this_sock.connector_handle.?, node.name, sock.name });
-                            }
-                            // NOTE: this most likely gets discarded when we copy the connector from the module to the node, but we need to create it here in case we do a node-to-node connection without a module in between
-                        }
-                    }
-                }
-            },
-            else => unreachable,
-        }
-
-        // ##### with duck-typing #####
-        // for (item.sockets) |socket| {
-        //     if (socket) |sock| {
-        //         if (sock.type.direction() == .output) {
-        //             var this_sock = try item.getSocketPtr(sock.name);
-        //             if (this_sock.connector_handle == null) {
-        //                 this_sock.connector_handle = try self.connector_pool.add(null);
-        //                 slog.debug("Created connector handle {any} for '{s}' output socket '{s}'", .{ this_sock.connector_handle.?, item.name, sock.name });
-        //             }
-        //         }
-        //     }
-        // }
-    }
-
     fn initParams(self: *Pipeline, module_handle: ModuleHandle) !void {
         const module = try self.module_pool.getPtr(module_handle);
         if (module.desc.initParams) |initParamsFn| {
@@ -735,14 +678,14 @@ pub const Pipeline = struct {
     }
 
     /// pub for util printing purposes
-    pub fn getNodeConnectorHandle(self: *Pipeline, socket: Socket) ?ConnectorHandle {
-        if (socket.connector_handle) |connector_handle| {
-            return connector_handle;
+    pub fn getNodeSocketTexture(self: *Pipeline, socket: Socket) ?gpu.Texture {
+        if (socket.texture) |texture| {
+            return texture;
         } else if (self.getConnectedNode(socket)) |connected_node_connection| {
             const connected_node = self.node_pool.getPtr(connected_node_connection.item) catch return null;
             const connected_node_socket = connected_node.sockets[connected_node_connection.socket_idx] orelse return null;
-            const connected_connector_handle = connected_node_socket.connector_handle orelse return null;
-            return connected_connector_handle;
+            const connected_texture = connected_node_socket.texture orelse return null;
+            return connected_texture;
         }
         return null;
     }
@@ -798,7 +741,7 @@ pub const Pipeline = struct {
         self.module_execution_order.clearAndFree(self.allocator);
 
         // OPTION #1
-        const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle, std.hash_map.AutoContext(ModuleHandle));
+        const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle(ModuleHandle), std.hash_map.AutoContext(ModuleHandle));
         var module_graph = ModuleGraph.init(arena);
         defer module_graph.deinit();
         try buildGraph(Module, &self.module_pool, &module_graph);
@@ -877,51 +820,6 @@ pub const Pipeline = struct {
                 const input_socket = try module.getSocketPtr("input");
                 const output_socket = try module.getSocketPtr("output");
                 output_socket.roi = input_socket.roi;
-            }
-        }
-
-        // resolve color profiles: if an output socket declares "any" for
-        // white point and/or primaries, inherit the corresponding field
-        // from the connected input's actual profile ("pass along the
-        // previous profile if unchanged"). Modules that emit an explicit
-        // profile (e.g. color -> rec2020/d65) keep it. Source modules have
-        // no input, so their "any" fields stay "any".
-        const input_profile = blk: {
-            var prof: ?api.Connector.ColorProfile = null;
-            for (module.sockets) |socket| {
-                if (socket) |sock| {
-                    if (sock.type.direction() == .input) {
-                        if (sock.connected_to_module) |connection| {
-                            const connected_to_module = try self.module_pool.getPtr(connection.item);
-                            const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse continue;
-                            prof = connected_to_socket.color_profile;
-                            break;
-                        }
-                    }
-                }
-            }
-            break :blk prof;
-        };
-        if (input_profile) |incoming| {
-            for (module.sockets) |socket| {
-                if (socket) |sock| {
-                    if (sock.type.direction() == .output) {
-                        const output_socket = try module.getSocketPtr(sock.name);
-                        if (output_socket.color_profile) |declared| {
-                            output_socket.color_profile = .{
-                                .white_point = if (declared.white_point == .any) incoming.white_point else declared.white_point,
-                                .primaries = if (declared.primaries == .any) incoming.primaries else declared.primaries,
-                            };
-                        } else {
-                            output_socket.color_profile = incoming;
-                        }
-                        // keep any already-created connector on this socket in sync
-                        if (sock.connector_handle) |ch| {
-                            const conn = self.connector_pool.getPtr(ch) catch continue;
-                            conn.*.color_profile = output_socket.color_profile.?;
-                        }
-                    }
-                }
             }
         }
     }
@@ -1056,7 +954,7 @@ pub const Pipeline = struct {
         self.node_execution_order.clearAndFree(self.allocator);
 
         // OPTION #1
-        const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle, std.hash_map.AutoContext(NodeHandle));
+        const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle(NodeHandle), std.hash_map.AutoContext(NodeHandle));
         var node_graph = NodeGraph.init(arena);
         defer node_graph.deinit();
         try buildGraph(Node, &self.node_pool, &node_graph);
@@ -1108,11 +1006,9 @@ pub const Pipeline = struct {
         for (self.node_execution_order.items) |node_handle| {
             const node = try self.node_pool.getPtr(node_handle);
             const mod = try self.module_pool.getPtr(node.mod);
-            for (node.sockets) |socket| {
-                if (socket) |sock| {
+            for (&node.sockets) |*socket| {
+                if (socket.*) |*sock| {
                     if (sock.type.direction() != .output) continue;
-                    const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
-                    const conn = try self.connector_pool.getPtr(connector_handle);
 
                     // resolve the authoritative roi/format: in refresh mode the
                     // module socket (updated by modifyOut) wins; otherwise the
@@ -1129,7 +1025,7 @@ pub const Pipeline = struct {
                     const expected_roi = roi orelse continue;
 
                     const need_alloc = blk: {
-                        const tex = conn.*.texture orelse break :blk true;
+                        const tex = sock.texture orelse break :blk true;
                         if (options.refresh) {
                             if (!std.meta.eql(tex.roi, expected_roi)) break :blk true;
                             if (tex.format != fmt) break :blk true;
@@ -1139,7 +1035,7 @@ pub const Pipeline = struct {
                     if (!need_alloc) continue;
 
                     var buf: [256]u8 = undefined;
-                    const str = try std.fmt.bufPrint(&buf, "id: {d}", .{connector_handle.id});
+                    const str = try std.fmt.bufPrint(&buf, "node: {s} > {s}", .{ node.name, sock.name });
                     if (options.refresh) {
                         slog.debug("Refreshing output texture for node '{s} > {s}' (roi/format changed)", .{ node.name, sock.name });
                     } else {
@@ -1147,16 +1043,16 @@ pub const Pipeline = struct {
                     }
                     // free the old texture before replacing (refresh only; full
                     // init starts with a null texture)
-                    if (conn.*.texture) |*old| old.deinit();
+                    if (sock.texture) |*old| old.deinit();
                     const texture = try gpu.Texture.init(gpu_inst, str, fmt, expected_roi);
-                    conn.*.texture = texture;
+                    sock.texture = texture;
                     if (options.refresh) {
                         // keep the node socket in sync so run_size/bindings use the new roi
                         var sock_ptr = node.getSocketPtr(sock.name) catch continue;
                         sock_ptr.roi = expected_roi;
                         self.markNodeDirty(node);
                     }
-                    self.perf.recordConnectorTextureAllocation(conn);
+                    self.perf.recordConnectorTextureAllocation();
                 }
             }
         }
@@ -1242,9 +1138,8 @@ pub const Pipeline = struct {
                         };
                         // slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
 
-                        const connector_handle = self.getNodeConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
-                        const conn = try self.connector_pool.getPtr(connector_handle);
-                        const texture = conn.*.texture orelse return error.NodeSocketMissingConnectorTexture;
+                        // const texture = sock.texture orelse return error.NodeSocketMissingConnectorTexture;
+                        const texture = self.getNodeSocketTexture(sock) orelse return error.NodeSocketMissingConnectorTexture;
                         bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
                             .texture = texture,
                         };
@@ -1551,9 +1446,7 @@ pub const Pipeline = struct {
             },
             .source => {
                 slog.debug("Enqueueing source node '{s}' buffer to texture copy", .{node.name});
-                const connector_handle = self.getNodeConnectorHandle(node.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle;
-                const connector = try self.connector_pool.getPtr(connector_handle);
-                var tex = connector.*.texture orelse return error.PipelineMissingSourceNodeTexture;
+                var tex = node.sockets[0].?.texture orelse return error.PipelineMissingSourceNodeTexture;
                 const staging_offset = node.sockets[0].?.staging_offset orelse unreachable;
                 const roi = node.sockets[0].?.roi orelse unreachable;
                 slog.debug("Source node staging offset: {d}", .{staging_offset});
@@ -1561,8 +1454,10 @@ pub const Pipeline = struct {
             },
             .sink => {
                 slog.debug("Enqueueing sink node '{s}' texture to buffer copy", .{node.name});
-                const connector = try self.connector_pool.getPtr(self.getNodeConnectorHandle(node.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle);
-                var tex = connector.*.texture orelse return error.PipelineMissingSinkNodeTexture;
+                // const connector = try self.connector_pool.getPtr(self.getNodeSocketTexture(node.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle);
+                // var tex = connector.*.texture orelse return error.PipelineMissingSinkNodeTexture;
+                // var tex = node.sockets[0].?.texture orelse return error.PipelineMissingSinkNodeTexture;
+                var tex = self.getNodeSocketTexture(node.sockets[0].?) orelse return error.PipelineMissingSinkNodeTexture;
                 const staging_offset = node.sockets[0].?.staging_offset orelse unreachable;
                 slog.debug("Sink node staging offset: {d}", .{staging_offset});
                 const roi = node.sockets[0].?.roi orelse unreachable;
@@ -1635,67 +1530,6 @@ pub const Pipeline = struct {
         download_buffer.unmap();
     }
 
-    /// Free connectors no longer referenced by any module/node socket.
-    /// Runs on reroute only. O(connectors * (modules*nodes)) worst case — the
-    /// nested module/node scans make this quadratic-ish, but only on structural
-    /// rebuilds, not per dirty frame.
-    fn freeUnusedConnectors(self: *Pipeline, arena: std.mem.Allocator) !void {
-        var connector_handles = try std.ArrayList(ConnectorHandle).initCapacity(arena, self.connector_pool.len());
-        defer connector_handles.deinit(arena);
-
-        var conn_pool_handles = self.connector_pool.liveHandles();
-        while (conn_pool_handles.next()) |connector_handle| {
-            try connector_handles.append(arena, connector_handle);
-        }
-
-        for (connector_handles.items) |connector_handle| {
-            // check if connector is used in any module or node
-            var found = false;
-
-            // check modules
-            var mod_pool_handles = self.module_pool.liveHandles();
-            while (mod_pool_handles.next()) |module_handle| {
-                const module = try self.module_pool.getPtr(module_handle);
-                for (module.sockets) |socket| {
-                    if (socket) |sock| {
-                        if (sock.connector_handle) |h| {
-                            if (h.id == connector_handle.id) {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (found) break;
-            }
-
-            // check nodes
-            if (!found) {
-                var node_pool_handles = self.node_pool.liveHandles();
-                while (node_pool_handles.next()) |node_handle| {
-                    const node = try self.node_pool.getPtr(node_handle);
-                    for (node.sockets) |socket| {
-                        if (socket) |sock| {
-                            if (sock.connector_handle) |h| {
-                                if (h.id == connector_handle.id) {
-                                    found = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (found) break;
-                }
-            }
-
-            if (!found) {
-                slog.debug("Freeing unused connector {any}", .{connector_handle});
-                // removing from the pool deinits the Connector (and its texture)
-                self.connector_pool.remove(connector_handle);
-            }
-        }
-    }
-
     fn runModulesDeinit(self: *Pipeline) void {
         for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
@@ -1705,7 +1539,7 @@ pub const Pipeline = struct {
         }
     }
 
-    fn deinitParams(self: *Pipeline) void {
+    fn runModulesDeinitParams(self: *Pipeline) void {
         var module_pool_handles = self.module_pool.liveHandles();
         while (module_pool_handles.next()) |module_handle| {
             var module = self.module_pool.getPtr(module_handle) catch unreachable;
@@ -1823,30 +1657,24 @@ pub fn PooledDagDfsIterator(T: type) type {
 pub fn buildGraph(
     T: type,
     pool: *Pool(T),
-    graph: *DirectedGraph(Pool(T).Handle, ConnectorHandle, std.hash_map.AutoContext(Pool(T).Handle)),
+    graph: *DirectedGraph(Pool(T).Handle, ConnectorHandle(Pool(T).Handle), std.hash_map.AutoContext(Pool(T).Handle)),
 ) !void {
-    //  NOTE: this is better then check over each possible connection like I was doing,
-    // but vkdt uses the connected_mi and associated_i fields to build the graph AND perform the DFS traversal
-    // const Graph = DirectedGraph(Pool(T).Handle, ConnectorHandle, std.hash_map.AutoContext(Pool(T).Handle));
-    // var graph = Graph.init(allocator);
-
     var pool_handles = pool.liveHandles();
     while (pool_handles.next()) |dst_node_handle| {
         const dst_node = try pool.getPtr(dst_node_handle);
         for (dst_node.sockets) |socket| {
             if (socket) |sock| {
-                // if (self.getConnectedNode(sock.*)) |src_node_handle_connection| {
                 const maybe_connected_to = if (comptime T == Node) sock.connected_to_node else if (comptime T == Module) sock.connected_to_module else unreachable;
                 const src_node_handle_connection = maybe_connected_to orelse continue;
                 const src_node_handle = src_node_handle_connection.item;
                 // connect
                 try graph.add(dst_node_handle);
                 try graph.add(src_node_handle);
-                const src_node = try pool.getPtr(src_node_handle);
-                const src_node_sock = src_node.sockets[src_node_handle_connection.socket_idx] orelse unreachable;
-                const connector_handle = src_node_sock.connector_handle orelse unreachable; // self.getNodeConnectorHandle(src_node_sock) ;
-                try graph.addEdge(src_node_handle, dst_node_handle, connector_handle);
-                // }
+                const connection: ConnectorHandle(Pool(T).Handle) = .{
+                    .item = src_node_handle,
+                    .socket_idx = src_node_handle_connection.socket_idx,
+                };
+                try graph.addEdge(src_node_handle, dst_node_handle, connection);
             }
         }
     }

@@ -66,7 +66,7 @@ pub const Darkroom = struct {
     }
 };
 
-fn build_image(allocator: std.mem.Allocator, io: std.Io, pipeline: *pie.pipeline.Pipeline) !*pie.gpu.Texture {
+fn build_image(allocator: std.mem.Allocator, io: std.Io, pipeline: *pie.pipeline.Pipeline) !pie.gpu.Texture {
     _ = allocator;
     _ = io;
 

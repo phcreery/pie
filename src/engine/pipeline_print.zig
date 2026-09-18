@@ -86,14 +86,14 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
             if (sock) |s| {
                 const connector_text = switch (s.type.direction()) {
                     .input => input: {
-                        if (self.getNodeConnectorHandle(s)) |h| {
+                        if (self.getNodeSocketTexture(s)) |h| {
                             break :input std.fmt.allocPrint(std.heap.page_allocator, "<- {any}", .{h.id}) catch "<- null";
                         } else {
                             break :input "<- null";
                         }
                     },
                     .output => output: {
-                        if (self.getNodeConnectorHandle(s)) |h| {
+                        if (self.getNodeSocketTexture(s)) |h| {
                             break :output std.fmt.allocPrint(std.heap.page_allocator, "-> {any}", .{h.id}) catch "-> null";
                         } else {
                             break :output "-> null";
@@ -101,7 +101,7 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
                     },
                 };
                 const tex_text = output: {
-                    if (self.getNodeConnectorHandle(s)) |h| {
+                    if (self.getNodeSocketTexture(s)) |h| {
                         const conn = self.connector_pool.getPtr(h) catch break;
                         if (conn.*.texture) |c| {
                             // tex_text = c.texture;
@@ -149,7 +149,7 @@ pub fn printNodesGraph(self: *pipeline.Pipeline) !void {
     }
     try stdout.print("\n", .{});
 
-    const NodeGraph = DirectedGraph(pipeline.NodeHandle, pipeline.ConnectorHandle, std.hash_map.AutoContext(pipeline.NodeHandle));
+    const NodeGraph = DirectedGraph(pipeline.NodeHandle, pipeline.ConnectorHandle(pipeline.NodeHandle), std.hash_map.AutoContext(pipeline.NodeHandle));
     var node_graph = NodeGraph.init(self.allocator);
     defer node_graph.deinit();
     try pipeline.buildGraph(Node, &self.node_pool, &node_graph);
@@ -171,15 +171,17 @@ pub fn printNodeExecutionOrder(self: *pipeline.Pipeline) void {
     }
 }
 
-fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaque) []u8 {
+fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle(pipeline.NodeHandle), user_data: *anyopaque) []u8 {
     var pipe: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
-    const conn = pipe.connector_pool.getPtr(edge) catch unreachable;
+    const node = pipe.node_pool.getPtr(edge.item) catch unreachable;
+    const socket = node.sockets[edge.socket_idx] orelse unreachable;
+
     const res = std.fmt.bufPrint(buf, "{s} {s} {s} {d}x{d}", .{
-        @tagName(conn.*.color_profile.primaries),
-        @tagName(conn.*.color_profile.white_point),
-        @tagName(conn.*.texture.?.format),
-        conn.*.texture.?.roi.h,
-        conn.*.texture.?.roi.w,
+        if (socket.color_profile) |cp| @tagName(cp.primaries) else "<missing>",
+        if (socket.color_profile) |cp| @tagName(cp.white_point) else "<missing>",
+        if (socket.texture) |tex| @tagName(tex.format) else "<missing>",
+        if (socket.texture) |tex| tex.roi.h else 0,
+        if (socket.texture) |tex| tex.roi.w else 0,
     }) catch "<error>";
     return @constCast(res);
 }

@@ -176,7 +176,7 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     var writer = std.Io.File.stdout().writer(pipe.io, &stdout_buffer);
     const stdout = &writer.interface;
     // try raw_image.print(stdout);
-    try m.img_param.?.print(stdout);
+    // try m.img_param.?.print(stdout);
     try stdout.flush();
 
     var socket = try api.getModSocket(pipe, mod, "output");

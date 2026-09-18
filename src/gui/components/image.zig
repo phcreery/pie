@@ -104,7 +104,7 @@ pub const Image = struct {
         self.pipeline.deinit();
     }
 
-    pub fn createFrom(self: *Self, texture: *pie.gpu.Texture) void {
+    pub fn createFrom(self: *Self, texture: pie.gpu.Texture) void {
         // Inject the existing GPU-side WebGPU texture into sokol instead of
         // trying to upload CPU pixel data. sokol will addRef() the texture and
         // create its own WGPUTextureView when we make the sg.View.
@@ -125,7 +125,7 @@ pub const Image = struct {
 
     /// Re-inject a (potentially new) display texture after a pipeline re-run.
     /// Destroys the previous sokol image/view first so we don't leak handles.
-    pub fn refreshFrom(self: *Self, texture: *pie.gpu.Texture) void {
+    pub fn refreshFrom(self: *Self, texture: pie.gpu.Texture) void {
         if (self.img.id != sg.invalid_id) sg.destroyImage(self.img);
         if (self.tex_view.id != sg.invalid_id) sg.destroyView(self.tex_view);
         self.createFrom(texture);

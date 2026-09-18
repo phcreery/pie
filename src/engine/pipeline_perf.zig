@@ -7,7 +7,7 @@ const Node = @import("Node.zig");
 const NodePool = pipeline.NodePool;
 
 const Connector = @import("Connector.zig");
-const ConnectorPool = pipeline.ConnectorPool;
+// const ConnectorPool = pipeline.ConnectorPool;
 
 pub const PerfMetrics = struct {
     allocator: std.mem.Allocator,
@@ -103,13 +103,13 @@ pub const PerfMetrics = struct {
         }
     }
 
-    pub fn countConnectors(self: *PerfMetrics, connector_pool: *ConnectorPool) void {
-        self.number_of_connectors = 0;
-        var conn_pool_handles = connector_pool.liveHandles();
-        while (conn_pool_handles.next()) |_| {
-            self.number_of_connectors.? += 1;
-        }
-    }
+    // pub fn countConnectors(self: *PerfMetrics, connector_pool: *ConnectorPool) void {
+    //     self.number_of_connectors = 0;
+    //     var conn_pool_handles = connector_pool.liveHandles();
+    //     while (conn_pool_handles.next()) |_| {
+    //         self.number_of_connectors.? += 1;
+    //     }
+    // }
 
     /// Counters
     pub fn resetCounters(self: *PerfMetrics) void {
@@ -126,8 +126,7 @@ pub const PerfMetrics = struct {
         }
     }
 
-    pub fn recordConnectorTextureAllocation(self: *PerfMetrics, conn: *Connector) void {
-        _ = conn;
+    pub fn recordConnectorTextureAllocation(self: *PerfMetrics) void {
         if (self.n_connector_textures_created) |*n| {
             n.* += 1;
         } else {
