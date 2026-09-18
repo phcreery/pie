@@ -12,8 +12,9 @@ const Param = @import("Param.zig");
 const ImgParam = @import("ImgParam.zig");
 const Modules = @import("modules/modules.zig");
 const Pool = @import("pool.zig").Pool;
-const History = @import("history.zig").History;
-const HistoryConfig = @import("history.zig").HistoryConfig;
+// const History = @import("history.zig").History;
+// const HistoryConfig = @import("history.zig").HistoryConfig;
+const PipelineHistory = @import("pipeline_history.zig").PipelineHistory;
 const serdes = @import("serdes.zig");
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const slog = std.log.scoped(.pipe);
@@ -84,10 +85,8 @@ pub const Pipeline = struct {
     rerouted: bool = true,
     dirty: bool = true,
 
-    history: History([]const u8, []const u8),
-    /// Coalescing config applied when recording edit deltas (see
-    /// `HistoryConfig.window_secs`). Mutate to change how subsequent edits
-    /// merge into history.
+    // history: History([]const u8, []const u8),
+    history: PipelineHistory(),
     history_cfg: HistoryConfig = .{},
 
     run_arena: std.heap.ArenaAllocator,
@@ -145,7 +144,8 @@ pub const Pipeline = struct {
         var param_buffer_pool: ParamBufferPool = .init(allocator);
         errdefer param_buffer_pool.deinit();
 
-        const history = History([]const u8, []const u8).init(allocator, io);
+        // const history = History([]const u8, []const u8).init(allocator, io);
+        const history: PipelineHistory(Pipeline) = .{};
 
         return Pipeline{
             .allocator = allocator,
@@ -515,44 +515,6 @@ pub const Pipeline = struct {
         }
         if (mod.desc.deinit) |deinitFn| deinitFn(self.allocator, self, mod_handle);
         self.module_pool.remove(mod_handle);
-    }
-
-    // ================================================
-    // History undo / redo / rollback
-    // ================================================
-
-    /// Roll back to the given committed step (exclusive index). Reconstructs the
-    /// graph from scratch by replaying every recorded delta up to `target`
-    /// onto a cleared pipeline — the same model vkdt uses. Module names resolve
-    /// against the registered repos. `history.setCursor(end)` mirrors the target.
-    pub fn replayHistory(self: *Pipeline, target: usize) !void {
-        const target_clamped = @min(target, self.history.count());
-
-        // tear down the live graph
-        self.clear();
-
-        // replay committed deltas over the empty graph
-        var scratch = std.heap.ArenaAllocator.init(self.allocator);
-        defer scratch.deinit();
-        const all = self.history.all();
-        const end = @min(target_clamped, all.len);
-        for (all[0..end], 0..) |item, i| {
-            try serdes.apply(self, scratch.allocator(), item.line, i);
-        }
-
-        self.history.setCursor(end);
-    }
-
-    /// Undo one edit step and apply it to the live pipeline.
-    pub fn undo(self: *Pipeline) !void {
-        if (!self.history.canUndo()) return;
-        try self.replayHistory(self.history.cursor - 1);
-    }
-
-    /// Redo one edit step and apply it to the live pipeline.
-    pub fn redo(self: *Pipeline) !void {
-        if (!self.history.canRedo()) return;
-        try self.replayHistory(self.history.cursor + 1);
     }
 
     /// Run the pipeline. Uses the pipeline-owned `run_arena` for temporary
