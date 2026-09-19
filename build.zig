@@ -77,6 +77,14 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{},
     });
 
+    // MATH MODULE
+    const mod_math = b.createModule(.{
+        .root_source_file = b.path("src/math/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
     // CONSOLE MODULE
     const mod_console = b.createModule(.{
         .root_source_file = b.path("src/cli/root.zig"),
@@ -106,6 +114,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "console", .module = mod_console },
             .{ .name = "gpu", .module = mod_gpu },
             .{ .name = "types", .module = mod_types },
+            .{ .name = "math", .module = mod_math },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
         },
