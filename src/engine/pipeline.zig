@@ -24,7 +24,10 @@ pub const ModuleHandle = ModulePool.Handle;
 pub const NodePool = Pool(Node);
 pub const NodeHandle = NodePool.Handle;
 
-pub const ConnectorHandle = Socket.SocketConnection;
+pub const TexturePool = Pool(gpu.Texture);
+pub const TextureHandle = TexturePool.Handle;
+
+pub const Connection = Socket.SocketConnection;
 
 pub const ParamBufferPool = Pool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
@@ -74,7 +77,7 @@ pub const Pipeline = struct {
     node_pool: NodePool,
     node_execution_order: std.ArrayList(NodeHandle),
 
-    // connector_pool: ConnectorPool,
+    texture_pool: TexturePool,
 
     param_buffer_pool: ParamBufferPool,
 
@@ -132,8 +135,8 @@ pub const Pipeline = struct {
         var node_execution_order = std.ArrayList(NodeHandle).initCapacity(allocator, 2) catch unreachable;
         errdefer node_execution_order.deinit(allocator);
 
-        // var connector_pool: ConnectorPool = .init(allocator);
-        // errdefer connector_pool.deinit();
+        var texture_pool: TexturePool = .init(allocator);
+        errdefer texture_pool.deinit();
 
         var param_buffer_pool: ParamBufferPool = .init(allocator);
         errdefer param_buffer_pool.deinit();
@@ -162,7 +165,7 @@ pub const Pipeline = struct {
             .node_pool = node_pool,
             .node_execution_order = node_execution_order,
 
-            // .connector_pool = connector_pool,
+            .texture_pool = texture_pool,
 
             .param_buffer_pool = param_buffer_pool,
 
@@ -185,7 +188,7 @@ pub const Pipeline = struct {
         self.module_pool.deinit();
         self.node_execution_order.deinit(self.allocator);
         self.node_pool.deinit();
-        // self.connector_pool.deinit();
+        self.texture_pool.deinit();
         self.param_buffer_pool.deinit();
         self.history.deinit();
         self.perf.deinit();
@@ -678,14 +681,14 @@ pub const Pipeline = struct {
     }
 
     /// pub for util printing purposes
-    pub fn getNodeSocketTexture(self: *Pipeline, socket: Socket) ?gpu.Texture {
+    pub fn getNodeSocketTexture(self: *Pipeline, socket: Socket) ?*gpu.Texture {
         if (socket.texture) |texture| {
-            return texture;
+            return self.texture_pool.getPtr(texture) catch return null;
         } else if (self.getConnectedNode(socket)) |connected_node_connection| {
             const connected_node = self.node_pool.getPtr(connected_node_connection.item) catch return null;
             const connected_node_socket = connected_node.sockets[connected_node_connection.socket_idx] orelse return null;
-            const connected_texture = connected_node_socket.texture orelse return null;
-            return connected_texture;
+            const connected_texture_handle = connected_node_socket.texture orelse return null;
+            return self.texture_pool.getPtr(connected_texture_handle) catch return null;
         }
         return null;
     }
@@ -741,7 +744,7 @@ pub const Pipeline = struct {
         self.module_execution_order.clearAndFree(self.allocator);
 
         // OPTION #1
-        const ModuleGraph = DirectedGraph(ModuleHandle, ConnectorHandle(ModuleHandle), std.hash_map.AutoContext(ModuleHandle));
+        const ModuleGraph = DirectedGraph(ModuleHandle, Connection(ModuleHandle), std.hash_map.AutoContext(ModuleHandle));
         var module_graph = ModuleGraph.init(arena);
         defer module_graph.deinit();
         try buildGraph(Module, &self.module_pool, &module_graph);
@@ -954,7 +957,7 @@ pub const Pipeline = struct {
         self.node_execution_order.clearAndFree(self.allocator);
 
         // OPTION #1
-        const NodeGraph = DirectedGraph(NodeHandle, ConnectorHandle(NodeHandle), std.hash_map.AutoContext(NodeHandle));
+        const NodeGraph = DirectedGraph(NodeHandle, Connection(NodeHandle), std.hash_map.AutoContext(NodeHandle));
         var node_graph = NodeGraph.init(arena);
         defer node_graph.deinit();
         try buildGraph(Node, &self.node_pool, &node_graph);
@@ -1025,7 +1028,8 @@ pub const Pipeline = struct {
                     const expected_roi = roi orelse continue;
 
                     const need_alloc = blk: {
-                        const tex = sock.texture orelse break :blk true;
+                        const texture_handle = sock.texture orelse break :blk true;
+                        const tex = try self.texture_pool.getPtr(texture_handle);
                         if (options.refresh) {
                             if (!std.meta.eql(tex.roi, expected_roi)) break :blk true;
                             if (tex.format != fmt) break :blk true;
@@ -1043,9 +1047,14 @@ pub const Pipeline = struct {
                     }
                     // free the old texture before replacing (refresh only; full
                     // init starts with a null texture)
-                    if (sock.texture) |*old| old.deinit();
+                    if (sock.texture) |*old_handle| {
+                        var old = try self.texture_pool.getPtr(old_handle.*);
+                        old.deinit();
+                    }
                     const texture = try gpu.Texture.init(gpu_inst, str, fmt, expected_roi);
-                    sock.texture = texture;
+                    // sock.texture = texture;
+                    const texture_handle = try self.texture_pool.add(texture);
+                    sock.texture = texture_handle;
                     if (options.refresh) {
                         // keep the node socket in sync so run_size/bindings use the new roi
                         var sock_ptr = node.getSocketPtr(sock.name) catch continue;
@@ -1141,7 +1150,7 @@ pub const Pipeline = struct {
                         // const texture = sock.texture orelse return error.NodeSocketMissingConnectorTexture;
                         const texture = self.getNodeSocketTexture(sock) orelse return error.NodeSocketMissingConnectorTexture;
                         bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
-                            .texture = texture,
+                            .texture = texture.*,
                         };
                         // slog.debug("Added bind group entry for binding {d} {any}", .{ binding_number, bind_group_1_binds[binding_number] });
                     }
@@ -1446,22 +1455,19 @@ pub const Pipeline = struct {
             },
             .source => {
                 slog.debug("Enqueueing source node '{s}' buffer to texture copy", .{node.name});
-                var tex = node.sockets[0].?.texture orelse return error.PipelineMissingSourceNodeTexture;
+                const tex = self.getNodeSocketTexture(node.sockets[0].?) orelse return error.PipelineMissingSourceNodeTexture;
                 const staging_offset = node.sockets[0].?.staging_offset orelse unreachable;
                 const roi = node.sockets[0].?.roi orelse unreachable;
                 slog.debug("Source node staging offset: {d}", .{staging_offset});
-                try encoder.enqueueBufToTex(upload_buffer, staging_offset, &tex, roi);
+                try encoder.enqueueBufToTex(upload_buffer, staging_offset, tex, roi);
             },
             .sink => {
                 slog.debug("Enqueueing sink node '{s}' texture to buffer copy", .{node.name});
-                // const connector = try self.connector_pool.getPtr(self.getNodeSocketTexture(node.sockets[0].?) orelse return error.NodeOutputSocketMissingConnectorHandle);
-                // var tex = connector.*.texture orelse return error.PipelineMissingSinkNodeTexture;
-                // var tex = node.sockets[0].?.texture orelse return error.PipelineMissingSinkNodeTexture;
-                var tex = self.getNodeSocketTexture(node.sockets[0].?) orelse return error.PipelineMissingSinkNodeTexture;
+                const tex = self.getNodeSocketTexture(node.sockets[0].?) orelse return error.PipelineMissingSinkNodeTexture;
                 const staging_offset = node.sockets[0].?.staging_offset orelse unreachable;
                 slog.debug("Sink node staging offset: {d}", .{staging_offset});
                 const roi = node.sockets[0].?.roi orelse unreachable;
-                try encoder.enqueueTexToBuf(download_buffer, staging_offset, &tex, roi);
+                try encoder.enqueueTexToBuf(download_buffer, staging_offset, tex, roi);
             },
         }
     }
@@ -1657,7 +1663,7 @@ pub fn PooledDagDfsIterator(T: type) type {
 pub fn buildGraph(
     T: type,
     pool: *Pool(T),
-    graph: *DirectedGraph(Pool(T).Handle, ConnectorHandle(Pool(T).Handle), std.hash_map.AutoContext(Pool(T).Handle)),
+    graph: *DirectedGraph(Pool(T).Handle, Connection(Pool(T).Handle), std.hash_map.AutoContext(Pool(T).Handle)),
 ) !void {
     var pool_handles = pool.liveHandles();
     while (pool_handles.next()) |dst_node_handle| {
@@ -1670,11 +1676,7 @@ pub fn buildGraph(
                 // connect
                 try graph.add(dst_node_handle);
                 try graph.add(src_node_handle);
-                const connection: ConnectorHandle(Pool(T).Handle) = .{
-                    .item = src_node_handle,
-                    .socket_idx = src_node_handle_connection.socket_idx,
-                };
-                try graph.addEdge(src_node_handle, dst_node_handle, connection);
+                try graph.addEdge(src_node_handle, dst_node_handle, src_node_handle_connection);
             }
         }
     }

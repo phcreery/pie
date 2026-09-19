@@ -15,7 +15,8 @@ color_profile: ?Connector.ColorProfile = null,
 
 // for output sockets of modules
 // connector_handle: ?pipeline.ConnectorHandle = null,
-texture: ?gpu.Texture = null,
+// texture: ?gpu.Texture = null,
+texture: ?pipeline.TextureHandle = null,
 
 // FOR GRAPH TRAVERSAL
 
@@ -76,12 +77,6 @@ pub fn SocketConnection(comptime TItem: type) type {
         item: TItem,
         socket_idx: usize,
     };
-}
-
-pub fn deinit(self: *Self) void {
-    if (self.texture) |*tex| {
-        tex.deinit();
-    }
 }
 
 /// A live socket: the declared interface (copied from a `SocketDesc` when the

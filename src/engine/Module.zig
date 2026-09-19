@@ -54,17 +54,6 @@ pub fn init(id: []const u8, desc: api.ModuleDesc) !Self {
     return self;
 }
 
-pub fn deinit(self: *Self) void {
-    // if (self.data) |*data| {
-    //     @free(self.desc.allocator, data);
-    // }
-    for (&self.sockets) |*maybe_sock| {
-        if (maybe_sock.*) |*sock| {
-            sock.deinit();
-        }
-    }
-}
-
 // HELPER FUNCTIONS
 
 pub fn getSocketIndex(mod: *const Self, name: []const u8) !usize {
