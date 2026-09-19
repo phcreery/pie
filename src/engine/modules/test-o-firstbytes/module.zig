@@ -10,7 +10,6 @@ pub const desc: api.ModuleDesc = .{
             .name = "input",
             .type = .sink,
             .format = .rgba16float,
-            .roi = null,
         };
         break :init s;
     },

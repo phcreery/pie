@@ -247,6 +247,12 @@ pub const Pipeline = struct {
         return try self.node_pool.add(node);
     }
 
+    pub fn setNodeSocketRoi(self: *Pipeline, node: NodeHandle, node_socket_name: []const u8, roi: ?ROI) !void {
+        var node_ptr = try self.node_pool.getPtr(node);
+        var socket = try node_ptr.getSocketPtr(node_socket_name);
+        socket.roi = roi;
+    }
+
     pub fn connectModulesByName(
         self: *Pipeline,
         src_mod_name: []const u8,

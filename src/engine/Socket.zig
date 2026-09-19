@@ -85,7 +85,6 @@ pub fn fromDesc(desc: api.SocketDesc) Self {
         .name = desc.name,
         .type = desc.type,
         .format = desc.format,
-        .roi = desc.roi,
         .color_profile = desc.color_profile,
     };
 }
@@ -97,7 +96,6 @@ pub fn toDesc(self: Self) api.SocketDesc {
         .name = self.name,
         .type = self.type,
         .format = self.format,
-        .roi = self.roi,
         .color_profile = self.color_profile,
     };
 }

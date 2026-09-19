@@ -1,7 +1,7 @@
 const api = @import("../api.zig");
 
 pub const desc: api.ModuleDesc = .{
-    .name = "test-nop",
+    .name = "test-nop-wgsl",
     .type = .compute,
     .sockets = init: {
         var s: api.Sockets = @splat(null);
@@ -9,13 +9,11 @@ pub const desc: api.ModuleDesc = .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-            .roi = null,
         };
         s[1] = .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-            .roi = null,
         };
         break :init s;
     },
@@ -51,13 +49,11 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-                .roi = null,
             };
             s[1] = .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-                .roi = null,
             };
             break :init s;
         },

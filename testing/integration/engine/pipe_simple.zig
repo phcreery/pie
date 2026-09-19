@@ -59,6 +59,7 @@ test "simple test modules" {
 
     const mod_test_i_1234 = try pipeline.addModule("01", "test-i-1234");
     const mod_test_multiply = try pipeline.addModule("01", "test-multiply");
+    const mod_test_2nodes = try pipeline.addModule("01", "test-2nodes");
     const mod_test_nop_glsl = try pipeline.addModule("01", "test-nop-glsl");
     const mod_test_nop_zig = try pipeline.addModule("01", "test-nop-zig");
     const mod_test_o_2468 = try pipeline.addModule("01", "test-o-2468");
@@ -73,7 +74,8 @@ test "simple test modules" {
     // pipeline.connectModules(mod_test_nop_2, "output", mod_test_o_2468, "input", .{}) catch unreachable;
 
     try pipeline.connectModules(mod_test_i_1234, "output", mod_test_multiply, "input");
-    try pipeline.connectModules(mod_test_multiply, "output", mod_test_nop_glsl, "input");
+    try pipeline.connectModules(mod_test_multiply, "output", mod_test_2nodes, "input");
+    try pipeline.connectModules(mod_test_2nodes, "output", mod_test_nop_glsl, "input");
     try pipeline.connectModules(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
     try pipeline.connectModules(mod_test_nop_zig, "output", mod_test_o_2468, "input");
 

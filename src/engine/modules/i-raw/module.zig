@@ -30,7 +30,6 @@ pub const desc: api.ModuleDesc = .{
             .name = "output",
             .type = .source,
             .format = .rggb16uint,
-            .roi = null,
             // the raw output is in the camera's color space, WB unknown/as-shot
             .color_profile = .{ .white_point = .any, .primaries = .camera },
         };

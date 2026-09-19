@@ -14,29 +14,32 @@ pub const desc: api.ModuleDesc = .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-            .roi = null,
         };
         s[1] = .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-            .roi = null,
         };
         break :init s;
     },
     .init = null,
     .deinit = null,
+    .initParams = initParams,
     .readSource = null,
     .writeSink = null,
     .createNodes = createNodes,
     .modifyOut = null,
 };
 
+pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
+    try api.initParamNamed(pipe, mod, "value", @as(i32, 1.0));
+}
+
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_add_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader = @embedFile("add.wgsl"),
+        .shader = .{ .wgsl = @embedFile("./add.wgsl") },
         .name = "add",
         .run_size = mod_output_sock.roi,
         .sockets = init: {
@@ -45,21 +48,20 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-                .roi = null, // populated with api.inheritSocket()
             };
             s[1] = .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-                .roi = mod_output_sock.roi, // we are responsible for setting this correctly
             };
             break :init s;
         },
     };
     const node_add = try api.addNode(pipe, mod, node_add_desc);
+    try api.setNodeSocketRoi(pipe, node_add, "output", mod_output_sock.roi);
     const node_sub_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader = @embedFile("sub.wgsl"),
+        .shader = .{ .wgsl = @embedFile("sub.wgsl") },
         .name = "sub",
         .run_size = mod_output_sock.roi,
         .sockets = init: {
@@ -68,18 +70,17 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-                .roi = mod_output_sock.roi, // we are responsible for setting this correctly
             };
             s[1] = .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-                .roi = null, // populated with api.inheritSocket()
             };
             break :init s;
         },
     };
     const node_sub = try api.addNode(pipe, mod, node_sub_desc);
+    try api.setNodeSocketRoi(pipe, node_sub, "input", mod_output_sock.roi);
 
     try api.inheritSocket(pipe, mod, "input", node_add, "input");
     try api.connectNodesByName(pipe, node_add, "output", node_sub, "input");

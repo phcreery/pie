@@ -9,7 +9,6 @@ pub const desc: api.ModuleDesc = .{
             .name = "output",
             .type = .source,
             .format = .rgba16float,
-            .roi = null,
         };
         break :init s;
     },

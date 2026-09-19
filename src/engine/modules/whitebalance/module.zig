@@ -9,13 +9,11 @@ pub const desc: api.ModuleDesc = .{
             .name = "input",
             .type = .read,
             .format = .rggb32float,
-            .roi = null,
         };
         s[1] = .{
             .name = "output",
             .type = .write,
             .format = .rggb32float,
-            .roi = null,
         };
         break :init s;
     },
@@ -35,13 +33,11 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
                 .name = "input",
                 .type = .read,
                 .format = .rggb32float,
-                .roi = null,
             };
             s[1] = .{
                 .name = "output",
                 .type = .write,
                 .format = .rggb32float,
-                .roi = mod_output_sock.roi,
             };
             break :init s;
         },

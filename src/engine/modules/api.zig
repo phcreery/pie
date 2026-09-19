@@ -29,7 +29,6 @@ pub const SocketDesc = struct {
     name: []const u8,
     type: SocketType,
     format: gpu.TextureFormat,
-    roi: ?ROI = null,
     color_profile: ?Connector.ColorProfile = null,
 };
 
@@ -169,6 +168,10 @@ pub fn addNode(pipe: PipelineHandle, mod: ModuleHandle, node_desc: NodeDesc) !No
     return pipe.addNode(mod, node_desc);
 }
 
+pub fn setNodeSocketRoi(pipe: PipelineHandle, node: NodeHandle, node_socket_name: []const u8, roi: ?ROI) !void {
+    return pipe.setNodeSocketRoi(node, node_socket_name, roi);
+}
+
 pub fn connectNodesByName(pipe: PipelineHandle, src_node: NodeHandle, src_socket: []const u8, dst_node: NodeHandle, dst_socket: []const u8) !void {
     return pipe.connectNodesByName(src_node, src_socket, dst_node, dst_socket);
 }
@@ -194,10 +197,23 @@ pub fn getSocketIndex(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_nam
     return mod.getSocketIndex(socket_name);
 }
 
-const ShaderSourceFileName = union(gpu.ShaderLanguage) {
+pub const ShaderLanguage = enum {
+    wgsl,
+    spirv,
+    glsl,
+};
+
+const ShaderSource = union(ShaderLanguage) {
     wgsl: []const u8,
     spirv: []const u8,
     glsl: []const u8,
+};
+
+pub const ShaderTypeEnum = enum { file, embed };
+
+const ShaderType = union(ShaderTypeEnum) {
+    file: ShaderSource,
+    embed: ShaderSource,
 };
 
 const SocketDescZon = struct {
@@ -207,7 +223,7 @@ const SocketDescZon = struct {
 };
 
 const NodeDescZon = struct {
-    shader: ShaderSourceFileName,
+    shader: ShaderSource,
     name: []const u8,
     sockets: []const SocketDescZon,
 };
