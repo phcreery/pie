@@ -1,7 +1,7 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
-const gpu = @import("gpu/root.zig");
-pub const ROI = @import("ROI.zig");
+const gpu = @import("gpu");
+const ROI = @import("types").ROI;
 const Connector = @import("Connector.zig");
 const pipeline = @import("pipeline.zig");
 
@@ -13,31 +13,29 @@ color_profile: ?Connector.ColorProfile = null,
 
 // FOR PIPELINE OPERATION
 
-// for output sockets of modules
+/// for output sockets of modules
 connector_handle: ?pipeline.ConnectorHandle = null,
-// texture: ?gpu.Texture = null,
-// texture: ?pipeline.TextureHandle = null,
 
 // FOR GRAPH TRAVERSAL
 
-// for input sockets of modules
-// populated with pipe.connectModules()
+/// for input sockets of modules
+/// populated with pipe.connectModules()
 connected_to_module: ?SocketConnection(pipeline.ModuleHandle) = null,
 
-// for input sockets of nodes
-// populated with pipe.connectNodesByName()
+/// for input sockets of nodes
+/// populated with pipe.connectNodesByName()
 connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null,
 
-// for output sockets of modules
-// populated with pipe.inheritSocket()
+/// for output sockets of modules
+/// populated with pipe.inheritSocket()
 inherited_by_node: ?SocketConnection(pipeline.NodeHandle) = null,
 
-// for input sockets of nodes
-// populated with pipe.inheritSocket()
+/// for input sockets of nodes
+/// populated with pipe.inheritSocket()
 inherited_from_module: ?SocketConnection(pipeline.ModuleHandle) = null,
 
-// offset in the upload or download staging buffer
-// for source or sink sockets only
+/// offset in the upload or download staging buffer
+/// for source or sink sockets only
 staging_offset: ?usize = null,
 staging_ptr: ?*anyopaque = null,
 

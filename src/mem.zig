@@ -19,7 +19,3 @@ pub const allocator = gpa.allocator();
 // pub const allocator = std.heap.page_allocator;
 
 // pub const allocator = std.heap.wasm_allocator;
-
-// var buffer: [1024]u8 = undefined;
-// var fba = std.heap.FixedBufferAllocator.init(&buffer);
-// const allocator = fba.allocator();

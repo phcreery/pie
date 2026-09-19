@@ -1,8 +1,7 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
 const Module = @import("Module.zig");
-const gpu = @import("gpu/root.zig");
-const gpu_data = @import("gpu/data.zig");
+const gpu = @import("gpu");
 const pipeline = @import("pipeline.zig");
 const slog = std.log.scoped(.param);
 
@@ -109,14 +108,14 @@ pub fn size_cpu(len: u32, typ: Type) usize {
 pub fn size(self: Self) usize {
     return switch (self.desc.typ) {
         .i32 => switch (self.desc.len) {
-            1 => gpu_data.size(i32),
-            // 2 => gpu_data.size([2]i32)
+            1 => gpu.data.size(i32),
+            // 2 => gpu.data.size([2]i32)
             else => unreachable,
         },
         .f32 => switch (self.desc.len) {
-            1 => gpu_data.size(f32),
-            3 => gpu_data.size([3]f32),
-            4 => gpu_data.size([4]f32),
+            1 => gpu.data.size(f32),
+            3 => gpu.data.size([3]f32),
+            4 => gpu.data.size([4]f32),
             else => unreachable,
         },
         else => unreachable,
@@ -126,13 +125,13 @@ pub fn size(self: Self) usize {
 pub fn alignment(self: Self) usize {
     return switch (self.desc.typ) {
         .i32 => switch (self.desc.len) {
-            1 => gpu_data.alignment(i32),
+            1 => gpu.data.alignment(i32),
             else => unreachable,
         },
         .f32 => switch (self.desc.len) {
-            1 => gpu_data.alignment(f32),
-            3 => gpu_data.alignment([3]f32),
-            4 => gpu_data.alignment([4]f32),
+            1 => gpu.data.alignment(f32),
+            3 => gpu.data.alignment([3]f32),
+            4 => gpu.data.alignment([4]f32),
             else => unreachable,
         },
         else => unreachable,

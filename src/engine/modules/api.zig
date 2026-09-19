@@ -1,10 +1,10 @@
 //! API definitions for engine pipeline modules and nodes
 
 const std = @import("std");
-const gpu = @import("../gpu/root.zig");
+const gpu = @import("gpu");
 pub const math = @import("../math/root.zig");
 
-pub const ROI = @import("../ROI.zig");
+pub const ROI = @import("types").ROI;
 pub const ImgParam = @import("../ImgParam.zig");
 pub const CFA = @import("./shared/CFA.zig");
 

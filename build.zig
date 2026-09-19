@@ -69,12 +69,32 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .slang = .{ .wgsl = true },
     });
 
+    // TYPES MODULE
+    const mod_types = b.createModule(.{
+        .root_source_file = b.path("src/types/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
     // CONSOLE MODULE
     const mod_console = b.createModule(.{
         .root_source_file = b.path("src/cli/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{},
+    });
+
+    // GPU MODULE
+    const mod_gpu = b.createModule(.{
+        .root_source_file = b.path("src/gpu/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
+            .{ .name = "types", .module = mod_types },
+            .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
+        },
     });
 
     // PIE MODULE
@@ -84,10 +104,10 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .optimize = optimize,
         .imports = &.{
             .{ .name = "console", .module = mod_console },
+            .{ .name = "gpu", .module = mod_gpu },
+            .{ .name = "types", .module = mod_types },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
-            .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
 
@@ -101,7 +121,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
+            .{ .name = "gpu", .module = mod_gpu },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
@@ -120,6 +140,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             // .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
+            .{ .name = "gpu", .module = mod_gpu },
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
         },
     });

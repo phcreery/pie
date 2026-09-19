@@ -17,17 +17,17 @@ dirty: bool = false,
 sockets: [api.MAX_SOCKETS]?Socket = @splat(null),
 
 /// Module-private data (e.g. a source module's loaded image). Owned by the
-/// module implementation; moved off `ModuleDesc` so descriptors stay POD.
+/// module implementation.
 data: ?*anyopaque = null,
 
 params: [api.MAX_PARAMS_PER_MODULE]?Param = @splat(null),
-// for the buffer that will live on the gpu
-// the handle is needed for gpu pipeline bindings
+/// for the buffer that will live on the gpu
+/// the handle is needed for gpu pipeline bindings
 param_handle: ?pipeline.ParamBufferHandle = null,
-// the offset of this module's params in the staging/upload buffer
-// the slice is used for writing params to the staging buffer before uploading to gpu
+/// the offset of this module's params in the staging/upload buffer
+/// the slice is used for writing params to the staging buffer before uploading to gpu
 param_mapped_slice_ptr: ?*anyopaque = null,
-// the offset and size is needed for enqueueBufToBuf
+/// the offset and size is needed for enqueueBufToBuf
 param_offset: ?usize = null,
 param_size: ?usize = null,
 

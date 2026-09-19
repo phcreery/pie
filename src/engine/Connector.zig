@@ -1,8 +1,9 @@
-/// A connector is the image data flowing between modules/nodes plus the color
-/// profile it carries. The pipeline owns the texture; `deinit` frees it.
+//! A connector is the image data flowing between modules/nodes plus the color
+//! profile it carries. The pipeline owns the texture; `deinit` frees it.
+
 const std = @import("std");
-const gpu = @import("gpu/root.zig");
-const ROI = @import("ROI.zig");
+const gpu = @import("gpu");
+const ROI = @import("types").ROI;
 
 /// White point of the working/connection color space.
 pub const WhitePoint = enum(i32) {

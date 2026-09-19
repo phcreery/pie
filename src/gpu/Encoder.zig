@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgpu = @import("wgpu_zig");
-const ROI = @import("../ROI.zig");
+const ROI = @import("types").ROI;
 const root = @import("root.zig");
 const GPU = @import("GPU.zig");
 const ComputePipeline = @import("ComputePipeline.zig");

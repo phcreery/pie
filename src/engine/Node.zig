@@ -1,12 +1,11 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
 const Module = @import("Module.zig");
-const gpu = @import("gpu/root.zig");
+const gpu = @import("gpu");
 const pipeline = @import("pipeline.zig");
 const Socket = @import("Socket.zig");
 const slog = std.log.scoped(.node);
 
-/// Node type, copied from `NodeDesc` at creation.
 type: api.NodeType,
 name: []const u8,
 shader_source: ?gpu.ShaderSource,
@@ -15,8 +14,8 @@ run_size: ?api.ROI,
 /// Handle of the module this node belongs to.
 mod: pipeline.ModuleHandle,
 
-/// Live sockets, copied from the `NodeDesc` when the node is created. All
-/// runtime socket state (roi, private members) lives here.
+/// Sockets copied from the `NodeDesc` when the node is created.
+/// All runtime socket state lives here.
 sockets: [api.MAX_SOCKETS]?Socket = @splat(null),
 
 shader: ?gpu.Shader = null,

@@ -1,6 +1,7 @@
 //! The Bindings (bind group) contains the actual resources to bind to the pipeline.
 //! Similar to vulkan's descriptor sets, a Bindings struct holds the actual resources
 //! (buffers, textures, etc) that are bound to a shader pipeline.
+
 const std = @import("std");
 const wgpu = @import("wgpu_zig");
 const root = @import("root.zig");

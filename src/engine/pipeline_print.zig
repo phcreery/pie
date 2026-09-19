@@ -1,11 +1,12 @@
-/// primarily for printing the pipeline state for debugging purposes
-/// most of the code in here is pretty ugly
+//! primarily for printing the pipeline state for debugging purposes
+//! most of the code in here is pretty ugly
+
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const api = @import("modules/api.zig");
-const gpu = @import("gpu/root.zig");
+const gpu = @import("gpu");
 const wgpu = @import("wgpu");
-const ROI = @import("ROI.zig");
+const ROI = @import("types").ROI;
 const console = @import("console");
 const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
 const Node = @import("Node.zig");

@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgpu = @import("wgpu_zig");
-const ROI = @import("../ROI.zig");
+const ROI = @import("types").ROI;
 const GPU = @import("GPU.zig");
 
 const slog = std.log.scoped(.gpu);

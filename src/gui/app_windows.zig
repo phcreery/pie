@@ -8,8 +8,6 @@ const build = @import("build_options");
 const zdt = @import("zdt");
 const libraw = @import("libraw");
 
-const util = @import("../mem.zig");
-
 pub const About = struct {
     is_open: bool,
     init_pos: ig.ImVec2,

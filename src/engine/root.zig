@@ -1,9 +1,9 @@
 pub const std = @import("std");
 
-pub const ROI = @import("ROI.zig");
+const ROI = @import("types").ROI;
 pub const Module = @import("Module.zig");
 pub const Node = @import("Node.zig");
-pub const gpu = @import("gpu/root.zig");
+pub const gpu = @import("gpu");
 pub const pipeline = @import("pipeline.zig");
 pub const history = @import("histlist.zig");
 pub const serdes = @import("serdes.zig");
