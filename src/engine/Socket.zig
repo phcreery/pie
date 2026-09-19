@@ -14,9 +14,9 @@ color_profile: ?Connector.ColorProfile = null,
 // FOR PIPELINE OPERATION
 
 // for output sockets of modules
-// connector_handle: ?pipeline.ConnectorHandle = null,
+connector_handle: ?pipeline.ConnectorHandle = null,
 // texture: ?gpu.Texture = null,
-texture: ?pipeline.TextureHandle = null,
+// texture: ?pipeline.TextureHandle = null,
 
 // FOR GRAPH TRAVERSAL
 

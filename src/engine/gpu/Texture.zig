@@ -53,7 +53,9 @@ pub const TextureFormat = enum {
             .r16float => .float,
 
             // special cases: single-channel bayer
-            .rggb32float => .float,
+            // rggb32float is stored as r32_float, which is not filterable in
+            // WebGPU, so it must bind as an unfilterable-float sample type.
+            .rggb32float => .unfilterable_float,
             .rggb16uint => .uint,
         };
     }
