@@ -2,9 +2,21 @@
 
 const std = @import("std");
 const gpu = @import("gpu");
+const util = @import("../util.zig");
 pub const math = @import("math");
 pub const ROI = @import("types").ROI;
 pub const CFA = @import("types").CFA;
+const ModuleApi = @import("types").ModuleApi;
+const ColorProfile = @import("types").ColorProfile;
+pub const ShaderTypeEnum = ModuleApi.ShaderTypeEnum;
+pub const ShaderSource = ModuleApi.ShaderSource;
+pub const ShaderLanguage = ModuleApi.ShaderLanguage;
+pub const ShaderLanguageSource = ModuleApi.ShaderLanguageSource;
+pub const TextureFormat = ModuleApi.TextureFormat;
+// pub const SocketDesc = ModuleApi.SocketDesc;
+pub const SocketDescZon = ModuleApi.SocketDescZon;
+pub const NodeDescZon = ModuleApi.NodeDescZon;
+pub const SocketType = ModuleApi.SocketType;
 
 const pipeline = @import("../pipeline.zig");
 pub const PipelineHandle = *pipeline.Pipeline; // sneaky
@@ -13,7 +25,7 @@ pub const NodeHandle = pipeline.NodeHandle;
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
 pub const Socket = @import("../Socket.zig");
-pub const SocketType = Socket.SocketType;
+// pub const SocketType = Socket.SocketType;
 pub const Connector = @import("../Connector.zig");
 pub const Param = @import("../Param.zig");
 pub const ImgParam = @import("../ImgParam.zig");
@@ -25,8 +37,8 @@ pub const MAX_PARAMS_PER_MODULE = 16;
 pub const SocketDesc = struct {
     name: []const u8,
     type: SocketType,
-    format: gpu.TextureFormat,
-    color_profile: ?Connector.ColorProfile = null,
+    format: TextureFormat,
+    color_profile: ?ColorProfile = null,
 };
 
 pub const Sockets = [MAX_SOCKETS]?SocketDesc;
@@ -38,8 +50,8 @@ pub const NodeType = enum {
 };
 
 pub const NodeDesc = struct {
-    type: NodeType, // TODO: infer from sockets (e.g. if there is a socket with type source, it must be a source node)
-    shader: ?gpu.ShaderSource = null,
+    type: NodeType, // TODO: infer from sockets
+    shader: ?ShaderLanguageSource = null,
     name: []const u8,
     run_size: ?ROI = null,
     sockets: Sockets,
@@ -194,46 +206,27 @@ pub fn getSocketIndex(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_nam
     return mod.getSocketIndex(socket_name);
 }
 
-pub const ShaderLanguage = enum {
-    wgsl,
-    spirv,
-    glsl,
-};
-
-const ShaderSource = union(ShaderLanguage) {
-    wgsl: []const u8,
-    spirv: []const u8,
-    glsl: []const u8,
-};
-
-pub const ShaderTypeEnum = enum { file, embed };
-
-const ShaderType = union(ShaderTypeEnum) {
-    file: ShaderSource,
-    embed: ShaderSource,
-};
-
-const SocketDescZon = struct {
-    name: []const u8,
-    type: SocketType,
-    format: gpu.TextureFormat,
-};
-
-const NodeDescZon = struct {
-    shader: ShaderSource,
-    name: []const u8,
-    sockets: []const SocketDescZon,
-};
+/// Resolve a shader declared in a zon descriptor: `.file` holds a path there
+/// and is embedded at comptime into `.embed`. Comptime only.
+fn resolveShader(comptime declared: ShaderLanguageSource) ShaderLanguageSource {
+    return switch (declared) {
+        .wgsl => |src| .{ .wgsl = switch (src) {
+            .file => |path| .{ .embed = @embedFile(path) },
+            .embed => |code| .{ .embed = code },
+        } },
+        .spirv => |src| .{ .spirv = switch (src) {
+            .file => |path| .{ .embed = @embedFile(path) },
+            .embed => |code| .{ .embed = code },
+        } },
+        .glsl => |src| .{ .glsl = switch (src) {
+            .file => |path| .{ .embed = @embedFile(path) },
+            .embed => |code| .{ .embed = code },
+        } },
+    };
+}
 
 pub fn parseNodeDescFromZon(comptime zon: NodeDescZon) NodeDesc {
-    var node_desc: NodeDesc = undefined;
-    node_desc.type = .compute;
-    node_desc.shader = switch (zon.shader) {
-        .wgsl => |file_name| gpu.ShaderSource{ .wgsl = @embedFile(file_name) },
-        .spirv => |file_name| gpu.ShaderSource{ .spirv = @embedFile(file_name) },
-        .glsl => |file_name| gpu.ShaderSource{ .glsl = @embedFile(file_name) },
-    };
-    node_desc.name = zon.name;
+    const shader = resolveShader(zon.shader);
     var sockets: Sockets = @splat(null);
     inline for (zon.sockets, 0..) |socket_zon, i| {
         var s: SocketDesc = undefined;
@@ -242,6 +235,11 @@ pub fn parseNodeDescFromZon(comptime zon: NodeDescZon) NodeDesc {
         s.format = socket_zon.format;
         sockets[i] = s;
     }
-    node_desc.sockets = sockets;
-    return node_desc;
+    return .{
+        .type = .compute,
+        .run_size = null,
+        .shader = shader,
+        .name = zon.name,
+        .sockets = sockets,
+    };
 }

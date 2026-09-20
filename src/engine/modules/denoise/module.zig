@@ -26,7 +26,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_interpolation = try api.addNode(pipe, mod, .{
         .type = .compute,
-        .shader = .{ .wgsl = @embedFile("./interpolation.wgsl") },
+        .shader = .{ .wgsl = .{ .embed = @embedFile("./interpolation.wgsl") } },
         .name = "interpolation",
         .run_size = mod_output_sock.roi.?,
         .sockets = init: {

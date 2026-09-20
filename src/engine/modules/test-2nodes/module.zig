@@ -39,7 +39,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_add_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader = .{ .wgsl = @embedFile("./add.wgsl") },
+        .shader = .{ .wgsl = .{ .embed = @embedFile("./add.wgsl") } },
         .name = "add",
         .run_size = mod_output_sock.roi,
         .sockets = init: {
@@ -61,7 +61,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.setNodeSocketRoi(pipe, node_add, "output", mod_output_sock.roi);
     const node_sub_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader = .{ .wgsl = @embedFile("sub.wgsl") },
+        .shader = .{ .wgsl = .{ .embed = @embedFile("sub.wgsl") } },
         .name = "sub",
         .run_size = mod_output_sock.roi,
         .sockets = init: {

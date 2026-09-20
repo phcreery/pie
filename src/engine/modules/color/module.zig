@@ -97,7 +97,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_color = try api.addNode(pipe, mod, .{
         .type = .compute,
-        .shader = .{ .wgsl = @embedFile("./color.wgsl") },
+        .shader = .{ .wgsl = .{ .embed = @embedFile("./color.wgsl") } },
         .name = "color",
         .run_size = mod_output_sock.roi.?,
         .sockets = init: {

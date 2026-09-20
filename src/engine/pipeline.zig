@@ -1,6 +1,7 @@
 const std = @import("std");
 const gpu = @import("gpu");
 const ROI = @import("types").ROI;
+const ColorProfile = @import("types").ColorProfile;
 const api = @import("modules/api.zig");
 const print = @import("pipeline_print.zig");
 const perf = @import("pipeline_perf.zig");
@@ -890,7 +891,7 @@ pub const Pipeline = struct {
         // profile (e.g. color -> rec2020/d65) keep it. Source modules have
         // no input, so their "any" fields stay "any".
         const input_profile = blk: {
-            var prof: ?api.Connector.ColorProfile = null;
+            var prof: ?ColorProfile = null;
             for (module.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .input) {

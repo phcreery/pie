@@ -37,7 +37,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = .{
         .type = .compute,
-        .shader = .{ .wgsl = @embedFile("./halfsize.wgsl") },
+        .shader = .{ .wgsl = .{ .embed = @embedFile("./halfsize.wgsl") } },
         .name = "halfsize",
         .run_size = mod_output_sock.roi,
         .sockets = init: {

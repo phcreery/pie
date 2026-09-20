@@ -50,7 +50,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_filmcurv = try api.addNode(pipe, mod, .{
         .type = .compute,
-        .shader = .{ .wgsl = @embedFile("./filmcurv.wgsl") },
+        .shader = .{ .wgsl = .{ .embed = @embedFile("./filmcurv.wgsl") } },
         // .shader = @embedFile("./main.comp"),
         // .temp_shader_language = .glsl,
         .name = "filmcurv",

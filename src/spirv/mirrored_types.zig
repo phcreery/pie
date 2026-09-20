@@ -63,20 +63,32 @@ const SocketDescZon = struct {
     }
 };
 
+pub const ShaderTypeEnum = enum {
+    file,
+    embed,
+};
+
+// mirrors api.ShaderSource
+pub const ShaderSource = union(ShaderTypeEnum) {
+    file: []const u8,
+    embed: []const u8,
+};
+
 pub const ShaderLanguage = enum {
     wgsl,
     spirv,
     glsl,
 };
 
-const ShaderSourceFileName = union(ShaderLanguage) {
-    wgsl: []const u8,
-    spirv: []const u8,
-    glsl: []const u8,
+// mirrors api.ShaderLanguageSource
+pub const ShaderLanguageSource = union(ShaderLanguage) {
+    wgsl: ShaderSource,
+    spirv: ShaderSource,
+    glsl: ShaderSource,
 };
 
 pub const NodeDescZon = struct {
-    shader: ShaderSourceFileName,
+    shader: ShaderLanguageSource,
     name: []const u8,
     sockets: []const SocketDescZon,
 };

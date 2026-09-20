@@ -35,10 +35,29 @@ pub fn init(
 ) !Self {
     _ = pipe;
 
+    // api's shader descriptor types are isolated from gpu's, so translate
+    // here. `.embed` carries the source content; `.file` is a zon-authoring
+    // concept (a path) that `parseNodeDescFromZon` already resolved to
+    // `.embed`, so any `.file` reaching here is treated defensively as content.
+    const shader_source: ?gpu.ShaderSource = if (desc.shader) |declared| switch (declared) {
+        .wgsl => |src| gpu.ShaderSource{ .wgsl = switch (src) {
+            .file => |bytes| bytes,
+            .embed => |code| code,
+        } },
+        .spirv => |src| gpu.ShaderSource{ .spirv = switch (src) {
+            .file => |bytes| bytes,
+            .embed => |code| code,
+        } },
+        .glsl => |src| gpu.ShaderSource{ .glsl = switch (src) {
+            .file => |bytes| bytes,
+            .embed => |code| code,
+        } },
+    } else null;
+
     var self = Self{
         .type = desc.type,
         .name = desc.name,
-        .shader_source = desc.shader,
+        .shader_source = shader_source,
         .run_size = desc.run_size,
         .mod = mod,
     };

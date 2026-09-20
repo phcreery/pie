@@ -2,14 +2,15 @@ const std = @import("std");
 const api = @import("modules/api.zig");
 const gpu = @import("gpu");
 const ROI = @import("types").ROI;
-const Connector = @import("Connector.zig");
+const ColorProfile = @import("types").ColorProfile;
 const pipeline = @import("pipeline.zig");
+const util = @import("util.zig");
 
 name: []const u8,
 type: SocketType,
 format: gpu.TextureFormat,
 roi: ?ROI = null,
-color_profile: ?Connector.ColorProfile = null,
+color_profile: ?ColorProfile = null,
 
 // FOR PIPELINE OPERATION
 
@@ -81,10 +82,12 @@ pub fn SocketConnection(comptime TItem: type) type {
 /// module is registered or the node is created) plus pipeline-owned runtime
 /// state. Descriptors are never mutated at runtime; all state lives here.
 pub fn fromDesc(desc: api.SocketDesc) Self {
+    const stype = util.castEnum(SocketType, desc.type);
+    const format = util.castEnum(gpu.TextureFormat, desc.format);
     return .{
         .name = desc.name,
-        .type = desc.type,
-        .format = desc.format,
+        .type = stype,
+        .format = format,
         .color_profile = desc.color_profile,
     };
 }
@@ -92,10 +95,12 @@ pub fn fromDesc(desc: api.SocketDesc) Self {
 /// Back to descriptor form, e.g. to seed a `NodeDesc` socket from a
 /// module socket. Runtime state is dropped.
 pub fn toDesc(self: Self) api.SocketDesc {
+    const stype = util.castEnum(api.SocketType, self.type);
+    const format = util.castEnum(api.TextureFormat, self.format);
     return .{
         .name = self.name,
-        .type = self.type,
-        .format = self.format,
+        .type = stype,
+        .format = format,
         .color_profile = self.color_profile,
     };
 }
@@ -123,7 +128,7 @@ pub fn areCompatible(output: *const Self, input: *const Self) bool {
     return true;
 }
 
-fn compatibleColorProfiles(a: ?Connector.ColorProfile, b: ?Connector.ColorProfile) bool {
+fn compatibleColorProfiles(a: ?ColorProfile, b: ?ColorProfile) bool {
     const pa = a orelse return true;
     const pb = b orelse return true;
     return pa.acceptedBy(pb);
