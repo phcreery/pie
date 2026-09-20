@@ -254,6 +254,11 @@ pub const Pipeline = struct {
         socket.roi = roi;
     }
 
+    pub fn setNodeRunSize(self: *Pipeline, node: NodeHandle, run_size: ?ROI) !void {
+        var node_ptr = try self.node_pool.getPtr(node);
+        node_ptr.run_size = run_size;
+    }
+
     pub fn connectModulesByName(
         self: *Pipeline,
         src_mod_name: []const u8,

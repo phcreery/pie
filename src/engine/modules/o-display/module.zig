@@ -43,16 +43,14 @@ pub fn writeSink(
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    const node_desc: api.NodeDesc = .{
+    const node = try api.addNode(pipe, mod, .{
         .type = .sink,
         .name = "o-display",
-        .run_size = null,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
-            s[0] = try api.copyModSocket(pipe, mod, "input");
+            s[0] = try api.copyModSocket(desc, "input");
             break :init s;
         },
-    };
-    const node = try api.addNode(pipe, mod, node_desc);
+    });
     try api.inheritSocket(pipe, mod, "input", node, "input");
 }

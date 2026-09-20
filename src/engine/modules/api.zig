@@ -53,7 +53,7 @@ pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets
     shader: ?ShaderLanguageSource = null,
     name: []const u8,
-    run_size: ?ROI = null,
+    // run_size: ?ROI = null,
     sockets: Sockets,
 };
 
@@ -173,12 +173,20 @@ pub fn inheritSocket(pipe: PipelineHandle, mod: ModuleHandle, mod_socket_name: [
     return pipe.inheritSocket(mod, mod_socket_name, node, node_socket_name);
 }
 
-pub fn addNode(pipe: PipelineHandle, mod: ModuleHandle, node_desc: NodeDesc) !NodeHandle {
-    return pipe.addNode(mod, node_desc);
+pub fn addNode(pipe: PipelineHandle, mod: ModuleHandle, comptime node_desc: NodeDesc) !NodeHandle {
+    comptime var mutable_node_desc = node_desc;
+    if (mutable_node_desc.shader) |shader| {
+        mutable_node_desc.shader = comptime resolveShader(shader);
+    }
+    return pipe.addNode(mod, mutable_node_desc);
 }
 
 pub fn setNodeSocketRoi(pipe: PipelineHandle, node: NodeHandle, node_socket_name: []const u8, roi: ?ROI) !void {
     return pipe.setNodeSocketRoi(node, node_socket_name, roi);
+}
+
+pub fn setNodeRunSize(pipe: PipelineHandle, node: NodeHandle, run_size: ?ROI) !void {
+    return pipe.setNodeRunSize(node, run_size);
 }
 
 pub fn connectNodesByName(pipe: PipelineHandle, src_node: NodeHandle, src_socket: []const u8, dst_node: NodeHandle, dst_socket: []const u8) !void {
@@ -194,11 +202,20 @@ pub fn getModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name:
     return mod.getSocketPtr(socket_name);
 }
 
-/// Copy a module socket's declared interface as a `SocketDesc`, e.g. to seed
-/// a node's socket list in `createNodes`. Runtime state is not copied.
-pub fn copyModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !SocketDesc {
-    const sock = try getModSocket(pipe, mod_handle, socket_name);
-    return sock.toDesc();
+// pub fn copyModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !SocketDesc {
+//     const sock = try getModSocket(pipe, mod_handle, socket_name);
+//     return sock.toDesc();
+// }
+
+pub fn copyModSocket(desc: ModuleDesc, socket_name: []const u8) !SocketDesc {
+    for (desc.sockets) |socket| {
+        if (socket) |sock| {
+            if (std.mem.eql(u8, sock.name, socket_name)) {
+                return sock;
+            }
+        }
+    }
+    return error.SocketNotFound;
 }
 
 pub fn getSocketIndex(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !usize {
@@ -237,7 +254,6 @@ pub fn parseNodeDescFromZon(comptime zon: NodeDescZon) NodeDesc {
     }
     return .{
         .type = .compute,
-        .run_size = null,
         .shader = shader,
         .name = zon.name,
         .sockets = sockets,

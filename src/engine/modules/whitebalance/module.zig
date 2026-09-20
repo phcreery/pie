@@ -26,7 +26,6 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("./whitebalance.wgsl") } },
         .name = "whitebalance",
-        .run_size = mod_output_sock.roi.?,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
             s[0] = .{
@@ -42,6 +41,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
+    try api.setNodeRunSize(pipe, node_whitebalance, mod_output_sock.roi);
     try api.inheritSocket(pipe, mod, "input", node_whitebalance, "input");
     try api.inheritSocket(pipe, mod, "output", node_whitebalance, "output");
 }

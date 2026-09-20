@@ -58,7 +58,8 @@ pub fn init(
         .type = desc.type,
         .name = desc.name,
         .shader_source = shader_source,
-        .run_size = desc.run_size,
+        // .run_size = desc.run_size,
+        .run_size = null,
         .mod = mod,
     };
     // copy the declared interface into live sockets

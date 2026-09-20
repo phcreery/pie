@@ -37,11 +37,10 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_add_desc: api.NodeDesc = .{
+    const node_add_desc: api.NodeDesc = comptime .{
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("./add.wgsl") } },
         .name = "add",
-        .run_size = mod_output_sock.roi,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
             s[0] = .{
@@ -59,11 +58,11 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     };
     const node_add = try api.addNode(pipe, mod, node_add_desc);
     try api.setNodeSocketRoi(pipe, node_add, "output", mod_output_sock.roi);
-    const node_sub_desc: api.NodeDesc = .{
+    try api.setNodeRunSize(pipe, node_add, mod_output_sock.roi);
+    const node_sub_desc: api.NodeDesc = comptime .{
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("sub.wgsl") } },
         .name = "sub",
-        .run_size = mod_output_sock.roi,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
             s[0] = .{
@@ -81,6 +80,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     };
     const node_sub = try api.addNode(pipe, mod, node_sub_desc);
     try api.setNodeSocketRoi(pipe, node_sub, "input", mod_output_sock.roi);
+    try api.setNodeRunSize(pipe, node_sub, mod_output_sock.roi);
 
     try api.inheritSocket(pipe, mod, "input", node_add, "input");
     try api.connectNodesByName(pipe, node_add, "output", node_sub, "input");

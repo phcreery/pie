@@ -29,9 +29,10 @@ pub const desc: api.ModuleDesc = .{
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
 
-    var node_desc = api.parseNodeDescFromZon(@import("nop.comp.zon"));
-    node_desc.run_size = mod_output_sock.roi;
+    const node_desc = comptime api.parseNodeDescFromZon(@import("nop.comp.zon"));
+    // node_desc.run_size = mod_output_sock.roi;
     const node = try api.addNode(pipe, mod, node_desc);
+    try api.setNodeRunSize(pipe, node, mod_output_sock.roi);
 
     try api.inheritSocket(pipe, mod, "input", node, "input");
     try api.inheritSocket(pipe, mod, "output", node, "output");

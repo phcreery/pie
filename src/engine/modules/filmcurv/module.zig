@@ -51,10 +51,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const node_filmcurv = try api.addNode(pipe, mod, .{
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("./filmcurv.wgsl") } },
-        // .shader = @embedFile("./main.comp"),
-        // .temp_shader_language = .glsl,
         .name = "filmcurv",
-        .run_size = mod_output_sock.roi.?,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
             s[0] = .{
@@ -70,6 +67,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
+    try api.setNodeRunSize(pipe, node_filmcurv, mod_output_sock.roi.?);
     try api.inheritSocket(pipe, mod, "input", node_filmcurv, "input");
     try api.inheritSocket(pipe, mod, "output", node_filmcurv, "output");
 }

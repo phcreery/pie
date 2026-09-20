@@ -75,7 +75,6 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("./rotate_center.wgsl") } },
         .name = "rotate_center",
-        .run_size = mod_output_sock.roi.?,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
             s[0] = .{
@@ -91,6 +90,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             break :init s;
         },
     });
+    try api.setNodeRunSize(pipe, node, mod_output_sock.roi.?);
     try api.inheritSocket(pipe, mod, "input", node, "input");
     try api.inheritSocket(pipe, mod, "output", node, "output");
 }

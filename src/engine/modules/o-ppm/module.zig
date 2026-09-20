@@ -64,13 +64,12 @@ pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHan
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    const node_desc: api.NodeDesc = .{
+    const node_desc: api.NodeDesc = comptime .{
         .type = .sink,
         .name = "sink",
-        .run_size = null,
         .sockets = init: {
             var s: api.Sockets = @splat(null);
-            s[0] = try api.copyModSocket(pipe, mod, "input");
+            s[0] = try api.copyModSocket(desc, "input");
             break :init s;
         },
     };
