@@ -46,10 +46,8 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const node = try api.addNode(pipe, mod, .{
         .type = .sink,
         .name = "o-display",
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = try api.copyModSocket(desc, "input");
-            break :init s;
+        .sockets = &.{
+            try api.copyModSocket(desc, "input"),
         },
     });
     try api.inheritSocket(pipe, mod, "input", node, "input");

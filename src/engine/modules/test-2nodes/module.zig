@@ -41,19 +41,17 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("./add.wgsl") } },
         .name = "add",
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = .{
+        .sockets = &.{
+            .{
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-            };
-            s[1] = .{
+            },
+            .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-            };
-            break :init s;
+            },
         },
     };
     const node_add = try api.addNode(pipe, mod, node_add_desc);
@@ -63,19 +61,17 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("sub.wgsl") } },
         .name = "sub",
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = .{
+        .sockets = &.{
+            .{
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-            };
-            s[1] = .{
+            },
+            .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-            };
-            break :init s;
+            },
         },
     };
     const node_sub = try api.addNode(pipe, mod, node_sub_desc);

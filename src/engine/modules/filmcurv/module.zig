@@ -52,19 +52,17 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("./filmcurv.wgsl") } },
         .name = "filmcurv",
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = .{
+        .sockets = &.{
+            .{
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-            };
-            s[1] = .{
+            },
+            .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-            };
-            break :init s;
+            },
         },
     });
     try api.setNodeRunSize(pipe, node_filmcurv, mod_output_sock.roi.?);

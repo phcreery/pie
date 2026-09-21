@@ -1,5 +1,6 @@
 .{
     .name = "test-nop-zig",
+    .type = .compute,
     .shader = .{ .spirv = .{ .file = "nop.comp.zig.spv.embed" } },
     .sockets = .{
         .{ .name = "input", .type = .read, .format = .rgba16float },

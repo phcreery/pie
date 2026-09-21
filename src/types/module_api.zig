@@ -1,3 +1,6 @@
+const ColorProfile = @import("ColorProfile.zig");
+const std = @import("std");
+
 pub const ShaderTypeEnum = enum {
     file,
     embed,
@@ -10,18 +13,21 @@ const ShaderSource = union(ShaderTypeEnum) {
     embed: []const u8,
 };
 
+// uhh, this is duplicate....
 pub const ShaderLanguage = enum {
     wgsl,
     spirv,
     glsl,
 };
 
+// uhh, this is duplicate....
 pub const ShaderLanguageSource = union(ShaderLanguage) {
     wgsl: ShaderSource,
     spirv: ShaderSource,
     glsl: ShaderSource,
 };
 
+// uhh, this is duplicate....
 pub const SocketType = enum {
     read,
     write,
@@ -29,6 +35,7 @@ pub const SocketType = enum {
     sink,
 };
 
+// uhh, this is also duplicate....
 pub const TextureFormat = enum {
     rgba16float,
     rgba16uint,
@@ -49,14 +56,25 @@ pub const TextureFormat = enum {
     rggb16uint,
 };
 
-pub const SocketDescZon = struct {
+pub const SocketDesc = struct {
     name: []const u8,
     type: SocketType,
     format: TextureFormat,
+    color_profile: ?ColorProfile = null,
 };
 
-pub const NodeDescZon = struct {
-    shader: ShaderLanguageSource,
+pub const MAX_SOCKETS = 8;
+pub const Sockets = [MAX_SOCKETS]?SocketDesc;
+
+pub const NodeType = enum {
+    compute,
+    source,
+    sink,
+};
+
+pub const NodeDesc = struct {
+    type: NodeType, // TODO: infer from sockets
+    shader: ?ShaderLanguageSource = null,
     name: []const u8,
-    sockets: []const SocketDescZon,
+    sockets: []const SocketDesc,
 };

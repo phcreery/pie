@@ -13,10 +13,11 @@ pub const ShaderSource = ModuleApi.ShaderSource;
 pub const ShaderLanguage = ModuleApi.ShaderLanguage;
 pub const ShaderLanguageSource = ModuleApi.ShaderLanguageSource;
 pub const TextureFormat = ModuleApi.TextureFormat;
-// pub const SocketDesc = ModuleApi.SocketDesc;
-pub const SocketDescZon = ModuleApi.SocketDescZon;
-pub const NodeDescZon = ModuleApi.NodeDescZon;
+pub const SocketDesc = ModuleApi.SocketDesc;
 pub const SocketType = ModuleApi.SocketType;
+pub const NodeDesc = ModuleApi.NodeDesc;
+pub const Sockets = ModuleApi.Sockets;
+pub const MAX_SOCKETS = ModuleApi.MAX_SOCKETS;
 
 const pipeline = @import("../pipeline.zig");
 pub const PipelineHandle = *pipeline.Pipeline; // sneaky
@@ -25,37 +26,16 @@ pub const NodeHandle = pipeline.NodeHandle;
 pub const Module = @import("../Module.zig");
 pub const Node = @import("../Node.zig");
 pub const Socket = @import("../Socket.zig");
-// pub const SocketType = Socket.SocketType;
 pub const Connector = @import("../Connector.zig");
 pub const Param = @import("../Param.zig");
 pub const ImgParam = @import("../ImgParam.zig");
 pub const HistoryConfig = @import("../histlist.zig").HistoryConfig;
+pub const NodeType = ModuleApi.NodeType;
 
-pub const MAX_SOCKETS = gpu.MAX_BINDINGS;
+comptime {
+    std.debug.assert(gpu.MAX_BINDINGS == MAX_SOCKETS);
+}
 pub const MAX_PARAMS_PER_MODULE = 16;
-
-pub const SocketDesc = struct {
-    name: []const u8,
-    type: SocketType,
-    format: TextureFormat,
-    color_profile: ?ColorProfile = null,
-};
-
-pub const Sockets = [MAX_SOCKETS]?SocketDesc;
-
-pub const NodeType = enum {
-    compute,
-    source,
-    sink,
-};
-
-pub const NodeDesc = struct {
-    type: NodeType, // TODO: infer from sockets
-    shader: ?ShaderLanguageSource = null,
-    name: []const u8,
-    // run_size: ?ROI = null,
-    sockets: Sockets,
-};
 
 pub const ModuleType = enum {
     compute,
@@ -202,11 +182,6 @@ pub fn getModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name:
     return mod.getSocketPtr(socket_name);
 }
 
-// pub fn copyModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name: []const u8) !SocketDesc {
-//     const sock = try getModSocket(pipe, mod_handle, socket_name);
-//     return sock.toDesc();
-// }
-
 pub fn copyModSocket(desc: ModuleDesc, socket_name: []const u8) !SocketDesc {
     for (desc.sockets) |socket| {
         if (socket) |sock| {
@@ -239,23 +214,5 @@ fn resolveShader(comptime declared: ShaderLanguageSource) ShaderLanguageSource {
             .file => |path| .{ .embed = @embedFile(path) },
             .embed => |code| .{ .embed = code },
         } },
-    };
-}
-
-pub fn parseNodeDescFromZon(comptime zon: NodeDescZon) NodeDesc {
-    const shader = resolveShader(zon.shader);
-    var sockets: Sockets = @splat(null);
-    inline for (zon.sockets, 0..) |socket_zon, i| {
-        var s: SocketDesc = undefined;
-        s.name = socket_zon.name;
-        s.type = socket_zon.type;
-        s.format = socket_zon.format;
-        sockets[i] = s;
-    }
-    return .{
-        .type = .compute,
-        .shader = shader,
-        .name = zon.name,
-        .sockets = sockets,
     };
 }

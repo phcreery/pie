@@ -1,12 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
-
 pub fn compileZigToSpirv(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     name: []const u8,
     file: std.Build.LazyPath,
     comptime features: []const std.Target.spirv.Feature,
+    imports: []const std.Build.Module.Import,
 ) std.Build.LazyPath {
     const target = b.resolveTargetQuery(.{
         .cpu_arch = .spirv32,
@@ -33,6 +33,10 @@ pub fn compileZigToSpirv(
         .use_llvm = false,
         .use_lld = false,
     });
+    for (imports) |imp| {
+        mod_spirv.addImport(imp.name, imp.module);
+    }
+
     return obj.getEmittedBin();
 }
 
@@ -65,11 +69,19 @@ pub fn compileAndEmbedModuleSpirVShader(
     module_name: []const u8,
     file_name: []const u8,
     embed_name: []const u8,
+    imports: []const std.Build.Module.Import,
 ) !void {
     var buffer: [64]u8 = undefined;
     const file_path_str = try std.fmt.bufPrint(&buffer, "src/engine/modules/{s}/{s}", .{ module_name, file_name });
     const file_name_path = b.path(file_path_str);
-    const spv = compileZigToSpirv(b, optimize, file_name, file_name_path, &[_]std.Target.spirv.Feature{});
+    const spv = compileZigToSpirv(
+        b,
+        optimize,
+        file_name,
+        file_name_path,
+        &[_]std.Target.spirv.Feature{},
+        imports,
+    );
     const spv_patched = try patchSpirvForNaga(b, spv, file_name);
     mod.addAnonymousImport(embed_name, .{ .root_source_file = spv_patched });
 }
@@ -81,6 +93,7 @@ pub fn compileAndEmbedZigSpirVModules(
     mod: *std.Build.Module,
     optimize: std.builtin.OptimizeMode,
     comptime modules: anytype, // parsed modules.zon
+    imports: []const std.Build.Module.Import,
 ) !void {
     inline for (modules) |m| {
         if (@hasField(@TypeOf(m), "zig_shader")) {
@@ -91,6 +104,7 @@ pub fn compileAndEmbedZigSpirVModules(
                 m.name,
                 m.zig_shader,
                 m.zig_shader ++ ".spv.embed",
+                imports,
             );
         }
     }

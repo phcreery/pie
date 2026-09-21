@@ -67,10 +67,12 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const node_desc: api.NodeDesc = comptime .{
         .type = .sink,
         .name = "sink",
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = try api.copyModSocket(desc, "input");
-            break :init s;
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .sink,
+                .format = .rgba16float,
+            },
         },
     };
     const node = try api.addNode(pipe, mod, node_desc);

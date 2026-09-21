@@ -35,21 +35,17 @@ pub fn init(
 ) !Self {
     _ = pipe;
 
-    // api's shader descriptor types are isolated from gpu's, so translate
-    // here. `.embed` carries the source content; `.file` is a zon-authoring
-    // concept (a path) that `parseNodeDescFromZon` already resolved to
-    // `.embed`, so any `.file` reaching here is treated defensively as content.
     const shader_source: ?gpu.ShaderSource = if (desc.shader) |declared| switch (declared) {
         .wgsl => |src| gpu.ShaderSource{ .wgsl = switch (src) {
-            .file => |bytes| bytes,
+            .file => unreachable,
             .embed => |code| code,
         } },
         .spirv => |src| gpu.ShaderSource{ .spirv = switch (src) {
-            .file => |bytes| bytes,
+            .file => unreachable,
             .embed => |code| code,
         } },
         .glsl => |src| gpu.ShaderSource{ .glsl = switch (src) {
-            .file => |bytes| bytes,
+            .file => unreachable,
             .embed => |code| code,
         } },
     } else null;
@@ -58,15 +54,12 @@ pub fn init(
         .type = desc.type,
         .name = desc.name,
         .shader_source = shader_source,
-        // .run_size = desc.run_size,
         .run_size = null,
         .mod = mod,
     };
     // copy the declared interface into live sockets
-    for (desc.sockets, 0..) |maybe_sock, i| {
-        if (maybe_sock) |sock| {
-            self.sockets[i] = Socket.fromDesc(sock);
-        }
+    for (desc.sockets, 0..) |sock, i| {
+        self.sockets[i] = Socket.fromDesc(sock);
     }
     return self;
 }
@@ -75,8 +68,8 @@ pub fn deinit(self: *Self) void {
     if (self.bindings) |*bindings| {
         bindings.deinit();
     }
-    if (self.compute_pipeline) |*shader| {
-        shader.deinit();
+    if (self.compute_pipeline) |*comp_pipe| {
+        comp_pipe.deinit();
     }
 }
 

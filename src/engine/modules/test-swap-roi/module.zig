@@ -70,19 +70,17 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = shader_code } },
         .name = "swap-roi",
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = .{
+        .sockets = &.{
+            .{
                 .name = "input",
                 .type = .read,
                 .format = .rggb32float,
-            };
-            s[1] = .{
+            },
+            .{
                 .name = "output",
                 .type = .write,
                 .format = .rggb32float,
-            };
-            break :init s;
+            },
         },
     };
     const node = try api.addNode(pipe, mod, node_desc);

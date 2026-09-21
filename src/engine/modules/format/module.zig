@@ -28,19 +28,17 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .compute,
         .shader = .{ .wgsl = .{ .embed = @embedFile("./format.wgsl") } },
         .name = "u16_to_f16",
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = .{
+        .sockets = &.{
+            .{
                 .name = "input",
                 .type = .read,
                 .format = .rggb16uint,
-            };
-            s[1] = .{
+            },
+            .{
                 .name = "output",
                 .type = .write,
                 .format = .rggb32float,
-            };
-            break :init s;
+            },
         },
     });
     try api.setNodeRunSize(pipe, node, mod_output_sock.roi.?);

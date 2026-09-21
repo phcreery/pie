@@ -1,7 +1,8 @@
 const std = @import("std");
-const mt = @import("mirrored_types.zig");
+const types = @import("types");
+
 pub const spirv = std.spirv; // TODO: remove this line
-pub const NodeDescZon = mt.NodeDescZon;
+pub const NodeDesc = types.ModuleApi.NodeDesc;
 
 pub const call_conv: std.lang.CallingConvention = .{ .spirv_kernel = .{ .x = 8, .y = 8, .z = 1 } };
 
@@ -13,7 +14,7 @@ pub fn coord() Vec2u32 {
 pub const Vec4f32 = @Vector(4, f32);
 pub const Vec2u32 = @Vector(2, u32);
 
-fn getSocketIdx(comptime desc: mt.NodeDescZon, comptime name: []const u8) usize {
+fn getSocketIdx(comptime desc: NodeDesc, comptime name: []const u8) usize {
     for (desc.sockets, 0..) |socket, i| {
         if (std.mem.eql(u8, socket.name, name)) {
             return i;
@@ -22,11 +23,50 @@ fn getSocketIdx(comptime desc: mt.NodeDescZon, comptime name: []const u8) usize 
     unreachable;
 }
 
-pub fn Image(comptime desc: mt.NodeDescZon, comptime name: []const u8) type {
+pub fn toSpirvUsage(socket: types.ModuleApi.SocketDesc) std.lang.Type.Spirv.Image.Usage {
+    // const T = self.format.toBaseType();
+    return switch (socket.type) {
+        // .read => .{ .sampled = T },
+        .read => .{ .sampled = f32 },
+        // 'storage' field value must be a 32-bit int, 64-bit int or 32-bit float under the 'vulkan' os
+        .write => .{ .storage = f32 },
+        .source, .sink => unreachable,
+    };
+}
+
+pub fn toSpirvImageFormat(texture_format: types.ModuleApi.TextureFormat) std.lang.Type.Spirv.Image.Format {
+    return switch (texture_format) {
+        .rgba16float => .rgba16f,
+        .rgba16uint => .rgba16u,
+        .r8uint => .unknown,
+        .r16uint => .unknown,
+        .r16float => .unknown,
+
+        // special cases: bayer mosaic stored single-channel
+        .rggb32float => .r32f,
+        .rggb16uint => .unknown,
+    };
+}
+
+pub fn toBaseType(texture_format: types.ModuleApi.TextureFormat) type {
+    return switch (texture_format) {
+        .rgba16float => f16,
+        .rgba16uint => u16,
+        .r8uint => u8,
+        .r16uint => u16,
+        .r16float => f16,
+
+        // special cases: bayer mosaic stored single-channel
+        .rggb32float => f32,
+        .rggb16uint => u16,
+    };
+}
+
+pub fn Image(comptime desc: NodeDesc, comptime name: []const u8) type {
     const socket = desc.sockets[getSocketIdx(desc, name)];
     return *addrspace(.constant) const @SpirvType(.{ .image = .{
-        .usage = socket.toSpirvUsage(),
-        .format = socket.format.toSpirvImageFormat(),
+        .usage = toSpirvUsage(socket),
+        .format = toSpirvImageFormat(socket.format),
         .dim = .@"2d",
         .depth = .not_depth,
         .arrayed = false,
@@ -35,7 +75,7 @@ pub fn Image(comptime desc: mt.NodeDescZon, comptime name: []const u8) type {
     } });
 }
 
-pub fn imageFromZon(comptime zon: mt.NodeDescZon, comptime name: []const u8) Image(zon, name) {
+pub fn imageFromZon(comptime zon: NodeDesc, comptime name: []const u8) Image(zon, name) {
     const socket_idx = getSocketIdx(zon, name);
     return @extern(Image(zon, name), .{
         .name = name,

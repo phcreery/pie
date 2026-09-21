@@ -67,10 +67,12 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const node = try api.addNode(pipe, mod, .{
         .type = .source,
         .name = "source",
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = try api.copyModSocket(desc, "output");
-            break :init s;
+        .sockets = &.{
+            .{
+                .name = "output",
+                .type = .source,
+                .format = .rgba16float,
+            },
         },
     });
     try api.inheritSocket(pipe, mod, "output", node, "output");

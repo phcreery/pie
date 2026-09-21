@@ -120,7 +120,15 @@ pub fn build(b: *Build) !void { // $ls root_id 3
         },
     });
 
-    try spv.compileAndEmbedZigSpirVModules(b, mod_pie, optimize, @import("src/engine/modules/modules.zon"));
+    try spv.compileAndEmbedZigSpirVModules(
+        b,
+        mod_pie,
+        optimize,
+        @import("src/engine/modules/modules.zon"),
+        &.{
+            .{ .name = "types", .module = mod_types },
+        },
+    );
 
     // GUI MODULE
     const mod_gui = b.createModule(.{

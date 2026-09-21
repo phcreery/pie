@@ -204,10 +204,8 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .{
             .type = .source,
             .name = "source",
-            .sockets = init: {
-                var s: api.Sockets = @splat(null);
-                s[0] = try api.copyModSocket(desc, "output");
-                break :init s;
+            .sockets = &.{
+                try api.copyModSocket(desc, "output"),
             },
         },
     );
