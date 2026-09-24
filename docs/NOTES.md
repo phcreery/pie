@@ -138,6 +138,12 @@
     - https://github.com/floooh/sokol/issues/1246
     - https://github.com/floooh/sokol/pull/1326
 
+- math
+  - https://codeberg.org/ziglang/zig/src/branch/master/lib/std/math.zig
+  - https://github.com/zig-gamedev/zmath
+  - https://codeberg.org/grius/zm/
+  - https://github.com/muhammad-fiaz/num.zig
+
 - Examples
   - https://github.com/riverwm/river/
     - files are structs

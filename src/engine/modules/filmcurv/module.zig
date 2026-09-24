@@ -48,23 +48,7 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_filmcurv = try api.addNode(pipe, mod, .{
-        .type = .compute,
-        .shader = .{ .wgsl = .{ .embed = @embedFile("./filmcurv.wgsl") } },
-        .name = "filmcurv",
-        .sockets = &.{
-            .{
-                .name = "input",
-                .type = .read,
-                .format = .rgba16float,
-            },
-            .{
-                .name = "output",
-                .type = .write,
-                .format = .rgba16float,
-            },
-        },
-    });
+    const node_filmcurv = try api.addNode(pipe, mod, @import("filmcurv.comp.zon"));
     try api.setNodeRunSize(pipe, node_filmcurv, mod_output_sock.roi.?);
     try api.inheritSocket(pipe, mod, "input", node_filmcurv, "input");
     try api.inheritSocket(pipe, mod, "output", node_filmcurv, "output");

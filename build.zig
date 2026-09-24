@@ -5,7 +5,7 @@ const sokol = @import("sokol");
 const cimgui = @import("cimgui");
 const spv = @import("build/spirv.zig");
 
-pub fn build(b: *Build) !void { // $ls root_id 3
+pub fn build(b: *Build) !void { // $ls root_id 7
     // CONFIGURATION
     const target = b.standardTargetOptions(.{});
     // for testing only, forces a native build
@@ -40,6 +40,7 @@ pub fn build(b: *Build) !void { // $ls root_id 3
     const dep_zigimg = b.dependency("zigimg", opts);
     const dep_zbench = b.dependency("zbench", opts);
     const dep_zuballoc = b.dependency("zuballoc", opts);
+    // const dep_zmath = b.dependency("zmath", opts);
 
     // inject the cimgui header search path into the sokol C library compile step
     dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
@@ -126,6 +127,7 @@ pub fn build(b: *Build) !void { // $ls root_id 3
         optimize,
         @import("src/engine/modules/modules.zon"),
         &.{
+            .{ .name = "math", .module = mod_math },
             .{ .name = "types", .module = mod_types },
         },
     );
@@ -174,6 +176,17 @@ pub fn build(b: *Build) !void { // $ls root_id 3
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    // `math` is a module dependency, so its tests are not collected by the
+    // mod_pie artifact above and need one of their own.
+    const math_unit_tests = b.addTest(.{
+        .name = "math unit tests",
+        .use_llvm = true,
+        .root_module = mod_math,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_math_unit_tests = b.addRunArtifact(math_unit_tests);
+    test_step.dependOn(&run_math_unit_tests.step);
 
     // INTEGRATION TESTS
     // first run the zig code as an executable

@@ -1,8 +1,15 @@
+//! Types and helpers available to shaders compiled by the Zig SPIR-V backend.
+//! Shaders import this as `@import("shader")`.
+
 const std = @import("std");
 const types = @import("types");
 
 pub const spirv = std.spirv; // TODO: remove this line
 pub const NodeDesc = types.ModuleApi.NodeDesc;
+
+/// The `math` module, re-exported so shaders can reach `math.color`,
+/// `math.matrices` and `math.mat3` without declaring their own imports.
+pub const math = @import("math");
 
 pub const call_conv: std.lang.CallingConvention = .{ .spirv_kernel = .{ .x = 8, .y = 8, .z = 1 } };
 

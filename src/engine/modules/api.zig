@@ -6,8 +6,9 @@ const util = @import("../util.zig");
 pub const math = @import("math");
 pub const ROI = @import("types").ROI;
 pub const CFA = @import("types").CFA;
-const ModuleApi = @import("types").ModuleApi;
 const ColorProfile = @import("types").ColorProfile;
+
+const ModuleApi = @import("types").ModuleApi;
 pub const ShaderTypeEnum = ModuleApi.ShaderTypeEnum;
 pub const ShaderSource = ModuleApi.ShaderSource;
 pub const ShaderLanguage = ModuleApi.ShaderLanguage;

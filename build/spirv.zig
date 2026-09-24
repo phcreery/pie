@@ -20,22 +20,24 @@ pub fn compileZigToSpirv(
         .target = target,
         .optimize = optimize,
     });
-    const obj = b.addExecutable(.{
-        .name = name,
-        .root_module = b.createModule(.{
-            .root_source_file = file,
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "shader", .module = mod_spirv },
-            },
-        }),
-        .use_llvm = false,
-        .use_lld = false,
+    const mod = b.createModule(.{
+        .root_source_file = file,
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "shader", .module = mod_spirv },
+        },
     });
     for (imports) |imp| {
         mod_spirv.addImport(imp.name, imp.module);
+        mod.addImport(imp.name, imp.module);
     }
+    const obj = b.addExecutable(.{
+        .name = name,
+        .root_module = mod,
+        .use_llvm = false,
+        .use_lld = false,
+    });
 
     return obj.getEmittedBin();
 }
