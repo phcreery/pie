@@ -22,10 +22,6 @@ shader: ?gpu.Shader = null,
 compute_pipeline: ?gpu.ComputePipeline = null,
 bindings: ?gpu.Bindings = null,
 
-/// debug: number of times this node has been enqueued (dispatched) by the
-/// pipeline. Useful for tests verifying dirty-region invalidation.
-run_count: u32 = 0,
-
 const Self = @This();
 
 pub fn init(

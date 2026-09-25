@@ -17,6 +17,8 @@ pub const PerfMetrics = struct {
     time_keys: std.ArrayList([]const u8),
     times: std.StringHashMap(u64),
 
+    node_run_counts: std.AutoHashMap(pipeline.NodeHandle, u32),
+
     upload_buffer_size_bytes: ?usize,
     upload_buffer_usage_size_bytes: ?usize,
     download_buffer_size_bytes: ?usize,
@@ -39,6 +41,7 @@ pub const PerfMetrics = struct {
             .start_time = .zero,
             .time_keys = try std.ArrayList([]const u8).initCapacity(allocator, 16),
             .times = std.StringHashMap(u64).init(allocator),
+            .node_run_counts = std.AutoHashMap(pipeline.NodeHandle, u32).init(allocator),
             .upload_buffer_size_bytes = null,
             .upload_buffer_usage_size_bytes = null,
             .download_buffer_size_bytes = null,
@@ -53,6 +56,7 @@ pub const PerfMetrics = struct {
 
     pub fn deinit(self: *PerfMetrics) void {
         self.times.deinit();
+        self.node_run_counts.deinit();
         self.time_keys.deinit(self.allocator);
     }
 
@@ -117,13 +121,26 @@ pub const PerfMetrics = struct {
         self.n_connector_textures_created = null;
     }
 
-    pub fn recordNodeRun(self: *PerfMetrics, node: *Node) void {
-        _ = node;
+    /// Count one dispatch of `node_handle`: bumps the per-run total and this
+    /// node's lifetime counter.
+    pub fn recordNodeRun(self: *PerfMetrics, node_handle: pipeline.NodeHandle) !void {
         if (self.n_nodes_ran) |*n| {
             n.* += 1;
         } else {
             self.n_nodes_ran = 1;
         }
+        const entry = try self.node_run_counts.getOrPut(node_handle);
+        entry.value_ptr.* = if (entry.found_existing) entry.value_ptr.* + 1 else 1;
+    }
+
+    /// Number of times `node_handle` has been dispatched.
+    pub fn runCount(self: *const PerfMetrics, node_handle: pipeline.NodeHandle) u32 {
+        return self.node_run_counts.get(node_handle) orelse 0;
+    }
+
+    /// Drop the counter for a node that no longer exists.
+    pub fn forgetNode(self: *PerfMetrics, node_handle: pipeline.NodeHandle) void {
+        _ = self.node_run_counts.remove(node_handle);
     }
 
     pub fn recordConnectorTextureAllocation(self: *PerfMetrics) void {

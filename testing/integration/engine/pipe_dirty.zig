@@ -4,13 +4,13 @@ const pie = @import("pie");
 const Pipeline = pie.Pipeline;
 const P = pie.pipeline;
 
-/// Helper: read a node's run_count by scanning the node pool for a node whose
-/// desc name matches (there is one node per module in this test chain).
+/// Helper: read a node's run count from the perf metrics by scanning the node
+/// pool for a node with a matching name (there is one node per module here).
 fn runCount(p: *Pipeline, name: []const u8) u32 {
     var it = p.node_pool.liveHandles();
     while (it.next()) |h| {
         const n = p.node_pool.getPtr(h) catch continue;
-        if (std.mem.eql(u8, n.name, name)) return n.run_count;
+        if (std.mem.eql(u8, n.name, name)) return p.perf.runCount(h);
     }
     return 0;
 }
@@ -141,7 +141,7 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
         while (node_it.next()) |h| {
             const n = try pipeline.node_pool.getPtr(h);
             if (std.mem.eql(u8, n.name, "swap-roi")) {
-                const ch = pipeline.getNodeConnectorHandle(n.sockets[1].?) orelse return error.TestUnexpectedResult;
+                const ch = pipeline.getNodeSocketConnectorHandle(n.sockets[1].?) orelse return error.TestUnexpectedResult;
                 const c = try pipeline.connector_pool.getPtr(ch);
                 break :blk c.texture.?.roi;
             }
@@ -159,7 +159,7 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
         while (node_it.next()) |h| {
             const n = try pipeline.node_pool.getPtr(h);
             if (std.mem.eql(u8, n.name, "swap-roi")) {
-                const ch = pipeline.getNodeConnectorHandle(n.sockets[1].?) orelse return error.TestUnexpectedResult;
+                const ch = pipeline.getNodeSocketConnectorHandle(n.sockets[1].?) orelse return error.TestUnexpectedResult;
                 const c = try pipeline.connector_pool.getPtr(ch);
                 break :blk c.texture.?.roi;
             }

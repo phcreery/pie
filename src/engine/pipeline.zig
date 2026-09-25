@@ -702,7 +702,10 @@ pub const Pipeline = struct {
         defer node_handles.deinit(self.allocator);
         var it = self.node_pool.liveHandles();
         while (it.next()) |h| node_handles.append(self.allocator, h) catch unreachable;
-        for (node_handles.items) |h| self.node_pool.remove(h);
+        for (node_handles.items) |h| {
+            self.perf.forgetNode(h);
+            self.node_pool.remove(h);
+        }
 
         self.rerouted = true;
     }
@@ -1014,6 +1017,7 @@ pub const Pipeline = struct {
             // remove node
             // we leave connectors alone for now since they are shared with modules and may be reused
             slog.debug("Removing node '{any}' from pipeline", .{node_handle});
+            self.perf.forgetNode(node_handle);
             self.node_pool.remove(node_handle);
         }
 
@@ -1514,8 +1518,8 @@ pub const Pipeline = struct {
             if (options.only_dirty and !self.nodeIsDirty(node)) continue;
             slog.debug("Enqueueing node '{s}'", .{node.name});
             nodes_ran += 1;
-            try self.enqueueNode(&encoder, node_handle, node, &upload_buffer, &download_buffer);
-            self.perf.recordNodeRun(node);
+            try self.enqueueNode(&encoder, node, &upload_buffer, &download_buffer);
+            try self.perf.recordNodeRun(node_handle);
         }
 
         slog.debug("Enqueued {d} nodes", .{nodes_ran});
@@ -1526,13 +1530,10 @@ pub const Pipeline = struct {
     fn enqueueNode(
         self: *Pipeline,
         encoder: *gpu.Encoder,
-        node_handle: NodeHandle,
         node: *Node,
         upload_buffer: *gpu.Buffer,
         download_buffer: *gpu.Buffer,
     ) !void {
-        _ = node_handle;
-        node.run_count += 1;
         switch (node.type) {
             .compute => {
                 const mod = try self.module_pool.getPtr(node.*.mod);
