@@ -228,12 +228,12 @@ pub const Pipeline = struct {
     fn _addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
         slog.debug("Adding module to pipeline: '{s}'", .{name});
         const module_desc = self.repo.get(name) orelse return error.ModuleNotFound;
-        var module = try Module.init(id, module_desc);
+        var module = try Module.initFromDesc(self.allocator, id, module_desc);
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
         const module_handle = try self.module_pool.add(module);
 
-        const fullname = try std.mem.concat(self.allocator, u8, &.{ module.desc.name, ":", id });
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ module.name, ":", id });
 
         try self.module_name_map.put(fullname, module_handle);
         try self.initParams(module_handle);
@@ -329,21 +329,21 @@ pub const Pipeline = struct {
         var src_mod_ptr = try self.module_pool.getPtr(src_mod);
         var dst_mod_ptr = try self.module_pool.getPtr(dst_mod);
 
-        slog.debug("Connecting module '{s} > {s}' to module '{s} > {s}'", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
+        slog.debug("Connecting module '{s} > {s}' to module '{s} > {s}'", .{ src_mod_ptr.name, src_mod_socket_name, dst_mod_ptr.name, dst_mod_socket_name });
         const dst_socket_idx = try dst_mod_ptr.getSocketIndex(dst_mod_socket_name);
         const src_socket_idx = try src_mod_ptr.getSocketIndex(src_mod_socket_name);
 
         var dst_mod_socket = &(dst_mod_ptr.sockets[dst_socket_idx] orelse {
-            slog.err("Destination module '{s} > {s}' is null", .{ dst_mod_ptr.desc.name, dst_mod_socket_name });
+            slog.err("Destination module '{s} > {s}' is null", .{ dst_mod_ptr.name, dst_mod_socket_name });
             return error.ModuleSocketNotFound;
         });
         const src_mod_socket = &(src_mod_ptr.sockets[src_socket_idx] orelse {
-            slog.err("Source module '{s} > {s}' is null", .{ src_mod_ptr.desc.name, src_mod_socket_name });
+            slog.err("Source module '{s} > {s}' is null", .{ src_mod_ptr.name, src_mod_socket_name });
             return error.ModuleSocketNotFound;
         });
 
         if (!Socket.areCompatible(src_mod_socket, dst_mod_socket)) {
-            slog.err("Incompatible module socket connection from '{s} > {s}' to '{s} > {s}'", .{ src_mod_ptr.desc.name, src_mod_socket_name, dst_mod_ptr.desc.name, dst_mod_socket_name });
+            slog.err("Incompatible module socket connection from '{s} > {s}' to '{s} > {s}'", .{ src_mod_ptr.name, src_mod_socket_name, dst_mod_ptr.name, dst_mod_socket_name });
             return error.ModuleSocketConnectionIncompatible;
         }
         dst_mod_socket.connected_to_module = .{
@@ -400,7 +400,7 @@ pub const Pipeline = struct {
 
         var mod = try self.module_pool.getPtr(mod_handle);
         var node = try self.node_pool.getPtr(node_handle);
-        slog.debug("Copying connector from module '{s} > {s}' to node '{s} > {s}'", .{ mod.desc.name, mod_socket_name, node.name, node_socket_name });
+        slog.debug("Copying connector from module '{s} > {s}' to node '{s} > {s}'", .{ mod.name, mod_socket_name, node.name, node_socket_name });
 
         const mod_socket_idx = try mod.getSocketIndex(mod_socket_name);
         const node_socket_idx = try node.getSocketIndex(node_socket_name);
@@ -410,11 +410,11 @@ pub const Pipeline = struct {
             return error.NodeSocketNotFound;
         });
         const mod_socket = &(mod.sockets[mod_socket_idx] orelse {
-            slog.err("Source module '{s} > {s}' is null", .{ mod.desc.name, mod_socket_name });
+            slog.err("Source module '{s} > {s}' is null", .{ mod.name, mod_socket_name });
             return error.ModuleSocketNotFound;
         });
         if (!Socket.areSimilar(mod_socket, node_socket)) {
-            slog.err("Incompatible connector copy from module '{s} > {s}' to node '{s} > {s}'", .{ mod.desc.name, mod_socket_name, node.name, node_socket_name });
+            slog.err("Incompatible connector copy from module '{s} > {s}' to node '{s} > {s}'", .{ mod.name, mod_socket_name, node.name, node_socket_name });
             return error.ModuleNodeSocketConnectionIncompatible;
         }
 
@@ -456,7 +456,7 @@ pub const Pipeline = struct {
                             var this_sock = try module.getSocketPtr(sock.name);
                             if (this_sock.connector_handle == null) {
                                 this_sock.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
-                                // slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.connector_handle.?, module.desc.name, sock.name });
+                                // slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.connector_handle.?, module.name, sock.name });
                             }
                         }
                     }
@@ -536,7 +536,7 @@ pub const Pipeline = struct {
     pub fn removeModule(self: *Pipeline, module_handle: ModuleHandle) !void {
         const mod = try self.module_pool.getPtr(module_handle);
         try self._removeModule(module_handle);
-        try self.history.recordRemoveDelta(self.allocator, mod.desc.name, mod.id);
+        try self.history.recordRemoveDelta(self.allocator, mod.name, mod.id);
     }
 
     /// Remove a module by name+instance (used by replay), freeing its map key,
@@ -559,8 +559,7 @@ pub const Pipeline = struct {
         for (&mod.params) |*maybe_param_ptr| {
             if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
         }
-        if (mod.desc.deinit) |deinitFn| deinitFn(self.allocator, self, mod_handle);
-        mod.deinit(); // although module_pool.remove() will call deinit if it exists...
+        if (mod.deinit) |deinitFn| deinitFn(self.allocator, self, mod_handle);
         self.module_pool.remove(mod_handle);
     }
 
@@ -727,7 +726,7 @@ pub const Pipeline = struct {
             for (&mod.params) |*maybe_param_ptr| {
                 if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
             }
-            if (mod.desc.deinit) |deinitFn| deinitFn(self.allocator, self, h);
+            if (mod.deinit) |deinitFn| deinitFn(self.allocator, self, h);
             self.module_pool.remove(h);
             handles.append(self.allocator, h) catch unreachable;
         }
@@ -736,7 +735,7 @@ pub const Pipeline = struct {
 
     fn initParams(self: *Pipeline, module_handle: ModuleHandle) !void {
         const module = try self.module_pool.getPtr(module_handle);
-        if (module.desc.initParams) |initParamsFn| {
+        if (module.initParams) |initParamsFn| {
             try initParamsFn(self, module_handle);
         }
     }
@@ -783,22 +782,22 @@ pub const Pipeline = struct {
 
     fn runModulePreCheck(self: *Pipeline, module: *Module) !void {
         _ = self;
-        if (module.desc.type == .source) {
+        if (module.type == .source) {
             const input_socket = module.getSocketPtr("input") catch null;
             if (input_socket != null) {
-                slog.err("Source module '{s}' has an input socket defined", .{module.desc.name});
+                slog.err("Source module '{s}' has an input socket defined", .{module.name});
                 return error.ModuleSourceHasInputSocket;
             }
         }
-        if (module.desc.type == .compute) {
+        if (module.type == .compute) {
             const input_socket = module.getSocketPtr("input") catch null;
             if (input_socket == null) {
-                slog.err("Compute module '{s}' has no input socket defined", .{module.desc.name});
+                slog.err("Compute module '{s}' has no input socket defined", .{module.name});
                 return error.ModuleComputeMissingInputSocket;
             }
             const output_socket = module.getSocketPtr("output") catch null;
             if (output_socket == null) {
-                slog.err("Compute module '{s}' has no output socket defined", .{module.desc.name});
+                slog.err("Compute module '{s}' has no output socket defined", .{module.name});
                 return error.ModuleComputeMissingOutputSocket;
             }
         }
@@ -833,7 +832,7 @@ pub const Pipeline = struct {
     }
 
     fn runModuleInit(self: *Pipeline, module_handle: ModuleHandle, module: *Module) !void {
-        if (module.desc.init) |initFn| {
+        if (module.init) |initFn| {
             try initFn(self.allocator, self.io, self, module_handle);
         }
     }
@@ -867,7 +866,7 @@ pub const Pipeline = struct {
                     if (sock.connected_to_module) |connection| {
                         const connected_to_module = try self.module_pool.getPtr(connection.item);
                         var socket_ptr = try module.getSocketPtr(sock.name);
-                        // slog.debug("Setting input ROI for module '{s} > {s}' from previous connected module '{s}'", .{ module.desc.name, sock.name, connected_to_module.desc.name });
+                        // slog.debug("Setting input ROI for module '{s} > {s}' from previous connected module '{s}'", .{ module.name, sock.name, connected_to_module.name });
                         const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse unreachable;
                         socket_ptr.roi = connected_to_socket.roi;
                         // carry the actual color profile of what is flowing in
@@ -881,11 +880,11 @@ pub const Pipeline = struct {
         }
 
         // modify out
-        if (module.desc.modifyOut) |modifyOutFn| {
+        if (module.modifyOut) |modifyOutFn| {
             try modifyOutFn(self, module_handle);
         } else {
             // auto propagate roi from input to output
-            if (module.desc.type != .source and module.desc.type != .sink) {
+            if (module.type != .source and module.type != .sink) {
                 const input_socket = try module.getSocketPtr("input");
                 const output_socket = try module.getSocketPtr("output");
                 output_socket.roi = input_socket.roi;
@@ -940,7 +939,7 @@ pub const Pipeline = struct {
 
     fn runModuleInitParamBuffers(self: *Pipeline, module: *Module) !void {
         const gpu_inst = self.gpu orelse return error.PipelineNoGPUInstance;
-        if (module.desc.type == .compute) {
+        if (module.type == .compute) {
             if (module.enabled == false) return;
             params: { // PARAM BUFFER INIT
                 var size_bytes: usize = 0;
@@ -982,7 +981,7 @@ pub const Pipeline = struct {
         if (self.upload_fba) |*upload_fba| {
             var upload_allocator = upload_fba.allocator();
 
-            if (module.desc.type == .compute) {
+            if (module.type == .compute) {
                 if (module.enabled == false) return;
                 blk: {
                     const size_bytes = module.param_size orelse break :blk;
@@ -1024,7 +1023,7 @@ pub const Pipeline = struct {
         for (self.module_execution_order.items) |module_handle| {
             const module = try self.module_pool.getPtr(module_handle);
             if (module.enabled == false) continue;
-            if (module.desc.createNodes) |createNodesFn| {
+            if (module.createNodes) |createNodesFn| {
                 try createNodesFn(self, module_handle);
             }
         }
@@ -1374,7 +1373,7 @@ pub const Pipeline = struct {
 
         for (self.module_execution_order.items) |module_handle| {
             const module = try self.module_pool.getPtr(module_handle);
-            if (module.desc.type == .compute) {
+            if (module.type == .compute) {
                 if (module.enabled == false) continue;
 
                 // upload params
@@ -1394,8 +1393,8 @@ pub const Pipeline = struct {
                     defer arena.free(buf);
                     const used_len = try Param.layoutTaggedUnion(buf, tu[0..tu_len]);
 
-                    // slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.desc.name, list.items.len });
-                    // slog.debug("Param bytes for module {s}:", .{module.desc.name});
+                    // slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.name, list.items.len });
+                    // slog.debug("Param bytes for module {s}:", .{module.name});
                     // var buf: [100]u8 = undefined;
                     // var w: std.io.Writer = .fixed(&buf);
                     // for (list.items) |byte| {
@@ -1411,7 +1410,7 @@ pub const Pipeline = struct {
 
                 // upload img params
                 if (module.img_param) |img_param| {
-                    slog.debug("Uploading img params for module '{s}':", .{module.desc.name});
+                    slog.debug("Uploading img params for module '{s}':", .{module.name});
                     var buf = try arena.alloc(u8, try gpu.data.layoutStruct(null, img_param));
                     defer arena.free(buf);
                     const used_len = try gpu.data.layoutStruct(buf, img_param);
@@ -1447,7 +1446,7 @@ pub const Pipeline = struct {
         }
         const sock = source_sock orelse return error.FirstNodeInputSocketNotSource;
         const source_mod = try self.module_pool.getPtr(first_node.mod);
-        const readSourceFn = source_mod.desc.readSource orelse return error.NodeMissingReadSourceFunction;
+        const readSourceFn = source_mod.readSource orelse return error.NodeMissingReadSourceFunction;
 
         upload_buffer.map();
         slog.debug("Uploading source data for first node", .{});
@@ -1603,7 +1602,7 @@ pub const Pipeline = struct {
         if (last_node.sockets[0]) |*sock| {
             if (sock.type == .sink) {
                 const last_node_mod = try self.module_pool.getPtr(last_node.*.mod);
-                if (last_node_mod.desc.writeSink) |writeSinkFn| {
+                if (last_node_mod.writeSink) |writeSinkFn| {
                     slog.debug("Downloading sink data for last node", .{});
                     const mapped_ptr = sock.*.staging_ptr orelse unreachable;
 
@@ -1650,7 +1649,7 @@ pub const Pipeline = struct {
     fn runModulesDeinit(self: *Pipeline) void {
         for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch unreachable;
-            if (module.desc.deinit) |deinitFn| {
+            if (module.deinit) |deinitFn| {
                 deinitFn(self.allocator, self, module_handle);
             }
         }

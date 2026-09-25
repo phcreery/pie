@@ -28,7 +28,7 @@ comptime {
         // _ = @import("engine/pipe_history.zig");
         // _ = @import("engine/pipe_serdes.zig");
         // _ = @import("engine/pipe_dirty.zig");
-        // _ = @import("engine/pipe_fullsize.zig");
+        _ = @import("engine/pipe_fullsize.zig");
 
         // TARGETS
         // _ = @import("targets/targets.zig");

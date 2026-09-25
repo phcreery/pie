@@ -3,14 +3,14 @@ const api = @import("../api.zig");
 pub const desc: api.ModuleDesc = .{
     .name = "test-i-1234",
     .type = .source,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .params = &.{},
+    .params_ui = &.{},
+    .sockets = &.{
+        .{
             .name = "output",
             .type = .source,
             .format = .rgba16float,
-        };
-        break :init s;
+        },
     },
     .init = null,
     .deinit = null,

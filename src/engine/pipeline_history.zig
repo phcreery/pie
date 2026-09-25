@@ -78,7 +78,7 @@ pub const PipelineHistory = struct {
         const line = try serdes.paramToLine(pipe, mod_handle, param_name);
         defer allocator.free(line);
         // key prefixes the value so repeated edits of the same param coalesce
-        const key = try std.mem.concat(allocator, u8, &.{ "param:", mod.desc.name, ":", mod.id, ":", param_name });
+        const key = try std.mem.concat(allocator, u8, &.{ "param:", mod.name, ":", mod.id, ":", param_name });
         defer allocator.free(key);
         try self.histlist.appendKeyed(line, key, self.config);
     }
@@ -109,11 +109,11 @@ pub const PipelineHistory = struct {
         const src = try pipe.module_pool.getPtr(src_mod);
         const dst = try pipe.module_pool.getPtr(dst_mod);
         const buf = try std.mem.concat(allocator, u8, &.{
-            "connect:",    src.desc.name, ":",    src.id, ":",                 src_mod_socket_name, ":",
-            dst.desc.name, ":",           dst.id, ":",    dst_mod_socket_name,
+            "connect:",    src.name, ":",    src.id, ":",                 src_mod_socket_name, ":",
+            dst.name, ":",           dst.id, ":",    dst_mod_socket_name,
         });
         defer allocator.free(buf);
-        const key = try std.mem.concat(allocator, u8, &.{ "connect:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name });
+        const key = try std.mem.concat(allocator, u8, &.{ "connect:", dst.name, ":", dst.id, ":", dst_mod_socket_name });
         defer allocator.free(key);
         try self.histlist.appendKeyed(buf, key, self.config);
     }
@@ -127,10 +127,10 @@ pub const PipelineHistory = struct {
         const pipe = super(self);
         const dst = try pipe.module_pool.getPtr(dst_mod);
         const buf = try std.mem.concat(allocator, u8, &.{
-            "connect:-1:-1:-1:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name,
+            "connect:-1:-1:-1:", dst.name, ":", dst.id, ":", dst_mod_socket_name,
         });
         defer allocator.free(buf);
-        const key = try std.mem.concat(allocator, u8, &.{ "connect:", dst.desc.name, ":", dst.id, ":", dst_mod_socket_name });
+        const key = try std.mem.concat(allocator, u8, &.{ "connect:", dst.name, ":", dst.id, ":", dst_mod_socket_name });
         defer allocator.free(key);
         try self.histlist.appendKeyed(buf, key, self.config);
     }

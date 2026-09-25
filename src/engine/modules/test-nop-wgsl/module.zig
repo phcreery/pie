@@ -3,19 +3,19 @@ const api = @import("../api.zig");
 pub const desc: api.ModuleDesc = .{
     .name = "test-nop-wgsl",
     .type = .compute,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .params = &.{},
+    .params_ui = &.{},
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-        };
-        break :init s;
+        },
     },
     .init = null,
     .deinit = null,
@@ -38,27 +38,24 @@ const shader_code: []const u8 =
 ;
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_desc: api.NodeDesc = .{
+    const node = try api.addNode(pipe, mod, .{
         .type = .compute,
         .shader = .{ .wgsl = .{ .string = shader_code } },
         .name = "nop",
-        .run_size = mod_output_sock.roi,
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = .{
+        .sockets = &.{
+            .{
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-            };
-            s[1] = .{
+            },
+            .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-            };
-            break :init s;
+            },
         },
-    };
-    const node = try api.addNode(pipe, mod, node_desc);
+    });
+    try api.setNodeRunSize(pipe, node, mod_output_sock.roi);
     try api.inheritSocket(pipe, mod, "input", node, "input");
     try api.inheritSocket(pipe, mod, "output", node, "output");
 }

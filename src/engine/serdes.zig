@@ -67,6 +67,10 @@ fn applyModule(
     defer pipe.allocator.free(fullname);
     if (pipe.module_name_map.contains(fullname)) return; // dedup
     const id_copy = try arena.dupe(u8, inst);
+    if (pipe.repo.get(name) == null) {
+        slog.warn("line {d}: unknown module '{s}', skipping", .{ line_no, name });
+        return;
+    }
     _ = try pipe.addModuleNoRecord(id_copy, name);
 }
 
@@ -134,7 +138,7 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
     var it = pipe.module_pool.liveHandles();
     while (it.next()) |handle| {
         const mod = try pipe.module_pool.getPtr(handle);
-        try writer.print("module:{s}:{s}\n", .{ mod.desc.name, mod.id });
+        try writer.print("module:{s}:{s}\n", .{ mod.name, mod.id });
     }
 
     // connects: one line per edge, from the destination side, input sockets only
@@ -148,22 +152,22 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
             const src_mod = try pipe.module_pool.getPtr(conn.item);
             const src_sock = src_mod.sockets[conn.socket_idx] orelse continue;
             try writer.print("connect:{s}:{s}:{s}:{s}:{s}:{s}\n", .{
-                src_mod.desc.name, src_mod.id, src_sock.name,
-                mod.desc.name,     mod.id,     sock.name,
+                src_mod.name, src_mod.id, src_sock.name,
+                mod.name,     mod.id,     sock.name,
             });
         }
     }
 
-    // params: only initialized ones (never-initialized params have no live value)
+    // params: one line per declared param
     it = pipe.module_pool.liveHandles();
     while (it.next()) |handle| {
         const mod = try pipe.module_pool.getPtr(handle);
-        for (mod.desc.params, 0..) |maybe_pdesc, idx| {
-            const pdesc = maybe_pdesc orelse continue;
-            const param = mod.params[idx] orelse continue;
+        for (mod.params) |maybe_param| {
+            const param = maybe_param orelse continue;
+            const pdesc = param.desc;
             switch (pdesc.typ) {
                 .f32, .i32 => {
-                    try writer.print("param:{s}:{s}:{s}:", .{ mod.desc.name, mod.id, pdesc.name });
+                    try writer.print("param:{s}:{s}:{s}:", .{ mod.name, mod.id, pdesc.name });
                     for (0..pdesc.len) |i| {
                         if (i != 0) try writer.writeByte(':');
                         const raw = param.bytes[i * 4 ..][0..4];
@@ -176,7 +180,7 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
                     try writer.writeByte('\n');
                 },
                 .str => {
-                    try writer.print("param:{s}:{s}:{s}:{s}\n", .{ mod.desc.name, mod.id, pdesc.name, param.get([]const u8) });
+                    try writer.print("param:{s}:{s}:{s}:{s}\n", .{ mod.name, mod.id, pdesc.name, param.get([]const u8) });
                 },
             }
         }
@@ -227,11 +231,11 @@ pub fn applyParam(
         slog.warn("preset line {d}: unknown parameter '{s}', skipping", .{ line_no, parm });
         return;
     };
-    const pdesc = mod.desc.params[idx].?;
     const param = mod.params[idx] orelse {
-        slog.warn("preset line {d}: parameter '{s}' is not initialized, skipping", .{ line_no, pdesc.name });
+        slog.warn("preset line {d}: unknown parameter '{s}', skipping", .{ line_no, parm });
         return;
     };
+    const pdesc = param.desc;
     switch (pdesc.typ) {
         .f32 => {
             var value_tokens = std.mem.splitScalar(u8, rest, ':');
@@ -272,13 +276,13 @@ pub fn applyParam(
 pub fn paramToLine(pipe: *pipeline.Pipeline, mod_handle: pipeline.ModuleHandle, param_name: []const u8) ![]u8 {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     const idx = try mod.getParamIndex(param_name);
-    const pdesc = mod.desc.params[idx].?;
     const param = mod.params[idx] orelse return error.ParamNotInitialized;
+    const pdesc = param.desc;
 
     var w: std.Io.Writer.Allocating = .init(pipe.allocator);
     errdefer w.deinit();
 
-    try w.writer.print("param:{s}:{s}:{s}:", .{ mod.desc.name, mod.id, pdesc.name });
+    try w.writer.print("param:{s}:{s}:{s}:", .{ mod.name, mod.id, pdesc.name });
     switch (pdesc.typ) {
         .f32 => {
             const vals = std.mem.bytesAsSlice(f32, param.bytes[0 .. pdesc.len * @sizeOf(f32)]);

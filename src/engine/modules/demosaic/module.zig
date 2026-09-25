@@ -4,21 +4,21 @@ const std = @import("std");
 pub const desc: api.ModuleDesc = .{
     .name = "demosaic",
     .type = .compute,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .params = &.{},
+    .params_ui = &.{},
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rggb32float,
             .color_profile = .any,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
             .color_profile = .any,
-        };
-        break :init s;
+        },
     },
     .createNodes = createNodes,
     .modifyOut = modifyOut,

@@ -3,24 +3,21 @@ const api = @import("../api.zig");
 pub const desc: api.ModuleDesc = .{
     .name = "test-2nodes",
     .type = .compute,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "value", .len = 1, .typ = .i32 };
-        break :init p;
+    .params_ui = &.{},
+    .params = &.{
+        .{ .name = "value", .len = 1, .typ = .i32 },
     },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-        };
-        break :init s;
+        },
     },
     .init = null,
     .deinit = null,

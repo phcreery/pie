@@ -12,28 +12,22 @@ const WbMode = enum(i32) {
 pub const desc: api.ModuleDesc = .{
     .name = "i-raw",
     .type = .source,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "filename", .len = 256, .typ = .str };
-        p[1] = .{ .name = "wb_mode", .len = 1, .typ = .i32 };
-        break :init p;
+    .params = &.{
+        .{ .name = "filename", .len = 256, .typ = .str },
+        .{ .name = "wb_mode", .len = 1, .typ = .i32 },
     },
-    .params_ui = init: {
-        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
-        ui[0] = .{ .name = "filename", .control = .{ .readonly = {} } };
-        ui[1] = .{ .name = "wb_mode", .control = .{ .combo = .{ .items = &.{ "cam_mul", "pre_mul" } } } };
-        break :init ui;
+    .params_ui = &.{
+        .{ .name = "filename", .control = .{ .readonly = {} } },
+        .{ .name = "wb_mode", .control = .{ .combo = .{ .items = &.{ "cam_mul", "pre_mul" } } } },
     },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .sockets = &.{
+        .{
             .name = "output",
             .type = .source,
             .format = .rggb16uint,
             // the raw output is in the camera's color space, WB unknown/as-shot
             .color_profile = .{ .white_point = .any, .primaries = .camera },
-        };
-        break :init s;
+        },
     },
     .initParams = initParams,
     .init = init,

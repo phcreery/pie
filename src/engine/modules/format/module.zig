@@ -3,21 +3,21 @@ const api = @import("../api.zig");
 pub const desc: api.ModuleDesc = .{
     .name = "format",
     .type = .compute,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .params = &.{},
+    .params_ui = &.{},
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rggb16uint,
             .color_profile = .any,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rggb32float,
             .color_profile = .any,
-        };
-        break :init s;
+        },
     },
     .createNodes = createNodes,
 };

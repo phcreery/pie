@@ -3,19 +3,19 @@ const api = @import("../api.zig");
 pub const desc: api.ModuleDesc = .{
     .name = "test-nop-glsl",
     .type = .compute,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .params = &.{},
+    .params_ui = &.{},
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-        };
-        break :init s;
+        },
     },
     .init = null,
     .deinit = null,

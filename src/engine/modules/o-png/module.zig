@@ -5,20 +5,17 @@ const zigimg = @import("zigimg");
 pub const desc: api.ModuleDesc = .{
     .name = "o-png",
     .type = .sink,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "filename", .len = 256, .typ = .str };
-        break :init p;
+    .params_ui = &.{},
+    .params = &.{
+        .{ .name = "filename", .len = 256, .typ = .str },
     },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .sink,
             .format = .rgba16float,
             .color_profile = .any,
-        };
-        break :init s;
+        },
     },
     .initParams = initParams,
     .writeSink = writeSink,

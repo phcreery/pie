@@ -43,7 +43,7 @@ pub const ModulesPanel = struct {
 
         // header row: name + type
         var header_buf: [128]u8 = undefined;
-        const header = std.mem.printSentinel(&header_buf, "{s}##{x}", .{ mod.desc.name, mod_handle.id }, 0) catch return;
+        const header = std.mem.printSentinel(&header_buf, "{s}##{x}", .{ mod.name, mod_handle.id }, 0) catch return;
         const open = ig.igCollapsingHeader(
             header.ptr,
             ig.ImGuiTreeNodeFlags_OpenOnArrow | ig.ImGuiTreeNodeFlags_OpenOnDoubleClick | ig.ImGuiTreeNodeFlags_DefaultOpen,
@@ -54,12 +54,12 @@ pub const ModulesPanel = struct {
         defer ig.igUnindentEx(8.0);
 
         // one row per param
-        for (mod.desc.params, mod.desc.params_ui, 0..) |maybe_param, maybe_ui, param_idx| {
-            const param_desc = maybe_param orelse continue;
+        for (mod.params, mod.params_ui, 0..) |maybe_param, maybe_ui, param_idx| {
             const ui = maybe_ui orelse continue;
 
             // read current value
-            const param = mod.getParamPtr(param_desc.name) catch continue;
+            const param = &(maybe_param orelse continue);
+            const param_desc = param.desc;
 
             switch (ui.control) {
                 .slider => |slider| drawSlider(pipeline, rerun_requested, mod_handle, param_desc.name, param, slider, param_idx),

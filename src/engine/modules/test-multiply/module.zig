@@ -4,31 +4,25 @@ const std = @import("std");
 pub const desc: api.ModuleDesc = .{
     .name = "test-multiply",
     .type = .compute,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "multiplier", .len = 1, .typ = .f32 };
-        p[1] = .{ .name = "adder", .len = 1, .typ = .f32 };
-        break :init p;
+    .params = &.{
+        .{ .name = "multiplier", .len = 1, .typ = .f32 },
+        .{ .name = "adder", .len = 1, .typ = .f32 },
     },
-    .params_ui = init: {
-        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
-        ui[0] = .{ .name = "multiplier", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } };
-        ui[1] = .{ .name = "adder", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } };
-        break :init ui;
+    .params_ui = &.{
+        .{ .name = "multiplier", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } },
+        .{ .name = "adder", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } },
     },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-        };
-        break :init s;
+        },
     },
     .init = null,
     .deinit = null,

@@ -3,19 +3,19 @@ const api = @import("../api.zig");
 pub const desc: api.ModuleDesc = .{
     .name = "whitebalance",
     .type = .compute,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .params = &.{},
+    .params_ui = &.{},
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rggb32float,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rggb32float,
-        };
-        break :init s;
+        },
     },
     .createNodes = createNodes,
 };

@@ -7,29 +7,23 @@ const api = @import("../api.zig");
 pub const desc: api.ModuleDesc = .{
     .name = "test-swap-roi",
     .type = .compute,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "swap_roi", .len = 1, .typ = .i32 };
-        break :init p;
+    .params = &.{
+        .{ .name = "swap_roi", .len = 1, .typ = .i32 },
     },
-    .params_ui = init: {
-        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
-        ui[0] = .{ .name = "swap_roi", .control = .{ .checkbox = {} } };
-        break :init ui;
+    .params_ui = &.{
+        .{ .name = "swap_roi", .control = .{ .checkbox = {} } },
     },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rggb32float,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rggb32float,
-        };
-        break :init s;
+        },
     },
     .createNodes = createNodes,
     .modifyOut = modifyOut,

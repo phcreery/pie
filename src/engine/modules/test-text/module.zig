@@ -5,24 +5,21 @@ const slog = std.log.scoped(.crop);
 pub const desc: api.ModuleDesc = .{
     .name = "test-text",
     .type = .compute,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "value", .len = 1, .typ = .f32 };
-        break :init p;
+    .params_ui = &.{},
+    .params = &.{
+        .{ .name = "value", .len = 1, .typ = .f32 },
     },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-        };
-        break :init s;
+        },
     },
     .initParams = initParams,
     .createNodes = createNodes,
@@ -38,22 +35,20 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .compute,
         .shader = .{ .wgsl = .{ .string = @embedFile("./text.wgsl") } },
         .name = "text",
-        .run_size = mod_output_sock.roi.?,
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = .{
+        .sockets = &.{
+            .{
                 .name = "input",
                 .type = .read,
                 .format = .rgba16float,
-            };
-            s[1] = .{
+            },
+            .{
                 .name = "output",
                 .type = .write,
                 .format = .rgba16float,
-            };
-            break :init s;
+            },
         },
     });
+    try api.setNodeRunSize(pipe, node, mod_output_sock.roi);
     try api.inheritSocket(pipe, mod, "input", node, "input");
     try api.inheritSocket(pipe, mod, "output", node, "output");
 }

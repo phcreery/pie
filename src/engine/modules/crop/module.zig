@@ -5,32 +5,26 @@ const slog = std.log.scoped(.crop);
 pub const desc: api.ModuleDesc = .{
     .name = "crop",
     .type = .compute,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "rotation", .len = 1, .typ = .f32 };
-        p[1] = .{ .name = "meta_rotation_deg", .len = 1, .typ = .f32 };
-        break :init p;
+    .params = &.{
+        .{ .name = "rotation", .len = 1, .typ = .f32 },
+        .{ .name = "meta_rotation_deg", .len = 1, .typ = .f32 },
     },
-    .params_ui = init: {
-        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
-        ui[0] = .{ .name = "rotation", .control = .{ .slider = .{ .min = -180, .max = 180, .step = 0.5, .suffix = " deg" } } };
-        break :init ui;
+    .params_ui = &.{
+        .{ .name = "rotation", .control = .{ .slider = .{ .min = -180, .max = 180, .step = 0.5, .suffix = " deg" } } },
     },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
             .color_profile = .any,
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
             .color_profile = .any,
-        };
-        break :init s;
+        },
     },
     .initParams = initParams,
     .modifyOut = modifyOut,

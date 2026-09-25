@@ -17,7 +17,7 @@ pub fn printModules(self: *pipeline.Pipeline) void {
     var module_pool_handles = self.module_pool.liveHandles();
     while (module_pool_handles.next()) |module_handle| {
         const module = self.module_pool.getPtr(module_handle) catch unreachable;
-        // slog.info("Module: {s}, enabled: {any}", .{ module.desc.name, module.enabled });
+        // slog.info("Module: {s}, enabled: {any}", .{ module.name, module.enabled });
         const module_text =
             \\ ==== MODULE ======================================
             \\  Input Connector:  <- {any} {any}x{any} ({any})
@@ -58,7 +58,7 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             // if (module.desc.input_socket) |input_socket| input_socket.roi else null,
             if (input_socket) |sock| if (sock.roi) |roi| roi.w else null else null,
             if (input_socket) |sock| if (sock.roi) |roi| roi.h else null else null,
-            module.desc.name,
+            module.name,
             module.enabled,
             if (output_socket) |sock| sock.name else "null",
             if (output_socket) |sock| sock.type else null,
@@ -194,6 +194,6 @@ fn vertPrinterCb(buf: []u8, vert: pipeline.NodeHandle, user_data: *anyopaque) []
     if (node_mod.enabled) {
         enabled_str = "[x]";
     }
-    const res = std.fmt.bufPrint(buf, "{s} {s} | {s} : {s}", .{ enabled_str, @tagName(node_mod.desc.type), node_mod.desc.name, node.name }) catch "<error>";
+    const res = std.fmt.bufPrint(buf, "{s} {s} | {s} : {s}", .{ enabled_str, @tagName(node_mod.type), node_mod.name, node.name }) catch "<error>";
     return @constCast(res);
 }

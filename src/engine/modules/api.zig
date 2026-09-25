@@ -93,15 +93,15 @@ pub const ParamUI = struct {
 pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
-    params: [MAX_PARAMS_PER_MODULE]?ParamDesc = @splat(null),
+    // params: [MAX_PARAMS_PER_MODULE]?ParamDesc = @splat(null),
+    params: []const ParamDesc,
 
-    /// UI hints for the editor; index-aligned with `params`. Entries may be
-    /// null (params without a UI spec are shown read-only).
-    params_ui: [MAX_PARAMS_PER_MODULE]?ParamUI = @splat(null),
+    /// UI hints for the editor; index-aligned with `params`.
+    // params_ui: [MAX_PARAMS_PER_MODULE]?ParamUI = @splat(null),
+    params_ui: []const ParamUI,
 
     // The sockets describe the module's input and output interface
-    // they can be null if the module has no input or output (sink or source only)
-    sockets: Sockets,
+    sockets: []const SocketDesc,
 
     // https://github.com/hanatos/vkdt/blob/1921eabfa2c87b90042dee676d5d3e34d8cbd5e1/src/pipe/global.c#L106
     initParams: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
@@ -131,12 +131,12 @@ pub fn initParam(pipe: PipelineHandle, desc: ParamDesc, value: anytype) !Param {
     return param;
 }
 
+/// Write the initial value of a declared param. Params are created (zero
+/// valued) when the module is registered, so this only sets the value.
 pub fn initParamNamed(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
     const mod = try pipe.module_pool.getPtr(mod_handle);
-    const idx = try mod.getParamIndex(param_name);
-    const desc = mod.desc.params[idx].?; // TODO: handle null case better
-    const param = try Param.init(pipe.allocator, desc, value);
-    mod.params[idx] = param;
+    const param = try mod.getParamPtr(param_name);
+    try param.set(value);
 }
 
 pub fn getParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type) !T {
@@ -184,11 +184,9 @@ pub fn getModSocket(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_name:
 }
 
 pub fn copyModSocket(desc: ModuleDesc, socket_name: []const u8) !SocketDesc {
-    for (desc.sockets) |socket| {
-        if (socket) |sock| {
-            if (std.mem.eql(u8, sock.name, socket_name)) {
-                return sock;
-            }
+    for (desc.sockets) |sock| {
+        if (std.mem.eql(u8, sock.name, socket_name)) {
+            return sock;
         }
     }
     return error.SocketNotFound;

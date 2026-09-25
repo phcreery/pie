@@ -5,37 +5,29 @@ const temp_tint = @import("./temp_tint.zig");
 pub const desc: api.ModuleDesc = .{
     .name = "color",
     .type = .compute,
-    .params = init: {
-        var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        p[0] = .{ .name = "wb_temp", .len = 1, .typ = .f32 };
-        p[1] = .{ .name = "wb_tint", .len = 1, .typ = .f32 };
-        p[2] = .{ .name = "wb_coeff", .len = 3, .typ = .f32 };
-        break :init p;
+    .params = &.{
+        .{ .name = "wb_temp", .len = 1, .typ = .f32 },
+        .{ .name = "wb_tint", .len = 1, .typ = .f32 },
+        .{ .name = "wb_coeff", .len = 3, .typ = .f32 },
     },
-    .params_ui = init: {
-        var ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null);
-        // ui[0] = .{ .name = "wb_temp", .control = .{ .slider = .{ .min = 1000, .max = 12000, .step = 100, .suffix = " K" } } };
-        // ui[1] = .{ .name = "wb_tint", .control = .{ .slider = .{ .min = -2, .max = 2, .step = 0.01 } } };
-        ui[2] = .{ .name = "wb_coeff", .control = .{ .sliders = .{ .n = 3, .min = 0.0, .max = 4.0, .labels = &.{ "R", "G", "B" } } } };
-        break :init ui;
+    .params_ui = &.{
+        .{ .name = "wb_coeff", .control = .{ .sliders = .{ .n = 3, .min = 0.0, .max = 4.0, .labels = &.{ "R", "G", "B" } } } },
     },
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
             // accepts camera primaries with any white balance (computed from temp/tint)
             .color_profile = .{ .white_point = .any, .primaries = .camera },
-        };
-        s[1] = .{
+        },
+        .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
             // emits linear rec2020 with D65 white point
             .color_profile = .{ .white_point = .d65, .primaries = .rec2020 },
-        };
-        break :init s;
+        },
     },
     .initParams = initParams,
     .modifyOut = modifyOut,

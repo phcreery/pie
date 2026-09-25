@@ -20,51 +20,32 @@ const Self = @This();
 desc: api.ParamDesc,
 bytes: []u8, // we will store the value as bytes, and interpret it based on the type
 
-pub fn init(allocator: std.mem.Allocator, desc: api.ParamDesc, value: anytype) !Self {
-    const val_as_bytes = switch (@typeInfo(@TypeOf(value))) {
-        .pointer => std.mem.sliceAsBytes(value),
-        else => std.mem.asBytes(&value),
-    };
-
-    if (val_as_bytes.len > size_cpu(desc.len, desc.typ)) {
-        std.debug.print("Value as bytes length {d} exceeds expected size {d} (type {s} * len {d})\n", .{
-            val_as_bytes.len,
-            size_cpu(desc.len, desc.typ),
-            @tagName(desc.typ),
-            desc.len,
-        });
-        return error.InvalidLengthTypeForParamValue;
-    }
-
+/// Create a zero-valued param from a descriptor. The value is written later
+/// with `set` (module `initParams` hooks or serdes).
+pub fn fromDesc(allocator: std.mem.Allocator, desc: api.ParamDesc) !Self {
     const bytes = try allocator.alloc(u8, size_cpu(desc.len, desc.typ));
     @memset(bytes, 0); // zero out the bytes to avoid uninitialized data issues
-
-    // std.debug.print("Initializing param {s} with value of type {s} at {*} {d}\n", .{ desc.name, @tagName(desc.typ), bytes, val_as_bytes.len });
-    @memcpy(bytes[0..val_as_bytes.len], val_as_bytes);
-
-    const self = Self{
+    return .{
         .desc = desc,
-        .bytes = bytes, // store the pointer to the allocated space
+        .bytes = bytes,
     };
+}
+
+pub fn init(allocator: std.mem.Allocator, desc: api.ParamDesc, value: anytype) !Self {
+    var self = try Self.fromDesc(allocator, desc);
+    errdefer self.deinit(allocator);
+    try self.set(value);
     return self;
 }
+
 pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
     allocator.free(self.bytes);
 }
 
 pub fn set(self: *Self, value: anytype) !void {
-    switch (@typeInfo(@TypeOf(value))) {
+    const val_as_bytes = switch (@typeInfo(@TypeOf(value))) {
         // some checks for slices
-        .pointer => {
-            const slice_info = @typeInfo(@TypeOf(value)).pointer;
-            if (value.len > self.desc.len) {
-                std.debug.print("Value slice length {d} exceeds expected length {d} for param {s}\n", .{
-                    value.len,
-                    self.desc.len,
-                    self.desc.name,
-                });
-                return error.InvalidLengthTypeForParamValue;
-            }
+        .pointer => |slice_info| blk: {
             if (slice_info.child != u8) {
                 std.debug.print("Expected array of u8 for param {s}, but got array of {s}\n", .{
                     self.desc.name,
@@ -72,15 +53,19 @@ pub fn set(self: *Self, value: anytype) !void {
                 });
                 return error.InvalidTypeForParamValue;
             }
+            break :blk std.mem.sliceAsBytes(value);
         },
-        else => {},
-    }
-
-    // convert value to bytes
-    const val_as_bytes = switch (@typeInfo(@TypeOf(value))) {
-        .pointer => std.mem.sliceAsBytes(value),
         else => std.mem.asBytes(&value),
     };
+    // the value must fit the storage described by `desc`
+    if (val_as_bytes.len > self.bytes.len) {
+        std.debug.print("Value length {d} exceeds expected size {d} for param {s}\n", .{
+            val_as_bytes.len,
+            self.bytes.len,
+            self.desc.name,
+        });
+        return error.InvalidLengthTypeForParamValue;
+    }
     // copy bytes to self.bytes
     @memcpy(self.bytes[0..val_as_bytes.len], val_as_bytes);
 }

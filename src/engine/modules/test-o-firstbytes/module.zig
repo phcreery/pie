@@ -4,14 +4,14 @@ const std = @import("std");
 pub const desc: api.ModuleDesc = .{
     .name = "test-o-2468",
     .type = .sink,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .params = &.{},
+    .params_ui = &.{},
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .sink,
             .format = .rgba16float,
-        };
-        break :init s;
+        },
     },
     .writeSink = writeSink,
     .createNodes = createNodes,
@@ -27,16 +27,12 @@ pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHan
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    const node_desc: api.NodeDesc = .{
+    const node = try api.addNode(pipe, mod, .{
         .type = .sink,
         .name = "Sink",
-        .run_size = null,
-        .sockets = init: {
-            var s: api.Sockets = @splat(null);
-            s[0] = try api.copyModSocket(pipe, mod, "input");
-            break :init s;
+        .sockets = &.{
+            try api.copyModSocket(desc, "input"),
         },
-    };
-    const node = try api.addNode(pipe, mod, node_desc);
+    });
     try api.inheritSocket(pipe, mod, "input", node, "input");
 }

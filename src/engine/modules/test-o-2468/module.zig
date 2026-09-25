@@ -4,14 +4,14 @@ const std = @import("std");
 pub const desc: api.ModuleDesc = .{
     .name = "test-o-2468",
     .type = .sink,
-    .sockets = init: {
-        var s: api.Sockets = @splat(null);
-        s[0] = .{
+    .params = &.{},
+    .params_ui = &.{},
+    .sockets = &.{
+        .{
             .name = "input",
             .type = .sink,
             .format = .rgba16float,
-        };
-        break :init s;
+        },
     },
     .init = null,
     .deinit = null,
