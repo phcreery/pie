@@ -101,42 +101,8 @@ pub inline fn hsvToRgb(c: Vec3f32) Vec3f32 {
     };
 }
 
-// ---------------------------------------------------------------------------
-// Weibull film curve
-// ---------------------------------------------------------------------------
-
-/// Weibull CDF, used as the per-channel film curve.
-///
-/// * `il`: 1/lambda, the scale parameter (0, inf)
-/// * `k`: the shape parameter (0, inf)
-pub inline fn weibullCdf(x: f32, il: f32, k: f32) f32 {
-    return 1.0 - @exp(-math.powf(@max(x, math.EPSILON) * il, k));
-}
-
-pub inline fn weibullCdfVec3(x: Vec3f32, il: f32, k: f32) Vec3f32 {
-    return .{
-        weibullCdf(x[0], il, k),
-        weibullCdf(x[1], il, k),
-        weibullCdf(x[2], il, k),
-    };
-}
-
-/// Weibull curve in AGX inset space, with the chroma angle lerped back toward
-/// the uncurved hue (`agx_inset` / `agx_inset_inv` in `matrices.zig`).
-pub inline fn agxWeibull(rgb: Vec3f32, il: f32, k: f32) Vec3f32 {
-    const inset = matrices.agx_inset.mulVec(rgb);
-    const mix_percent = 0.4;
-    const hsv0 = rgbToHsv(inset);
-    const curved = weibullCdfVec3(inset, il, k);
-    var hsv1 = rgbToHsv(curved);
-    hsv1[0] = lerpChromaticityAngle(hsv0[0], hsv1[0], mix_percent);
-    const recolored = hsvToRgb(hsv1);
-    return @max(matrices.agx_inset_inv.mulVec(recolored), @as(Vec3f32, @splat(0.0)));
-}
-
-const testing = @import("std").testing;
-
 test "hsv round-trips" {
+    const testing = @import("std").testing;
     const inputs = [4]Vec3f32{
         .{ 1.0, 0.0, 0.0 },
         .{ 0.2, 0.6, 0.9 },
@@ -150,21 +116,11 @@ test "hsv round-trips" {
 }
 
 test "linearToSrgb follows the piecewise sRGB curve" {
+    const testing = @import("std").testing;
     // linear piece below the 0.0031308 breakpoint
     try testing.expectApproxEqAbs(@as(f32, 0.0), linearToSrgb(0.0), 1e-7);
     try testing.expectApproxEqAbs(@as(f32, 0.01292), linearToSrgb(0.001), 1e-7);
     // power piece above it: 0.04045 linear is 0.22221 sRGB
     try testing.expectApproxEqAbs(@as(f32, 0.2222055), linearToSrgb(0.04045), 1e-6);
     try testing.expectApproxEqAbs(@as(f32, 1.0), linearToSrgb(1.0), 1e-6);
-}
-
-test "weibullCdf is a monotonically increasing CDF on [0, 1]" {
-    var previous: f32 = -1.0;
-    var x: f32 = 0.0;
-    while (x <= 8.0) : (x += 0.25) {
-        const y = weibullCdf(x, 3.8, 1.3);
-        try testing.expect(y >= previous);
-        try testing.expect(y >= 0.0 and y <= 1.0);
-        previous = y;
-    }
 }

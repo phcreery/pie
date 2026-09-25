@@ -73,7 +73,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
     const node = try api.addNode(pipe, mod, .{
         .type = .compute,
-        .shader = .{ .wgsl = .{ .embed = @embedFile("./rotate_center.wgsl") } },
+        .shader = .{ .wgsl = .{ .string = @embedFile("./rotate_center.wgsl") } },
         .name = "rotate_center",
         .sockets = &.{
             .{

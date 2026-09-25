@@ -26,7 +26,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node = try api.addNode(pipe, mod, .{
         .type = .compute,
-        .shader = .{ .wgsl = .{ .embed = @embedFile("./format.wgsl") } },
+        .shader = .{ .wgsl = .{ .string = @embedFile("./format.wgsl") } },
         .name = "u16_to_f16",
         .sockets = &.{
             .{

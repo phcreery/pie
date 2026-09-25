@@ -5,8 +5,8 @@
 const shd = @import("shader");
 const zon: shd.NodeDesc = @import("nop.comp.zon");
 
-const input_image = shd.imageFromZon(zon, "input");
-const output_image = shd.imageFromZon(zon, "output");
+const input_image = shd.getImageFromZon(zon, "input");
+const output_image = shd.getImageFromZon(zon, "output");
 
 export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();

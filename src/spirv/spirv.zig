@@ -11,6 +11,9 @@ pub const NodeDesc = types.ModuleApi.NodeDesc;
 /// `math.matrices` and `math.mat3` without declaring their own imports.
 pub const math = @import("math");
 
+pub const Vec4f32 = @Vector(4, f32);
+pub const Vec2u32 = @Vector(2, u32);
+
 pub const call_conv: std.lang.CallingConvention = .{ .spirv_kernel = .{ .x = 8, .y = 8, .z = 1 } };
 
 pub extern const global_invocation_id: @Vector(3, u32) addrspace(.input);
@@ -18,8 +21,12 @@ pub fn coord() Vec2u32 {
     return @as(Vec2u32, .{ global_invocation_id[0], global_invocation_id[1] });
 }
 
-pub const Vec4f32 = @Vector(4, f32);
-pub const Vec2u32 = @Vector(2, u32);
+pub fn getParams(T: type) *addrspace(.storage_buffer) T {
+    return @extern(*addrspace(.storage_buffer) T, .{
+        .name = "params",
+        .decoration = .{ .descriptor = .{ .set = 0, .binding = 0 } },
+    });
+}
 
 fn getSocketIdx(comptime desc: NodeDesc, comptime name: []const u8) usize {
     for (desc.sockets, 0..) |socket, i| {
@@ -82,7 +89,7 @@ pub fn Image(comptime desc: NodeDesc, comptime name: []const u8) type {
     } });
 }
 
-pub fn imageFromZon(comptime zon: NodeDesc, comptime name: []const u8) Image(zon, name) {
+pub fn getImageFromZon(comptime zon: NodeDesc, comptime name: []const u8) Image(zon, name) {
     const socket_idx = getSocketIdx(zon, name);
     return @extern(Image(zon, name), .{
         .name = name,

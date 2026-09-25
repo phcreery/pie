@@ -200,20 +200,20 @@ pub fn getSocketIndex(pipe: PipelineHandle, mod_handle: ModuleHandle, socket_nam
 }
 
 /// Resolve a shader declared in a zon descriptor: `.file` holds a path there
-/// and is embedded at comptime into `.embed`. Comptime only.
+/// and is embedded at comptime into `.string`. Comptime only.
 fn resolveShader(comptime declared: ShaderLanguageSource) ShaderLanguageSource {
     return switch (declared) {
         .wgsl => |src| .{ .wgsl = switch (src) {
-            .file => |path| .{ .embed = @embedFile(path) },
-            .embed => |code| .{ .embed = code },
+            .file => |path| .{ .string = @embedFile(path) },
+            .string => |code| .{ .string = code },
         } },
         .spirv => |src| .{ .spirv = switch (src) {
-            .file => |path| .{ .embed = @embedFile(path) },
-            .embed => |code| .{ .embed = code },
+            .file => |path| .{ .string = @embedFile(path) },
+            .string => |code| .{ .string = code },
         } },
         .glsl => |src| .{ .glsl = switch (src) {
-            .file => |path| .{ .embed = @embedFile(path) },
-            .embed => |code| .{ .embed = code },
+            .file => |path| .{ .string = @embedFile(path) },
+            .string => |code| .{ .string = code },
         } },
     };
 }

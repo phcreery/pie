@@ -3,14 +3,14 @@ const std = @import("std");
 
 pub const ShaderTypeEnum = enum {
     file,
-    embed,
+    string,
 };
 
 const ShaderSource = union(ShaderTypeEnum) {
     /// path string
     file: []const u8,
     /// inline string or use `@embedFile`
-    embed: []const u8,
+    string: []const u8,
 };
 
 // uhh, this is duplicate....

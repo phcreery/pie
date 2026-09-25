@@ -34,15 +34,15 @@ pub fn init(
     const shader_source: ?gpu.ShaderSource = if (desc.shader) |declared| switch (declared) {
         .wgsl => |src| gpu.ShaderSource{ .wgsl = switch (src) {
             .file => unreachable,
-            .embed => |code| code,
+            .string => |code| code,
         } },
         .spirv => |src| gpu.ShaderSource{ .spirv = switch (src) {
             .file => unreachable,
-            .embed => |code| code,
+            .string => |code| code,
         } },
         .glsl => |src| gpu.ShaderSource{ .glsl = switch (src) {
             .file => unreachable,
-            .embed => |code| code,
+            .string => |code| code,
         } },
     } else null;
 

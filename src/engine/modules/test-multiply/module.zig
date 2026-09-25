@@ -79,7 +79,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node = try api.addNode(pipe, mod, .{
         .type = .compute,
-        .shader = .{ .wgsl = .{ .embed = shader_code } },
+        .shader = .{ .wgsl = .{ .string = shader_code } },
         .name = "multiply",
         .sockets = &.{
             .{

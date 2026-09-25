@@ -43,7 +43,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
     const node_desc: api.NodeDesc = comptime .{
         .type = .compute,
-        .shader = .{ .glsl = .{ .embed = shader_code } },
+        .shader = .{ .glsl = .{ .string = shader_code } },
         .name = "test-nop-glsl",
         .sockets = &.{
             .{
