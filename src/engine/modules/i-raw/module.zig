@@ -45,7 +45,6 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHandle, 
     slog.info("i-raw Filename param value: {s}", .{filename});
 
     raw_image.* = try RawImage.read(allocator, io, filename);
-    errdefer raw_image.deinit();
 
     var mod = try api.getModule(pipe, mod_handle);
     mod.data = raw_image;

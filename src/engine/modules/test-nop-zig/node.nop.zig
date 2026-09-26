@@ -3,7 +3,7 @@
 // diff -u --color <(spirv-dis src/engine/modules/test-nop-zig/nop.comp.spv) <(spirv-dis src/engine/modules/test-nop-zig/nopopt.comp.spv)
 
 const shd = @import("shader");
-const zon: shd.NodeDesc = @import("nop.comp.zon");
+const zon: shd.NodeDesc = @import("node.nop.zon");
 
 const input_image = shd.getImageFromZon(zon, "input");
 const output_image = shd.getImageFromZon(zon, "output");

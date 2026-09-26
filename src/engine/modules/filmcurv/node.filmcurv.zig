@@ -12,7 +12,7 @@ const color = math.color;
 const Vec3f32 = math.mat3.Vec3f32;
 const Vec4f32 = shd.Vec4f32;
 
-const zon: shd.NodeDesc = @import("filmcurv.comp.zon");
+const zon: shd.NodeDesc = @import("node.filmcurv.zon");
 
 const Params = extern struct {
     brightness: f32,
@@ -25,7 +25,7 @@ const params = shd.getParams(Params);
 const input_image = shd.getImageFromZon(zon, "input");
 const output_image = shd.getImageFromZon(zon, "output");
 
-const COLORMODE_AGX: i32 = 4;
+const COLORMODE_AGX: i32 = 0;
 
 /// Clamps for the curve parameters; `il` must stay positive for `log2` in
 /// `color.powf`, `k` must stay positive for the Weibull shape.

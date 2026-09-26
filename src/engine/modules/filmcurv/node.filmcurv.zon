@@ -1,7 +1,7 @@
 .{
     .name = "filmcurv",
     .type = .compute,
-    .shader = .{ .spirv = .{ .file = "filmcurv.comp.zig.spv.embed" } },
+    .shader = .{ .spirv = .{ .file = "node.filmcurv.zig.spv.embed" } },
     .sockets = .{
         .{ .name = "input", .type = .read, .format = .rgba16float },
         .{ .name = "output", .type = .write, .format = .rgba16float },

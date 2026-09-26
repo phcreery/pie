@@ -2,11 +2,9 @@
 
 const std = @import("std");
 const gpu = @import("gpu");
-const util = @import("../util.zig");
 pub const math = @import("math");
 pub const ROI = @import("types").ROI;
 pub const CFA = @import("types").CFA;
-const ColorProfile = @import("types").ColorProfile;
 
 const ModuleApi = @import("types").ModuleApi;
 pub const ShaderTypeEnum = ModuleApi.ShaderTypeEnum;
@@ -93,11 +91,9 @@ pub const ParamUI = struct {
 pub const ModuleDesc = struct {
     name: []const u8,
     type: ModuleType,
-    // params: [MAX_PARAMS_PER_MODULE]?ParamDesc = @splat(null),
     params: []const ParamDesc,
 
     /// UI hints for the editor; index-aligned with `params`.
-    // params_ui: [MAX_PARAMS_PER_MODULE]?ParamUI = @splat(null),
     params_ui: []const ParamUI,
 
     // The sockets describe the module's input and output interface

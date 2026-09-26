@@ -121,6 +121,7 @@ pub fn build(b: *Build) !void { // $ls root_id 7
         },
     });
 
+    // PIE MODULES SPIR-V SHADERS
     try spv.compileAndEmbedZigSpirVModules(
         b,
         mod_pie,
