@@ -1,81 +1,50 @@
-const pie = @import("pie");
-const std = @import("std");
+//! GUI plugin root — the *entire* plugin surface.
+//!
+//! The plugin is stateless by design: the host owns the pipeline, the blit
+//! resources, the UI model and all mutable state (`abi.SharedState`), so a
+//! reload is `dlclose` + `dlopen` with nothing to save, restore or free. That
+//! also keeps the plugin's module graph small (ImGui + sokol's event type),
+//! which is what makes an edit rebuild in about a second.
+//!
+//! Keep the engine out of here: this side is only good at drawing widgets.
 
 const sokol = @import("sokol");
 const sapp = sokol.app;
 
-const Image = @import("./components/image.zig").Image;
+const abi = @import("abi");
+
 const Darkroom = @import("./views/darkroom.zig").Darkroom;
 
-const CurrentView = enum {
-    darkroom,
-};
-
-// God Object for GUI State
-pub const GUI = struct {
-    allocator: std.mem.Allocator,
-    io: std.Io,
-
-    // pie
-    gpu: *pie.GPU,
-
-    // views
-    current_view: CurrentView = .darkroom,
-    darkroom: Darkroom,
-
-    const Self = @This();
-
-    pub fn init(
-        allocator: std.mem.Allocator,
-        io: std.Io,
-        gpu: *pie.GPU,
-    ) !Self {
-        const darkroom = try Darkroom.init(allocator, io, gpu);
-        return .{
-            .allocator = allocator,
-            .io = io,
-            .gpu = gpu,
-            .current_view = .darkroom,
-            .darkroom = darkroom,
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.darkroom.deinit();
-    }
-
-    pub fn update(self: *Self) void {
-        switch (self.current_view) {
-            .darkroom => {
-                self.darkroom.update(self);
-            },
-        }
-    }
-    pub fn draw(self: *Self) void {
-        switch (self.current_view) {
-            .darkroom => {
-                self.darkroom.draw(self);
-            },
-        }
-    }
-    pub fn event(self: *Self, ev: [*c]const sapp.Event) void {
-        switch (self.current_view) {
-            .darkroom => {
-                self.darkroom.event(self, ev);
-            },
-        }
-    }
-};
-
-pub fn gui_update(gui: *GUI) callconv(.c) void {
-    gui.update();
+pub fn gui_abi_version() callconv(.c) u32 {
+    return abi.abi_version;
 }
 
-pub fn gui_draw(gui: *GUI) callconv(.c) void {
-    gui.draw();
+/// Fingerprint of the memory layout this plugin was built against; the loader
+/// compares it so a stale plugin (e.g. built after editing `types/ui.zig` while
+/// the app kept running the old contract) is refused instead of misread.
+pub fn gui_abi_layout() callconv(.c) u64 {
+    return abi.layout_hash;
+}
+
+/// Draw the current view's widgets. Runs inside the swapchain render pass.
+pub fn gui_draw(state: *abi.SharedState, model: *const abi.Model) callconv(.c) void {
+    Darkroom.draw(state, model);
+}
+
+/// Mouse/keyboard input that ImGui did not consume.
+pub fn gui_event(state: *abi.SharedState, ev: [*c]const sapp.Event) callconv(.c) void {
+    Darkroom.event(state, ev);
 }
 
 comptime {
-    @export(&gui_update, .{ .name = "gui_update" });
+    @export(&gui_abi_version, .{ .name = "gui_abi_version" });
+    @export(&gui_abi_layout, .{ .name = "gui_abi_layout" });
     @export(&gui_draw, .{ .name = "gui_draw" });
+    @export(&gui_event, .{ .name = "gui_event" });
+
+    // ABI drift guard: these must be exactly the signatures the host looks up.
+    if (@TypeOf(&gui_abi_version) != *const abi.Entry.VersionFn) @compileError("gui_abi_version signature mismatch");
+    if (@TypeOf(&gui_abi_layout) != *const abi.Entry.LayoutFn) @compileError("gui_abi_layout signature mismatch");
+    if (@TypeOf(&gui_draw) != *const abi.Entry.DrawFn) @compileError("gui_draw signature mismatch");
+    if (@TypeOf(&gui_event) != *const abi.Entry.EventFn) @compileError("gui_event signature mismatch");
 }

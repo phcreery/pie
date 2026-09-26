@@ -1,22 +1,22 @@
+//! Renders one collapsible section per module in the pipeline.
+//!
+//! Everything it draws comes from the host-built `abi.Model`: the parameter's
+//! descriptor and UI hint are the engine's own `types/ui.zig` types (shared, not
+//! mirrored), and its value is read through `ParamView.value` (live host memory).
+//! Changes are queued as `abi.Edit` intents in `SharedState` for the host to
+//! apply. No engine code reaches into this module, which is what keeps the
+//! plugin small.
+
 const std = @import("std");
-const pie = @import("pie");
 const ig = @import("cimgui");
+const abi = @import("abi");
+const ui = @import("types").ui;
 
-/// Renders one collapsible section per module in the pipeline. Each section
-/// shows a control per param that has a `params_ui` entry in the module desc.
-/// When a control changes value it writes through to the pipeline param and
-/// signals the owner (via `rerun_requested`) to re-run the pipeline.
 pub const ModulesPanel = struct {
-    is_open: bool = true,
-
-    const Self = @This();
-
-    pub fn init() Self {
-        return Self{};
-    }
-
-    pub fn draw(self: *Self, pipeline: *pie.Pipeline, rerun_requested: *bool) void {
-        if (!ig.igBegin("Modules", &self.is_open, ig.ImGuiWindowFlags_MenuBar)) {
+    pub fn draw(state: *abi.SharedState, model: *const abi.Model) void {
+        // no `MenuBar` flag: it reserves a menu-bar strip we never draw into,
+        // which shows up as a blank band under the title bar.
+        if (!ig.igBegin("Modules", &state.panel_open, ig.ImGuiWindowFlags_None)) {
             ig.igEnd();
             return;
         }
@@ -25,25 +25,18 @@ pub const ModulesPanel = struct {
         ig.igText("pipeline modules");
         ig.igSeparator();
 
-        var handles = pipeline.module_pool.liveHandles();
-        while (handles.next()) |mod_handle| {
-            const mod = pipeline.module_pool.getPtr(mod_handle) catch continue;
-            drawModule(pipeline, rerun_requested, mod_handle, mod);
+        for (model.modules, 0..) |*mod, module_index| {
+            drawModule(state, mod, module_index);
         }
     }
 
-    fn drawModule(
-        pipeline: *pie.Pipeline,
-        rerun_requested: *bool,
-        mod_handle: pie.pipeline.ModuleHandle,
-        mod: *pie.Module,
-    ) void {
-        ig.igPushIDPtr(@ptrCast(mod));
+    fn drawModule(state: *abi.SharedState, mod: *const abi.ModuleView, module_index: usize) void {
+        ig.igPushIDInt(@intCast(module_index));
         defer ig.igPopID();
 
-        // header row: name + type
-        var header_buf: [128]u8 = undefined;
-        const header = std.mem.printSentinel(&header_buf, "{s}##{x}", .{ mod.name, mod_handle.id }, 0) catch return;
+        var header_buf: [160]u8 = undefined;
+        const header = std.mem.printSentinel(&header_buf, "{s}##{d}", .{ mod.name, module_index }, 0) catch return;
+
         const open = ig.igCollapsingHeader(
             header.ptr,
             ig.ImGuiTreeNodeFlags_OpenOnArrow | ig.ImGuiTreeNodeFlags_OpenOnDoubleClick | ig.ImGuiTreeNodeFlags_DefaultOpen,
@@ -53,68 +46,47 @@ pub const ModulesPanel = struct {
         ig.igIndentEx(8.0);
         defer ig.igUnindentEx(8.0);
 
-        // one row per param
-        for (mod.params, mod.params_ui, 0..) |maybe_param, maybe_ui, param_idx| {
-            const ui = maybe_ui orelse continue;
+        for (mod.params) |*param| {
+            drawParam(state, param, module_index);
+        }
+    }
 
-            // read current value
-            const param = &(maybe_param orelse continue);
-            const param_desc = param.desc;
-
-            switch (ui.control) {
-                .slider => |slider| drawSlider(pipeline, rerun_requested, mod_handle, param_desc.name, param, slider, param_idx),
-                .sliders => |sliders| drawSliders(pipeline, rerun_requested, mod_handle, param_desc.name, param, sliders, param_idx),
-                .combo => |combo| drawCombo(pipeline, rerun_requested, mod_handle, param_desc.name, param, combo.items, param_idx),
-                .checkbox => drawCheckbox(pipeline, rerun_requested, mod_handle, param_desc.name, param, param_idx),
-                .text => drawText(pipeline, rerun_requested, mod_handle, param_desc.name, param, param_idx),
-                .readonly => drawReadonly(param_desc.name, param),
-            }
+    fn drawParam(state: *abi.SharedState, param: *const abi.ParamView, module_index: usize) void {
+        switch (param.control) {
+            .slider => |slider| drawSlider(state, param, slider, module_index),
+            .sliders => |sliders| drawSliders(state, param, sliders, module_index),
+            .combo => |combo| drawCombo(state, param, combo, module_index),
+            .checkbox => drawCheckbox(state, param, module_index),
+            .text => drawText(state, param, module_index),
+            .readonly => drawReadonly(param),
         }
     }
 
     fn drawSlider(
-        pipeline: *pie.Pipeline,
-        rerun_requested: *bool,
-        mod_handle: pie.pipeline.ModuleHandle,
-        param_name: []const u8,
-        param: *pie.api.Param,
-        slider: pie.api.ParamUI.Slider,
-        param_idx: usize,
+        state: *abi.SharedState,
+        param: *const abi.ParamView,
+        slider: ui.Slider,
+        module_index: usize,
     ) void {
-        var label_buf: [128]u8 = undefined;
-        const label = std.mem.printSentinel(
-            &label_buf,
-            "{s}##{d}",
-            .{ param_name, param_idx },
-            0,
-        ) catch return;
-
-        ig.igPushIDInt(@intCast(param_idx));
+        var label_buf: [160]u8 = undefined;
+        const label = labelZ(&label_buf, param);
+        ig.igPushIDInt(@intCast(param.param_index));
         defer ig.igPopID();
-        // ig.igSetNextItemWidth(-1); // fill the row
 
+        const suffix = slider.suffix orelse "";
         switch (param.desc.typ) {
             .f32 => {
-                var v = param.get(f32);
+                var value = readF32(param, 0);
                 var format_buf: [32]u8 = undefined;
-                const format = std.mem.printSentinel(
-                    &format_buf,
-                    "%.2f{s}",
-                    .{slider.suffix orelse ""},
-                    0,
-                ) catch "%.2f";
-                const changed = ig.igSliderFloatEx(label.ptr, &v, slider.min, slider.max, format.ptr, 0);
-                if (changed) {
-                    pipeline.setModuleParam(mod_handle, param_name, f32, v) catch {};
-                    rerun_requested.* = true;
+                const format = std.mem.printSentinel(&format_buf, "%.2f{s}", .{suffix}, 0) catch "%.2f";
+                if (ig.igSliderFloatEx(label.ptr, &value, slider.min, slider.max, format.ptr, 0)) {
+                    _ = state.pushEdit(edit(module_index, param, .{ .scalar = value }));
                 }
             },
             .i32 => {
-                var v = param.get(i32);
-                const changed = ig.igSliderInt(label.ptr, &v, @intFromFloat(@floor(slider.min)), @intFromFloat(@ceil(slider.max)));
-                if (changed) {
-                    pipeline.setModuleParam(mod_handle, param_name, i32, v) catch {};
-                    rerun_requested.* = true;
+                var value = readI32(param, 0);
+                if (ig.igSliderInt(label.ptr, &value, @intFromFloat(@floor(slider.min)), @intFromFloat(@ceil(slider.max)))) {
+                    _ = state.pushEdit(edit(module_index, param, .{ .integer = value }));
                 }
             },
             .str => {},
@@ -122,181 +94,157 @@ pub const ModulesPanel = struct {
     }
 
     fn drawSliders(
-        pipeline: *pie.Pipeline,
-        rerun_requested: *bool,
-        mod_handle: pie.pipeline.ModuleHandle,
-        param_name: []const u8,
-        param: *pie.api.Param,
-        sliders: pie.api.ParamUI.Sliders,
-        param_idx: usize,
+        state: *abi.SharedState,
+        param: *const abi.ParamView,
+        sliders: ui.Sliders,
+        module_index: usize,
     ) void {
-        if (param.desc.typ != .f32) return; // only float arrays supported for now
+        if (param.desc.typ != .f32) return; // only float arrays are supported for now
 
-        // read the current value as a slice of n f32
-        ig.igPushIDInt(@intCast(param_idx));
+        // declared element count, bounded by the storage the param actually has
+        const n = @min(sliders.n, @as(usize, param.desc.len));
+        if (n == 0 or n > 4) return; // only 2/3/4-element vectors can be committed
+
+        ig.igPushIDInt(@intCast(param.param_index));
         defer ig.igPopID();
 
-        // header label
-        var label_buf: [128]u8 = undefined;
-        const label = std.mem.printSentinel(&label_buf, "{s}", .{param_name}, 0) catch return;
-        ig.igText("{s}", label.ptr);
+        var name_buf: [160]u8 = undefined;
+        const name = std.mem.printSentinel(&name_buf, "{s}", .{param.desc.name}, 0) catch return;
+        ig.igText("%s", name.ptr);
 
-        // read the current value as n f32 (dispatch on the param's static len)
-        var values: [16]f32 = @splat(0);
-        const n: usize = @intCast(param.desc.len);
-        if (n > values.len or sliders.n != n) return;
-        switch (n) {
-            2 => @memcpy(values[0..n], &(param.get([2]f32))),
-            3 => @memcpy(values[0..n], &(param.get([3]f32))),
-            4 => @memcpy(values[0..n], &(param.get([4]f32))),
-            else => return,
-        }
+        var values: [4]f32 = @splat(0);
+        for (0..n) |i| values[i] = readF32(param, i);
 
         var changed = false;
         for (0..n) |i| {
-            const suffix = if (sliders.suffixes) |s| if (i < s.len) s[i] else "" else "";
-            var fmt_buf: [32]u8 = undefined;
-            const fmt = std.mem.printSentinel(&fmt_buf, "%.3f{s}", .{suffix}, 0) catch "%.3f";
-            var id_buf: [64]u8 = undefined;
+            const suffix = if (sliders.suffixes) |suffixes| if (i < suffixes.len) suffixes[i] else "" else "";
+            var format_buf: [32]u8 = undefined;
+            const format = std.mem.printSentinel(&format_buf, "%.3f{s}", .{suffix}, 0) catch "%.3f";
 
             // per-element label if provided (e.g. "R", "G", "B"), else "[i]"
-            const elem_label = if (sliders.labels) |l| if (i < l.len) l[i] else "" else "";
+            const elem_label = if (sliders.labels) |labels| if (i < labels.len) labels[i] else "" else "";
+            var id_buf: [64]u8 = undefined;
             const id = if (elem_label.len > 0)
-                std.mem.printSentinel(&id_buf, "{s}##{d}", .{elem_label, i}, 0) catch return
+                std.mem.printSentinel(&id_buf, "{s}##{d}", .{ elem_label, i }, 0) catch return
             else
-                std.mem.printSentinel(&id_buf, "[{d}]##{d}", .{i, i}, 0) catch return;
+                std.mem.printSentinel(&id_buf, "[{d}]##{d}", .{ i, i }, 0) catch return;
 
-            const changed_i = ig.igSliderFloatEx(
-                id.ptr,
-                &values[i],
-                sliders.min,
-                sliders.max,
-                fmt.ptr,
-                0,
-            );
-            changed = changed or changed_i;
+            if (ig.igSliderFloatEx(id.ptr, &values[i], sliders.min, sliders.max, format.ptr, 0)) changed = true;
         }
 
         if (changed) {
-            switch (n) {
-                2 => pipeline.setModuleParam(mod_handle, param_name, [2]f32, values[0..2].*) catch {},
-                3 => pipeline.setModuleParam(mod_handle, param_name, [3]f32, values[0..3].*) catch {},
-                4 => pipeline.setModuleParam(mod_handle, param_name, [4]f32, values[0..4].*) catch {},
-                else => {},
-            }
-            rerun_requested.* = true;
+            var vector: abi.EditVector = .{ .count = @intCast(n) };
+            @memcpy(vector.values[0..n], values[0..n]);
+            _ = state.pushEdit(edit(module_index, param, .{ .vector = vector }));
         }
     }
 
     fn drawCombo(
-        pipeline: *pie.Pipeline,
-        rerun_requested: *bool,
-        mod_handle: pie.pipeline.ModuleHandle,
-        param_name: []const u8,
-        param: *pie.api.Param,
-        items: []const []const u8,
-        param_idx: usize,
+        state: *abi.SharedState,
+        param: *const abi.ParamView,
+        combo: ui.Combo,
+        module_index: usize,
     ) void {
-        var label_buf: [128]u8 = undefined;
-        const label = std.mem.printSentinel(
-            &label_buf,
-            "{s}##{d}",
-            .{ param_name, param_idx },
-            0,
-        ) catch return;
+        var label_buf: [160]u8 = undefined;
+        const label = labelZ(&label_buf, param);
 
-        // build the zero-separated items string imgui wants ("a\x00b\x00\x00")
+        // zero-separated items string, the form imgui wants ("a\x00b\x00\x00")
         var items_buf: [512]u8 = undefined;
         var pos: usize = 0;
-        for (items) |item| {
+        for (combo.items) |item| {
             if (pos + item.len + 1 > items_buf.len) break;
             @memcpy(items_buf[pos..][0..item.len], item);
             pos += item.len;
             items_buf[pos] = 0;
             pos += 1;
         }
+        if (pos == 0) return;
         items_buf[pos] = 0;
         const items_z = items_buf[0 .. pos + 1];
 
-        ig.igPushIDInt(@intCast(param_idx));
+        ig.igPushIDInt(@intCast(param.param_index));
         defer ig.igPopID();
-        // ig.igSetNextItemWidth(-1);
 
-        const current_item = switch (param.desc.typ) {
-            .i32 => param.get(i32),
-            else => 0,
-        };
-        var cur: c_int = @intCast(current_item);
-        const changed = ig.igCombo(label.ptr, &cur, @ptrCast(items_z.ptr));
-        if (changed) {
-            pipeline.setModuleParam(mod_handle, param_name, i32, cur) catch {};
-            rerun_requested.* = true;
+        var current: c_int = if (param.desc.typ == .i32) readI32(param, 0) else 0;
+        if (ig.igCombo(label.ptr, &current, @ptrCast(items_z.ptr))) {
+            _ = state.pushEdit(edit(module_index, param, .{ .integer = current }));
         }
     }
 
-    fn drawCheckbox(
-        pipeline: *pie.Pipeline,
-        rerun_requested: *bool,
-        mod_handle: pie.pipeline.ModuleHandle,
-        param_name: []const u8,
-        param: *pie.api.Param,
-        param_idx: usize,
-    ) void {
-        var label_buf: [128]u8 = undefined;
-        const label = std.mem.printSentinel(
-            &label_buf,
-            "{s}##{d}",
-            .{ param_name, param_idx },
-            0,
-        ) catch return;
-
-        var value = param.get(i32) != 0;
-        const changed = ig.igCheckbox(label.ptr, &value);
-        if (changed) {
-            pipeline.setModuleParam(mod_handle, param_name, i32, @as(i32, if (value) 1 else 0)) catch {};
-            rerun_requested.* = true;
+    fn drawCheckbox(state: *abi.SharedState, param: *const abi.ParamView, module_index: usize) void {
+        var label_buf: [160]u8 = undefined;
+        const label = labelZ(&label_buf, param);
+        var value = readI32(param, 0) != 0;
+        if (ig.igCheckbox(label.ptr, &value)) {
+            _ = state.pushEdit(edit(module_index, param, .{ .integer = if (value) 1 else 0 }));
         }
     }
 
-    fn drawText(
-        pipeline: *pie.Pipeline,
-        rerun_requested: *bool,
-        mod_handle: pie.pipeline.ModuleHandle,
-        param_name: []const u8,
-        param: *pie.api.Param,
-        param_idx: usize,
-    ) void {
-        var label_buf: [128]u8 = undefined;
-        const label = std.mem.printSentinel(
-            &label_buf,
-            "{s}##{d}",
-            .{ param_name, param_idx },
-            0,
-        ) catch return;
+    fn drawText(state: *abi.SharedState, param: *const abi.ParamView, module_index: usize) void {
+        var label_buf: [160]u8 = undefined;
+        const label = labelZ(&label_buf, param);
 
-        var buf: [256]u8 = @splat(0);
-        const cur = param.get([]const u8);
-        const n = @min(cur.len, buf.len - 1);
-        @memcpy(buf[0..n], cur[0..n]);
+        var buf: [abi.max_str_bytes]u8 = @splat(0);
+        const current = readStr(param);
+        const n = @min(current.len, buf.len - 1);
+        @memcpy(buf[0..n], current[0..n]);
 
-        ig.igPushIDInt(@intCast(param_idx));
+        ig.igPushIDInt(@intCast(param.param_index));
         defer ig.igPopID();
-        // ig.igSetNextItemWidth(-1);
-        const changed = ig.igInputText(label.ptr, &buf, buf.len, ig.ImGuiInputTextFlags_None);
-        if (changed) {
-            const s = std.mem.sliceTo(&buf, 0);
-            pipeline.setModuleParam(mod_handle, param_name, []const u8, s) catch {};
-            rerun_requested.* = true;
+
+        if (ig.igInputText(label.ptr, &buf, buf.len, ig.ImGuiInputTextFlags_None)) {
+            const text = std.mem.sliceTo(&buf, 0);
+            var payload: abi.EditText = .{ .len = @intCast(@min(text.len, abi.max_str_bytes)) };
+            @memcpy(payload.bytes[0..payload.len], text[0..payload.len]);
+            _ = state.pushEdit(edit(module_index, param, .{ .text = payload }));
         }
     }
 
-    fn drawReadonly(param_name: []const u8, param: *pie.api.Param) void {
-        var buf: [256]u8 = undefined;
+    fn drawReadonly(param: *const abi.ParamView) void {
+        var buf: [384]u8 = undefined;
+        const name = param.desc.name;
         const text = switch (param.desc.typ) {
-            .f32 => std.mem.printSentinel(&buf, "{s}: {d:.2}", .{ param_name, param.get(f32) }, 0) catch return,
-            .i32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ param_name, param.get(i32) }, 0) catch return,
-            .str => std.mem.printSentinel(&buf, "{s}: {s}", .{ param_name, param.get([]const u8) }, 0) catch return,
+            .f32 => std.mem.printSentinel(&buf, "{s}: {d:.2}", .{ name, readF32(param, 0) }, 0) catch return,
+            .i32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, readI32(param, 0) }, 0) catch return,
+            .str => std.mem.printSentinel(&buf, "{s}: {s}", .{ name, readStr(param) }, 0) catch return,
         };
         ig.igText("%s", text.ptr);
+    }
+
+    // ------------------------------------------------------------------
+    // helpers
+    // ------------------------------------------------------------------
+
+    /// `"{name}##{param_index}"` — the index keys the widget to the parameter.
+    /// `buf` belongs to the caller: the returned slice points into it.
+    fn labelZ(buf: []u8, param: *const abi.ParamView) [:0]const u8 {
+        return std.mem.printSentinel(buf, "{s}##{d}", .{ param.desc.name, param.param_index }, 0) catch "";
+    }
+
+    fn edit(module_index: usize, param: *const abi.ParamView, value: abi.EditValue) abi.Edit {
+        return .{
+            .module = @intCast(module_index),
+            .param = param.param_index,
+            .value = value,
+        };
+    }
+
+    // ------------------------------------------------------------------
+    // reading live values out of the host's parameter bytes
+    // ------------------------------------------------------------------
+    fn readF32(param: *const abi.ParamView, index: usize) f32 {
+        const offset = index * @sizeOf(f32);
+        if (offset + @sizeOf(f32) > param.value.len) return 0;
+        return std.mem.bytesToValue(f32, param.value[offset..][0..@sizeOf(f32)]);
+    }
+
+    fn readI32(param: *const abi.ParamView, index: usize) i32 {
+        const offset = index * @sizeOf(i32);
+        if (offset + @sizeOf(i32) > param.value.len) return 0;
+        return std.mem.bytesToValue(i32, param.value[offset..][0..@sizeOf(i32)]);
+    }
+
+    fn readStr(param: *const abi.ParamView) []const u8 {
+        return std.mem.sliceTo(param.value, 0);
     }
 };

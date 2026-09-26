@@ -8,6 +8,7 @@ const ShaderMap = Shader.ShaderMap;
 const c = wgpu.c;
 const slog = std.log.scoped(.gpu);
 
+allocator: std.mem.Allocator,
 instance: ?wgpu.Instance,
 adapter: ?wgpu.Adapter,
 device: wgpu.Device,
@@ -111,6 +112,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !Self {
     const shader_cache = ShaderMap.init(allocator);
 
     return Self{
+        .allocator = allocator,
         .instance = instance,
         .adapter = adapter,
         .device = device,
@@ -129,6 +131,7 @@ pub fn initExternal(allocator: std.mem.Allocator, io: std.Io, device: wgpu.Devic
     errdefer queue.deinit();
     const shader_cache = ShaderMap.init(allocator);
     return .{
+        .allocator = allocator,
         .instance = null,
         .adapter = null,
         .device = device,
@@ -141,11 +144,25 @@ pub fn initExternal(allocator: std.mem.Allocator, io: std.Io, device: wgpu.Devic
 pub fn deinit(self: *Self) void {
     slog.debug("De-initializing GPU", .{});
 
+    self.clearShaderCache();
     self.queue.deinit();
     self.device.deinit();
     if (self.adapter) |adapter| adapter.deinit();
     if (self.instance) |instance| instance.deinit();
+}
+
+/// Release every cached shader module and empty the cache.
+///
+/// The cache is keyed by `ShaderSource` slices, which for embedded module
+/// shaders point into the code/data of whichever binary compiled them. The
+/// host calls this before unloading the GUI plugin: the host owns the `GPU`,
+/// so without it the first lookup after a reload would read unmapped memory.
+pub fn clearShaderCache(self: *Self) void {
+    slog.debug("Clearing shader cache", .{});
+    var it = self.shader_cache.iterator();
+    while (it.next()) |entry| entry.value_ptr.deinit();
     self.shader_cache.deinit();
+    self.shader_cache = ShaderMap.init(self.allocator);
 }
 
 pub fn compileShader(self: *Self, shader_source: ShaderSource) !Shader {

@@ -1,45 +1,28 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
-const ig = @import("cimgui");
 const sokol = @import("sokol");
 const slog = sokol.log;
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
 const simgui = sokol.imgui;
-// const zr = @import("zr");
 
 const pie = @import("pie");
 const console = @import("console");
 const wgpu = @import("wgpu_zig");
 
-const gui = @import("gui");
+const abi = @import("abi");
+const GuiPlugin = @import("plugin.zig").GuiPlugin;
+const Session = @import("session.zig").Session;
 
 const util = @import("../mem.zig");
 
-// Configured plugin type. This will hold the symbols we wish to hot-reload.
-// const PluginGUI = zr.Plugin(@import("gui"), .{
-//     .name = "gui",
-//     .link_mode = .dynamic,
-//     // An override to the subpath (relative to file executable directory) where the plugin's dynamic library is located in.
-//     //
-//     // If `null`, this is `./` on windows and `../lib/` everywhere else.
-//     .load_path_override = null,
-//     // Contains the list of symbols that will be hot-reloaded.
-//     //
-//     // These need to be actual symbols in the `"plugin"` module we imported before.
-//     // They are the "single source of truth" and the types will be fetched from them.
-//     //
-//     // These symbols need to be exported with `@export`, and if they are functions,
-//     // they need to be `callconv(.c)`.
-//     .syms = &.{
-//         "gui_update",
-//         "gui_draw",
-//     },
-// });
-
-// God Object for app state
+// God Object for app state.
+//
+// The host owns everything that must survive a GUI reload: the window and
+// sokol/ImGui contexts, the WebGPU device, the editing session (pipeline +
+// textures) and the state/model the plugin reads and writes. The plugin itself
+// is stateless code, swapped in place by `GuiPlugin`.
 pub const AppState = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -50,30 +33,34 @@ pub const AppState = struct {
     // pie
     gpu: pie.gpu.GPU,
 
-    // app
-    // these are initted and deinitted in the sokol calls
-    gui: gui.GUI,
+    // hot-reloadable GUI
+    session: Session,
+    /// host-owned, mutated in place by the plugin
+    gui_state: abi.SharedState,
+    /// what the plugin draws, built once the pipeline exists
+    gui_model: abi.Model,
+    gui_model_built: bool = false,
+    gui_plugin: GuiPlugin,
 
     const Self = @This();
 
-    fn init(allocator: std.mem.Allocator, io: std.Io) AppState {
+    fn init(allocator: std.mem.Allocator, io: std.Io) Self {
         return .{
             .allocator = allocator,
             .io = io,
             .pass_action = .{},
+            // initted in the sokol callbacks below
             .gpu = undefined,
-            .gui = undefined, // will init in sokol init fn
+            .session = undefined,
+            .gui_state = .{},
+            .gui_model = .{},
+            .gui_plugin = undefined,
         };
-    }
-
-    fn deinit(self: *Self) void {
-        self.gui.deinit();
     }
 };
 
 export fn init_fn(ptr: ?*anyopaque) void {
-    std.debug.print("init_fn called with ptr: {any}\n", .{ptr});
-    var state: *AppState = @ptrCast(@alignCast(ptr));
+    const state: *AppState = @ptrCast(@alignCast(ptr));
 
     // initialize sokol-gfx
     sg.setup(.{
@@ -98,14 +85,37 @@ export fn init_fn(ptr: ?*anyopaque) void {
     const ext_device = wgpu.Device{ .device = @ptrCast(@constCast(sg.wgpuDevice().?)) };
     const ext_queue = wgpu.Queue{ .queue = @ptrCast(@constCast(sg.wgpuQueue().?)) };
     state.gpu = pie.GPU.initExternal(state.allocator, state.io, ext_device, ext_queue) catch unreachable;
-    state.gui = gui.GUI.init(state.allocator, state.io, &state.gpu) catch unreachable;
+
+    // editing session (pipeline + blit resources) and the GUI plugin
+    state.session = Session.init(state.allocator, state.io, &state.gpu) catch unreachable;
+    state.gui_plugin = GuiPlugin.init(state.allocator, state.io, &state.gui_state) catch |err| {
+        std.log.err("failed to load the GUI plugin: {s}", .{@errorName(err)});
+        std.log.err("build it with: zig build gui", .{});
+        unreachable;
+    };
+    std.log.info("GUI plugin generation {d} loaded from {s}", .{ state.gui_plugin.generation, state.gui_plugin.path });
 }
 
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
 
-    // Run logic + compute (may submit to the WebGPU queue) BEFORE the render pass
-    state.gui.update();
+    // Hot reload first: swapping the plugin code must not happen inside a
+    // render pass or an open ImGui frame.
+    state.gui_plugin.tick();
+    state.gui_state.frame += 1;
+
+    // Build the default graph once, then apply whatever the plugin asked for in
+    // the previous frame. Both submit to the WebGPU queue, which is only legal
+    // before the render pass starts.
+    if (!state.gui_model_built and state.session.ensureBuilt()) {
+        state.session.rebuildModel(&state.gui_model);
+        state.gui_model_built = true;
+    }
+    if (state.session.applyEdits(&state.gui_state)) {
+        state.session.run() catch |err| {
+            std.log.err("pipeline re-run failed: {s}", .{@errorName(err)});
+        };
+    }
 
     // start the imgui frame (needs the framebuffer size + frame delta)
     simgui.newFrame(.{
@@ -117,7 +127,9 @@ export fn frame(ptr: ?*anyopaque) void {
 
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
 
-    state.gui.draw();
+    // the image view (host-drawn), then the plugin's widgets on top
+    state.session.blit.draw(state.gui_state.zoom, state.gui_state.pan);
+    state.gui_plugin.draw(&state.gui_state, &state.gui_model);
 
     simgui.render();
 
@@ -127,7 +139,8 @@ export fn frame(ptr: ?*anyopaque) void {
 
 export fn cleanup(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
-    state.gui.deinit();
+    state.gui_plugin.deinit();
+    state.session.deinit();
     state.gpu.deinit();
     simgui.shutdown();
     sg.shutdown();
@@ -141,46 +154,24 @@ export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
     // other app-level input handlers don't fight the imgui widgets.
     const imgui_consumed = simgui.handleEvent(ev.*);
     if (!imgui_consumed) {
-        state.gui.event(ev);
+        state.gui_plugin.event(&state.gui_state, ev);
     }
 }
 
 pub fn run(init: std.process.Init) !void {
     // general purpose allocator for temporary heap allocations:
-    // const gpa = init.gpa;
     const allocator = util.allocator;
     // default Io implementation:
     const io = init.io;
-    // access to environment variables:
-    // std.log.info("{d} env vars", .{init.environ_map.count()});
-    // access to CLI arguments
-    // const args = try init.minimal.args.toSlice(
-    //     init.arena.allocator()
-    // );
 
-    // Allocate the application state on the heap to ensure it lives long enough.
-    // const state = try util.allocator.create(AppState);
-    // errdefer util.allocator.destroy(state);
-    // state.* = AppState.init(util.allocator);
-
-    // Alternatively, allocate the application state on the stack
-    const state: *AppState = @constCast(&AppState.init(allocator, io));
-    defer state.deinit();
+    // Must outlive `sapp.run`: it is passed as user data to every callback.
+    var state: AppState = AppState.init(allocator, io);
 
     const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();
 
-    // Use preferably a dynamic allocator for a plugin, rather than a `FixedBufferAllocator` or an `ArenaAllocator`,
-    // since it holds mainly array lists inside.
-    // var plugin_gui = try PluginGUI.new(io, allocator);
-    // defer plugin_gui.destroy();
-    // state.plugin_gui = plugin_gui;
-
-    // state.gui_update = @constCast(plugin_gui.symbol("gui_update"));
-    // state.gui_draw = @constCast(plugin_gui.symbol("gui_draw"));
-
     sapp.run(.{
-        .user_data = state,
+        .user_data = &state,
         .init_userdata_cb = init_fn,
         .frame_userdata_cb = frame,
         .cleanup_userdata_cb = cleanup,

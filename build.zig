@@ -5,7 +5,7 @@ const sokol = @import("sokol");
 const cimgui = @import("cimgui");
 const spv = @import("build/spirv.zig");
 
-pub fn build(b: *Build) !void { // $ls root_id 7
+pub fn build(b: *Build) !void { // $ls root_id 1
     // CONFIGURATION
     const target = b.standardTargetOptions(.{});
     // for testing only, forces a native build
@@ -22,18 +22,22 @@ pub fn build(b: *Build) !void { // $ls root_id 7
     const cimgui_conf = cimgui.getConfig(opt_docking);
 
     // DEPENDENCIES
-    // note that the sokol dependency is built with `.with_sokol_imgui = true`
+    // sokol + Dear ImGui are built as shared libraries because the GUI is a
+    // hot-reloadable plugin: the exe and the plugin must bind to ONE instance
+    // of the sokol/ImGui state (two copies would mean two ImGui contexts).
+    // wgpu-native already ships as a shared library.
     const dep_sokol = b.dependency("sokol", .{
         .target = target,
         .optimize = optimize,
         .wgpu = true,
         .wgpu_native = true,
         .with_sokol_imgui = true,
-        // .dynamic_linkage = true,
+        .dynamic_linkage = true,
     });
     const dep_cimgui = b.dependency("cimgui", .{
         .target = target,
         .optimize = optimize,
+        .dynamic_linkage = true,
     });
     const dep_libraw = b.dependency("libraw", opts);
     const dep_wgpu_zig = b.dependency("wgpu-zig", .{});
@@ -43,14 +47,14 @@ pub fn build(b: *Build) !void { // $ls root_id 7
     // const dep_zmath = b.dependency("zmath", opts);
 
     // inject the cimgui header search path into the sokol C library compile step
-    dep_sokol.artifact("sokol_clib").root_module.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
-    @import("wgpu-zig").addWgpuNativeObjectFiles(b, dep_sokol.artifact("sokol_clib").root_module, target, optimize);
-
-    // When sokol_clib is built as a shared library, its native WebGPU symbols
-    // must resolve against the same shared Dawn instance used by the rest of
-    // the app. Link sokol_clib against shared zdawn instead of letting it rely
-    // on the final exe link step.
-    // dep_sokol.artifact("sokol_clib").root_module.linkLibrary(dep_wgpu_zig.artifact("wgpu"));
+    const mod_sokol_clib = dep_sokol.artifact("sokol_clib").root_module;
+    mod_sokol_clib.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
+    @import("wgpu-zig").addWgpuNativeObjectFiles(b, mod_sokol_clib, target, optimize);
+    // sokol's ImGui glue calls into Dear ImGui, so as a shared library it has
+    // to record that dependency itself, and resolve its siblings relative to
+    // its own location (it is installed next to them in zig-out/lib).
+    mod_sokol_clib.linkLibrary(dep_cimgui.artifact(cimgui_conf.clib_name));
+    mod_sokol_clib.addRPathSpecial("$ORIGIN");
 
     // OPTIONS
     const mod_options = b.addOptions();
@@ -133,31 +137,91 @@ pub fn build(b: *Build) !void { // $ls root_id 7
         },
     );
 
+    // ABI MODULE (shared by the host exe and the GUI plugin). Its contract
+    // imports the shared parameter vocabulary (`types/ui.zig`) so the engine and
+    // the editor describe a control exactly once.
+    const mod_abi = b.createModule(.{
+        .root_source_file = b.path("src/gui_abi/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "types", .module = mod_types },
+            .{ .name = "sokol", .module = dep_sokol.module("sokol") },
+        },
+    });
+
     // GUI MODULE
     const mod_gui = b.createModule(.{
         .root_source_file = b.path("src/gui/root.zig"),
         .target = target,
         .optimize = optimize,
+        // The plugin is deliberately engine-free (it only draws widgets), so
+        // it needs neither `pie` nor the shader bindings. Every declared module
+        // root gets parsed, so keep this list minimal.
         .imports = &.{
-            .{ .name = "pie", .module = mod_pie },
-            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "gpu", .module = mod_gpu },
+            .{ .name = "abi", .module = mod_abi },
+            .{ .name = "types", .module = mod_types },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
-            .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
         },
     });
+
+    // GUI PLUGIN (hot-reloadable)
+    // The exe never links this module: it loads `zig-out/lib/libgui.so` at
+    // runtime (see `src/app/plugin.zig`). The plugin borrows the exe's sokol,
+    // ImGui and wgpu instances through the shared C libraries above.
+    const gui_dl = b.addLibrary(.{
+        .name = "gui",
+        .linkage = .dynamic,
+        .root_module = mod_gui,
+        // Matches the exe. The self-hosted backend also compiles and runs this
+        // plugin (~15% faster), but backend choice is the small lever here:
+        // semantic analysis dominates, so the win comes from shrinking what the
+        // plugin reaches. See README "GUI hot reload".
+        .use_llvm = true,
+    });
+    // resolve libsokol_clib.so / libcimgui_clib.so relative to the plugin
+    gui_dl.root_module.addRPathSpecial("$ORIGIN");
+    const install_gui_dl = b.addInstallArtifact(gui_dl, .{});
+    b.getInstallStep().dependOn(&install_gui_dl.step);
+    const gui_step = b.step("gui", "Build the hot-reloadable GUI plugin (zig-out/lib/libgui.so)");
+    gui_step.dependOn(&install_gui_dl.step);
+
+    // wgpu-native ships prebuilt as a shared library. Install it beside the exe
+    // and the plugin so both resolve it through their `$ORIGIN` rpaths instead
+    // of a cwd-relative path into the package cache.
+    const wgpu_bin_dep_name = b.fmt("wgpu_{s}_{s}_{s}_{s}", .{
+        @tagName(target.result.os.tag),
+        @tagName(target.result.cpu.arch),
+        if (target.result.os.tag == .linux) "none" else @tagName(target.result.abi),
+        if (optimize == .debug) "debug" else "release",
+    });
+    const wgpu_lib_name = switch (target.result.os.tag) {
+        .windows => "wgpu_native.dll",
+        .macos => "libwgpu_native.dylib",
+        else => "libwgpu_native.so",
+    };
+    if (b.lazyDependency(wgpu_bin_dep_name, .{})) |wgpu_bin| {
+        const install_wgpu = b.addInstallFileWithDir(
+            wgpu_bin.path(b.fmt("lib/{s}", .{wgpu_lib_name})),
+            .lib,
+            wgpu_lib_name,
+        );
+        b.getInstallStep().dependOn(&install_wgpu.step);
+        gui_step.dependOn(&install_wgpu.step);
+    }
 
     // APP MODULE
     const mod_app = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        // Host side: owns the session (pipeline + blit) the plugin draws from.
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
-            .{ .name = "gui", .module = mod_gui },
+            .{ .name = "abi", .module = mod_abi },
             .{ .name = "console", .module = mod_console },
-            // .{ .name = "texview_shader", .module = mod_texview_shd },
+            .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "gpu", .module = mod_gpu },
@@ -229,9 +293,8 @@ pub fn build(b: *Build) !void { // $ls root_id 7
     //         .cimgui_clib_name = cimgui_conf.clib_name,
     //     });
     // } else {
-    //     try buildNative(b, mod_app);
-    // }
     try buildNative(b, mod_app);
+
 }
 
 fn buildNative(b: *Build, mod: *Build.Module) !void {
@@ -240,6 +303,9 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
         .root_module = mod,
         .use_llvm = true,
     });
+    // The shared C libraries (sokol, Dear ImGui, wgpu-native) live in
+    // zig-out/lib, so resolve them relative to the exe.
+    exe.root_module.addRPathSpecial("$ORIGIN/../lib");
     b.installArtifact(exe);
     const exe_step = b.step("app", "Run pie app");
     const run_cmd = b.addRunArtifact(exe);

@@ -1,106 +1,68 @@
-const sokol = @import("sokol");
-const shd = @import("texview_shader");
-const sg = sokol.gfx;
-const sapp = sokol.app;
+//! The darkroom view: the image view's input handling plus the modules panel.
+//!
+//! The image itself is blitted by the host (`src/app/blit.zig`) using the
+//! zoom/pan this view maintains, so what lives here is exactly what benefits
+//! from hot reloading: widget and view composition.
+
 const std = @import("std");
-const pie = @import("pie");
-const Image = @import("../components/image.zig").Image;
+
+const sokol = @import("sokol");
+const sapp = sokol.app;
+
+const abi = @import("abi");
 const ModulesPanel = @import("../components/modules_panel.zig").ModulesPanel;
 
-const GUI = @import("../root.zig").GUI;
-
 pub const Darkroom = struct {
-    image: Image,
-    image_loaded: bool = false,
-    modules_panel: ModulesPanel,
-
-    /// set by the modules panel when a param changed; consumed each update
-    rerun_requested: bool = false,
-
-    const Self = @This();
-
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU) !Self {
-        const image = try Image.init(allocator, io, gpu);
-        const modules_panel = ModulesPanel.init();
-        return .{
-            .image = image,
-            .modules_panel = modules_panel,
-        };
+    pub fn draw(state: *abi.SharedState, model: *const abi.Model) void {
+        ModulesPanel.draw(state, model);
     }
-    pub fn deinit(self: *Self) void {
-        self.image.deinit();
-    }
-    pub fn update(self: *Self, gui: *GUI) void {
-        // Logic + compute (pipeline run) must happen *outside* the sokol
-        // render pass: WebGPU disallows buffer mapAsync/queue.submit while a
-        // render command encoder is open ("Concurrent buffer operations").
 
-        if (!self.image_loaded) {
-            std.debug.print("building texture", .{});
-            // set up the pipeline graph once, run it, and inject the texture
-            const texture = build_image(gui.allocator, gui.io, &self.image.pipeline) catch unreachable;
-            std.debug.print("texture: {any}\n", .{texture});
-            self.image.createFrom(texture);
-            self.image_loaded = true;
+    /// Pan (left-drag) and zoom (wheel) for the image view. The host reads the
+    /// resulting `zoom`/`pan` when it draws the image.
+    pub fn event(state: *abi.SharedState, ev: [*c]const sapp.Event) void {
+        if (ev == null) return;
+        const e = ev[0];
+        switch (e.type) {
+            .MOUSE_DOWN => {
+                if (e.mouse_button == .LEFT) {
+                    state.dragging = true;
+                    state.last_mouse = .{ e.mouse_x, e.mouse_y };
+                }
+            },
+            .MOUSE_UP => {
+                if (e.mouse_button == .LEFT) state.dragging = false;
+            },
+            .MOUSE_MOVE => {
+                if (state.dragging) {
+                    const ww = @as(f32, @floatFromInt(e.framebuffer_width));
+                    const wh = @as(f32, @floatFromInt(e.framebuffer_height));
+                    if (ww > 0 and wh > 0) {
+                        const dx_ndc = (e.mouse_x - state.last_mouse[0]) / (ww * 0.5);
+                        const dy_ndc = -(e.mouse_y - state.last_mouse[1]) / (wh * 0.5);
+                        state.pan[0] += dx_ndc;
+                        state.pan[1] += dy_ndc;
+                    }
+                    state.last_mouse = .{ e.mouse_x, e.mouse_y };
+                }
+            },
+            .MOUSE_SCROLL => {
+                const factor = std.math.pow(f32, 1.1, -e.scroll_y);
+                state.last_zoom = state.zoom;
+                state.zoom = std.math.clamp(state.zoom * factor, 0.05, 64.0);
+
+                // Zoom toward the cursor
+                const ww = @as(f32, @floatFromInt(e.framebuffer_width));
+                const wh = @as(f32, @floatFromInt(e.framebuffer_height));
+                if (ww > 0 and wh > 0 and state.last_zoom > 0) {
+                    // cursor in NDC (screen center = 0, y up)
+                    const cx = (e.mouse_x - (ww * 0.5)) / (ww * 0.5);
+                    const cy = -(e.mouse_y - (wh * 0.5)) / (wh * 0.5);
+                    const r = state.zoom / state.last_zoom;
+                    state.pan[0] += (1.0 - r) * (cx - state.pan[0]);
+                    state.pan[1] += (1.0 - r) * (cy - state.pan[1]);
+                }
+            },
+            else => {},
         }
-
-        // consume any param edits from the modules panel
-        if (self.rerun_requested) {
-            self.rerun_requested = false;
-            self.image.pipeline.run() catch {};
-            const texture = self.image.pipeline.getDisplaySinkTexture() catch null;
-            if (texture) |t| {
-                // re-inject (texture may have been reallocated on a rerouted run)
-                self.image.refreshFrom(t);
-            }
-        }
-    }
-    pub fn draw(self: *Self, gui: *GUI) void {
-        _ = gui;
-        self.image.draw();
-        self.modules_panel.draw(&self.image.pipeline, &self.rerun_requested);
-    }
-    pub fn event(self: *Self, gui: *GUI, ev: [*c]const sapp.Event) void {
-        _ = gui;
-        self.image.event(ev);
     }
 };
-
-fn build_image(allocator: std.mem.Allocator, io: std.Io, pipeline: *pie.pipeline.Pipeline) !pie.gpu.Texture {
-    _ = allocator;
-    _ = io;
-
-    const input_filename = "testing/images/DSC_6765.NEF";
-
-    const mod_i_raw = try pipeline.addModule("01", "i-raw");
-    const mod_format = try pipeline.addModule("01", "format");
-    const mod_denoise = try pipeline.addModule("01", "denoise");
-    const mod_demosaic = try pipeline.addModule("01", "demosaic");
-    const mod_crop = try pipeline.addModule("01", "crop");
-    const mod_color = try pipeline.addModule("01", "color");
-    const mod_filmcurv = try pipeline.addModule("01", "filmcurv");
-    const mod_o_display = try pipeline.addModule("01", "o-display");
-
-    try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, input_filename);
-    try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 0);
-    try pipeline.setModuleParam(mod_color, "wb_tint", f32, 0.0);
-    try pipeline.setModuleParam(mod_color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 }); // from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
-    try pipeline.setModuleParam(mod_filmcurv, "colormode", i32, 1);
-    try pipeline.setModuleParam(mod_filmcurv, "brightness", f32, 3.8);
-    try pipeline.setModuleParam(mod_filmcurv, "contrast", f32, 1.3);
-    try pipeline.setModuleParam(mod_filmcurv, "bias", f32, 0.0);
-
-    try pipeline.connectModules(mod_i_raw, "output", mod_format, "input");
-    try pipeline.connectModules(mod_format, "output", mod_denoise, "input");
-    try pipeline.connectModules(mod_denoise, "output", mod_demosaic, "input");
-    try pipeline.connectModules(mod_demosaic, "output", mod_crop, "input");
-    try pipeline.connectModules(mod_crop, "output", mod_color, "input");
-    try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input");
-    try pipeline.connectModules(mod_filmcurv, "output", mod_o_display, "input");
-
-    try pipeline.run();
-
-    const disp_tex = try pipeline.getDisplaySinkTexture();
-    // Use the display texture for rendering
-    return disp_tex;
-}

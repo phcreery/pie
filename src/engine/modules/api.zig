@@ -18,6 +18,15 @@ pub const NodeDesc = ModuleApi.NodeDesc;
 pub const Sockets = ModuleApi.Sockets;
 pub const MAX_SOCKETS = ModuleApi.MAX_SOCKETS;
 
+const ui = @import("types").ui;
+pub const ParamType = ui.ParamType;
+pub const ParamDesc = ui.ParamDesc;
+pub const ParamUI = ui.ParamUI;
+pub const Control = ui.Control;
+pub const Slider = ui.Slider;
+pub const Sliders = ui.Sliders;
+pub const Combo = ui.Combo;
+
 const pipeline = @import("../pipeline.zig");
 pub const PipelineHandle = *pipeline.Pipeline; // sneaky
 pub const ModuleHandle = pipeline.ModuleHandle;
@@ -40,49 +49,6 @@ pub const ModuleType = enum {
     compute,
     source,
     sink,
-};
-
-pub const ParamDesc = struct {
-    name: []const u8,
-    len: u32,
-    typ: Param.Type,
-};
-
-/// UI hint for a module parameter. `name` must match the `ParamDesc` at the
-/// same index in `ModuleDesc.params`, and the control must match the param
-/// type (`slider`/`combo`/`checkbox` for i32/f32, `text` for str).
-pub const ParamUI = struct {
-    name: []const u8,
-    control: Control,
-
-    pub const Slider = struct {
-        min: f32,
-        max: f32,
-        step: f32 = 0.0, // 0 = full precision (1/tick-resolution)
-        suffix: ?[]const u8 = null,
-    };
-
-    pub const Control = union(enum) {
-        slider: Slider,
-        sliders: Sliders,
-        combo: struct {
-            items: []const []const u8,
-        },
-        checkbox: void,
-        text: void,
-        readonly: void,
-    };
-
-    pub const Sliders = struct {
-        /// number of scalar elements (must match param len)
-        n: usize,
-        min: f32,
-        max: f32,
-        step: f32 = 0.01,
-        suffixes: ?[]const []const u8 = null,
-        /// optional per-element labels shown instead of "name[0]" etc.
-        labels: ?[]const []const u8 = null,
-    };
 };
 
 /// A module can have multiple nodes.

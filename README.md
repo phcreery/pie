@@ -68,14 +68,20 @@ you can write compute shaders in wgsl, glsl, or zig (with the new spir-v backend
 ```
 zig build test --watch --error-style minimal_clear
 zig build integration --watch --error-style minimal_clear -freference-trace=100
-zig build app --watch --error-style minimal_clear --fork=../zgpu
 ```
 
-To build and run the experimental web version:
+### GUI hot reload
 
-`zig build --release=small -Dtarget=wasm32-emscripten run`
+The GUI is built as a plugin (`zig-out/lib/libgui.so`) that the app loads at
+runtime.
 
-This may require changing the default allocator.
+```
+# terminal 1: build and run once
+zig build app --error-style minimal_clear
+
+# terminal 2: rebuild just the GUI plugin on every edit
+zig build gui --watch --error-style minimal_clear
+```
 
 ## Build Requirements
 
