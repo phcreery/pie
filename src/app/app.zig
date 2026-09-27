@@ -11,21 +11,22 @@ const pie = @import("pie");
 const console = @import("console");
 const wgpu = @import("wgpu_zig");
 
-const abi = @import("abi");
-const GuiPlugin = @import("plugin.zig").GuiPlugin;
-const Session = @import("session.zig").Session;
+const session = @import("session");
+const Session = session.Session;
+const GUI = @import("gui").GUI;
 
 const util = @import("../mem.zig");
 
 // God Object for app state.
 //
-// The host owns everything that must survive a GUI reload: the window and
-// sokol/ImGui contexts, the WebGPU device, the editing session (pipeline +
-// textures) and the state/model the plugin reads and writes. The plugin itself
-// is stateless code, swapped in place by `GuiPlugin`.
+// The app owns the window and sokol/ImGui contexts, the WebGPU device, the
+// editing session (pipeline + textures + catalog + blit) and the GUI's view
+// state.
 pub const AppState = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
+    /// thumbnail cache directory (owned)
+    cache_dir: []u8,
 
     // sokol
     pass_action: sg.PassAction,
@@ -33,27 +34,23 @@ pub const AppState = struct {
     // pie
     gpu: pie.gpu.GPU,
 
-    // hot-reloadable GUI
+    // editing session (pipeline + blit resources + catalog)
     session: Session,
-    /// host-owned, mutated in place by the plugin
-    gui_state: abi.SharedState,
-    /// what the plugin draws, built once the pipeline exists
-    gui_model: abi.Model,
-    gui_plugin: GuiPlugin,
+    // editor widgets
+    gui: GUI,
 
     const Self = @This();
 
-    fn init(allocator: std.mem.Allocator, io: std.Io) Self {
+    fn init(allocator: std.mem.Allocator, io: std.Io, cache_dir: []u8) Self {
         return .{
             .allocator = allocator,
             .io = io,
+            .cache_dir = cache_dir,
             .pass_action = .{},
             // initted in the sokol callbacks below
             .gpu = undefined,
             .session = undefined,
-            .gui_state = .{},
-            .gui_model = .{},
-            .gui_plugin = undefined,
+            .gui = undefined,
         };
     }
 };
@@ -85,34 +82,28 @@ export fn init_fn(ptr: ?*anyopaque) void {
     const ext_queue = wgpu.Queue{ .queue = @ptrCast(@constCast(sg.wgpuQueue().?)) };
     state.gpu = pie.GPU.initExternal(state.allocator, state.io, ext_device, ext_queue) catch unreachable;
 
-    // editing session (pipeline + blit resources) and the GUI plugin
-    state.session = Session.init(state.allocator, state.io, &state.gpu) catch unreachable;
-    state.gui_plugin = GuiPlugin.init(state.allocator, state.io, &state.gui_state) catch |err| {
-        std.log.err("failed to load the GUI plugin: {s}", .{@errorName(err)});
-        std.log.err("build it with: zig build gui", .{});
+    // editing session (pipeline + blit resources + catalog) and the GUI
+    state.session = Session.init(state.allocator, state.io, &state.gpu, state.cache_dir) catch unreachable;
+    state.gui = GUI.init(state.allocator, state.io) catch |err| {
+        std.log.err("failed to init the GUI: {s}", .{@errorName(err)});
         unreachable;
     };
-    std.log.info("GUI plugin generation {d} loaded from {s}", .{ state.gui_plugin.generation, state.gui_plugin.path });
 }
 
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
 
-    // Hot reload first: swapping the plugin code must not happen inside a
-    // render pass or an open ImGui frame.
-    state.gui_plugin.tick();
-    state.gui_state.frame += 1;
-
     // Move catalog thumbnails along (uploads happen on this thread), then build
-    // the graph once and apply whatever the plugin asked for in the previous
-    // frame. All of that submits GPU work, which is only legal before the
-    // render pass starts.
+    // the graph once and re-run the editor pipeline if a parameter changed in
+    // the previous frame. All of that submits GPU work, which is only legal
+    // before the render pass starts.
     state.session.tick();
-    if (state.session.ensureBuilt()) state.session.refreshModel(&state.gui_model);
-    if (state.session.applyIntents(&state.gui_state)) {
-        state.session.run() catch |err| {
-            std.log.err("pipeline re-run failed: {s}", .{@errorName(err)});
-        };
+    if (state.session.ensureBuilt()) {
+        if (state.session.consumeRun()) {
+            state.session.run() catch |err| {
+                std.log.err("pipeline re-run failed: {s}", .{@errorName(err)});
+            };
+        }
     }
 
     // start the imgui frame (needs the framebuffer size + frame delta)
@@ -125,12 +116,9 @@ export fn frame(ptr: ?*anyopaque) void {
 
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
 
-    // the darkroom's image is host-drawn behind the widgets; the lighttable
-    // draws its own thumbnails from inside the plugin
-    if (state.gui_state.view == .darkroom) {
-        state.session.blit.draw(state.gui_state.darkroom.zoom, state.gui_state.darkroom.pan);
-    }
-    state.gui_plugin.draw(&state.gui_state, &state.gui_model);
+    // the darkroom's image is drawn behind the widgets
+    state.gui.drawImage(&state.session);
+    state.gui.draw(&state.session);
 
     simgui.render();
 
@@ -140,7 +128,7 @@ export fn frame(ptr: ?*anyopaque) void {
 
 export fn cleanup(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
-    state.gui_plugin.deinit();
+    state.gui.deinit();
     state.session.deinit();
     state.gpu.deinit();
     simgui.shutdown();
@@ -155,7 +143,7 @@ export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
     // other app-level input handlers don't fight the imgui widgets.
     const imgui_consumed = simgui.handleEvent(ev.*);
     if (!imgui_consumed) {
-        state.gui_plugin.event(&state.gui_state, ev);
+        state.gui.event(&state.session, ev);
     }
 }
 
@@ -164,9 +152,13 @@ pub fn run(init: std.process.Init) !void {
     const allocator = util.allocator;
     // default Io implementation:
     const io = init.io;
+    // thumbnail cache lives under the user cache dir; keep it for the process
+    const cache_dir = session.resolveCacheDir(allocator, init.environ_map) catch
+        allocator.dupe(u8, ".pie-thumbs") catch unreachable;
+    defer allocator.free(cache_dir);
 
     // Must outlive `sapp.run`: it is passed as user data to every callback.
-    var state: AppState = AppState.init(allocator, io);
+    var state: AppState = AppState.init(allocator, io, cache_dir);
 
     const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();

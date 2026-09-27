@@ -1,6 +1,21 @@
 const ColorProfile = @import("ColorProfile.zig");
 const std = @import("std");
 
+/// How a parameter's value bytes are encoded.
+pub const ParamType = enum {
+    i32,
+    f32,
+    str,
+};
+
+/// A module parameter: its name, element count and element type. Part of the
+/// module API — `ModuleDesc.params` is an array of these.
+pub const ParamDesc = struct {
+    name: []const u8,
+    len: u32,
+    typ: ParamType,
+};
+
 pub const ShaderTypeEnum = enum {
     file,
     string,
@@ -54,6 +69,11 @@ pub const TextureFormat = enum {
     // u16 raw input stays rggb16uint (r16_uint, which IS core-spec).
     rggb32float,
     rggb16uint,
+
+    /// Placeholder for sockets that accept/emit whatever their connection
+    /// resolves to (e.g. the `format` module). The pipeline replaces it with
+    /// the concrete format before any texture/pipeline is created.
+    any,
 };
 
 pub const SocketDesc = struct {

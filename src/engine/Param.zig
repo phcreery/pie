@@ -1,6 +1,5 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
-const ui = @import("types").ui;
 const Module = @import("Module.zig");
 const gpu = @import("gpu");
 const pipeline = @import("pipeline.zig");
@@ -10,8 +9,8 @@ const slog = std.log.scoped(.param);
 // Structured as Tagged Union for dynamic data
 // =================
 
-/// Shared with the GUI ABI (`types/ui.zig`).
-pub const Type = ui.ParamType;
+/// Shared with the module API (`types/module_api.zig`).
+pub const Type = api.ParamType;
 
 const Self = @This();
 

@@ -2,6 +2,10 @@ const api = @import("../api.zig");
 const libraw = @import("libraw");
 const std = @import("std");
 
+/// libraw keeps process-global state, and the editor and the thumbnail worker
+/// can both decode raw files. Serialize every libraw call.
+var libraw_mutex: std.Io.Mutex = .init;
+
 pub const RawImage = struct {
     width: usize,
     height: usize,
@@ -16,8 +20,13 @@ pub const RawImage = struct {
     cam_xyz: [3][3]f32,
     filters: api.CFA,
     libraw_rp: *libraw.libraw_data_t,
+    /// kept so `deinit` can lock the shared libraw mutex
+    io: std.Io,
 
     pub fn read(allocator: std.mem.Allocator, io: std.Io, file_path: []const u8) !RawImage {
+        try libraw_mutex.lock(io);
+        defer libraw_mutex.unlock(io);
+
         const buf = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, allocator, .unlimited);
         defer allocator.free(buf);
 
@@ -100,6 +109,7 @@ pub const RawImage = struct {
             .cam_xyz = cam_xyz,
             .filters = try api.CFA.fromLibraw(libraw_rp.*.rawdata.iparams.cdesc[0..], libraw_rp.*.rawdata.iparams.filters),
             .libraw_rp = libraw_rp,
+            .io = io,
         };
     }
 
@@ -112,6 +122,8 @@ pub const RawImage = struct {
     }
 
     pub fn deinit(self: *RawImage) void {
+        libraw_mutex.lockUncancelable(self.io);
+        defer libraw_mutex.unlock(self.io);
         libraw.libraw_recycle(self.libraw_rp);
         libraw.libraw_close(self.libraw_rp);
     }

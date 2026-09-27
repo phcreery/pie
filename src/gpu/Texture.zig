@@ -30,6 +30,10 @@ pub const TextureFormat = enum {
     rggb32float,
     rggb16uint,
 
+    /// Placeholder for sockets that accept/emit whatever their connection
+    /// resolves to (see `format`). Must be resolved before a texture is made.
+    any,
+
     pub fn toWGPUFormat(self: TextureFormat) wgpu.Texture.Format {
         return switch (self) {
             .rgba16float => .rgba16_float,
@@ -41,6 +45,7 @@ pub const TextureFormat = enum {
             // special cases: bayer mosaic stored single-channel
             .rggb32float => .r32_float,
             .rggb16uint => .r16_uint,
+            .any => unreachable,
         };
     }
 
@@ -57,6 +62,7 @@ pub const TextureFormat = enum {
             // WebGPU, so it must bind as an unfilterable-float sample type.
             .rggb32float => .unfilterable_float,
             .rggb16uint => .uint,
+            .any => unreachable,
         };
     }
 
@@ -79,6 +85,7 @@ pub const TextureFormat = enum {
             // special cases: single-channel bayer mosaic
             .rggb32float => 1,
             .rggb16uint => 1,
+            .any => unreachable,
         };
     }
 
@@ -93,6 +100,7 @@ pub const TextureFormat = enum {
             // special cases
             .rggb32float => @sizeOf(f32),
             .rggb16uint => @sizeOf(u16),
+            .any => unreachable,
         };
     }
 };

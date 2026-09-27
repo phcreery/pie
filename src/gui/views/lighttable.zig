@@ -1,14 +1,13 @@
 //! The lighttable view: a scrollable grid of catalog thumbnails.
 //!
-//! A pure function of the host-built `abi.LighttableModel` and the host-owned
-//! `LighttableState`: thumbnails are textures the host created (`ImageRef`),
-//! selection is written straight into the shared state (like the darkroom's
-//! zoom/pan), and opening an image is an intent. No engine code, no I/O, no
-//! decoding — the host does that.
+//! A pure function of the live session: thumbnails are textures the catalog
+//! owns (`textureOf`), selection is view state, and opening an image calls
+//! straight into the session.
 
 const std = @import("std");
 const ig = @import("cimgui");
-const abi = @import("abi");
+const session = @import("session");
+const GUI = @import("../root.zig").GUI;
 
 pub const Lighttable = struct {
     /// thumbnail square, cell = thumb + label strip
@@ -23,7 +22,9 @@ pub const Lighttable = struct {
     const color_label: u32 = 0xFF_E0_E0_E0;
     const color_label_dim: u32 = 0xFF_90_90_90;
 
-    pub fn draw(state: *abi.SharedState, model: *const abi.LighttableModel) void {
+    selected: u32 = 0,
+
+    pub fn draw(self: *Lighttable, gui: *GUI, s: *session.Session) void {
         const viewport = ig.igGetMainViewport();
         ig.igSetNextWindowPos(viewport.*.WorkPos, ig.ImGuiCond_Always);
         ig.igSetNextWindowSize(viewport.*.WorkSize, ig.ImGuiCond_Always);
@@ -39,45 +40,51 @@ pub const Lighttable = struct {
         }
         defer ig.igEnd();
 
-        drawStatus(state, model);
+        drawStatus(self, s);
         ig.igSeparator();
 
         var avail = ig.igGetContentRegionAvail();
         if (avail.x < cell_w) avail.x = cell_w;
         if (avail.y < cell_h) avail.y = cell_h;
         if (ig.igBeginChild("grid", avail, ig.ImGuiChildFlags_None, ig.ImGuiWindowFlags_NoSavedSettings)) {
-            drawGrid(state, model, avail.x);
+            drawGrid(self, gui, s, avail.x);
         }
         ig.igEndChild();
 
         // Enter opens the selection; double click is the mouse equivalent
+        const entries = s.catalog.entries;
         if (ig.igIsKeyPressed(ig.ImGuiKey_Enter) or ig.igIsKeyPressed(ig.ImGuiKey_KeypadEnter)) {
-            if (state.lighttable.selected < model.items.len) {
-                _ = state.push(.{ .open_image = state.lighttable.selected });
+            if (self.selected < entries.len) {
+                s.openImage(self.selected);
+                gui.view = .darkroom;
             }
         }
     }
 
-    fn drawStatus(state: *abi.SharedState, model: *const abi.LighttableModel) void {
+    fn drawStatus(self: *Lighttable, s: *session.Session) void {
+        const entries = s.catalog.entries;
+
         var pending: usize = 0;
-        for (model.items) |item| {
-            if (item.thumb == null and !item.failed) pending += 1;
+        for (0..entries.len) |i| {
+            const st = s.catalog.entryState(i);
+            if (!st.ready and !st.failed) pending += 1;
         }
 
         var buf: [512]u8 = undefined;
-        const selected = if (state.lighttable.selected < model.items.len)
-            model.items[state.lighttable.selected].name
+        const selected = if (self.selected < entries.len)
+            entries[self.selected].name
         else
             "";
         const line = std.mem.printSentinel(&buf, "{s}   {d} images, {d} decoding   selected: {s}", .{
-            model.dir, model.items.len, pending, selected,
+            s.catalog.dir, entries.len, pending, selected,
         }, 0) catch return;
         ig.igText("%s", line.ptr);
     }
 
-    fn drawGrid(state: *abi.SharedState, model: *const abi.LighttableModel, avail_w: f32) void {
+    fn drawGrid(self: *Lighttable, gui: *GUI, s: *session.Session, avail_w: f32) void {
+        const entries = s.catalog.entries;
         const columns = @max(1, @as(usize, @intFromFloat(@floor((avail_w + pad) / (cell_w + pad)))));
-        const rows = (model.items.len + columns - 1) / columns;
+        const rows = (entries.len + columns - 1) / columns;
 
         const draw_list = ig.igGetWindowDrawList();
         const origin = ig.igGetCursorScreenPos();
@@ -91,7 +98,7 @@ pub const Lighttable = struct {
             });
         }
 
-        for (model.items, 0..) |item, index| {
+        for (entries, 0..) |entry, index| {
             const column = index % columns;
             const row = index / columns;
             const x = origin.x + @as(f32, @floatFromInt(column)) * (cell_w + pad);
@@ -102,33 +109,37 @@ pub const Lighttable = struct {
             const thumb_min = ig.ImVec2{ .x = x + pad, .y = y + pad };
             const thumb_max = ig.ImVec2{ .x = x + pad + thumb_px, .y = y + pad + thumb_px };
 
-            const selected = state.lighttable.selected == @as(u32, @intCast(index));
+            const selected = self.selected == @as(u32, @intCast(index));
             const bg = if (selected)
                 ig.igGetColorU32Ex(ig.ImGuiCol_HeaderActive, 1)
             else
                 ig.igGetColorU32Ex(ig.ImGuiCol_FrameBg, 0.6);
             ig.ImDrawList_AddRectFilled(draw_list, min, max, bg);
 
-            if (item.thumb) |thumb| {
-                // letterbox the host's texture inside the square
-                if (thumb.width > 0 and thumb.height > 0) {
-                    const scale = @min(thumb_px / thumb.width, thumb_px / thumb.height);
-                    const w = thumb.width * scale;
-                    const h = thumb.height * scale;
+            const st = s.catalog.entryState(index);
+            if (st.ready) {
+                // letterbox the catalog's texture inside the square
+                const size = s.catalog.thumbSize(index);
+                const tw: f32 = @floatFromInt(size[0]);
+                const th: f32 = @floatFromInt(size[1]);
+                if (tw > 0 and th > 0) {
+                    const scale = @min(thumb_px / tw, thumb_px / th);
+                    const w = tw * scale;
+                    const h = th * scale;
                     const img_min = ig.ImVec2{
                         .x = thumb_min.x + (thumb_px - w) * 0.5,
                         .y = thumb_min.y + (thumb_px - h) * 0.5,
                     };
                     const img_max = ig.ImVec2{ .x = img_min.x + w, .y = img_min.y + h };
-                    const tex_ref = ig.ImTextureRef{ ._TexData = null, ._TexID = thumb.id };
+                    const tex_ref = ig.ImTextureRef{ ._TexData = null, ._TexID = s.catalog.textureOf(index) };
                     ig.ImDrawList_AddImage(draw_list, tex_ref, img_min, img_max);
                 }
             } else {
-                const color: u32 = if (item.failed) color_failed else color_placeholder;
+                const color: u32 = if (st.failed) color_failed else color_placeholder;
                 ig.ImDrawList_AddRectFilled(draw_list, thumb_min, thumb_max, color);
 
                 var msg_buf: [32]u8 = undefined;
-                const msg = std.mem.printSentinel(&msg_buf, "{s}", .{if (item.failed) "failed" else "decoding..."}, 0) catch "";
+                const msg = std.mem.printSentinel(&msg_buf, "{s}", .{if (st.failed) "failed" else "decoding..."}, 0) catch "";
                 ig.ImDrawList_AddText(draw_list, .{
                     .x = thumb_min.x + 8,
                     .y = thumb_min.y + thumb_px * 0.5 - text_h * 0.5,
@@ -137,7 +148,7 @@ pub const Lighttable = struct {
 
             // label: file name, first line's worth of it
             var name_buf: [64]u8 = undefined;
-            const name = truncateZ(&name_buf, item.name);
+            const name = truncateZ(&name_buf, entry.name);
             ig.ImDrawList_AddText(draw_list, .{
                 .x = thumb_min.x + 2,
                 .y = thumb_max.y + 4,
@@ -149,11 +160,12 @@ pub const Lighttable = struct {
             const id = std.mem.printSentinel(&id_buf, "cell##{d}", .{index}, 0) catch continue;
             ig.igSetCursorScreenPos(min);
             if (ig.igInvisibleButton(id.ptr, .{ .x = cell_w, .y = cell_h }, ig.ImGuiButtonFlags_None)) {
-                state.lighttable.selected = @intCast(index);
+                self.selected = @intCast(index);
             }
             if (ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) and ig.igIsMouseDoubleClicked(ig.ImGuiMouseButton_Left)) {
-                state.lighttable.selected = @intCast(index);
-                _ = state.push(.{ .open_image = @intCast(index) });
+                self.selected = @intCast(index);
+                s.openImage(@intCast(index));
+                gui.view = .darkroom;
             }
         }
     }

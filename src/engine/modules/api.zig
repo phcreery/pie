@@ -16,11 +16,11 @@ pub const SocketDesc = ModuleApi.SocketDesc;
 pub const SocketType = ModuleApi.SocketType;
 pub const NodeDesc = ModuleApi.NodeDesc;
 pub const Sockets = ModuleApi.Sockets;
+pub const ParamType = ModuleApi.ParamType;
+pub const ParamDesc = ModuleApi.ParamDesc;
 pub const MAX_SOCKETS = ModuleApi.MAX_SOCKETS;
 
 const ui = @import("types").ui;
-pub const ParamType = ui.ParamType;
-pub const ParamDesc = ui.ParamDesc;
 pub const ParamUI = ui.ParamUI;
 pub const Control = ui.Control;
 pub const Slider = ui.Slider;

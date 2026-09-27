@@ -1,29 +1,13 @@
 //! UI vocabulary for pipeline module parameters.
 //!
-//! This is the *shared* definition: the engine's module descriptors
-//! (`engine/modules/api.zig` re-exports these, and every `module.zig` writes
-//! `.params` / `.params_ui` in these terms) and the GUI ABI
-//! (`gui_abi/root.zig` hands the same values to the hot-reloadable plugin) both
-//! use these exact types. There is one definition of what a slider is, not two
-//! that have to be kept in sync by hand.
+//! The parameter *description* (`ParamType`/`ParamDesc`) lives with the module
+//! API in `module_api.zig`; this file is only the editor-facing side: the
+//! widgets a parameter can be drawn with.
 //!
-//! Kept dependency-free on purpose: it lives in the `types` module, which has no
-//! imports, so the GUI plugin can import it without pulling in any engine code.
+//! Kept dependency-free on purpose: it lives in the `types` module, which has
+//! no imports.
 
 const std = @import("std");
-
-/// How a parameter's value bytes are encoded.
-pub const ParamType = enum {
-    i32,
-    f32,
-    str,
-};
-
-pub const ParamDesc = struct {
-    name: []const u8,
-    len: u32,
-    typ: ParamType,
-};
 
 pub const Slider = struct {
     min: f32,

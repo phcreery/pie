@@ -4,6 +4,7 @@ const api = @import("api.zig");
 pub fn populateRepository(repo: *Repository) !void {
     // built-in modules
     try repo.add(@import("i-raw/module.zig").desc);
+    try repo.add(@import("i-png/module.zig").desc);
     try repo.add(@import("format/module.zig").desc);
     try repo.add(@import("denoise/module.zig").desc);
     try repo.add(@import("whitebalance/module.zig").desc);
@@ -11,6 +12,7 @@ pub fn populateRepository(repo: *Repository) !void {
     try repo.add(@import("crop/module.zig").desc);
     try repo.add(@import("color/module.zig").desc);
     try repo.add(@import("filmcurv/module.zig").desc);
+    try repo.add(@import("downscale/module.zig").desc);
     try repo.add(@import("o-png/module.zig").desc);
     try repo.add(@import("o-ppm/module.zig").desc);
     try repo.add(@import("o-display/module.zig").desc);

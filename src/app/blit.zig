@@ -1,9 +1,9 @@
 //! sokol-gfx resources that draw the pipeline's display texture as a
 //! letterboxed fullscreen quad.
 //!
-//! Host-owned: blitting a texture into the swapchain pass is stable code, so it
-//! stays out of the hot-reloadable plugin. Only the view transform (zoom/pan)
-//! comes from the plugin, through the host-owned `abi.SharedState`.
+//! Part of the editing session: blitting a texture into the swapchain pass is
+//! stable code, so it stays out of the GUI. The darkroom supplies only the view
+//! transform (zoom/pan).
 
 const std = @import("std");
 const sokol = @import("sokol");

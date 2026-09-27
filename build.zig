@@ -22,10 +22,6 @@ pub fn build(b: *Build) !void { // $ls root_id 1
     const cimgui_conf = cimgui.getConfig(opt_docking);
 
     // DEPENDENCIES
-    // sokol + Dear ImGui are built as shared libraries because the GUI is a
-    // hot-reloadable plugin: the exe and the plugin must bind to ONE instance
-    // of the sokol/ImGui state (two copies would mean two ImGui contexts).
-    // wgpu-native already ships as a shared library.
     const dep_sokol = b.dependency("sokol", .{
         .target = target,
         .optimize = optimize,
@@ -39,9 +35,9 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         .optimize = optimize,
         .dynamic_linkage = true,
     });
-    // Image decoding is the hot path (a debug-built libraw decodes a 24 MP raw
-    // several times slower), so these two are built optimized while the app
-    // itself stays debug.
+    // Image decoding is the hot path. C dependencies (libraw, stb_image) honor
+    // their own optimize; a Zig *module* dependency does not (Zig compiles
+    // imported modules at the root artifact's optimize level).
     const dep_opts_fast = .{ .target = target, .optimize = .ReleaseFast };
     const dep_libraw = b.dependency("libraw", dep_opts_fast);
     const dep_wgpu_zig = b.dependency("wgpu-zig", .{});
@@ -114,6 +110,29 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         },
     });
 
+    // STBI MODULE
+    const mod_stbi_core = b.createModule(.{
+        .target = target,
+        .optimize = .ReleaseFast,
+        .link_libc = true,
+    });
+    mod_stbi_core.addIncludePath(b.path("src/stbi"));
+    mod_stbi_core.addCSourceFile(.{
+        .file = b.path("src/stbi/stb_image_impl.c"),
+        .flags = &.{"-std=c99"},
+    });
+    const lib_stbi = b.addLibrary(.{
+        .name = "stbi",
+        .linkage = .static,
+        .root_module = mod_stbi_core,
+    });
+    const mod_stbi = b.createModule(.{
+        .root_source_file = b.path("src/stbi/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    mod_stbi.linkLibrary(lib_stbi);
+
     // PIE MODULE
     const mod_pie = b.createModule(.{
         .root_source_file = b.path("src/engine/root.zig"),
@@ -126,6 +145,7 @@ pub fn build(b: *Build) !void { // $ls root_id 1
             .{ .name = "math", .module = mod_math },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
+            .{ .name = "stbi", .module = mod_stbi },
         },
     });
 
@@ -141,16 +161,17 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         },
     );
 
-    // ABI MODULE (shared by the host exe and the GUI plugin). Its contract
-    // imports the shared parameter vocabulary (`types/ui.zig`) so the engine and
-    // the editor describe a control exactly once.
-    const mod_abi = b.createModule(.{
-        .root_source_file = b.path("src/gui_abi/root.zig"),
+    // SESSION MODULE
+    const mod_session = b.createModule(.{
+        .root_source_file = b.path("src/app/session.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "pie", .module = mod_pie },
             .{ .name = "types", .module = mod_types },
+            .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
+            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
         },
     });
 
@@ -159,41 +180,18 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         .root_source_file = b.path("src/gui/root.zig"),
         .target = target,
         .optimize = optimize,
-        // The plugin is deliberately engine-free (it only draws widgets), so
-        // it needs neither `pie` nor the shader bindings. Every declared module
-        // root gets parsed, so keep this list minimal.
         .imports = &.{
-            .{ .name = "abi", .module = mod_abi },
+            .{ .name = "session", .module = mod_session },
+            .{ .name = "pie", .module = mod_pie },
             .{ .name = "types", .module = mod_types },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
         },
     });
 
-    // GUI PLUGIN (hot-reloadable)
-    // The exe never links this module: it loads `zig-out/lib/libgui.so` at
-    // runtime (see `src/app/plugin.zig`). The plugin borrows the exe's sokol,
-    // ImGui and wgpu instances through the shared C libraries above.
-    const gui_dl = b.addLibrary(.{
-        .name = "gui",
-        .linkage = .dynamic,
-        .root_module = mod_gui,
-        // Matches the exe. The self-hosted backend also compiles and runs this
-        // plugin (~15% faster), but backend choice is the small lever here:
-        // semantic analysis dominates, so the win comes from shrinking what the
-        // plugin reaches. See README "GUI hot reload".
-        .use_llvm = true,
-    });
-    // resolve libsokol_clib.so / libcimgui_clib.so relative to the plugin
-    gui_dl.root_module.addRPathSpecial("$ORIGIN");
-    const install_gui_dl = b.addInstallArtifact(gui_dl, .{});
-    b.getInstallStep().dependOn(&install_gui_dl.step);
-    const gui_step = b.step("gui", "Build the hot-reloadable GUI plugin (zig-out/lib/libgui.so)");
-    gui_step.dependOn(&install_gui_dl.step);
-
     // wgpu-native ships prebuilt as a shared library. Install it beside the exe
-    // and the plugin so both resolve it through their `$ORIGIN` rpaths instead
-    // of a cwd-relative path into the package cache.
+    // so the exe resolves it through its `$ORIGIN/../lib` rpath instead of a
+    // cwd-relative path into the package cache.
     const wgpu_bin_dep_name = b.fmt("wgpu_{s}_{s}_{s}_{s}", .{
         @tagName(target.result.os.tag),
         @tagName(target.result.cpu.arch),
@@ -212,7 +210,6 @@ pub fn build(b: *Build) !void { // $ls root_id 1
             wgpu_lib_name,
         );
         b.getInstallStep().dependOn(&install_wgpu.step);
-        gui_step.dependOn(&install_wgpu.step);
     }
 
     // APP MODULE
@@ -220,16 +217,13 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        // Host side: owns the session (pipeline + blit) the plugin draws from.
+        // Host side: owns the session the GUI draws from.
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
-            .{ .name = "abi", .module = mod_abi },
+            .{ .name = "session", .module = mod_session },
+            .{ .name = "gui", .module = mod_gui },
             .{ .name = "console", .module = mod_console },
-            .{ .name = "texview_shader", .module = mod_texview_shd },
-            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
-            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
-            // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "gpu", .module = mod_gpu },
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
         },
@@ -271,6 +265,7 @@ pub fn build(b: *Build) !void { // $ls root_id 1
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "zbench", .module = dep_zbench.module("zbench") },
+            .{ .name = "stbi", .module = mod_stbi },
         },
     });
 
@@ -300,7 +295,6 @@ pub fn build(b: *Build) !void { // $ls root_id 1
     //     });
     // } else {
     try buildNative(b, mod_app);
-
 }
 
 fn buildNative(b: *Build, mod: *Build.Module) !void {

@@ -1,22 +1,23 @@
-//! Renders one collapsible section per module in the pipeline.
+//! Renders one collapsible section per module in the live pipeline.
 //!
-//! Everything it draws comes from the host-built `abi.Model`: the parameter's
-//! descriptor and UI hint are the engine's own `types/ui.zig` types (shared, not
-//! mirrored), and its value is read through `ParamView.value` (live host memory).
-//! Changes are queued as `abi.Edit` intents in `SharedState` for the host to
-//! apply. No engine code reaches into this module, which is what keeps the
-//! plugin small.
+//! The module list comes from the session's pipeline pool; each parameter's
+//! descriptor and UI hint are the engine's own `types/ui.zig` types, read
+//! through live `Param.bytes`. Edits go straight to the session.
 
 const std = @import("std");
 const ig = @import("cimgui");
-const abi = @import("abi");
+const session = @import("session");
+const pie = @import("pie");
 const ui = @import("types").ui;
 
+/// Inline capacity of a string parameter, matching the engine's `max_str_bytes`.
+const max_str_bytes = 256;
+
 pub const ModulesPanel = struct {
-    pub fn draw(state: *abi.SharedState, model: *const abi.DarkroomModel) void {
+    pub fn draw(s: *session.Session, panel_open: *bool) void {
         // no `MenuBar` flag: it reserves a menu-bar strip we never draw into,
         // which shows up as a blank band under the title bar.
-        if (!ig.igBegin("Modules", &state.darkroom.panel_open, ig.ImGuiWindowFlags_None)) {
+        if (!ig.igBegin("Modules", panel_open, ig.ImGuiWindowFlags_None)) {
             ig.igEnd();
             return;
         }
@@ -25,12 +26,21 @@ pub const ModulesPanel = struct {
         ig.igText("pipeline modules");
         ig.igSeparator();
 
-        for (model.modules, 0..) |*mod, module_index| {
-            drawModule(state, mod, module_index);
+        var index: usize = 0;
+        var it = s.pipeline.module_pool.liveHandles();
+        while (it.next()) |handle| {
+            const mod = s.pipeline.module_pool.getPtr(handle) catch continue;
+            drawModule(s, handle, mod, index);
+            index += 1;
         }
     }
 
-    fn drawModule(state: *abi.SharedState, mod: *const abi.ModuleView, module_index: usize) void {
+    fn drawModule(
+        s: *session.Session,
+        handle: pie.pipeline.ModuleHandle,
+        mod: *pie.api.Module,
+        module_index: usize,
+    ) void {
         ig.igPushIDInt(@intCast(module_index));
         defer ig.igPopID();
 
@@ -46,31 +56,41 @@ pub const ModulesPanel = struct {
         ig.igIndentEx(8.0);
         defer ig.igUnindentEx(8.0);
 
-        for (mod.params) |*param| {
-            drawParam(state, param, module_index);
+        for (mod.params_ui) |maybe_ui| {
+            const param_ui = maybe_ui orelse continue;
+            const idx = mod.getParamIndex(param_ui.name) catch continue;
+            const param = mod.params[idx] orelse continue;
+            drawParam(s, handle, &param, param_ui.control, @intCast(idx));
         }
     }
 
-    fn drawParam(state: *abi.SharedState, param: *const abi.ParamView, module_index: usize) void {
-        switch (param.control) {
-            .slider => |slider| drawSlider(state, param, slider, module_index),
-            .sliders => |sliders| drawSliders(state, param, sliders, module_index),
-            .combo => |combo| drawCombo(state, param, combo, module_index),
-            .checkbox => drawCheckbox(state, param, module_index),
-            .text => drawText(state, param, module_index),
+    fn drawParam(
+        s: *session.Session,
+        handle: pie.pipeline.ModuleHandle,
+        param: *const pie.api.Param,
+        control: ui.Control,
+        param_index: u32,
+    ) void {
+        switch (control) {
+            .slider => |slider| drawSlider(s, handle, param, slider, param_index),
+            .sliders => |sliders| drawSliders(s, handle, param, sliders, param_index),
+            .combo => |combo| drawCombo(s, handle, param, combo, param_index),
+            .checkbox => drawCheckbox(s, handle, param, param_index),
+            .text => drawText(s, handle, param, param_index),
             .readonly => drawReadonly(param),
         }
     }
 
     fn drawSlider(
-        state: *abi.SharedState,
-        param: *const abi.ParamView,
+        s: *session.Session,
+        handle: pie.pipeline.ModuleHandle,
+        param: *const pie.api.Param,
         slider: ui.Slider,
-        module_index: usize,
+        param_index: u32,
     ) void {
         var label_buf: [160]u8 = undefined;
-        const label = labelZ(&label_buf, param);
-        ig.igPushIDInt(@intCast(param.param_index));
+        const label = labelZ(&label_buf, param, param_index);
+        ig.igPushIDInt(@intCast(param_index));
         defer ig.igPopID();
 
         const suffix = slider.suffix orelse "";
@@ -80,13 +100,13 @@ pub const ModulesPanel = struct {
                 var format_buf: [32]u8 = undefined;
                 const format = std.mem.printSentinel(&format_buf, "%.2f{s}", .{suffix}, 0) catch "%.2f";
                 if (ig.igSliderFloatEx(label.ptr, &value, slider.min, slider.max, format.ptr, 0)) {
-                    _ = state.push(intent(module_index, param, .{ .scalar = value }));
+                    s.setParam(handle, param.desc.name, f32, value);
                 }
             },
             .i32 => {
                 var value = readI32(param, 0);
                 if (ig.igSliderInt(label.ptr, &value, @intFromFloat(@floor(slider.min)), @intFromFloat(@ceil(slider.max)))) {
-                    _ = state.push(intent(module_index, param, .{ .integer = value }));
+                    s.setParam(handle, param.desc.name, i32, value);
                 }
             },
             .str => {},
@@ -94,10 +114,11 @@ pub const ModulesPanel = struct {
     }
 
     fn drawSliders(
-        state: *abi.SharedState,
-        param: *const abi.ParamView,
+        s: *session.Session,
+        handle: pie.pipeline.ModuleHandle,
+        param: *const pie.api.Param,
         sliders: ui.Sliders,
-        module_index: usize,
+        param_index: u32,
     ) void {
         if (param.desc.typ != .f32) return; // only float arrays are supported for now
 
@@ -105,7 +126,7 @@ pub const ModulesPanel = struct {
         const n = @min(sliders.n, @as(usize, param.desc.len));
         if (n == 0 or n > 4) return; // only 2/3/4-element vectors can be committed
 
-        ig.igPushIDInt(@intCast(param.param_index));
+        ig.igPushIDInt(@intCast(param_index));
         defer ig.igPopID();
 
         var name_buf: [160]u8 = undefined;
@@ -133,20 +154,24 @@ pub const ModulesPanel = struct {
         }
 
         if (changed) {
-            var vector: abi.ParamVector = .{ .count = @intCast(n) };
-            @memcpy(vector.values[0..n], values[0..n]);
-            _ = state.push(intent(module_index, param, .{ .vector = vector }));
+            switch (n) {
+                2 => s.setParam(handle, param.desc.name, [2]f32, values[0..2].*),
+                3 => s.setParam(handle, param.desc.name, [3]f32, values[0..3].*),
+                4 => s.setParam(handle, param.desc.name, [4]f32, values[0..4].*),
+                else => {},
+            }
         }
     }
 
     fn drawCombo(
-        state: *abi.SharedState,
-        param: *const abi.ParamView,
+        s: *session.Session,
+        handle: pie.pipeline.ModuleHandle,
+        param: *const pie.api.Param,
         combo: ui.Combo,
-        module_index: usize,
+        param_index: u32,
     ) void {
         var label_buf: [160]u8 = undefined;
-        const label = labelZ(&label_buf, param);
+        const label = labelZ(&label_buf, param, param_index);
 
         // zero-separated items string, the form imgui wants ("a\x00b\x00\x00")
         var items_buf: [512]u8 = undefined;
@@ -162,45 +187,43 @@ pub const ModulesPanel = struct {
         items_buf[pos] = 0;
         const items_z = items_buf[0 .. pos + 1];
 
-        ig.igPushIDInt(@intCast(param.param_index));
+        ig.igPushIDInt(@intCast(param_index));
         defer ig.igPopID();
 
         var current: c_int = if (param.desc.typ == .i32) readI32(param, 0) else 0;
         if (ig.igCombo(label.ptr, &current, @ptrCast(items_z.ptr))) {
-            _ = state.push(intent(module_index, param, .{ .integer = current }));
+            s.setParam(handle, param.desc.name, i32, @intCast(current));
         }
     }
 
-    fn drawCheckbox(state: *abi.SharedState, param: *const abi.ParamView, module_index: usize) void {
+    fn drawCheckbox(s: *session.Session, handle: pie.pipeline.ModuleHandle, param: *const pie.api.Param, param_index: u32) void {
         var label_buf: [160]u8 = undefined;
-        const label = labelZ(&label_buf, param);
+        const label = labelZ(&label_buf, param, param_index);
         var value = readI32(param, 0) != 0;
         if (ig.igCheckbox(label.ptr, &value)) {
-            _ = state.push(intent(module_index, param, .{ .integer = if (value) 1 else 0 }));
+            s.setParam(handle, param.desc.name, i32, if (value) 1 else 0);
         }
     }
 
-    fn drawText(state: *abi.SharedState, param: *const abi.ParamView, module_index: usize) void {
+    fn drawText(s: *session.Session, handle: pie.pipeline.ModuleHandle, param: *const pie.api.Param, param_index: u32) void {
         var label_buf: [160]u8 = undefined;
-        const label = labelZ(&label_buf, param);
+        const label = labelZ(&label_buf, param, param_index);
 
-        var buf: [abi.max_str_bytes]u8 = @splat(0);
+        var buf: [max_str_bytes]u8 = @splat(0);
         const current = readStr(param);
         const n = @min(current.len, buf.len - 1);
         @memcpy(buf[0..n], current[0..n]);
 
-        ig.igPushIDInt(@intCast(param.param_index));
+        ig.igPushIDInt(@intCast(param_index));
         defer ig.igPopID();
 
         if (ig.igInputText(label.ptr, &buf, buf.len, ig.ImGuiInputTextFlags_None)) {
             const text = std.mem.sliceTo(&buf, 0);
-            var payload: abi.ParamText = .{ .len = @intCast(@min(text.len, abi.max_str_bytes)) };
-            @memcpy(payload.bytes[0..payload.len], text[0..payload.len]);
-            _ = state.push(intent(module_index, param, .{ .text = payload }));
+            s.setParam(handle, param.desc.name, []const u8, text);
         }
     }
 
-    fn drawReadonly(param: *const abi.ParamView) void {
+    fn drawReadonly(param: *const pie.api.Param) void {
         var buf: [384]u8 = undefined;
         const name = param.desc.name;
         const text = switch (param.desc.typ) {
@@ -217,35 +240,26 @@ pub const ModulesPanel = struct {
 
     /// `"{name}##{param_index}"` — the index keys the widget to the parameter.
     /// `buf` belongs to the caller: the returned slice points into it.
-    fn labelZ(buf: []u8, param: *const abi.ParamView) [:0]const u8 {
-        return std.mem.printSentinel(buf, "{s}##{d}", .{ param.desc.name, param.param_index }, 0) catch "";
-    }
-
-    /// One intent that asks the host to write `value` into this parameter.
-    fn intent(module_index: usize, param: *const abi.ParamView, value: abi.ParamValue) abi.Intent {
-        return .{ .set_param = .{
-            .module = @intCast(module_index),
-            .param = param.param_index,
-            .value = value,
-        } };
+    fn labelZ(buf: []u8, param: *const pie.api.Param, param_index: u32) [:0]const u8 {
+        return std.mem.printSentinel(buf, "{s}##{d}", .{ param.desc.name, param_index }, 0) catch "";
     }
 
     // ------------------------------------------------------------------
-    // reading live values out of the host's parameter bytes
+    // reading live values out of the parameter's bytes
     // ------------------------------------------------------------------
-    fn readF32(param: *const abi.ParamView, index: usize) f32 {
+    fn readF32(param: *const pie.api.Param, index: usize) f32 {
         const offset = index * @sizeOf(f32);
-        if (offset + @sizeOf(f32) > param.value.len) return 0;
-        return std.mem.bytesToValue(f32, param.value[offset..][0..@sizeOf(f32)]);
+        if (offset + @sizeOf(f32) > param.bytes.len) return 0;
+        return std.mem.bytesToValue(f32, param.bytes[offset..][0..@sizeOf(f32)]);
     }
 
-    fn readI32(param: *const abi.ParamView, index: usize) i32 {
+    fn readI32(param: *const pie.api.Param, index: usize) i32 {
         const offset = index * @sizeOf(i32);
-        if (offset + @sizeOf(i32) > param.value.len) return 0;
-        return std.mem.bytesToValue(i32, param.value[offset..][0..@sizeOf(i32)]);
+        if (offset + @sizeOf(i32) > param.bytes.len) return 0;
+        return std.mem.bytesToValue(i32, param.bytes[offset..][0..@sizeOf(i32)]);
     }
 
-    fn readStr(param: *const abi.ParamView) []const u8 {
-        return std.mem.sliceTo(param.value, 0);
+    fn readStr(param: *const pie.api.Param) []const u8 {
+        return std.mem.sliceTo(param.bytes, 0);
     }
 };

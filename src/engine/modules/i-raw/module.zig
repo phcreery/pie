@@ -37,25 +37,49 @@ pub const desc: api.ModuleDesc = .{
     .readSource = readSource,
 };
 
+/// The raw image plus the path it came from, so `modifyOut` can notice a
+/// changed `filename` param and reload without a full pipeline reroute.
+const Loaded = struct {
+    raw: RawImage,
+    path: []u8,
+};
+
+fn load(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Loaded {
+    const owned_path = try allocator.dupe(u8, path);
+    errdefer allocator.free(owned_path);
+    const raw = try RawImage.read(allocator, io, path);
+    return .{ .raw = raw, .path = owned_path };
+}
+
+fn loadedOf(mod: *api.Module) ?*Loaded {
+    const data_ptr = mod.data orelse return null;
+    return @ptrCast(@alignCast(data_ptr));
+}
+
+fn unload(allocator: std.mem.Allocator, mod: *api.Module) void {
+    const loaded = loadedOf(mod) orelse return;
+    loaded.raw.deinit();
+    allocator.free(loaded.path);
+    allocator.destroy(loaded);
+    mod.data = null;
+}
+
 pub fn init(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHandle, mod_handle: api.ModuleHandle) !void {
-    var raw_image = try allocator.create(RawImage);
-    errdefer raw_image.deinit();
-
     const filename = try api.getParam(pipe, mod_handle, "filename", []const u8);
-    slog.info("i-raw Filename param value: {s}", .{filename});
+    if (filename.len == 0) return;
+    slog.info("i-raw filename: {s}", .{filename});
 
-    raw_image.* = try RawImage.read(allocator, io, filename);
+    const loaded = try allocator.create(Loaded);
+    errdefer allocator.destroy(loaded);
+    loaded.* = try load(allocator, io, filename);
 
-    var mod = try api.getModule(pipe, mod_handle);
-    mod.data = raw_image;
+    const mod = try api.getModule(pipe, mod_handle);
+    mod.data = loaded;
 }
 
 pub fn deinit(allocator: std.mem.Allocator, pipe: api.PipelineHandle, mod: api.ModuleHandle) void {
     const m = api.getModule(pipe, mod) catch return;
-    const data_ptr = m.data orelse return;
-    const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
-    raw_image.deinit();
-    allocator.destroy(raw_image);
+    unload(allocator, m);
 }
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
@@ -97,8 +121,29 @@ fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const m = try api.getModule(pipe, mod);
-    const data_ptr = m.data orelse return error.ModuleDataMissing;
-    const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
+    const filename = try api.getParam(pipe, mod, "filename", []const u8);
+
+    // Reload when the file changed. `init` only runs on a reroute, so this is
+    // what lets a cached pipeline (and the editor) open another image.
+    const stale = if (loadedOf(m)) |loaded| !std.mem.eql(u8, loaded.path, filename) else true;
+    if (stale) {
+        unload(pipe.allocator, m);
+        if (filename.len > 0) {
+            const loaded = pipe.allocator.create(Loaded) catch |err| {
+                slog.err("cannot allocate raw image state: {s}", .{@errorName(err)});
+                return;
+            };
+            loaded.* = load(pipe.allocator, pipe.io, filename) catch |err| {
+                slog.err("cannot decode '{s}': {s}", .{ filename, @errorName(err) });
+                pipe.allocator.destroy(loaded);
+                return;
+            };
+            m.data = loaded;
+        }
+    }
+
+    const loaded = loadedOf(m) orelse return error.ModuleDataMissing;
+    const raw_image = &loaded.raw;
     const wb_mode: WbMode = @fromBackingInt(@intCast(try api.getParam(pipe, mod, "wb_mode", i32)));
 
     const roi: api.ROI = .{
@@ -177,8 +222,8 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
 pub fn readSource(pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyopaque) !void {
     const m = try api.getModule(pipe, mod);
-    const data_ptr = m.data orelse return error.ModuleDataMissing;
-    const raw_image = @as(*RawImage, @ptrCast(@alignCast(data_ptr)));
+    const loaded = loadedOf(m) orelse return error.ModuleDataMissing;
+    const raw_image = &loaded.raw;
 
     // raw_image is row-contiguous u16; stage it into the padded upload layout
     api.copyToStaging(

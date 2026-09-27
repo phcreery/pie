@@ -110,7 +110,7 @@ pub fn toDesc(self: Self) api.SocketDesc {
 pub fn areCompatible(output: *const Self, input: *const Self) bool {
     if (output.type.direction() != .output) return false;
     if (input.type.direction() != .input) return false;
-    if (output.format != input.format) return false;
+    if (!formatsCompatible(output.format, input.format)) return false;
     // check that output ROI can satisfy input ROI
     if (input.roi) |input_roi| {
         if (output.roi) |output_roi| {
@@ -139,7 +139,7 @@ fn compatibleColorProfiles(a: ?ColorProfile, b: ?ColorProfile) bool {
 /// used for copying socket descriptors between modules and nodes
 pub fn areSimilar(sock_a: *const Self, sock_b: *const Self) bool {
     if (sock_a.type != sock_b.type) return false;
-    if (sock_a.format != sock_b.format) return false;
+    if (!formatsCompatible(sock_a.format, sock_b.format)) return false;
     // color profile is part of the socket identity; "any" on either side
     // (or absent) matches. exact mismatches are not similar.
     if (!compatibleColorProfiles(sock_a.color_profile, sock_b.color_profile)) {
@@ -155,4 +155,11 @@ pub fn areSimilar(sock_a: *const Self, sock_b: *const Self) bool {
     //     }
     // }
     return true;
+}
+
+/// A socket whose format is `.any` accepts/emits whatever its counterpart
+/// declares; the pipeline resolves it to the concrete format before creating
+/// any texture or pipeline.
+fn formatsCompatible(a: gpu.TextureFormat, b: gpu.TextureFormat) bool {
+    return a == .any or b == .any or a == b;
 }

@@ -70,17 +70,10 @@ zig build test --watch --error-style minimal_clear
 zig build integration --watch --error-style minimal_clear -freference-trace=100
 ```
 
-### GUI hot reload
-
-The GUI is built as a plugin (`zig-out/lib/libgui.so`) that the app loads at
-runtime.
+### App
 
 ```
-# terminal 1: build and run once
 zig build app --error-style minimal_clear
-
-# terminal 2: rebuild just the GUI plugin on every edit
-zig build gui --watch --error-style minimal_clear
 ```
 
 ## Build Requirements

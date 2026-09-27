@@ -590,6 +590,13 @@ pub const Pipeline = struct {
         try self.perf.startRun();
 
         if (self.rerouted) {
+            // A reroute tears down and reallocates every module's upload staging
+            // and every sink's download staging. Reset the fixed-buffer
+            // allocators first, otherwise each rebuild leaks its predecessor's
+            // slices until the staging buffers are exhausted (OutOfMemory).
+            if (self.upload_fba) |*upload_fba| upload_fba.reset();
+            if (self.download_fba) |*download_fba| download_fba.reset();
+
             // First run modules so we know which nodes to create, what rois, buffers, and textures to allocate
             try self.runModulesBuildExecutionOrder(arena);
             try self.perf.timerLap("runModulesBuildExecutionOrder");
@@ -869,6 +876,9 @@ pub const Pipeline = struct {
                         // slog.debug("Setting input ROI for module '{s} > {s}' from previous connected module '{s}'", .{ module.name, sock.name, connected_to_module.name });
                         const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse unreachable;
                         socket_ptr.roi = connected_to_socket.roi;
+                        // resolve a `.any` input (e.g. `format`) to the concrete
+                        // format flowing in, before nodes/textures are built
+                        socket_ptr.format = connected_to_socket.format;
                         // carry the actual color profile of what is flowing in
                         socket_ptr.color_profile = connected_to_socket.color_profile;
 

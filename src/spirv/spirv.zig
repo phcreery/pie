@@ -59,6 +59,7 @@ pub fn toSpirvImageFormat(texture_format: types.ModuleApi.TextureFormat) std.lan
         // special cases: bayer mosaic stored single-channel
         .rggb32float => .r32f,
         .rggb16uint => .unknown,
+        .any => .unknown,
     };
 }
 
@@ -73,6 +74,7 @@ pub fn toBaseType(texture_format: types.ModuleApi.TextureFormat) type {
         // special cases: bayer mosaic stored single-channel
         .rggb32float => f32,
         .rggb16uint => u16,
+        .any => u16,
     };
 }
 
