@@ -13,10 +13,10 @@ const abi = @import("abi");
 const ui = @import("types").ui;
 
 pub const ModulesPanel = struct {
-    pub fn draw(state: *abi.SharedState, model: *const abi.Model) void {
+    pub fn draw(state: *abi.SharedState, model: *const abi.DarkroomModel) void {
         // no `MenuBar` flag: it reserves a menu-bar strip we never draw into,
         // which shows up as a blank band under the title bar.
-        if (!ig.igBegin("Modules", &state.panel_open, ig.ImGuiWindowFlags_None)) {
+        if (!ig.igBegin("Modules", &state.darkroom.panel_open, ig.ImGuiWindowFlags_None)) {
             ig.igEnd();
             return;
         }
@@ -80,13 +80,13 @@ pub const ModulesPanel = struct {
                 var format_buf: [32]u8 = undefined;
                 const format = std.mem.printSentinel(&format_buf, "%.2f{s}", .{suffix}, 0) catch "%.2f";
                 if (ig.igSliderFloatEx(label.ptr, &value, slider.min, slider.max, format.ptr, 0)) {
-                    _ = state.pushEdit(edit(module_index, param, .{ .scalar = value }));
+                    _ = state.push(intent(module_index, param, .{ .scalar = value }));
                 }
             },
             .i32 => {
                 var value = readI32(param, 0);
                 if (ig.igSliderInt(label.ptr, &value, @intFromFloat(@floor(slider.min)), @intFromFloat(@ceil(slider.max)))) {
-                    _ = state.pushEdit(edit(module_index, param, .{ .integer = value }));
+                    _ = state.push(intent(module_index, param, .{ .integer = value }));
                 }
             },
             .str => {},
@@ -133,9 +133,9 @@ pub const ModulesPanel = struct {
         }
 
         if (changed) {
-            var vector: abi.EditVector = .{ .count = @intCast(n) };
+            var vector: abi.ParamVector = .{ .count = @intCast(n) };
             @memcpy(vector.values[0..n], values[0..n]);
-            _ = state.pushEdit(edit(module_index, param, .{ .vector = vector }));
+            _ = state.push(intent(module_index, param, .{ .vector = vector }));
         }
     }
 
@@ -167,7 +167,7 @@ pub const ModulesPanel = struct {
 
         var current: c_int = if (param.desc.typ == .i32) readI32(param, 0) else 0;
         if (ig.igCombo(label.ptr, &current, @ptrCast(items_z.ptr))) {
-            _ = state.pushEdit(edit(module_index, param, .{ .integer = current }));
+            _ = state.push(intent(module_index, param, .{ .integer = current }));
         }
     }
 
@@ -176,7 +176,7 @@ pub const ModulesPanel = struct {
         const label = labelZ(&label_buf, param);
         var value = readI32(param, 0) != 0;
         if (ig.igCheckbox(label.ptr, &value)) {
-            _ = state.pushEdit(edit(module_index, param, .{ .integer = if (value) 1 else 0 }));
+            _ = state.push(intent(module_index, param, .{ .integer = if (value) 1 else 0 }));
         }
     }
 
@@ -194,9 +194,9 @@ pub const ModulesPanel = struct {
 
         if (ig.igInputText(label.ptr, &buf, buf.len, ig.ImGuiInputTextFlags_None)) {
             const text = std.mem.sliceTo(&buf, 0);
-            var payload: abi.EditText = .{ .len = @intCast(@min(text.len, abi.max_str_bytes)) };
+            var payload: abi.ParamText = .{ .len = @intCast(@min(text.len, abi.max_str_bytes)) };
             @memcpy(payload.bytes[0..payload.len], text[0..payload.len]);
-            _ = state.pushEdit(edit(module_index, param, .{ .text = payload }));
+            _ = state.push(intent(module_index, param, .{ .text = payload }));
         }
     }
 
@@ -221,12 +221,13 @@ pub const ModulesPanel = struct {
         return std.mem.printSentinel(buf, "{s}##{d}", .{ param.desc.name, param.param_index }, 0) catch "";
     }
 
-    fn edit(module_index: usize, param: *const abi.ParamView, value: abi.EditValue) abi.Edit {
-        return .{
+    /// One intent that asks the host to write `value` into this parameter.
+    fn intent(module_index: usize, param: *const abi.ParamView, value: abi.ParamValue) abi.Intent {
+        return .{ .set_param = .{
             .module = @intCast(module_index),
             .param = param.param_index,
             .value = value,
-        };
+        } };
     }
 
     // ------------------------------------------------------------------

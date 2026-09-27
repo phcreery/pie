@@ -39,7 +39,6 @@ pub const AppState = struct {
     gui_state: abi.SharedState,
     /// what the plugin draws, built once the pipeline exists
     gui_model: abi.Model,
-    gui_model_built: bool = false,
     gui_plugin: GuiPlugin,
 
     const Self = @This();
@@ -104,14 +103,13 @@ export fn frame(ptr: ?*anyopaque) void {
     state.gui_plugin.tick();
     state.gui_state.frame += 1;
 
-    // Build the default graph once, then apply whatever the plugin asked for in
-    // the previous frame. Both submit to the WebGPU queue, which is only legal
-    // before the render pass starts.
-    if (!state.gui_model_built and state.session.ensureBuilt()) {
-        state.session.rebuildModel(&state.gui_model);
-        state.gui_model_built = true;
-    }
-    if (state.session.applyEdits(&state.gui_state)) {
+    // Move catalog thumbnails along (uploads happen on this thread), then build
+    // the graph once and apply whatever the plugin asked for in the previous
+    // frame. All of that submits GPU work, which is only legal before the
+    // render pass starts.
+    state.session.tick();
+    if (state.session.ensureBuilt()) state.session.refreshModel(&state.gui_model);
+    if (state.session.applyIntents(&state.gui_state)) {
         state.session.run() catch |err| {
             std.log.err("pipeline re-run failed: {s}", .{@errorName(err)});
         };
@@ -127,8 +125,11 @@ export fn frame(ptr: ?*anyopaque) void {
 
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
 
-    // the image view (host-drawn), then the plugin's widgets on top
-    state.session.blit.draw(state.gui_state.zoom, state.gui_state.pan);
+    // the darkroom's image is host-drawn behind the widgets; the lighttable
+    // draws its own thumbnails from inside the plugin
+    if (state.gui_state.view == .darkroom) {
+        state.session.blit.draw(state.gui_state.darkroom.zoom, state.gui_state.darkroom.pan);
+    }
     state.gui_plugin.draw(&state.gui_state, &state.gui_model);
 
     simgui.render();

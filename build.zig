@@ -39,9 +39,13 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         .optimize = optimize,
         .dynamic_linkage = true,
     });
-    const dep_libraw = b.dependency("libraw", opts);
+    // Image decoding is the hot path (a debug-built libraw decodes a 24 MP raw
+    // several times slower), so these two are built optimized while the app
+    // itself stays debug.
+    const dep_opts_fast = .{ .target = target, .optimize = .ReleaseFast };
+    const dep_libraw = b.dependency("libraw", dep_opts_fast);
     const dep_wgpu_zig = b.dependency("wgpu-zig", .{});
-    const dep_zigimg = b.dependency("zigimg", opts);
+    const dep_zigimg = b.dependency("zigimg", dep_opts_fast);
     const dep_zbench = b.dependency("zbench", opts);
     const dep_zuballoc = b.dependency("zuballoc", opts);
     // const dep_zmath = b.dependency("zmath", opts);
@@ -222,6 +226,8 @@ pub fn build(b: *Build) !void { // $ls root_id 1
             .{ .name = "abi", .module = mod_abi },
             .{ .name = "console", .module = mod_console },
             .{ .name = "texview_shader", .module = mod_texview_shd },
+            .{ .name = "libraw", .module = dep_libraw.module("libraw") },
+            .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             // .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "gpu", .module = mod_gpu },

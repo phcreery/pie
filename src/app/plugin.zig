@@ -31,6 +31,8 @@ const poll_interval_ns: i96 = 200 * std.time.ns_per_ms;
 pub const GuiPlugin = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
+    /// host state, so the loader can publish the reload count for the UI
+    state: *abi.SharedState,
 
     /// absolute path of the built plugin
     path: []u8,
@@ -46,8 +48,7 @@ pub const GuiPlugin = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, state: *const abi.SharedState) !Self {
-        _ = state; // the plugin is stateless; nothing to hand it up front
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, state: *abi.SharedState) !Self {
         const path = try resolvePath(allocator, io);
         errdefer allocator.free(path);
 
@@ -61,6 +62,7 @@ pub const GuiPlugin = struct {
         return .{
             .allocator = allocator,
             .io = io,
+            .state = state,
             .path = path,
             .lib = lib,
             .entry = entry,
@@ -136,6 +138,7 @@ pub const GuiPlugin = struct {
             self.allocator.free(path);
         }
 
+        self.state.reloads += 1;
         const elapsed_ms = @divTrunc(std.Io.Timestamp.now(self.io, .awake).nanoseconds - started_at, std.time.ns_per_ms);
         log.info("reloaded GUI plugin -> generation {d} in {d} ms", .{ generation, elapsed_ms });
     }

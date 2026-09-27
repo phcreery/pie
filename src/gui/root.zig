@@ -14,6 +14,8 @@ const sapp = sokol.app;
 const abi = @import("abi");
 
 const Darkroom = @import("./views/darkroom.zig").Darkroom;
+const Lighttable = @import("./views/lighttable.zig").Lighttable;
+const MenuBar = @import("./components/menu_bar.zig").MenuBar;
 
 pub fn gui_abi_version() callconv(.c) u32 {
     return abi.abi_version;
@@ -26,14 +28,23 @@ pub fn gui_abi_layout() callconv(.c) u64 {
     return abi.layout_hash;
 }
 
-/// Draw the current view's widgets. Runs inside the swapchain render pass.
+/// Draw the menu bar and the active view's widgets. The menu bar is drawn before
+/// the view so imgui offsets the viewport's work area for it.
 pub fn gui_draw(state: *abi.SharedState, model: *const abi.Model) callconv(.c) void {
-    Darkroom.draw(state, model);
+    MenuBar.draw(state);
+    switch (state.view) {
+        .darkroom => Darkroom.draw(state, &model.darkroom),
+        .lighttable => Lighttable.draw(state, &model.lighttable),
+    }
 }
 
-/// Mouse/keyboard input that ImGui did not consume.
+/// Mouse/keyboard input that ImGui did not consume. Both views are imgui
+/// widgets, so only the image view needs raw input (pan/zoom).
 pub fn gui_event(state: *abi.SharedState, ev: [*c]const sapp.Event) callconv(.c) void {
-    Darkroom.event(state, ev);
+    switch (state.view) {
+        .darkroom => Darkroom.event(state, ev),
+        .lighttable => {},
+    }
 }
 
 comptime {

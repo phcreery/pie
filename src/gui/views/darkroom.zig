@@ -13,7 +13,7 @@ const abi = @import("abi");
 const ModulesPanel = @import("../components/modules_panel.zig").ModulesPanel;
 
 pub const Darkroom = struct {
-    pub fn draw(state: *abi.SharedState, model: *const abi.Model) void {
+    pub fn draw(state: *abi.SharedState, model: *const abi.DarkroomModel) void {
         ModulesPanel.draw(state, model);
     }
 
@@ -25,41 +25,41 @@ pub const Darkroom = struct {
         switch (e.type) {
             .MOUSE_DOWN => {
                 if (e.mouse_button == .LEFT) {
-                    state.dragging = true;
-                    state.last_mouse = .{ e.mouse_x, e.mouse_y };
+                    state.darkroom.dragging = true;
+                    state.darkroom.last_mouse = .{ e.mouse_x, e.mouse_y };
                 }
             },
             .MOUSE_UP => {
-                if (e.mouse_button == .LEFT) state.dragging = false;
+                if (e.mouse_button == .LEFT) state.darkroom.dragging = false;
             },
             .MOUSE_MOVE => {
-                if (state.dragging) {
+                if (state.darkroom.dragging) {
                     const ww = @as(f32, @floatFromInt(e.framebuffer_width));
                     const wh = @as(f32, @floatFromInt(e.framebuffer_height));
                     if (ww > 0 and wh > 0) {
-                        const dx_ndc = (e.mouse_x - state.last_mouse[0]) / (ww * 0.5);
-                        const dy_ndc = -(e.mouse_y - state.last_mouse[1]) / (wh * 0.5);
-                        state.pan[0] += dx_ndc;
-                        state.pan[1] += dy_ndc;
+                        const dx_ndc = (e.mouse_x - state.darkroom.last_mouse[0]) / (ww * 0.5);
+                        const dy_ndc = -(e.mouse_y - state.darkroom.last_mouse[1]) / (wh * 0.5);
+                        state.darkroom.pan[0] += dx_ndc;
+                        state.darkroom.pan[1] += dy_ndc;
                     }
-                    state.last_mouse = .{ e.mouse_x, e.mouse_y };
+                    state.darkroom.last_mouse = .{ e.mouse_x, e.mouse_y };
                 }
             },
             .MOUSE_SCROLL => {
                 const factor = std.math.pow(f32, 1.1, -e.scroll_y);
-                state.last_zoom = state.zoom;
-                state.zoom = std.math.clamp(state.zoom * factor, 0.05, 64.0);
+                state.darkroom.last_zoom = state.darkroom.zoom;
+                state.darkroom.zoom = std.math.clamp(state.darkroom.zoom * factor, 0.05, 64.0);
 
                 // Zoom toward the cursor
                 const ww = @as(f32, @floatFromInt(e.framebuffer_width));
                 const wh = @as(f32, @floatFromInt(e.framebuffer_height));
-                if (ww > 0 and wh > 0 and state.last_zoom > 0) {
+                if (ww > 0 and wh > 0 and state.darkroom.last_zoom > 0) {
                     // cursor in NDC (screen center = 0, y up)
                     const cx = (e.mouse_x - (ww * 0.5)) / (ww * 0.5);
                     const cy = -(e.mouse_y - (wh * 0.5)) / (wh * 0.5);
-                    const r = state.zoom / state.last_zoom;
-                    state.pan[0] += (1.0 - r) * (cx - state.pan[0]);
-                    state.pan[1] += (1.0 - r) * (cy - state.pan[1]);
+                    const r = state.darkroom.zoom / state.darkroom.last_zoom;
+                    state.darkroom.pan[0] += (1.0 - r) * (cx - state.darkroom.pan[0]);
+                    state.darkroom.pan[1] += (1.0 - r) * (cy - state.darkroom.pan[1]);
                 }
             },
             else => {},

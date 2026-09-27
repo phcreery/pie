@@ -8,16 +8,30 @@
 //!
 //! Each frame the host builds a `Model` (pointers into its own pipeline, never
 //! mutated by the plugin) and passes the host-owned `SharedState` for the
-//! plugin to update in place. Widget edits come back as `Edit` intents which the
-//! host applies *outside* the render pass.
+//! plugin to update in place. Anything the plugin wants done comes back as an
+//! `Intent` which the host applies *outside* the render pass.
+//!
+//! Growth is meant to be additive:
+//!
+//! - a new view adds a `ViewKind` variant, a `Model` section and (usually) a
+//!   couple of `Intent` variants. Both switches that matter — the host draining
+//!   intents and the plugin dispatching on the view — are exhaustive, so the
+//!   compiler walks you through it.
+//! - the plugin never gets a callable interface to the engine: everything a
+//!   view needs is projected into the model, and everything it changes is an
+//!   intent. That is what keeps the plugin engine-free (fast build, safe
+//!   reloads) as the UI grows.
+//! - intents reference host entities by *index* into a host-owned collection,
+//!   never by name, path or pointer. They outlive the frame, so any bytes they
+//!   carry are inline (`ParamText`).
 //!
 //! These structs are plain Zig (slices, tagged unions), not `extern`: both sides
 //! compile this file with the same compiler in the same build, so the layout
 //! cannot differ. Two checks protect against a *stale* plugin: `abi_version`
-//! (bumped when this contract changes on purpose) and `layout_hash`, which is
-//! derived from the memory layout the two sides must agree on — including the
-//! shared types in `types/ui.zig`, so editing those without bumping the version
-//! is still caught instead of silently misread.
+//! (bumped when this contract changes on purpose) and `layout_hash`, derived
+//! from the memory layout the two sides must agree on — including the shared
+//! types in `types/ui.zig`, so editing those without bumping the version is
+//! caught instead of silently misread.
 //!
 //! Borrowed memory (module/param names, combo items, suffixes, live parameter
 //! bytes) is always host memory, valid for the life of the process. The plugin
@@ -29,7 +43,7 @@ const sokol = @import("sokol");
 const ui = @import("types").ui;
 
 /// Bump when this contract changes. The loader refuses a mismatched plugin.
-pub const abi_version: u32 = 5;
+pub const abi_version: u32 = 7;
 
 /// File name `zig build gui` installs, relative to `zig-out/lib`.
 pub const plugin_file_name = switch (builtin.os.tag) {
@@ -38,11 +52,25 @@ pub const plugin_file_name = switch (builtin.os.tag) {
     else => "libgui.so",
 };
 
-/// Maximum parameter edits the plugin may queue in one frame.
-pub const max_edits = 16;
+/// Which view the editor shows. The host owns it (`SharedState.view`) and builds
+/// the matching `Model` section; the plugin dispatches on it when drawing and
+/// when routing input, so adding a variant here surfaces every place that has to
+/// handle it.
+pub const ViewKind = enum {
+    darkroom,
+    lighttable,
+    // nodes, files …
+};
 
-/// Inline capacity of a string edit.
+/// Maximum intents the plugin may queue in one frame.
+pub const max_intents = 16;
+
+/// Inline capacity of a string value.
 pub const max_str_bytes = 256;
+
+// ============================================================================
+// what the editor draws
+// ============================================================================
 
 /// One parameter the editor draws: where it lives (`param_index` into the
 /// module's `params`), what it is (`desc`, the engine's own descriptor), how to
@@ -61,78 +89,146 @@ pub const ModuleView = struct {
     params: []const ParamView = &.{},
 };
 
-/// What the editor draws: a slice of host-owned `ModuleView`s, rebuilt whenever
-/// the graph changes. Values are read through `ParamView.value`, so value edits
-/// never need a rebuild.
-pub const Model = struct {
+/// The darkroom view: the pipeline being edited, module by module.
+pub const DarkroomModel = struct {
     modules: []const ModuleView = &.{},
 };
 
-pub const EditVector = struct {
+/// A texture the plugin may draw with `igImage`: `id` is the ImTextureID the
+/// host built with `sokol.imgui.imtextureid(sg.View)`, so the GPU resource stays
+/// host-owned and the plugin only holds a handle.
+pub const ImageRef = struct {
+    id: u64 = 0,
+    width: f32 = 0,
+    height: f32 = 0,
+};
+
+/// One entry of the catalog behind the lighttable. `thumb` is null until the
+/// host has decoded and uploaded the thumbnail; `failed` marks entries whose
+/// decode failed (the plugin still shows the name).
+pub const CatalogItem = struct {
+    name: []const u8 = "",
+    thumb: ?ImageRef = null,
+    failed: bool = false,
+};
+
+/// The lighttable view: the catalog the host has scanned.
+pub const LighttableModel = struct {
+    dir: []const u8 = "",
+    items: []const CatalogItem = &.{},
+};
+
+/// What the editor draws this frame. Sections other than `SharedState.view` are
+/// not populated. Built by the host whenever the graph changes; values are read
+/// through `ParamView.value`, so value edits never need a rebuild.
+pub const Model = struct {
+    darkroom: DarkroomModel = .{},
+    lighttable: LighttableModel = .{},
+};
+
+// ============================================================================
+// what the plugin asks for
+// ============================================================================
+
+pub const ParamVector = struct {
     values: [4]f32 = @splat(0),
     count: u32 = 1,
 };
 
-/// Owned inline bytes: an edit outlives the frame that queued it, so it cannot
+/// Owned inline bytes: an intent outlives the frame that queued it, so it cannot
 /// point at the plugin's stack.
-pub const EditText = struct {
+pub const ParamText = struct {
     bytes: [max_str_bytes]u8 = @splat(0),
     len: u32 = 0,
 
-    pub fn slice(self: *const EditText) []const u8 {
+    pub fn slice(self: *const ParamText) []const u8 {
         return self.bytes[0..@min(self.len, max_str_bytes)];
     }
 };
 
-/// The new value of an edited parameter. The variant *is* the parameter's type:
-/// `.scalar` is an f32, `.integer` an i32, `.vector` an N-element f32 array,
-/// `.text` a string.
-pub const EditValue = union(enum) {
+/// A new parameter value. The variant *is* the parameter's type: `.scalar` is an
+/// f32, `.integer` an i32, `.vector` an N-element f32 array, `.text` a string.
+pub const ParamValue = union(enum) {
     scalar: f32,
     integer: i32,
-    vector: EditVector,
-    text: EditText,
+    vector: ParamVector,
+    text: ParamText,
 };
 
-/// A parameter change requested by the plugin, queued in `SharedState.edits`
-/// and applied by the host after the frame (GPU work must not happen inside a
-/// render pass). `module` indexes `Model.modules`, `param` indexes that
-/// module's `params` array in the pipeline.
-pub const Edit = struct {
-    module: u32 = 0,
-    param: u32 = 0,
-    value: EditValue = .{ .integer = 0 },
-
+/// Something the plugin wants the host to do. Queued in `SharedState.intents`
+/// and applied after the frame (GPU work must not happen inside a render pass).
+pub const Intent = union(enum) {
     /// Placeholder for empty queue slots.
-    pub const none: Edit = .{};
+    none,
+
+    /// Change a module parameter. `module` indexes `Model.darkroom.modules`,
+    /// `param` indexes that module's `params` array in the pipeline.
+    set_param: struct {
+        module: u32 = 0,
+        param: u32 = 0,
+        value: ParamValue = .{ .integer = 0 },
+    },
+
+    /// Show another view.
+    switch_view: ViewKind,
+
+    /// Load catalog item `index` into the pipeline and switch to the darkroom.
+    open_image: u32,
+
+    /// Rescan the catalog directory.
+    reload_catalog,
+
+    /// Ask the app to quit.
+    quit,
+
+    // grow here: add_module, connect, set_interacting, undo, …
 };
 
-/// Host-owned state that outlives plugin generations. The plugin mutates it in
-/// place; nothing else crosses the boundary.
-pub const SharedState = struct {
-    abi_version: u32 = abi_version,
-    frame: u64 = 0,
-    reloads: u32 = 0,
+// ============================================================================
+// host-owned state
+// ============================================================================
 
-    // view state, owned by the plugin (mouse input); the host uses it for the blit
+/// Per-view UI state. The plugin is the only writer; the host reads what it
+/// needs (the blit uses `zoom`/`pan`). Kept here rather than in the plugin so it
+/// survives a reload.
+pub const DarkroomState = struct {
     zoom: f32 = 1,
     pan: [2]f32 = .{ 0, 0 },
     dragging: bool = false,
     last_mouse: [2]f32 = .{ 0, 0 },
     last_zoom: f32 = 1,
     panel_open: bool = true,
+};
 
-    /// Edits the plugin queued this frame. Queuing one means "re-run the
-    /// pipeline"; the host drains the queue outside the render pass.
-    edits: [max_edits]Edit = @splat(Edit.none),
-    edit_count: u32 = 0,
+/// Per-view UI state for the lighttable: which entry is highlighted. Written by
+/// the plugin (like the darkroom's zoom/pan), kept here so it survives a reload.
+pub const LighttableState = struct {
+    selected: u32 = 0,
+};
 
-    /// Queue a parameter change. Returns false (dropping it) if this frame's
-    /// queue is already full.
-    pub fn pushEdit(self: *SharedState, edit: Edit) bool {
-        if (self.edit_count >= max_edits) return false;
-        self.edits[self.edit_count] = edit;
-        self.edit_count += 1;
+/// State that outlives plugin generations. The plugin mutates it in place;
+/// nothing else crosses the boundary.
+pub const SharedState = struct {
+    abi_version: u32 = abi_version,
+    frame: u64 = 0,
+    reloads: u32 = 0,
+
+    /// active view, owned by the host (the plugin requests changes with intents)
+    view: ViewKind = .darkroom,
+
+    darkroom: DarkroomState = .{},
+    lighttable: LighttableState = .{},
+    // nodes: NodesState …
+
+    intents: [max_intents]Intent = @splat(Intent.none),
+    intent_count: u32 = 0,
+
+    /// Queue an intent. Returns false (dropping it) if this frame's queue is
+    /// already full.
+    pub fn push(self: *SharedState, intent: Intent) bool {
+        if (self.intent_count >= max_intents) return false;
+        self.intents[self.intent_count] = intent;
+        self.intent_count += 1;
         return true;
     }
 };
@@ -155,10 +251,11 @@ pub const Entry = struct {
 /// out identically are interchangeable here, and it is the *interpretation* of
 /// the bytes that must match, not the names.
 pub const layout_hash: u64 = blk: {
+    @setEvalBranchQuota(100_000); // recursive structure walk + FNV per name
     var seed: u64 = 14695981039346656037;
     seed = mix(seed, typeHash(Model));
     seed = mix(seed, typeHash(SharedState));
-    seed = mix(seed, typeHash(Edit));
+    seed = mix(seed, typeHash(Intent));
     break :blk seed;
 };
 

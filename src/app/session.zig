@@ -1,16 +1,16 @@
 //! Host-side editing session: owns the pipeline, the default raw -> display
-//! graph, the UI model the plugin draws, and the parameter edits it returns.
-//!
-//! This used to live in the plugin (`views/darkroom.zig` + `components/image.zig`).
-//! Keeping it in the host is what makes the plugin thin: the plugin no longer
-//! reaches into the engine, so it compiles in about a second and a reload keeps
-//! the pipeline, textures and view state without any hand-off.
+//! graph, the image catalog behind the lighttable, and the UI model the plugin
+//! draws. Anything the plugin wants done arrives as an `abi.Intent` and is
+//! applied here, outside the render pass.
 
 const std = @import("std");
+const sokol = @import("sokol");
+const sapp = sokol.app;
 const pie = @import("pie");
 
 const abi = @import("abi");
 const Blit = @import("blit.zig").Blit;
+const Catalog = @import("catalog.zig").Catalog;
 
 const slog = std.log.scoped(.session);
 
@@ -24,7 +24,11 @@ pub const Session = struct {
     pipeline: pie.Pipeline,
     blit: Blit,
 
+    /// images the lighttable can open (scanned + thumbnailed by a worker)
+    catalog: *Catalog,
+
     built: bool = false,
+    model_built: bool = false,
 
     /// module handle per model index, for applying plugin edits
     handles: [model_module_capacity]pie.pipeline.ModuleHandle = @splat(undefined),
@@ -34,28 +38,48 @@ pub const Session = struct {
     /// is never copied, so those pointers stay valid for the process.
     modules: [model_module_capacity]abi.ModuleView = @splat(.{}),
     params: [model_module_capacity][model_param_capacity]abi.ParamView = @splat(@splat(.{})),
+    items: [model_item_capacity]abi.CatalogItem = @splat(.{}),
+
+    /// catalog revision the lighttable model was built from
+    model_catalog_revision: u32 = 0,
 
     /// Capacities of the editor model. Host-side only: the ABI carries slices,
     /// so the limits are an implementation detail here rather than part of the
     /// contract.
     const model_module_capacity = 32;
     const model_param_capacity = pie.api.MAX_PARAMS_PER_MODULE;
+    const model_item_capacity = 256;
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, gpu: *pie.GPU) !Self {
+        var pipeline = try pie.Pipeline.init(allocator, io, gpu, null);
+        errdefer pipeline.deinit();
+
+        // the lighttable lists the directory the default image lives in
+        const dir = std.fs.path.dirname(input_filename) orelse ".";
+        const catalog = try Catalog.init(allocator, io, dir);
+        errdefer catalog.deinit();
+
         return .{
             .allocator = allocator,
             .io = io,
             .gpu = gpu,
-            .pipeline = try pie.Pipeline.init(allocator, io, gpu, null),
+            .pipeline = pipeline,
             .blit = Blit.init(),
+            .catalog = catalog,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.blit.deinit();
+        self.catalog.deinit();
         self.pipeline.deinit();
+    }
+
+    /// Per-frame host work for the catalog: upload whatever the worker decoded.
+    pub fn tick(self: *Self) void {
+        self.catalog.tick();
     }
 
     /// Build and run the default graph on the first frame. Errors are reported
@@ -82,49 +106,113 @@ pub const Session = struct {
         self.blit.setTexture(texture);
     }
 
-    /// Apply the edits the plugin queued this frame. Returns true when the
-    /// pipeline needs re-running.
-    pub fn applyEdits(self: *Self, state: *abi.SharedState) bool {
-        const count = @min(state.edit_count, abi.max_edits);
-        const edits = state.edits[0..count];
-        state.edit_count = 0;
+    /// Publish what the editor draws. The model holds pointers into the live
+    /// pipeline and the catalog, so this only rebuilds when one of them changed.
+    pub fn refreshModel(self: *Self, model: *abi.Model) void {
+        if (!self.built) return;
+        if (self.model_built and self.model_catalog_revision == self.catalog.revision) return;
 
-        var applied = false;
-        for (edits) |edit| {
-            // Resolve the target: model index -> module handle -> param name.
-            if (edit.module >= self.module_count) continue;
-            const handle = self.handles[edit.module];
-            const mod = self.pipeline.module_pool.getPtr(handle) catch continue;
-            if (edit.param >= mod.params.len) continue;
-            const param = if (mod.params[edit.param]) |*p| p else continue;
-            const name = param.desc.name;
+        self.rebuildDarkroom(model);
+        self.rebuildLighttable(model);
 
-            applied = switch (edit.value) {
-                .scalar => |v| self.setParam(handle, name, f32, v),
-                .integer => |v| self.setParam(handle, name, i32, v),
-                .vector => |vec| switch (vec.count) {
-                    2 => self.setParam(handle, name, [2]f32, vec.values[0..2].*),
-                    3 => self.setParam(handle, name, [3]f32, vec.values[0..3].*),
-                    4 => self.setParam(handle, name, [4]f32, vec.values[0..4].*),
-                    else => false,
-                },
-                .text => |t| self.setParam(handle, name, []const u8, t.slice()),
-            } or applied;
-        }
-        return applied;
+        self.model_built = true;
+        self.model_catalog_revision = self.catalog.revision;
     }
 
-    fn setParam(self: *Self, handle: pie.pipeline.ModuleHandle, name: []const u8, comptime T: type, value: T) bool {
-        self.pipeline.setModuleParam(handle, name, T, value) catch |err| {
-            slog.warn("edit of '{s}' failed: {s}", .{ name, @errorName(err) });
+    /// Drain the intents the plugin queued this frame. Returns true when the
+    /// pipeline needs re-running.
+    pub fn applyIntents(self: *Self, state: *abi.SharedState) bool {
+        const count = @min(state.intent_count, abi.max_intents);
+        const intents = state.intents[0..count];
+        state.intent_count = 0;
+
+        var rerun = false;
+        for (intents) |intent| {
+            switch (intent) {
+                .none => {},
+                .set_param => |edit| {
+                    rerun = self.writeParam(edit.module, edit.param, edit.value) or rerun;
+                },
+                .switch_view => |view| {
+                    slog.info("switching to {s}", .{@tagName(view)});
+                    state.view = view;
+                },
+                .open_image => |index| {
+                    if (self.openImage(state, index)) rerun = true;
+                },
+                .reload_catalog => {
+                    slog.info("reloading the catalog", .{});
+                    self.catalog.reload();
+                },
+                .quit => {
+                    slog.info("quit requested", .{});
+                    sapp.requestQuit();
+                },
+            }
+        }
+        return rerun;
+    }
+
+    /// Load a catalog entry into the graph's source module and show the darkroom.
+    fn openImage(self: *Self, state: *abi.SharedState, index: u32) bool {
+        if (index >= self.catalog.entries.len) return false;
+        const path = self.catalog.entries[index].path;
+
+        self.setSourcePath(path) catch |err| {
+            slog.err("cannot open '{s}': {s}", .{ path, @errorName(err) });
+            return false;
+        };
+        slog.info("opening '{s}'", .{path});
+        state.view = .darkroom;
+        return true;
+    }
+
+    /// Point the graph's source module at `path`. The source is found by name
+    /// (`filename`, a string param) rather than by module type, so it keeps
+    /// working when the input module changes.
+    fn setSourcePath(self: *Self, path: []const u8) !void {
+        var handles = self.pipeline.module_pool.liveHandles();
+        while (handles.next()) |handle| {
+            const mod = self.pipeline.module_pool.getPtr(handle) catch continue;
+            const param_index = mod.getParamIndex("filename") catch continue;
+            const param = mod.params[param_index] orelse continue;
+            if (param.desc.typ != .str) continue;
+            try self.pipeline.setModuleParam(handle, "filename", []const u8, path);
+            return;
+        }
+        return error.NoSourceModule;
+    }
+
+    /// Resolve `set_param`'s addressing (model index -> module handle -> param
+    /// name) and write the value.
+    fn writeParam(self: *Self, module_index: u32, param_index: u32, value: abi.ParamValue) bool {
+        if (module_index >= self.module_count) return false;
+        const handle = self.handles[module_index];
+        const mod = self.pipeline.module_pool.getPtr(handle) catch return false;
+        if (param_index >= mod.params.len) return false;
+        const param = if (mod.params[param_index]) |*p| p else return false;
+        const name = param.desc.name;
+
+        const ok = switch (value) {
+            .scalar => |v| self.pipeline.setModuleParam(handle, name, f32, v),
+            .integer => |v| self.pipeline.setModuleParam(handle, name, i32, v),
+            .vector => |vec| switch (vec.count) {
+                2 => self.pipeline.setModuleParam(handle, name, [2]f32, vec.values[0..2].*),
+                3 => self.pipeline.setModuleParam(handle, name, [3]f32, vec.values[0..3].*),
+                4 => self.pipeline.setModuleParam(handle, name, [4]f32, vec.values[0..4].*),
+                else => return false,
+            },
+            .text => |t| self.pipeline.setModuleParam(handle, name, []const u8, t.slice()),
+        };
+
+        ok catch |err| {
+            slog.warn("set_param '{s}' failed: {s}", .{ name, @errorName(err) });
             return false;
         };
         return true;
     }
 
-    /// Publish what the editor draws. The model holds pointers into the live
-    /// pipeline, so it only needs rebuilding when the graph changes.
-    pub fn rebuildModel(self: *Self, model: *abi.Model) void {
+    fn rebuildDarkroom(self: *Self, model: *abi.Model) void {
         self.module_count = 0;
         self.handles = @splat(undefined);
 
@@ -178,11 +266,38 @@ pub const Session = struct {
             self.module_count += 1;
         }
 
-        model.modules = self.modules[0..self.module_count];
+        model.darkroom.modules = self.modules[0..self.module_count];
+    }
+
+    fn rebuildLighttable(self: *Self, model: *abi.Model) void {
+        const entries = self.catalog.entries;
+        const count = @min(entries.len, self.items.len);
+        if (entries.len > self.items.len) {
+            slog.warn("catalog has {d} images, the lighttable shows the first {d}", .{ entries.len, self.items.len });
+        }
+
+        for (entries[0..count], 0..) |entry, index| {
+            const state = self.catalog.entryState(index);
+            const size = self.catalog.thumbSize(index);
+            self.items[index] = .{
+                .name = entry.name,
+                .thumb = if (state.ready) .{
+                    .id = self.catalog.textureOf(index),
+                    .width = @floatFromInt(size[0]),
+                    .height = @floatFromInt(size[1]),
+                } else null,
+                .failed = state.failed,
+            };
+        }
+
+        model.lighttable = .{
+            .dir = self.catalog.dir,
+            .items = self.items[0..count],
+        };
     }
 
     // ------------------------------------------------------------------
-    // the default graph (was `build_image` in the GUI plugin)
+    // the default graph
     // ------------------------------------------------------------------
     fn buildDefaultGraph(self: *Self) !void {
         const pipeline = &self.pipeline;
@@ -199,7 +314,8 @@ pub const Session = struct {
         try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, input_filename);
         try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 0);
         try pipeline.setModuleParam(mod_color, "wb_tint", f32, 0.0);
-        try pipeline.setModuleParam(mod_color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 }); // from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
+        // from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
+        try pipeline.setModuleParam(mod_color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 });
         try pipeline.setModuleParam(mod_filmcurv, "colormode", i32, 1);
         try pipeline.setModuleParam(mod_filmcurv, "brightness", f32, 3.8);
         try pipeline.setModuleParam(mod_filmcurv, "contrast", f32, 1.3);
