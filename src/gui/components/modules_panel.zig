@@ -14,10 +14,20 @@ const ui = @import("types").ui;
 const max_str_bytes = 256;
 
 pub const ModulesPanel = struct {
-    pub fn draw(s: *session.Session, panel_open: *bool) void {
+    /// Draw the pipeline modules pinned to `rect` (imgui logical units). The
+    /// darkroom owns the panel's placement in the split layout, so the window
+    /// is fixed in place and has no title bar of its own.
+    pub fn draw(s: *session.Session, rect: session.Rect) void {
         // no `MenuBar` flag: it reserves a menu-bar strip we never draw into,
         // which shows up as a blank band under the title bar.
-        if (!ig.igBegin("Modules", panel_open, ig.ImGuiWindowFlags_None)) {
+        const flags = ig.ImGuiWindowFlags_NoTitleBar |
+            ig.ImGuiWindowFlags_NoResize |
+            ig.ImGuiWindowFlags_NoMove |
+            ig.ImGuiWindowFlags_NoBringToFrontOnFocus |
+            ig.ImGuiWindowFlags_NoSavedSettings;
+        ig.igSetNextWindowPos(.{ .x = rect.x, .y = rect.y }, ig.ImGuiCond_Always);
+        ig.igSetNextWindowSize(.{ .x = rect.w, .y = rect.h }, ig.ImGuiCond_Always);
+        if (!ig.igBegin("Modules", null, flags)) {
             ig.igEnd();
             return;
         }

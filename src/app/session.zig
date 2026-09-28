@@ -10,6 +10,8 @@ const sapp = sokol.app;
 const pie = @import("pie");
 
 const Blit = @import("blit.zig").Blit;
+/// A framebuffer-pixel region: where the image is allowed to draw.
+pub const Rect = @import("blit.zig").Rect;
 const Catalog = @import("catalog.zig").Catalog;
 
 const slog = std.log.scoped(.session);

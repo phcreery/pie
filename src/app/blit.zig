@@ -1,9 +1,9 @@
 //! sokol-gfx resources that draw the pipeline's display texture as a
-//! letterboxed fullscreen quad.
+//! letterboxed quad.
 //!
 //! Part of the editing session: blitting a texture into the swapchain pass is
 //! stable code, so it stays out of the GUI. The darkroom supplies only the view
-//! transform (zoom/pan).
+//! transform (zoom/pan) and the screen region the image may occupy.
 
 const std = @import("std");
 const sokol = @import("sokol");
@@ -11,6 +11,14 @@ const shd = @import("texview_shader");
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const pie = @import("pie");
+
+pub const Rect = struct {
+    /// top-left corner and size, in framebuffer pixels
+    x: f32 = 0,
+    y: f32 = 0,
+    w: f32 = 0,
+    h: f32 = 0,
+};
 
 pub const Blit = struct {
     img: sg.Image = .{},
@@ -74,8 +82,22 @@ pub const Blit = struct {
         return .{ base[0] * zoom, base[1] * zoom };
     }
 
-    pub fn draw(self: *Blit, zoom: f32, pan: [2]f32) void {
+    /// Draw the image letterboxed (and panned/zoomed) inside `rect`, a region
+    /// of the framebuffer in pixels. `zoom`/`pan` are relative to that region:
+    /// pan 1.0 moves the image half a region, so panning feels the same at any
+    /// region size. The image is clipped to the region.
+    pub fn draw(self: *Blit, zoom: f32, pan: [2]f32, rect: Rect) void {
         if (!self.hasTexture()) return;
+
+        const win_w = sapp.widthf();
+        const win_h = sapp.heightf();
+        if (win_w <= 0 or win_h <= 0 or rect.w <= 0 or rect.h <= 0) return;
+
+        // the region's center and half-size as fractions of the full screen NDC
+        const center_x = ((rect.x + rect.w * 0.5) / win_w) * 2.0 - 1.0;
+        const center_y = 1.0 - ((rect.y + rect.h * 0.5) / win_h) * 2.0;
+        const half_x = rect.w / win_w;
+        const half_y = rect.h / win_h;
 
         const bindings = sg.Bindings{
             .views = init: {
@@ -90,15 +112,22 @@ pub const Blit = struct {
             },
         };
 
-        const scale = scaleFor(self.width, self.height, sapp.widthf(), sapp.heightf(), zoom);
+        const base = scaleFor(self.width, self.height, rect.w, rect.h, zoom);
         const vs_params = shd.VsParams{
-            .scale = scale,
-            .offset = pan,
+            .scale = .{ base[0] * half_x, base[1] * half_y },
+            .offset = .{ center_x + half_x * pan[0], center_y + half_y * pan[1] },
         };
 
         sg.applyPipeline(self.pip);
         sg.applyBindings(bindings);
         sg.applyUniforms(shd.UB_vs_params, .{ .ptr = &vs_params, .size = @sizeOf(shd.VsParams) });
+        sg.applyScissorRect(
+            @intFromFloat(rect.x),
+            @intFromFloat(rect.y),
+            @intFromFloat(rect.w),
+            @intFromFloat(rect.h),
+            true,
+        );
         sg.draw(0, 4, 1);
     }
 

@@ -4,12 +4,18 @@ const std = @import("std");
 const ig = @import("cimgui");
 const sapp = @import("sokol").app;
 const session = @import("session");
-const GUI = @import("../root.zig").GUI;
+const root = @import("../root.zig");
+const GUI = root.GUI;
 
 pub const MenuBar = struct {
     pub fn draw(gui: *GUI, s: *session.Session) void {
         if (!ig.igBeginMainMenuBar()) return;
         defer ig.igEndMainMenuBar();
+
+        // Switch between darkroom and lighttable views
+        var label_buf: [32]u8 = undefined;
+        const label = std.mem.printSentinel(&label_buf, "{s}##view", .{viewName(gui.view)}, 0) catch "##view";
+        if (ig.igButton(label.ptr)) gui.view = switchView(gui.view);
 
         if (ig.igBeginMenu("File")) {
             if (ig.igMenuItemEx("Reload catalog", "", false, true)) {
@@ -21,19 +27,16 @@ pub const MenuBar = struct {
             }
             ig.igEndMenu();
         }
+    }
 
-        if (ig.igBeginMenu("View")) {
-            if (ig.igMenuItemEx("Darkroom", "", gui.view == .darkroom, true)) {
-                gui.view = .darkroom;
-            }
-            if (ig.igMenuItemEx("Lighttable", "", gui.view == .lighttable, true)) {
-                gui.view = .lighttable;
-            }
-            ig.igEndMenu();
-        }
+    fn switchView(view: root.ViewKind) root.ViewKind {
+        return if (view == .darkroom) .lighttable else .darkroom;
+    }
 
-        var buf: [96]u8 = undefined;
-        const status = std.mem.printSentinel(&buf, "{s}  |  {d} images", .{ @tagName(gui.view), s.catalog.entries.len }, 0) catch "";
-        ig.igText("%s", status.ptr);
+    fn viewName(view: root.ViewKind) []const u8 {
+        return switch (view) {
+            .darkroom => "Darkroom",
+            .lighttable => "Lighttable",
+        };
     }
 };

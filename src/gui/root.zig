@@ -11,6 +11,7 @@ const session = @import("session");
 const Darkroom = @import("./views/darkroom.zig").Darkroom;
 const Lighttable = @import("./views/lighttable.zig").Lighttable;
 const MenuBar = @import("./components/menu_bar.zig").MenuBar;
+const theme = @import("./theme.zig");
 
 pub const ViewKind = enum { darkroom, lighttable };
 
@@ -22,6 +23,7 @@ pub const GUI = struct {
     lighttable: Lighttable = .{},
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io) !GUI {
+        theme.apply();
         return .{ .allocator = allocator, .io = io };
     }
 
@@ -30,8 +32,12 @@ pub const GUI = struct {
     }
 
     /// The image quad is drawn behind the widgets, before the rest of the GUI.
+    /// The darkroom lays its split out first so the blit and the widgets agree
+    /// on where the image region is.
     pub fn drawImage(self: *GUI, s: *session.Session) void {
-        if (self.view == .darkroom) s.blit.draw(self.darkroom.zoom, self.darkroom.pan);
+        if (self.view != .darkroom) return;
+        self.darkroom.layout();
+        s.blit.draw(self.darkroom.zoom, self.darkroom.pan, self.darkroom.image_rect);
     }
 
     /// Draw the menu bar and the active view's widgets. The menu bar is drawn
