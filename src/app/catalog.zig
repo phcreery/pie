@@ -1,11 +1,12 @@
 //! Image catalog behind the lighttable.
 //!
 //! Thumbnails are decoded with the pie engine's recommended pipeline for the
-//! file type (`i-raw` / `i-png` -> `downscale` -> `o-png`) and cached as small
-//! PNGs under the user cache directory, keyed by the source's path, size and
-//! mtime. Rendering happens on a worker thread so browsing a directory never
-//! blocks the UI; the main thread only loads the finished PNG and uploads it to
-//! sokol (like vkdt's `.bc1` cache, minus the GPU-format step).
+//! file type (whatever `i-*` module `pie.graphs` picks -> `downscale` ->
+//! `o-qoi`) and cached as small QOI images under the user cache directory,
+//! keyed by the source's path, size and mtime. Rendering happens on a worker
+//! thread so browsing a directory never blocks the UI; the main thread only
+//! loads the finished image and uploads it to sokol (like vkdt's `.bc1` cache,
+//! minus the GPU-format step).
 
 const std = @import("std");
 const sokol = @import("sokol");
@@ -19,9 +20,17 @@ const slog = std.log.scoped(.catalog);
 /// longest edge of a generated thumbnail, in pixels
 pub const thumb_px: u32 = 256;
 
+/// Thumbnail cache format. QOI encodes in a fraction of PNG's time and the
+/// cached pixels are uploaded as RGBA8 anyway, so the 16-bit PNG cache bought
+/// nothing for the extra encode time.
+const cache_module = "o-qoi";
+const cache_extension = "qoi";
+/// The sink's filename when the graph is built; every render re-points it.
+const cache_placeholder = "thumbnail." ++ cache_extension;
+
 /// Bumped when the cached thumbnail format/content changes, so old cache files
 /// are simply missed instead of being misread.
-const cache_version: u32 = 2;
+const cache_version: u32 = 3;
 
 /// How many finished thumbnails the main thread uploads per frame.
 const uploads_per_tick: usize = 8;
@@ -32,11 +41,9 @@ const uploads_per_tick: usize = 8;
 pub const Status = enum(u8) { pending, rendering, cached, ready, failed };
 
 pub const Entry = struct {
-    /// file name, for display
     name: []u8,
-    /// path handed to the engine when the entry is opened or rendered
     path: []u8,
-    status: std.atomic.Value(u8) = .init(@backingInt(Status.pending)),
+    status: std.atomic.Value(Status) = .init(.pending),
     /// uploaded thumbnail, owned by the main thread
     image: sg.Image = .{},
     view: sg.View = .{},
@@ -46,8 +53,8 @@ pub const Entry = struct {
     height: u32 = 0,
 };
 
-/// A cached decode pipeline: the engine's recommended graph for one file kind,
-/// ending in an `o-png` sink whose `filename` is re-pointed at each entry.
+/// A cached decode pipeline: the engine's recommended graph for one input
+/// family, ending in a file sink whose `filename` is re-pointed at each entry.
 const Decoder = struct {
     pipeline: pie.Pipeline,
     source: pie.pipeline.ModuleHandle,
@@ -58,16 +65,15 @@ pub const Catalog = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
     gpu: *pie.GPU,
-    /// directory that was scanned, absolute
     dir: []u8,
-    /// where rendered thumbnails are cached
     cache_dir: []u8,
     entries: []Entry = &.{},
 
     // Decoders are created lazily by the worker thread and only touched there
-    // (or by the main thread when no worker is running).
-    raw_decoder: ?Decoder = null,
-    png_decoder: ?Decoder = null,
+    // (or by the main thread when no worker is running). Keyed by the `i-*`
+    // module that reads the file, so another decoder family needs no change
+    // here. The values are heap-allocated because the map moves its storage.
+    decoders: std.StringHashMapUnmanaged(*Decoder) = .empty,
 
     // worker bookkeeping: one thread per scan walks the entries slice once and
     // exits, so the slice must stay stable until it is joined (see `reload`).
@@ -114,8 +120,12 @@ pub const Catalog = struct {
         self.stopWorker();
         self.destroyThumbnails();
         self.freeEntries();
-        if (self.raw_decoder) |*decoder| decoder.pipeline.deinit();
-        if (self.png_decoder) |*decoder| decoder.pipeline.deinit();
+        var decoders = self.decoders.valueIterator();
+        while (decoders.next()) |decoder| {
+            decoder.*.pipeline.deinit();
+            self.allocator.destroy(decoder.*);
+        }
+        self.decoders.deinit(self.allocator);
         self.allocator.free(self.dir);
         self.allocator.free(self.cache_dir);
         self.allocator.destroy(self);
@@ -160,13 +170,13 @@ pub const Catalog = struct {
 
         var uploaded: usize = 0;
         for (self.entries) |*entry| {
-            if (entry.status.load(.acquire) != @backingInt(Status.cached)) continue;
+            if (entry.status.load(.acquire) != Status.cached) continue;
             self.uploadEntry(entry) catch |err| {
                 slog.warn("thumbnail for '{s}' failed: {s}", .{ entry.path, @errorName(err) });
-                entry.status.store(@backingInt(Status.failed), .release);
+                entry.status.store(Status.failed, .release);
                 continue;
             };
-            entry.status.store(@backingInt(Status.ready), .release);
+            entry.status.store(Status.ready, .release);
             uploaded += 1;
             if (uploaded >= uploads_per_tick) break;
         }
@@ -185,7 +195,7 @@ pub const Catalog = struct {
 
     pub fn entryState(self: *const Self, index: usize) struct { failed: bool, ready: bool } {
         if (index >= self.entries.len) return .{ .failed = false, .ready = false };
-        const status: Status = @fromBackingInt(@intCast(self.entries[index].status.load(.acquire)));
+        const status: Status = self.entries[index].status.load(.acquire);
         return .{
             .failed = status == .failed,
             .ready = status == .ready,
@@ -217,7 +227,7 @@ pub const Catalog = struct {
             if (dirent.kind == .directory) continue;
             // The engine's registry is the single source of truth for what can
             // be decoded, so scanning can't list a file no decoder handles.
-            if (pie.graphs.kindForPath(dirent.name) == .unsupported) continue;
+            if (pie.graphs.formatForPath(dirent.name) == null) continue;
 
             const path = try std.fs.path.join(self.allocator, &.{ self.dir, dirent.name });
             errdefer self.allocator.free(path);
@@ -248,7 +258,7 @@ pub const Catalog = struct {
             entry.texture = 0;
             entry.width = 0;
             entry.height = 0;
-            entry.status.store(@backingInt(Status.pending), .release);
+            entry.status.store(Status.pending, .release);
         }
     }
 
@@ -272,7 +282,7 @@ pub const Catalog = struct {
         var version = cache_version;
         hasher.update(std.mem.asBytes(&version));
 
-        const file = try std.fmt.allocPrint(self.allocator, "{x:0>16}.png", .{hasher.final()});
+        const file = try std.fmt.allocPrint(self.allocator, "{x:0>16}.{s}", .{ hasher.final(), cache_extension });
         defer self.allocator.free(file);
         return std.fs.path.join(self.allocator, &.{ self.cache_dir, file });
     }
@@ -288,16 +298,16 @@ pub const Catalog = struct {
     }
 
     fn renderToFile(self: *Self, entry: *Entry, cache_path: []const u8) !void {
-        const kind = pie.graphs.kindForPath(entry.path);
-        const decoder = try self.ensureDecoder(kind);
+        const format = pie.graphs.formatForPath(entry.path) orelse return error.UnsupportedFileType;
+        const decoder = try self.ensureDecoder(format);
 
         // Render to a temporary file, then rename it into place so a crash or a
         // failed render can never be mistaken for a valid cache entry.
         const tmp_path = try std.fmt.allocPrint(self.allocator, "{s}.tmp", .{cache_path});
         defer self.allocator.free(tmp_path);
 
-        try decoder.pipeline.setModuleParam(decoder.sink, "filename", []const u8, tmp_path);
         try decoder.pipeline.setModuleParam(decoder.source, "filename", []const u8, entry.path);
+        try decoder.pipeline.setModuleParam(decoder.sink, "filename", []const u8, tmp_path);
         try decoder.pipeline.run();
 
         std.Io.Dir.renameAbsolute(tmp_path, cache_path, self.io) catch |err| {
@@ -306,30 +316,33 @@ pub const Catalog = struct {
         };
     }
 
-    /// Lazily build (and cache) the decode pipeline for `kind`.
-    fn ensureDecoder(self: *Self, kind: pie.graphs.FileKind) !*Decoder {
-        const slot = switch (kind) {
-            .raw => &self.raw_decoder,
-            .png => &self.png_decoder,
-            .unsupported => return error.UnsupportedFileType,
-        };
-        if (slot.*) |*decoder| return decoder;
+    /// Lazily build (and cache) the decode pipeline for `format`.
+    fn ensureDecoder(self: *Self, format: *const pie.graphs.Format) !*Decoder {
+        const slot = try self.decoders.getOrPut(self.allocator, format.source_module);
+        if (slot.found_existing) return slot.value_ptr.*;
+        errdefer _ = self.decoders.remove(format.source_module);
 
-        var pipeline = try pie.Pipeline.init(self.allocator, self.io, self.gpu, .{
+        const decoder = try self.allocator.create(Decoder);
+        errdefer self.allocator.destroy(decoder);
+
+        decoder.pipeline = try pie.Pipeline.init(self.allocator, self.io, self.gpu, .{
             .upload_buffer_size_bytes = 96 * 1024 * 1024,
             .download_buffer_size_bytes = 8 * 1024 * 1024,
         });
-        errdefer pipeline.deinit();
+        errdefer decoder.pipeline.deinit();
 
-        // The sink's filename is overwritten per render; this is just a
-        // placeholder so the graph ends in a file sink.
-        const graph = try pie.graphs.recommendKind(&pipeline, kind, .{
+        // The graph's sink is re-pointed at each entry's cache file, so this
+        // path only has to end the graph in a file sink.
+        const graph = try pie.graphs.recommendFormat(&decoder.pipeline, format, .{
             .max_edge = thumb_px,
-            .output_path = "thumbnail.png",
+            .output_path = cache_placeholder,
+            .output_module = cache_module,
         });
-        slot.* = .{ .pipeline = pipeline, .source = graph.source, .sink = graph.sink };
-        if (slot.*) |*decoder| return decoder;
-        unreachable;
+        decoder.source = graph.source;
+        decoder.sink = graph.sink;
+
+        slot.value_ptr.* = decoder;
+        return decoder;
     }
 
     // ------------------------------------------------------------------------
@@ -356,15 +369,15 @@ pub const Catalog = struct {
     fn workerMain(self: *Self) void {
         for (self.entries) |*entry| {
             if (self.stop.load(.acquire)) return;
-            if (entry.status.load(.acquire) != @backingInt(Status.pending)) continue;
+            if (entry.status.load(.acquire) != Status.pending) continue;
 
-            entry.status.store(@backingInt(Status.rendering), .release);
+            entry.status.store(Status.rendering, .release);
             self.renderEntry(entry) catch |err| {
                 slog.warn("thumbnail for '{s}' failed: {s}", .{ entry.path, @errorName(err) });
-                entry.status.store(@backingInt(Status.failed), .release);
+                entry.status.store(Status.failed, .release);
                 continue;
             };
-            entry.status.store(@backingInt(Status.cached), .release);
+            entry.status.store(Status.cached, .release);
         }
     }
 
@@ -372,14 +385,14 @@ pub const Catalog = struct {
     /// pending thumbnail on the main thread so thumbnails still appear.
     fn renderPendingOnMainThread(self: *Self) void {
         for (self.entries) |*entry| {
-            if (entry.status.load(.acquire) != @backingInt(Status.pending)) continue;
-            entry.status.store(@backingInt(Status.rendering), .release);
+            if (entry.status.load(.acquire) != Status.pending) continue;
+            entry.status.store(Status.rendering, .release);
             self.renderEntry(entry) catch |err| {
                 slog.warn("thumbnail for '{s}' failed: {s}", .{ entry.path, @errorName(err) });
-                entry.status.store(@backingInt(Status.failed), .release);
+                entry.status.store(Status.failed, .release);
                 return;
             };
-            entry.status.store(@backingInt(Status.cached), .release);
+            entry.status.store(Status.cached, .release);
             return;
         }
     }

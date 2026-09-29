@@ -83,4 +83,4 @@ zig 0.17.0-dev.1464+6aff551f1
 ### Linux
 
 `alsa-lib-devel libX11-devel mesa-libGL mesa-libGL-devel libXi-devel libXcursor-devel`
-`libX11-devel libXi-devel libXcursor-devel libXrandr-devel mesa-libGL-devel`
+`libX11-devel libXi-devel libXcursor-devel libXrandr-devel mesa-libGL-devel libgtk-3-dev`

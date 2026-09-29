@@ -14,6 +14,7 @@ pub fn populateRepository(repo: *Repository) !void {
     try repo.add(@import("filmcurv/module.zig").desc);
     try repo.add(@import("downscale/module.zig").desc);
     try repo.add(@import("o-png/module.zig").desc);
+    try repo.add(@import("o-qoi/module.zig").desc);
     try repo.add(@import("o-ppm/module.zig").desc);
     try repo.add(@import("o-display/module.zig").desc);
 
