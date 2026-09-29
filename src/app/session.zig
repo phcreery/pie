@@ -13,7 +13,7 @@ const Blit = @import("blit.zig").Blit;
 /// A framebuffer-pixel region: where the image is allowed to draw.
 pub const Rect = @import("blit.zig").Rect;
 const Catalog = @import("catalog.zig").Catalog;
-const folder = @import("folder.zig");
+const nfd = @import("nfd");
 
 const slog = std.log.scoped(.session);
 
@@ -83,7 +83,7 @@ pub const Session = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        folder.deinit();
+        nfd.deinit();
         self.blit.deinit();
         self.catalog.deinit();
         self.pipeline.deinit();
@@ -184,7 +184,7 @@ pub const Session = struct {
     /// it has already been submitted, and no render pass is open while the
     /// catalog swaps its GPU thumbnails.
     fn browseCatalogNow(self: *Self) void {
-        const picked = folder.pickFolder(self.allocator, self.catalog.dir) orelse return;
+        const picked = nfd.pickFolder(self.allocator, self.catalog.dir) orelse return;
         defer self.allocator.free(picked);
 
         self.catalog.setDir(picked) catch |err| {

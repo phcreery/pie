@@ -1,16 +1,18 @@
 //! Native folder chooser, backed by nativefiledialog-extended.
 //!
-//! Only the single-folder picker is needed, so the four C entry points are
-//! declared here directly instead of pulling `nfd.h` in through `@cImport`.
-//! `NFD_PickFolderU8`/`NFD_FreePathU8` are the UTF-8 variants and are valid on
-//! every platform; the unsuffixed ones alias to UTF-16 on Windows.
+//! The `nfd` C library is built by the `nativefiledialog_extended` package and
+//! linked into this module (see `build.zig`). That package ships the headers and
+//! the build glue but no Zig bindings, and only the single-folder picker is
+//! needed, so the C entry points are declared here rather than pulled in through
+//! `@cImport`. The `U8` variants are UTF-8 on every platform (`N` variants alias
+//! to UTF-16 on Windows).
 //!
 //! The dialog is modal and blocks the calling thread, so it must be opened from
 //! the main thread and outside the render pass (see `Session.tick`).
 
 const std = @import("std");
 
-const slog = std.log.scoped(.folder);
+const slog = std.log.scoped(.nfd);
 
 extern fn NFD_Init() c_int;
 extern fn NFD_Quit() void;

@@ -163,22 +163,32 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         },
     );
 
+    // NFD MODULE
+    // Native folder chooser; the module links the vendored C library so
+    // importers only need `@import("nfd")`.
+    const mod_nfd = b.createModule(.{
+        .root_source_file = b.path("src/nfd/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{},
+    });
+    mod_nfd.linkLibrary(dep_nfd.artifact("nfd"));
+
     // SESSION MODULE
     const mod_session = b.createModule(.{
         .root_source_file = b.path("src/app/session.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "types", .module = mod_types },
             .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
+            .{ .name = "nfd", .module = mod_nfd },
         },
     });
-    // vendored C library behind the native folder chooser
-    mod_session.linkLibrary(dep_nfd.artifact("nfd"));
 
     // GUI MODULE
     const mod_gui = b.createModule(.{
