@@ -18,7 +18,7 @@ pub const ViewKind = enum { darkroom, lighttable };
 pub const GUI = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    view: ViewKind = .darkroom,
+    view: ViewKind = .lighttable,
     darkroom: Darkroom = .{},
     lighttable: Lighttable = .{},
 

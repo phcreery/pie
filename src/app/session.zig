@@ -13,6 +13,7 @@ const Blit = @import("blit.zig").Blit;
 /// A framebuffer-pixel region: where the image is allowed to draw.
 pub const Rect = @import("blit.zig").Rect;
 const Catalog = @import("catalog.zig").Catalog;
+const folder = @import("folder.zig");
 
 const slog = std.log.scoped(.session);
 
@@ -50,6 +51,7 @@ pub const Session = struct {
     /// Deferred GUI requests, applied in `tick` (outside the render pass).
     pending_open: ?u32 = null,
     pending_reload: bool = false,
+    pending_browse: bool = false,
 
     const Self = @This();
 
@@ -81,6 +83,7 @@ pub const Session = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        folder.deinit();
         self.blit.deinit();
         self.catalog.deinit();
         self.pipeline.deinit();
@@ -90,6 +93,10 @@ pub const Session = struct {
     /// Per-frame host work: apply deferred GUI requests, then move catalog
     /// thumbnails along. MUST run before `simgui.newFrame` (it submits GPU work).
     pub fn tick(self: *Self) void {
+        if (self.pending_browse) {
+            self.pending_browse = false;
+            self.browseCatalogNow();
+        }
         if (self.pending_reload) {
             self.pending_reload = false;
             self.reloadCatalogNow();
@@ -165,6 +172,26 @@ pub const Session = struct {
     /// Rescan the catalog directory (applied in `tick`).
     pub fn reloadCatalog(self: *Self) void {
         self.pending_reload = true;
+    }
+
+    /// Ask for a new catalog directory with the platform's folder picker
+    /// (applied in `tick`, which may block until the user answers).
+    pub fn browseCatalog(self: *Self) void {
+        self.pending_browse = true;
+    }
+
+    /// The modal dialog blocks, so this runs in `tick`: the frame that asked for
+    /// it has already been submitted, and no render pass is open while the
+    /// catalog swaps its GPU thumbnails.
+    fn browseCatalogNow(self: *Self) void {
+        const picked = folder.pickFolder(self.allocator, self.catalog.dir) orelse return;
+        defer self.allocator.free(picked);
+
+        self.catalog.setDir(picked) catch |err| {
+            slog.warn("cannot list '{s}': {s}", .{ picked, @errorName(err) });
+            return;
+        };
+        slog.info("catalog directory is now '{s}'", .{picked});
     }
 
     fn openImageNow(self: *Self, index: u32) void {

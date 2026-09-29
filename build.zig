@@ -40,6 +40,8 @@ pub fn build(b: *Build) !void { // $ls root_id 1
     // imported modules at the root artifact's optimize level).
     const dep_opts_fast = .{ .target = target, .optimize = .ReleaseFast };
     const dep_libraw = b.dependency("libraw", dep_opts_fast);
+    // native folder chooser; the package compiles the C library for the target
+    const dep_nfd = b.dependency("nativefiledialog_extended", opts);
     const dep_wgpu_zig = b.dependency("wgpu-zig", .{});
     const dep_zigimg = b.dependency("zigimg", dep_opts_fast);
     const dep_zbench = b.dependency("zbench", opts);
@@ -166,6 +168,7 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         .root_source_file = b.path("src/app/session.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "types", .module = mod_types },
@@ -174,6 +177,8 @@ pub fn build(b: *Build) !void { // $ls root_id 1
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
         },
     });
+    // vendored C library behind the native folder chooser
+    mod_session.linkLibrary(dep_nfd.artifact("nfd"));
 
     // GUI MODULE
     const mod_gui = b.createModule(.{

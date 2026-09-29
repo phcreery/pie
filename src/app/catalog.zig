@@ -58,7 +58,7 @@ pub const Catalog = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
     gpu: *pie.GPU,
-    /// directory that was scanned
+    /// directory that was scanned, absolute
     dir: []u8,
     /// where rendered thumbnails are cached
     cache_dir: []u8,
@@ -87,11 +87,15 @@ pub const Catalog = struct {
     ) !*Self {
         const self = try allocator.create(Self);
         errdefer allocator.destroy(self);
+        const abs_dir = absoluteDir(allocator, io, dir) catch |err| blk: {
+            slog.warn("cannot resolve '{s}': {s}", .{ dir, @errorName(err) });
+            break :blk try allocator.dupe(u8, dir);
+        };
         self.* = .{
             .allocator = allocator,
             .io = io,
             .gpu = gpu,
-            .dir = try allocator.dupe(u8, dir),
+            .dir = abs_dir,
             .cache_dir = try allocator.dupe(u8, cache_dir),
         };
         errdefer allocator.free(self.dir);
@@ -126,6 +130,25 @@ pub const Catalog = struct {
 
         self.scan() catch |err| slog.err("rescan of '{s}' failed: {s}", .{ self.dir, @errorName(err) });
         self.startWorker();
+    }
+
+    /// Point the catalog at `dir` and rescan it. The path is resolved to an
+    /// absolute one and must name a readable directory; otherwise the current
+    /// directory is kept and the error is returned.
+    pub fn setDir(self: *Self, dir: []const u8) !void {
+        const resolved = try absoluteDir(self.allocator, self.io, dir);
+
+        // swap only once the directory is known to be scannable
+        var probe = std.Io.Dir.cwd().openDir(self.io, resolved, .{ .iterate = true }) catch |err| {
+            self.allocator.free(resolved);
+            return err;
+        };
+        probe.close(self.io);
+
+        const old = self.dir;
+        self.dir = resolved;
+        self.reload();
+        self.allocator.free(old);
     }
 
     /// Main thread: upload thumbnails the worker finished rendering. Cached
@@ -398,4 +421,13 @@ pub const Catalog = struct {
 
 fn lessByName(_: void, a: Entry, b: Entry) bool {
     return std.mem.lessThan(u8, a.name, b.name);
+}
+
+/// Absolute, symlink-resolved path of `dir` (which must exist). Owned by the
+/// caller. The catalog keeps this so the lighttable can show, and the folder
+/// picker can seed itself with, a full path.
+fn absoluteDir(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) ![]u8 {
+    const resolved = try std.Io.Dir.cwd().realPathFileAlloc(io, dir, allocator);
+    defer allocator.free(resolved);
+    return allocator.dupe(u8, resolved);
 }

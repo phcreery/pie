@@ -10,10 +10,10 @@ const session = @import("session");
 const GUI = @import("../root.zig").GUI;
 
 pub const Lighttable = struct {
-    /// thumbnail square, cell = thumb + label strip
+    /// thumbnail square, inset by `pad` inside its cell; the label sits below
     const thumb_px: f32 = 128;
-    const cell_w: f32 = 148;
-    const cell_h: f32 = 136;
+    const cell_w: f32 = thumb_px + pad * 2;
+    const cell_h: f32 = thumb_px + pad * 2;
     const pad: f32 = 4;
 
     /// ABGR (imgui's packing)
@@ -40,7 +40,15 @@ pub const Lighttable = struct {
         }
         defer ig.igEnd();
 
-        drawStatus(self, s);
+        // the directory can change under us, so the selection may be stale
+        const count = s.catalog.entries.len;
+        if (count == 0) {
+            self.selected = 0;
+        } else if (self.selected >= count) {
+            self.selected = @intCast(count - 1);
+        }
+
+        drawDirBar(s);
         ig.igSeparator();
 
         var avail = ig.igGetContentRegionAvail();
@@ -61,24 +69,20 @@ pub const Lighttable = struct {
         }
     }
 
-    fn drawStatus(self: *Lighttable, s: *session.Session) void {
-        const entries = s.catalog.entries;
+    /// The catalog's directory, as a full path. Clicking it asks the host for a
+    /// different one (a native folder dialog) and rescans.
+    fn drawDirBar(s: *session.Session) void {
+        var buf: [1024]u8 = undefined;
+        // `##dir` keeps the widget id stable while the path changes
+        const label = std.mem.printSentinel(&buf, "{s}##dir", .{s.catalog.dir}, 0) catch return;
 
-        var pending: usize = 0;
-        for (0..entries.len) |i| {
-            const st = s.catalog.entryState(i);
-            if (!st.ready and !st.failed) pending += 1;
+        const width = @max(1, ig.igGetContentRegionAvail().x);
+        if (ig.igSelectableEx(label.ptr, false, ig.ImGuiSelectableFlags_None, .{ .x = width, .y = 0 })) {
+            s.browseCatalog();
         }
-
-        var buf: [512]u8 = undefined;
-        const selected = if (self.selected < entries.len)
-            entries[self.selected].name
-        else
-            "";
-        const line = std.mem.printSentinel(&buf, "{s}   {d} images, {d} decoding   selected: {s}", .{
-            s.catalog.dir, entries.len, pending, selected,
-        }, 0) catch return;
-        ig.igText("%s", line.ptr);
+        if (ig.igIsItemHovered(ig.ImGuiHoveredFlags_None)) {
+            ig.igSetItemTooltip("Click to open another folder");
+        }
     }
 
     fn drawGrid(self: *Lighttable, gui: *GUI, s: *session.Session, avail_w: f32) void {

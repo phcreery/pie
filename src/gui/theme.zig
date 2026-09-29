@@ -1,4 +1,4 @@
-//! ImGui theme: a port of the "Nuklear Dark Gray" style in `gui/theme.md`.
+//! ImGui theme: the "Nuklear Dark Gray" style, applied to the editor.
 //!
 //! Applied once at startup, before the first frame. `igGetStyle` hands back the
 //! global style instance, which Dear ImGui only allows poking between frames.
