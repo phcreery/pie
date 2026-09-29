@@ -30,7 +30,7 @@ comptime {
         // _ = @import("engine/pipe_dirty.zig");
         _ = @import("engine/pipe_fullsize.zig");
         _ = @import("engine/pipe_png.zig");
-        _ = @import("engine/pipe_thumbnail.zig");
+        // _ = @import("engine/pipe_graphs.zig");
 
         // TARGETS
         // _ = @import("targets/targets.zig");

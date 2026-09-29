@@ -151,6 +151,14 @@ pub fn build(b: *Build) !void { // $ls root_id 1
         },
     });
 
+    // DEFAULT PIPELINE GRAPHS
+    // `graphs.zig` builds its recommended pipelines by deserializing these
+    // assets (one per `i-*` family, named after it), so they are compiled into
+    // the module. Adding a decoder means adding an asset and a table row there,
+    // plus the import below.
+    mod_pie.addAnonymousImport("default.i-raw.graph", .{ .root_source_file = b.path("assets/default.i-raw.graph") });
+    mod_pie.addAnonymousImport("default.i-png.graph", .{ .root_source_file = b.path("assets/default.i-png.graph") });
+
     // PIE MODULES SPIR-V SHADERS
     try spv.compileAndEmbedZigSpirVModules(
         b,

@@ -71,12 +71,10 @@ test "preset round trip preserves pipeline state" {
     try pie.serdes.serialize(&pipe_a, &w_a.writer);
     const text_a = w_a.written();
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
 
     var pipe_b = try Pipeline.init(allocator, io, null, null);
     defer pipe_b.deinit();
-    try pie.serdes.deserialize(&pipe_b, arena.allocator(), text_a);
+    try pie.serdes.deserialize(&pipe_b, text_a);
 
     var w_b = std.Io.Writer.Allocating.init(allocator);
     defer w_b.deinit();
@@ -113,10 +111,8 @@ test "preset deserialize accepts vkdt syntax" {
         \\module:format:01
     ;
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
 
-    try pie.serdes.deserialize(&pipeline, arena.allocator(), text);
+    try pie.serdes.deserialize(&pipeline, text);
 
     // duplicate module line is deduped
     try std.testing.expectEqual(@as(usize, 2), pipeline.module_name_map.count());
@@ -151,11 +147,9 @@ test "preset deserialize skips bad lines leniently" {
         \\param:filmcurv:01:brightness:abc
     ;
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
 
     // no error return: bad lines are warned and skipped
-    try pie.serdes.deserialize(&pipeline, arena.allocator(), text);
+    try pie.serdes.deserialize(&pipeline, text);
 
     try std.testing.expect(pipeline.module_name_map.contains("format:01"));
     try std.testing.expect(!pipeline.module_name_map.contains("draw:01"));

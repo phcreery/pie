@@ -13,16 +13,10 @@ enabled: bool,
 
 dirty: bool = false,
 
-/// Live sockets, copied from `desc.sockets` at registration. All runtime
-/// socket state (roi, private members) lives here; the desc is never mutated.
+allocator: std.mem.Allocator,
+
 sockets: [api.MAX_SOCKETS]?Socket = @splat(null),
-
-/// The declared params, created from `desc.params` at registration. Each
-/// `Param` carries its own `ParamDesc`, so this is the single source of truth
-/// for param metadata; the module's `initParams` hook fills in the values.
 params: [api.MAX_PARAMS_PER_MODULE]?Param = @splat(null),
-
-/// UI hints, copied from `desc.params_ui`; index-aligned with `params`.
 params_ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null),
 
 /// Module-private data (e.g. a source module's loaded image). Owned by the
@@ -49,7 +43,7 @@ img_param_size: ?usize = null,
 // https://github.com/hanatos/vkdt/blob/1921eabfa2c87b90042dee676d5d3e34d8cbd5e1/src/pipe/global.c#L106
 initParams: ?*const fn (pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) anyerror!void = null,
 init: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) anyerror!void = null,
-deinit: ?*const fn (allocator: std.mem.Allocator, pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) void = null,
+deinit_hook: ?*const fn (allocator: std.mem.Allocator, pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) void = null,
 modifyOut: ?*const fn (pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) anyerror!void = null,
 createNodes: ?*const fn (pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) anyerror!void = null,
 readSource: ?*const fn (pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle, mapped: *anyopaque) anyerror!void = null,
@@ -57,11 +51,10 @@ writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *pipeline
 
 const Self = @This();
 
-/// Build a live module from its (comptime) descriptor: the descriptor's
-/// metadata, interface and hooks are copied into fixed-length runtime arrays.
 pub fn initFromDesc(allocator: std.mem.Allocator, id: []const u8, desc: api.ModuleDesc) !Self {
     var self = Self{
-        .id = id,
+        .allocator = allocator,
+        .id = try allocator.dupe(u8, id),
         .name = desc.name,
         .type = desc.type,
         .enabled = true,
@@ -70,7 +63,7 @@ pub fn initFromDesc(allocator: std.mem.Allocator, id: []const u8, desc: api.Modu
         .data = null,
         .initParams = desc.initParams,
         .init = desc.init,
-        .deinit = desc.deinit,
+        .deinit_hook = desc.deinit,
         .modifyOut = desc.modifyOut,
         .createNodes = desc.createNodes,
         .readSource = desc.readSource,
@@ -79,6 +72,7 @@ pub fn initFromDesc(allocator: std.mem.Allocator, id: []const u8, desc: api.Modu
     for (desc.sockets, 0..) |sock, i| {
         self.sockets[i] = Socket.fromDesc(sock);
     }
+    errdefer allocator.free(self.id);
     errdefer for (&self.params) |*maybe_param| {
         if (maybe_param.*) |*param| param.deinit(allocator);
     };
@@ -90,6 +84,13 @@ pub fn initFromDesc(allocator: std.mem.Allocator, id: []const u8, desc: api.Modu
         self.params_ui[i] = ui;
     }
     return self;
+}
+
+pub fn deinit(mod: *Self) void {
+    for (&mod.params) |*maybe_param| {
+        if (maybe_param.*) |*param| param.deinit(mod.allocator);
+    }
+    mod.allocator.free(mod.id);
 }
 
 // HELPER FUNCTIONS

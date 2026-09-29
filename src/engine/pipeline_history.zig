@@ -43,12 +43,10 @@ pub const PipelineHistory = struct {
         pipe.clear();
 
         // replay committed deltas over the empty graph
-        var scratch = std.heap.ArenaAllocator.init(pipe.allocator);
-        defer scratch.deinit();
         const all = self.histlist.all();
         const end = @min(target_clamped, all.len);
         for (all[0..end], 0..) |item, i| {
-            try serdes.apply(pipe, scratch.allocator(), item.line, i);
+            try serdes.apply(pipe, item.line, i);
         }
 
         self.histlist.setCursor(end);

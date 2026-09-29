@@ -3,8 +3,9 @@
 //! whitespace trimming, `#` full-line comments.
 //!
 //! `serialize` writes modules, then connects (destination-side only), then
-//! params. `deserialize` applies onto an existing pipeline
-//! only allocator errors propagate.
+//! params. `deserialize` applies onto an existing pipeline and only allocator
+//! errors propagate; module ids are owned by the pipeline (see
+//! `Pipeline._addModule`), so the lines may be transient.
 
 const std = @import("std");
 const api = @import("modules/api.zig");
@@ -18,7 +19,7 @@ const slog = std.log.scoped(.serdes);
 /// pipeline's registered repos. Unknown commands, unknown modules/params and
 /// failed connects log a warning and are skipped; only allocator errors
 /// propagate.
-pub fn apply(pipe: *pipeline.Pipeline, arena: std.mem.Allocator, line_in: []const u8, line_no: usize) !void {
+pub fn apply(pipe: *pipeline.Pipeline, line_in: []const u8, line_no: usize) !void {
     const line = std.mem.trimEnd(u8, line_in, "\r");
     if (line.len == 0) return;
     if (line[0] == '#') return;
@@ -27,7 +28,7 @@ pub fn apply(pipe: *pipeline.Pipeline, arena: std.mem.Allocator, line_in: []cons
     const cmd = tokens.next() orelse return;
 
     if (std.mem.eql(u8, cmd, "module")) {
-        return applyModule(pipe, arena, &tokens, line_no);
+        return applyModule(pipe, &tokens, line_no);
     } else if (std.mem.eql(u8, cmd, "connect") or std.mem.eql(u8, cmd, "feedback")) {
         return applyConnect(pipe, &tokens, line_no);
     } else if (std.mem.eql(u8, cmd, "param")) {
@@ -51,7 +52,6 @@ pub fn apply(pipe: *pipeline.Pipeline, arena: std.mem.Allocator, line_in: []cons
 
 fn applyModule(
     pipe: *pipeline.Pipeline,
-    arena: std.mem.Allocator,
     tokens: *std.mem.SplitIterator(u8, .scalar),
     line_no: usize,
 ) !void {
@@ -66,12 +66,11 @@ fn applyModule(
     const fullname = try std.mem.concat(pipe.allocator, u8, &.{ name, ":", inst });
     defer pipe.allocator.free(fullname);
     if (pipe.module_name_map.contains(fullname)) return; // dedup
-    const id_copy = try arena.dupe(u8, inst);
     if (pipe.repo.get(name) == null) {
         slog.warn("line {d}: unknown module '{s}', skipping", .{ line_no, name });
         return;
     }
-    _ = try pipe.addModuleNoRecord(id_copy, name);
+    _ = try pipe.addModuleNoRecord(inst, name);
 }
 
 fn applyRemoveModule(
@@ -309,11 +308,11 @@ pub fn paramToLine(pipe: *pipeline.Pipeline, mod_handle: pipeline.ModuleHandle, 
     return al.toOwnedSlice(pipe.allocator);
 }
 
-pub fn deserialize(pipe: *pipeline.Pipeline, arena: std.mem.Allocator, text: []const u8) !void {
+pub fn deserialize(pipe: *pipeline.Pipeline, text: []const u8) !void {
     var line_no: usize = 0;
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |raw| {
         line_no += 1;
-        try apply(pipe, arena, raw, line_no);
+        try apply(pipe, raw, line_no);
     }
 }

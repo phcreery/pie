@@ -1,0 +1,6 @@
+module:i-png:01
+module:format:01
+module:o-display:01
+connect:i-png:01:output:format:01:input
+connect:format:01:output:o-display:01:input
+param:i-png:01:filename:

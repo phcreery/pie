@@ -174,8 +174,10 @@ pub const Pipeline = struct {
 
     pub fn deinit(self: *Pipeline) void {
         slog.debug("De-initializing Pipeline", .{});
-        self.runModulesDeinit();
-        self.runModulesDeinitParams();
+        // run every live module's descriptor hook while its slot still
+        // resolves, then let the pool free the modules themselves
+        var mod_it = self.module_pool.liveHandles();
+        while (mod_it.next()) |handle| self.runModuleDeinitHook(handle);
         // the pool deinit will take care of deallocating the textures
         self.module_execution_order.deinit(self.allocator);
         self.repo.deinit();
@@ -228,12 +230,14 @@ pub const Pipeline = struct {
     fn _addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
         slog.debug("Adding module to pipeline: '{s}'", .{name});
         const module_desc = self.repo.get(name) orelse return error.ModuleNotFound;
+        // the module dupes its own id, so transient strings are fine here
+        // (e.g. slices of a deserialized graph)
         var module = try Module.initFromDesc(self.allocator, id, module_desc);
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
         const module_handle = try self.module_pool.add(module);
 
-        const fullname = try std.mem.concat(self.allocator, u8, &.{ module.name, ":", id });
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ module.name, ":", module.id });
 
         try self.module_name_map.put(fullname, module_handle);
         try self.initParams(module_handle);
@@ -535,8 +539,9 @@ pub const Pipeline = struct {
     /// Remove a module and record a `removemodule:` delta.
     pub fn removeModule(self: *Pipeline, module_handle: ModuleHandle) !void {
         const mod = try self.module_pool.getPtr(module_handle);
-        try self._removeModule(module_handle);
+        // recorded before the removal: removing the module frees its id
         try self.history.recordRemoveDelta(self.allocator, mod.name, mod.id);
+        try self._removeModule(module_handle);
     }
 
     /// Remove a module by name+instance (used by replay), freeing its map key,
@@ -551,15 +556,25 @@ pub const Pipeline = struct {
         try self.history.recordRemoveDelta(self.allocator, dst_mod_name, dst_mod_id);
     }
 
+    pub fn removeModuleByNameNoRecord(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8) !void {
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
+        defer self.allocator.free(fullname);
+        const kv = self.module_name_map.fetchRemove(fullname) orelse return error.ModuleNotFound;
+        self.allocator.free(kv.key);
+        try self._removeModule(kv.value);
+    }
+
+    fn runModuleDeinitHook(self: *Pipeline, mod_handle: ModuleHandle) void {
+        const mod = self.module_pool.getPtr(mod_handle) catch return;
+        if (mod.deinit_hook) |deinitFn| deinitFn(self.allocator, self, mod_handle);
+    }
+
     fn _removeModule(
         self: *Pipeline,
         mod_handle: ModuleHandle,
     ) !void {
-        const mod = self.module_pool.getPtr(mod_handle) catch return error.ModuleNotFound;
-        for (&mod.params) |*maybe_param_ptr| {
-            if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
-        }
-        if (mod.deinit) |deinitFn| deinitFn(self.allocator, self, mod_handle);
+        _ = self.module_pool.getPtr(mod_handle) catch return error.ModuleNotFound;
+        self.runModuleDeinitHook(mod_handle);
         self.module_pool.remove(mod_handle);
     }
 
@@ -697,9 +712,10 @@ pub const Pipeline = struct {
     // Private Pipeline functions
     // ================================================
 
-    /// Tear down every module (freeing params, name-map keys and module deinit
-    /// hooks) and node (freeing shaders/bindings). Connectors are left alone:
-    /// they are a growth pool shared by modules and get recycled lazily.
+    /// Tear down every module (running its deinit hook, then freeing its params,
+    /// id, name-map key and pool slot) and node (freeing shaders/bindings).
+    /// Connectors are left alone: they are a growth pool shared by modules and
+    /// get recycled lazily.
     pub fn clear(self: *Pipeline) void {
         var mod_handles = self.removeAllModules();
         defer mod_handles.deinit(self.allocator);
@@ -715,10 +731,9 @@ pub const Pipeline = struct {
 
         self.rerouted = true;
     }
-
-    /// Free every module name-map key, clear the map, remove every module
-    /// (params + deinit hook + pool slot), and return the handles (already
-    /// removed) for the caller's convenience.
+    /// Free every module name-map key, clear the map, then run each module's
+    /// deinit hook and drop its slot (which frees its params and id), returning
+    /// the handles (already removed) for the caller's convenience.
     fn removeAllModules(self: *Pipeline) std.ArrayList(ModuleHandle) {
         var handles = std.ArrayList(ModuleHandle).empty;
         var map_it = self.module_name_map.iterator();
@@ -729,11 +744,7 @@ pub const Pipeline = struct {
 
         var mod_it = self.module_pool.liveHandles();
         while (mod_it.next()) |h| {
-            const mod = self.module_pool.getPtr(h) catch continue;
-            for (&mod.params) |*maybe_param_ptr| {
-                if (maybe_param_ptr.*) |*param| param.deinit(self.allocator);
-            }
-            if (mod.deinit) |deinitFn| deinitFn(self.allocator, self, h);
+            self.runModuleDeinitHook(h);
             self.module_pool.remove(h);
             handles.append(self.allocator, h) catch unreachable;
         }
@@ -1654,28 +1665,6 @@ pub const Pipeline = struct {
         }
 
         download_buffer.unmap();
-    }
-
-    fn runModulesDeinit(self: *Pipeline) void {
-        for (self.module_execution_order.items) |module_handle| {
-            const module = self.module_pool.getPtr(module_handle) catch unreachable;
-            if (module.deinit) |deinitFn| {
-                deinitFn(self.allocator, self, module_handle);
-            }
-        }
-    }
-
-    fn runModulesDeinitParams(self: *Pipeline) void {
-        var module_pool_handles = self.module_pool.liveHandles();
-        while (module_pool_handles.next()) |module_handle| {
-            var module = self.module_pool.getPtr(module_handle) catch unreachable;
-            for (&module.params) |*maybe_param_ptr| {
-                var maybe_param = maybe_param_ptr.*;
-                if (maybe_param) |*param| {
-                    param.deinit(self.allocator);
-                }
-            }
-        }
     }
 };
 
