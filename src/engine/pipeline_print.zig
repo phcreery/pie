@@ -176,8 +176,9 @@ fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaqu
     var pipe: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
     const conn = pipe.connector_pool.getPtr(edge) catch unreachable;
 
-    const res = std.fmt.bufPrint(buf, "{s} {s} {s} {d}x{d}", .{
+    const res = std.fmt.bufPrint(buf, "{s} {s} {s} {s} {d}x{d}", .{
         @tagName(conn.*.color_profile.primaries),
+        @tagName(conn.*.color_profile.mapping),
         @tagName(conn.*.color_profile.white_point),
         @tagName(conn.*.texture.?.format),
         conn.*.texture.?.roi.h,

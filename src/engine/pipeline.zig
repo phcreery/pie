@@ -938,7 +938,7 @@ pub const Pipeline = struct {
         // white point and/or primaries, inherit the corresponding field
         // from the connected input's actual profile ("pass along the
         // previous profile if unchanged"). Modules that emit an explicit
-        // profile (e.g. color -> rec2020/d65) keep it. Source modules have
+        // profile (e.g. color -> linear rec709/srgb d65) keep it. Source modules have
         // no input, so their "any" fields stay "any".
         const input_profile = blk: {
             var prof: ?ColorProfile = null;
@@ -965,6 +965,7 @@ pub const Pipeline = struct {
                             output_socket.color_profile = .{
                                 .white_point = if (declared.white_point == .any) incoming.white_point else declared.white_point,
                                 .primaries = if (declared.primaries == .any) incoming.primaries else declared.primaries,
+                                .mapping = if (declared.mapping == .any) incoming.mapping else declared.mapping,
                             };
                         } else {
                             output_socket.color_profile = incoming;

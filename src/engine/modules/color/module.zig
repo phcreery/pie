@@ -18,15 +18,22 @@ pub const desc: api.ModuleDesc = .{
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-            // accepts camera primaries with any white balance (computed from temp/tint)
-            .color_profile = .{ .white_point = .any, .primaries = .camera },
+            // raw sensor data is linear
+            .color_profile = .{
+                .white_point = .any,
+                .primaries = .camera,
+                .mapping = .linear,
+            },
         },
         .{
             .name = "output",
             .type = .write,
             .format = .rgba16float,
-            // emits linear rec2020 with D65 white point
-            .color_profile = .{ .white_point = .d65, .primaries = .rec2020 },
+            .color_profile = .{
+                .white_point = .d65,
+                .primaries = .srgb,
+                .mapping = .linear,
+            },
         },
     },
     .initParams = initParams,

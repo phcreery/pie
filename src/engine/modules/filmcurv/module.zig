@@ -16,8 +16,16 @@ pub const desc: api.ModuleDesc = .{
         .{ .name = "colormode", .control = .{ .combo = .{ .items = &.{"AgX"} } } },
     },
     .sockets = &.{
-        .{ .name = "input", .type = .read, .format = .rgba16float, .color_profile = .any },
-        .{ .name = "output", .type = .write, .format = .rgba16float, .color_profile = .any },
+        .{ .name = "input", .type = .read, .format = .rgba16float, .color_profile = .{
+            .primaries = .any,
+            .mapping = .linear,
+            .white_point = .any,
+        } },
+        .{ .name = "output", .type = .write, .format = .rgba16float, .color_profile = .{
+            .primaries = .any,
+            .mapping = .gamma_srgb,
+            .white_point = .any,
+        } },
     },
     .initParams = initParams,
     .createNodes = createNodes,
