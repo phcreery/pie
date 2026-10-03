@@ -322,6 +322,17 @@ pub const Pipeline = struct {
         return;
     }
 
+    pub fn connectModulesNoRecord(
+        self: *Pipeline,
+        src_mod: ModuleHandle,
+        src_mod_socket_name: []const u8,
+        dst_mod: ModuleHandle,
+        dst_mod_socket_name: []const u8,
+    ) !void {
+        try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
+        return;
+    }
+
     fn _connectModules(
         self: *Pipeline,
         src_mod: ModuleHandle,
@@ -706,6 +717,17 @@ pub const Pipeline = struct {
             return error.PipelineMissingDisplaySinkTexture;
         }
         return error.NodeOutputSocketMissingConnectorHandle;
+    }
+
+    pub fn modulesOfType(self: *Pipeline, kind: api.ModuleType) !std.ArrayList(ModuleHandle) {
+        var matches = std.ArrayList(ModuleHandle).empty;
+        errdefer matches.deinit(self.allocator);
+        var it = self.module_pool.liveHandles();
+        while (it.next()) |handle| {
+            const mod = try self.module_pool.getPtr(handle);
+            if (mod.type == kind) try matches.append(self.allocator, handle);
+        }
+        return matches;
     }
 
     // ================================================
