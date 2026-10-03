@@ -2,27 +2,29 @@ const api = @import("../api.zig");
 const std = @import("std");
 const slog = std.log.scoped(.downscale);
 
-pub const desc: api.ModuleDesc = .{
-    .name = "downscale",
-    .type = .compute,
-    .params = &.{
-        .{ .name = "max_edge", .len = 1, .typ = .i32 },
-    },
-    .params_ui = &.{
-        .{ .name = "max_edge", .control = .{ .slider = .{ .min = 16, .max = 4096, .step = 1, .suffix = " px" } } },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rgba16float,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "downscale",
+        .type = .compute,
+        .params = &.{
+            .{ .name = "max_edge", .len = 1, .typ = .i32 },
         },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rgba16float,
-            .color_profile = .any,
+        .params_ui = &.{
+            .{ .name = "max_edge", .control = .{ .slider = .{ .min = 16, .max = 4096, .step = 1, .suffix = " px" } } },
+        },
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rgba16float,
+                .color_profile = .any,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rgba16float,
+                .color_profile = .any,
+            },
         },
     },
     .initParams = initParams,

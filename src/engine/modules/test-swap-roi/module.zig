@@ -4,25 +4,27 @@ const api = @import("../api.zig");
 /// ROI is `input_roi` when `swap_roi == 0`, or `(h, w)` when `swap_roi == 1`.
 /// Used to exercise the pipeline's connector-texture refresh path when an output
 /// roi changes (modifyOut).
-pub const desc: api.ModuleDesc = .{
-    .name = "test-swap-roi",
-    .type = .compute,
-    .params = &.{
-        .{ .name = "swap_roi", .len = 1, .typ = .i32 },
-    },
-    .params_ui = &.{
-        .{ .name = "swap_roi", .control = .{ .checkbox = {} } },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rggb32float,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "test-swap-roi",
+        .type = .compute,
+        .params = &.{
+            .{ .name = "swap_roi", .len = 1, .typ = .i32 },
         },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rggb32float,
+        .params_ui = &.{
+            .{ .name = "swap_roi", .control = .{ .checkbox = {} } },
+        },
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rggb32float,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rggb32float,
+            },
         },
     },
     .createNodes = createNodes,

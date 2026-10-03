@@ -1,20 +1,22 @@
 const api = @import("../api.zig");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "whitebalance",
-    .type = .compute,
-    .params = &.{},
-    .params_ui = &.{},
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rggb32float,
-        },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rggb32float,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "whitebalance",
+        .type = .compute,
+        .params = &.{},
+        .params_ui = &.{},
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rggb32float,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rggb32float,
+            },
         },
     },
     .createNodes = createNodes,

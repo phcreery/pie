@@ -2,22 +2,24 @@ const api = @import("../api.zig");
 const std = @import("std");
 const slog = std.log.scoped(.@"o-display");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "o-display",
-    .type = .sink,
-    .params = &.{},
-    .params_ui = &.{},
-    // .params = init: {
-    //     var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-    //     p[0] = .{ .name = "filename", .len = 256, .typ = .str };
-    //     break :init p;
-    // },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .sink,
-            .format = .rgba16float,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "o-display",
+        .type = .sink,
+        .params = &.{},
+        .params_ui = &.{},
+        // .params = init: {
+        //     var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
+        //     p[0] = .{ .name = "filename", .len = 256, .typ = .str };
+        //     break :init p;
+        // },
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .sink,
+                .format = .rgba16float,
+                .color_profile = .any,
+            },
         },
     },
     .createNodes = createNodes,
@@ -47,7 +49,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .sink,
         .name = "o-display",
         .sockets = &.{
-            try api.copyModSocket(desc, "input"),
+            try api.copyModSocket(def.desc, "input"),
         },
     });
     try api.inheritSocket(pipe, mod, "input", node, "input");

@@ -1,27 +1,29 @@
 const api = @import("../api.zig");
 const std = @import("std");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "test-multiply",
-    .type = .compute,
-    .params = &.{
-        .{ .name = "multiplier", .len = 1, .typ = .f32 },
-        .{ .name = "adder", .len = 1, .typ = .f32 },
-    },
-    .params_ui = &.{
-        .{ .name = "multiplier", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } },
-        .{ .name = "adder", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rgba16float,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "test-multiply",
+        .type = .compute,
+        .params = &.{
+            .{ .name = "multiplier", .len = 1, .typ = .f32 },
+            .{ .name = "adder", .len = 1, .typ = .f32 },
         },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rgba16float,
+        .params_ui = &.{
+            .{ .name = "multiplier", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } },
+            .{ .name = "adder", .control = .{ .slider = .{ .min = -8, .max = 8, .step = 0.1 } } },
+        },
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rgba16float,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rgba16float,
+            },
         },
     },
     .init = null,

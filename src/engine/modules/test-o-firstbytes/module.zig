@@ -1,16 +1,18 @@
 const api = @import("../api.zig");
 const std = @import("std");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "test-o-2468",
-    .type = .sink,
-    .params = &.{},
-    .params_ui = &.{},
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .sink,
-            .format = .rgba16float,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "test-o-2468",
+        .type = .sink,
+        .params = &.{},
+        .params_ui = &.{},
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .sink,
+                .format = .rgba16float,
+            },
         },
     },
     .writeSink = writeSink,
@@ -31,7 +33,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .sink,
         .name = "Sink",
         .sockets = &.{
-            try api.copyModSocket(desc, "input"),
+            try api.copyModSocket(def.desc, "input"),
         },
     });
     try api.inheritSocket(pipe, mod, "input", node, "input");

@@ -9,25 +9,27 @@ const WbMode = enum(i32) {
     pre_mul = 1, // White balance coefficients for daylight (daylight balance). Either read from file, or calculated on the basis of file data, or taken from hardcoded constants.
 };
 
-pub const desc: api.ModuleDesc = .{
-    .name = "i-raw",
-    .type = .source,
-    .params = &.{
-        .{ .name = "filename", .len = 256, .typ = .str },
-        .{ .name = "wb_mode", .len = 1, .typ = .i32 },
-    },
-    .params_ui = &.{
-        .{ .name = "filename", .control = .{ .readonly = {} } },
-        .{ .name = "wb_mode", .control = .{ .combo = .{ .items = &.{ "cam_mul", "pre_mul" } } } },
-    },
-    .sockets = &.{
-        .{
-            .name = "output",
-            .type = .source,
-            .format = .rggb16uint,
-            // the raw output is in the camera's color space, WB unknown/as-shot,
-            // and linear (sensor response)
-            .color_profile = .{ .white_point = .any, .primaries = .camera, .mapping = .linear },
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "i-raw",
+        .type = .source,
+        .params = &.{
+            .{ .name = "filename", .len = 256, .typ = .str },
+            .{ .name = "wb_mode", .len = 1, .typ = .i32 },
+        },
+        .params_ui = &.{
+            .{ .name = "filename", .control = .{ .readonly = {} } },
+            .{ .name = "wb_mode", .control = .{ .combo = .{ .items = &.{ "cam_mul", "pre_mul" } } } },
+        },
+        .sockets = &.{
+            .{
+                .name = "output",
+                .type = .source,
+                .format = .rggb16uint,
+                // the raw output is in the camera's color space, WB unknown/as-shot,
+                // and linear (sensor response)
+                .color_profile = .{ .white_point = .any, .primaries = .camera, .mapping = .linear },
+            },
         },
     },
     .initParams = initParams,
@@ -244,7 +246,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             .type = .source,
             .name = "source",
             .sockets = &.{
-                try api.copyModSocket(desc, "output"),
+                try api.copyModSocket(def.desc, "output"),
             },
         },
     );

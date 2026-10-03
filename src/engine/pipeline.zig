@@ -229,10 +229,10 @@ pub const Pipeline = struct {
 
     fn _addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
         slog.debug("Adding module to pipeline: '{s}'", .{name});
-        const module_desc = self.repo.get(name) orelse return error.ModuleNotFound;
+        const module_def = self.repo.get(name) orelse return error.ModuleNotFound;
         // the module dupes its own id, so transient strings are fine here
         // (e.g. slices of a deserialized graph)
-        var module = try Module.initFromDesc(self.allocator, id, module_desc);
+        var module = try Module.initFromDef(self.allocator, id, module_def);
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
         const module_handle = try self.module_pool.add(module);

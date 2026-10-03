@@ -2,28 +2,30 @@ const api = @import("../api.zig");
 const std = @import("std");
 const slog = std.log.scoped(.crop);
 
-pub const desc: api.ModuleDesc = .{
-    .name = "crop",
-    .type = .compute,
-    .params = &.{
-        .{ .name = "rotation", .len = 1, .typ = .f32 },
-        .{ .name = "meta_rotation_deg", .len = 1, .typ = .f32 },
-    },
-    .params_ui = &.{
-        .{ .name = "rotation", .control = .{ .slider = .{ .min = -180, .max = 180, .step = 0.5, .suffix = " deg" } } },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rgba16float,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "crop",
+        .type = .compute,
+        .params = &.{
+            .{ .name = "rotation", .len = 1, .typ = .f32 },
+            .{ .name = "meta_rotation_deg", .len = 1, .typ = .f32 },
         },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rgba16float,
-            .color_profile = .any,
+        .params_ui = &.{
+            .{ .name = "rotation", .control = .{ .slider = .{ .min = -180, .max = 180, .step = 0.5, .suffix = " deg" } } },
+        },
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rgba16float,
+                .color_profile = .any,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rgba16float,
+                .color_profile = .any,
+            },
         },
     },
     .initParams = initParams,

@@ -1,31 +1,33 @@
 const api = @import("../api.zig");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "filmcurv",
-    .type = .compute,
-    .params = &.{
-        .{ .name = "brightness", .len = 1, .typ = .f32 },
-        .{ .name = "contrast", .len = 1, .typ = .f32 },
-        .{ .name = "bias", .len = 1, .typ = .f32 },
-        .{ .name = "colormode", .len = 1, .typ = .i32 },
-    },
-    .params_ui = &.{
-        .{ .name = "brightness", .control = .{ .slider = .{ .min = 0, .max = 7, .step = 0.01 } } },
-        .{ .name = "contrast", .control = .{ .slider = .{ .min = 0, .max = 4, .step = 0.01 } } },
-        .{ .name = "bias", .control = .{ .slider = .{ .min = -0.05, .max = 0.2, .step = 0.01 } } },
-        .{ .name = "colormode", .control = .{ .combo = .{ .items = &.{"AgX"} } } },
-    },
-    .sockets = &.{
-        .{ .name = "input", .type = .read, .format = .rgba16float, .color_profile = .{
-            .primaries = .any,
-            .mapping = .linear,
-            .white_point = .any,
-        } },
-        .{ .name = "output", .type = .write, .format = .rgba16float, .color_profile = .{
-            .primaries = .any,
-            .mapping = .gamma_srgb,
-            .white_point = .any,
-        } },
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "filmcurv",
+        .type = .compute,
+        .params = &.{
+            .{ .name = "brightness", .len = 1, .typ = .f32 },
+            .{ .name = "contrast", .len = 1, .typ = .f32 },
+            .{ .name = "bias", .len = 1, .typ = .f32 },
+            .{ .name = "colormode", .len = 1, .typ = .i32 },
+        },
+        .params_ui = &.{
+            .{ .name = "brightness", .control = .{ .slider = .{ .min = 0, .max = 7, .step = 0.01 } } },
+            .{ .name = "contrast", .control = .{ .slider = .{ .min = 0, .max = 4, .step = 0.01 } } },
+            .{ .name = "bias", .control = .{ .slider = .{ .min = -0.05, .max = 0.2, .step = 0.01 } } },
+            .{ .name = "colormode", .control = .{ .combo = .{ .items = &.{"AgX"} } } },
+        },
+        .sockets = &.{
+            .{ .name = "input", .type = .read, .format = .rgba16float, .color_profile = .{
+                .primaries = .any,
+                .mapping = .linear,
+                .white_point = .any,
+            } },
+            .{ .name = "output", .type = .write, .format = .rgba16float, .color_profile = .{
+                .primaries = .any,
+                .mapping = .gamma_srgb,
+                .white_point = .any,
+            } },
+        },
     },
     .initParams = initParams,
     .createNodes = createNodes,

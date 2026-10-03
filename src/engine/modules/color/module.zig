@@ -2,37 +2,39 @@ const api = @import("../api.zig");
 const std = @import("std");
 const temp_tint = @import("./temp_tint.zig");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "color",
-    .type = .compute,
-    .params = &.{
-        .{ .name = "wb_temp", .len = 1, .typ = .f32 },
-        .{ .name = "wb_tint", .len = 1, .typ = .f32 },
-        .{ .name = "wb_coeff", .len = 3, .typ = .f32 },
-    },
-    .params_ui = &.{
-        .{ .name = "wb_coeff", .control = .{ .sliders = .{ .n = 3, .min = 0.0, .max = 4.0, .labels = &.{ "R", "G", "B" } } } },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rgba16float,
-            // raw sensor data is linear
-            .color_profile = .{
-                .white_point = .any,
-                .primaries = .camera,
-                .mapping = .linear,
-            },
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "color",
+        .type = .compute,
+        .params = &.{
+            .{ .name = "wb_temp", .len = 1, .typ = .f32 },
+            .{ .name = "wb_tint", .len = 1, .typ = .f32 },
+            .{ .name = "wb_coeff", .len = 3, .typ = .f32 },
         },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rgba16float,
-            .color_profile = .{
-                .white_point = .d65,
-                .primaries = .srgb,
-                .mapping = .linear,
+        .params_ui = &.{
+            .{ .name = "wb_coeff", .control = .{ .sliders = .{ .n = 3, .min = 0.0, .max = 4.0, .labels = &.{ "R", "G", "B" } } } },
+        },
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rgba16float,
+                // raw sensor data is linear
+                .color_profile = .{
+                    .white_point = .any,
+                    .primaries = .camera,
+                    .mapping = .linear,
+                },
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rgba16float,
+                .color_profile = .{
+                    .white_point = .d65,
+                    .primaries = .srgb,
+                    .mapping = .linear,
+                },
             },
         },
     },

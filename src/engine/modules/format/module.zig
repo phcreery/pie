@@ -10,23 +10,25 @@ const api = @import("../api.zig");
 const gpu = @import("gpu");
 const slog = std.log.scoped(.format);
 
-pub const desc: api.ModuleDesc = .{
-    .name = "format",
-    .type = .compute,
-    .params = &.{},
-    .params_ui = &.{},
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .any,
-            .color_profile = .any,
-        },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .any,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "format",
+        .type = .compute,
+        .params = &.{},
+        .params_ui = &.{},
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .any,
+                .color_profile = .any,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .any,
+                .color_profile = .any,
+            },
         },
     },
     .modifyOut = modifyOut,

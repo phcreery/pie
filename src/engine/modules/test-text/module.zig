@@ -2,23 +2,25 @@ const api = @import("../api.zig");
 const std = @import("std");
 const slog = std.log.scoped(.crop);
 
-pub const desc: api.ModuleDesc = .{
-    .name = "test-text",
-    .type = .compute,
-    .params_ui = &.{},
-    .params = &.{
-        .{ .name = "value", .len = 1, .typ = .f32 },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rgba16float,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "test-text",
+        .type = .compute,
+        .params_ui = &.{},
+        .params = &.{
+            .{ .name = "value", .len = 1, .typ = .f32 },
         },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rgba16float,
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rgba16float,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rgba16float,
+            },
         },
     },
     .initParams = initParams,

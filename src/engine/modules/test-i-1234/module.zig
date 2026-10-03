@@ -1,15 +1,17 @@
 const api = @import("../api.zig");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "test-i-1234",
-    .type = .source,
-    .params = &.{},
-    .params_ui = &.{},
-    .sockets = &.{
-        .{
-            .name = "output",
-            .type = .source,
-            .format = .rgba16float,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "test-i-1234",
+        .type = .source,
+        .params = &.{},
+        .params_ui = &.{},
+        .sockets = &.{
+            .{
+                .name = "output",
+                .type = .source,
+                .format = .rgba16float,
+            },
         },
     },
     .init = null,

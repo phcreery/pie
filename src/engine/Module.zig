@@ -51,7 +51,8 @@ writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *pipeline
 
 const Self = @This();
 
-pub fn initFromDesc(allocator: std.mem.Allocator, id: []const u8, desc: api.ModuleDesc) !Self {
+pub fn initFromDef(allocator: std.mem.Allocator, id: []const u8, def: api.ModuleDef) !Self {
+    const desc = def.desc;
     var self = Self{
         .allocator = allocator,
         .id = try allocator.dupe(u8, id),
@@ -61,13 +62,13 @@ pub fn initFromDesc(allocator: std.mem.Allocator, id: []const u8, desc: api.Modu
 
         // copy the declared metadata and interface into fixed-length runtime arrays
         .data = null,
-        .initParams = desc.initParams,
-        .init = desc.init,
-        .deinit_hook = desc.deinit,
-        .modifyOut = desc.modifyOut,
-        .createNodes = desc.createNodes,
-        .readSource = desc.readSource,
-        .writeSink = desc.writeSink,
+        .initParams = def.initParams,
+        .init = def.init,
+        .deinit_hook = def.deinit,
+        .modifyOut = def.modifyOut,
+        .createNodes = def.createNodes,
+        .readSource = def.readSource,
+        .writeSink = def.writeSink,
     };
     for (desc.sockets, 0..) |sock, i| {
         self.sockets[i] = Socket.fromDesc(sock);

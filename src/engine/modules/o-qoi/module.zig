@@ -4,19 +4,21 @@ const api = @import("../api.zig");
 const std = @import("std");
 const zigimg = @import("zigimg");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "o-qoi",
-    .type = .sink,
-    .params_ui = &.{},
-    .params = &.{
-        .{ .name = "filename", .len = 256, .typ = .str },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .sink,
-            .format = .rgba16float,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "o-qoi",
+        .type = .sink,
+        .params_ui = &.{},
+        .params = &.{
+            .{ .name = "filename", .len = 256, .typ = .str },
+        },
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .sink,
+                .format = .rgba16float,
+                .color_profile = .any,
+            },
         },
     },
     .initParams = initParams,
@@ -55,7 +57,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .type = .sink,
         .name = "sink",
         .sockets = &.{
-            try api.copyModSocket(desc, "input"),
+            try api.copyModSocket(def.desc, "input"),
         },
     });
     try api.inheritSocket(pipe, mod, "input", node, "input");

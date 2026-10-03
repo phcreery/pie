@@ -3,19 +3,21 @@ const std = @import("std");
 const zigimg = @import("zigimg");
 const slog = std.log.scoped(.@"o-ppm");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "o-ppm",
-    .type = .sink,
-    .params_ui = &.{},
-    .params = &.{
-        .{ .name = "filename", .len = 256, .typ = .str },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .sink,
-            .format = .rgba16float,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "o-ppm",
+        .type = .sink,
+        .params_ui = &.{},
+        .params = &.{
+            .{ .name = "filename", .len = 256, .typ = .str },
+        },
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .sink,
+                .format = .rgba16float,
+                .color_profile = .any,
+            },
         },
     },
     .initParams = initParams,

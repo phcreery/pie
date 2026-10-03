@@ -3,23 +3,25 @@ const slog = std.log.scoped(.@"i-png");
 const stbi = @import("stbi");
 const api = @import("../api.zig");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "i-png",
-    .type = .source,
-    .params = &.{
-        .{ .name = "filename", .len = 256, .typ = .str },
-    },
-    .params_ui = &.{
-        .{ .name = "filename", .control = .{ .readonly = {} } },
-    },
-    .sockets = &.{
-        .{
-            .name = "output",
-            // raw 16-bit samples; the `format` module converts to f16 on
-            // the GPU, so the CPU never touches the samples
-            .type = .source,
-            .format = .rgba16uint,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "i-png",
+        .type = .source,
+        .params = &.{
+            .{ .name = "filename", .len = 256, .typ = .str },
+        },
+        .params_ui = &.{
+            .{ .name = "filename", .control = .{ .readonly = {} } },
+        },
+        .sockets = &.{
+            .{
+                .name = "output",
+                // raw 16-bit samples; the `format` module converts to f16 on
+                // the GPU, so the CPU never touches the samples
+                .type = .source,
+                .format = .rgba16uint,
+                .color_profile = .any,
+            },
         },
     },
     .initParams = initParams,
@@ -179,7 +181,7 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             .type = .source,
             .name = "source",
             .sockets = &.{
-                try api.copyModSocket(desc, "output"),
+                try api.copyModSocket(def.desc, "output"),
             },
         },
     );

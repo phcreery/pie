@@ -1,23 +1,25 @@
 const api = @import("../api.zig");
 const std = @import("std");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "demosaic",
-    .type = .compute,
-    .params = &.{},
-    .params_ui = &.{},
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rggb32float,
-            .color_profile = .any,
-        },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rgba16float,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "demosaic",
+        .type = .compute,
+        .params = &.{},
+        .params_ui = &.{},
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rggb32float,
+                .color_profile = .any,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rgba16float,
+                .color_profile = .any,
+            },
         },
     },
     .createNodes = createNodes,

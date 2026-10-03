@@ -1,22 +1,24 @@
 const api = @import("../api.zig");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "test-2nodes",
-    .type = .compute,
-    .params_ui = &.{},
-    .params = &.{
-        .{ .name = "value", .len = 1, .typ = .i32 },
-    },
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rgba16float,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "test-2nodes",
+        .type = .compute,
+        .params_ui = &.{},
+        .params = &.{
+            .{ .name = "value", .len = 1, .typ = .i32 },
         },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rgba16float,
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rgba16float,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rgba16float,
+            },
         },
     },
     .init = null,

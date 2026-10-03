@@ -1,22 +1,24 @@
 const api = @import("../api.zig");
 
-pub const desc: api.ModuleDesc = .{
-    .name = "denoise",
-    .type = .compute,
-    .params = &.{},
-    .params_ui = &.{},
-    .sockets = &.{
-        .{
-            .name = "input",
-            .type = .read,
-            .format = .rggb32float,
-            .color_profile = .any,
-        },
-        .{
-            .name = "output",
-            .type = .write,
-            .format = .rggb32float,
-            .color_profile = .any,
+pub const def: api.ModuleDef = .{
+    .desc = .{
+        .name = "denoise",
+        .type = .compute,
+        .params = &.{},
+        .params_ui = &.{},
+        .sockets = &.{
+            .{
+                .name = "input",
+                .type = .read,
+                .format = .rggb32float,
+                .color_profile = .any,
+            },
+            .{
+                .name = "output",
+                .type = .write,
+                .format = .rggb32float,
+                .color_profile = .any,
+            },
         },
     },
     .createNodes = createNodes,
