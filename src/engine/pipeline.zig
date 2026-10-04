@@ -31,6 +31,21 @@ pub const ConnectorHandle = ConnectorPool.Handle;
 pub const ParamBufferPool = Pool(?gpu.Buffer);
 pub const ParamBufferHandle = ParamBufferPool.Handle;
 
+pub const OperationError = error{
+    InvalidModule,
+    InvalidNode,
+    // InvalidConnector,
+    // InvalidParamBuffer,
+    InvalidSocket,
+    InvalidParam,
+    // NodeSocketNotFound,
+    // ModuleSocketNotFound
+    SocketsIncompatible,
+    InitModuleFailed,
+} || std.mem.Allocator.Error;
+
+pub const RunError = error{} || OperationError || std.mem.Allocator.Error;
+
 // CONFIG
 
 pub const PipelineConfig = struct {
@@ -215,7 +230,7 @@ pub const Pipeline = struct {
 
     /// Public edit op: resolve `name` from the registered repos, add the
     /// module (instance `id`), and record a `module:` delta in history.
-    pub fn addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
+    pub fn addModule(self: *Pipeline, id: []const u8, name: []const u8) OperationError!ModuleHandle {
         const module_handle = try self._addModule(id, name);
         try self.history.recordModuleDelta(self.allocator, name, id);
         return module_handle;
@@ -223,13 +238,13 @@ pub const Pipeline = struct {
 
     /// Internal primitive: add a module, no history recorded.
     /// Prefer `addModule` (which records a delta) from user-facing editing code.
-    pub fn addModuleNoRecord(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
+    pub fn addModuleNoRecord(self: *Pipeline, id: []const u8, name: []const u8) OperationError!ModuleHandle {
         return self._addModule(id, name);
     }
 
-    fn _addModule(self: *Pipeline, id: []const u8, name: []const u8) !ModuleHandle {
+    fn _addModule(self: *Pipeline, id: []const u8, name: []const u8) OperationError!ModuleHandle {
         slog.debug("Adding module to pipeline: '{s}'", .{name});
-        const module_def = self.repo.get(name) orelse return error.ModuleNotFound;
+        const module_def = self.repo.get(name) orelse return error.InvalidModule;
         // the module dupes its own id, so transient strings are fine here
         // (e.g. slices of a deserialized graph)
         var module = try Module.initFromDef(self.allocator, id, module_def);
@@ -244,7 +259,7 @@ pub const Pipeline = struct {
         return module_handle;
     }
 
-    pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) !NodeHandle {
+    pub fn addNode(self: *Pipeline, mod_handle: ModuleHandle, node_desc: api.NodeDesc) OperationError!NodeHandle {
         slog.debug("Adding node to pipeline: '{s}'", .{node_desc.name});
         var node = try Node.init(self, mod_handle, node_desc);
         try self.initOutputConnectorHandles(&node);
@@ -252,14 +267,14 @@ pub const Pipeline = struct {
         return try self.node_pool.add(node);
     }
 
-    pub fn setNodeSocketRoi(self: *Pipeline, node: NodeHandle, node_socket_name: []const u8, roi: ?ROI) !void {
-        var node_ptr = try self.node_pool.getPtr(node);
-        var socket = try node_ptr.getSocketPtr(node_socket_name);
+    pub fn setNodeSocketRoi(self: *Pipeline, node: NodeHandle, node_socket_name: []const u8, roi: ?ROI) OperationError!void {
+        var node_ptr = self.node_pool.getPtr(node) catch return error.InvalidNode;
+        var socket = node_ptr.getSocketPtr(node_socket_name) catch return error.InvalidSocket;
         socket.roi = roi;
     }
 
-    pub fn setNodeRunSize(self: *Pipeline, node: NodeHandle, run_size: ?ROI) !void {
-        var node_ptr = try self.node_pool.getPtr(node);
+    pub fn setNodeRunSize(self: *Pipeline, node: NodeHandle, run_size: ?ROI) OperationError!void {
+        var node_ptr = self.node_pool.getPtr(node) catch return error.InvalidNode;
         node_ptr.run_size = run_size;
     }
 
@@ -271,16 +286,16 @@ pub const Pipeline = struct {
         dst_mod_name: []const u8,
         dst_mod_id: []const u8,
         dst_mod_socket_name: []const u8,
-    ) !void {
+    ) OperationError!void {
         const src_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ src_mod_name, ":", src_mod_id });
         defer self.allocator.free(src_mod_fullname);
 
-        const src_mod = self.module_name_map.get(src_mod_fullname) orelse return error.ModuleNotFound;
+        const src_mod = self.module_name_map.get(src_mod_fullname) orelse return OperationError.InvalidModule;
 
         const dst_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
         defer self.allocator.free(dst_mod_fullname);
 
-        const dst_mod = self.module_name_map.get(dst_mod_fullname) orelse return error.ModuleNotFound;
+        const dst_mod = self.module_name_map.get(dst_mod_fullname) orelse return OperationError.InvalidModule;
 
         try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
 
@@ -296,16 +311,16 @@ pub const Pipeline = struct {
         dst_mod_name: []const u8,
         dst_mod_id: []const u8,
         dst_mod_socket_name: []const u8,
-    ) !void {
+    ) OperationError!void {
         const src_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ src_mod_name, ":", src_mod_id });
         defer self.allocator.free(src_mod_fullname);
 
-        const src_mod = self.module_name_map.get(src_mod_fullname) orelse return error.ModuleNotFound;
+        const src_mod = self.module_name_map.get(src_mod_fullname) orelse return OperationError.InvalidModule;
 
         const dst_mod_fullname = try std.mem.concat(self.allocator, u8, &.{ dst_mod_name, ":", dst_mod_id });
         defer self.allocator.free(dst_mod_fullname);
 
-        const dst_mod = self.module_name_map.get(dst_mod_fullname) orelse return error.ModuleNotFound;
+        const dst_mod = self.module_name_map.get(dst_mod_fullname) orelse return OperationError.InvalidModule;
 
         return try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
     }
@@ -316,7 +331,7 @@ pub const Pipeline = struct {
         src_mod_socket_name: []const u8,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
-    ) !void {
+    ) OperationError!void {
         try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
         try self.history.recordConnectDelta(self.allocator, src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
         return;
@@ -328,7 +343,7 @@ pub const Pipeline = struct {
         src_mod_socket_name: []const u8,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
-    ) !void {
+    ) OperationError!void {
         try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
         return;
     }
@@ -339,28 +354,25 @@ pub const Pipeline = struct {
         src_mod_socket_name: []const u8,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
-    ) !void {
+    ) OperationError!void {
         // slog.debug("Connecting module {any} socket {s} to module {any} socket {s}", .{ src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name });
-        var src_mod_ptr = try self.module_pool.getPtr(src_mod);
-        var dst_mod_ptr = try self.module_pool.getPtr(dst_mod);
+        var src_mod_ptr = self.module_pool.getPtr(src_mod) catch return OperationError.InvalidModule;
+        var dst_mod_ptr = self.module_pool.getPtr(dst_mod) catch return OperationError.InvalidModule;
 
         slog.debug("Connecting module '{s} > {s}' to module '{s} > {s}'", .{ src_mod_ptr.name, src_mod_socket_name, dst_mod_ptr.name, dst_mod_socket_name });
-        const dst_socket_idx = try dst_mod_ptr.getSocketIndex(dst_mod_socket_name);
-        const src_socket_idx = try src_mod_ptr.getSocketIndex(src_mod_socket_name);
+        const dst_socket_idx = dst_mod_ptr.getSocketIndex(dst_mod_socket_name) catch return OperationError.InvalidSocket;
+        const src_socket_idx = src_mod_ptr.getSocketIndex(src_mod_socket_name) catch return OperationError.InvalidSocket;
 
-        var dst_mod_socket = &(dst_mod_ptr.sockets[dst_socket_idx] orelse {
-            slog.err("Destination module '{s} > {s}' is null", .{ dst_mod_ptr.name, dst_mod_socket_name });
-            return error.ModuleSocketNotFound;
-        });
-        const src_mod_socket = &(src_mod_ptr.sockets[src_socket_idx] orelse {
-            slog.err("Source module '{s} > {s}' is null", .{ src_mod_ptr.name, src_mod_socket_name });
-            return error.ModuleSocketNotFound;
-        });
+        var dst_mod_socket = &(dst_mod_ptr.sockets[dst_socket_idx] orelse unreachable);
+        const src_mod_socket = &(src_mod_ptr.sockets[src_socket_idx] orelse unreachable);
 
         if (!Socket.areCompatible(src_mod_socket, dst_mod_socket)) {
             slog.err("Incompatible module socket connection from '{s} > {s}' to '{s} > {s}'", .{ src_mod_ptr.name, src_mod_socket_name, dst_mod_ptr.name, dst_mod_socket_name });
-            return error.ModuleSocketConnectionIncompatible;
+            return error.SocketsIncompatible;
         }
+
+        // infallible past here
+
         dst_mod_socket.connected_to_module = .{
             .item = src_mod,
             .socket_idx = src_socket_idx,
@@ -374,28 +386,25 @@ pub const Pipeline = struct {
         src_node_socket_name: []const u8,
         dst_node: NodeHandle,
         dst_node_socket_name: []const u8,
-    ) !void {
+    ) OperationError!void {
         // slog.debug("Connecting node {any} socket {s} to node {any} socket {s}", .{ src_node, src_node_socket_name, dst_node, dst_node_socket_name });
-        var src_node_ptr = try self.node_pool.getPtr(src_node);
-        var dst_node_ptr = try self.node_pool.getPtr(dst_node);
+        var src_node_ptr = self.node_pool.getPtr(src_node) catch return OperationError.InvalidNode;
+        var dst_node_ptr = self.node_pool.getPtr(dst_node) catch return OperationError.InvalidNode;
 
         slog.debug("Connecting node '{s} > {s}' to node '{s} > {s}'", .{ src_node_ptr.name, src_node_socket_name, dst_node_ptr.name, dst_node_socket_name });
-        const dst_socket_idx = try dst_node_ptr.getSocketIndex(dst_node_socket_name);
-        const src_socket_idx = try src_node_ptr.getSocketIndex(src_node_socket_name);
+        const dst_socket_idx = dst_node_ptr.getSocketIndex(dst_node_socket_name) catch return OperationError.InvalidSocket;
+        const src_socket_idx = src_node_ptr.getSocketIndex(src_node_socket_name) catch return OperationError.InvalidSocket;
 
-        var dst_node_socket = &(dst_node_ptr.sockets[dst_socket_idx] orelse {
-            slog.err("Destination node '{s} > {s}' is null", .{ dst_node_ptr.name, dst_node_socket_name });
-            return error.NodeSocketNotFound;
-        });
-        const src_node_socket = &(src_node_ptr.sockets[src_socket_idx] orelse {
-            slog.err("Source node '{s} > {s}' is null", .{ src_node_ptr.name, src_node_socket_name });
-            return error.NodeSocketNotFound;
-        });
+        // unreachable error since the getSocketIndex found it.
+        var dst_node_socket = &(dst_node_ptr.sockets[dst_socket_idx] orelse unreachable);
+        const src_node_socket = &(src_node_ptr.sockets[src_socket_idx] orelse unreachable);
 
         if (!Socket.areCompatible(src_node_socket, dst_node_socket)) {
             slog.err("Incompatible node socket connection from '{s} > {s}' to '{s} > {s}'", .{ src_node_ptr.name, src_node_socket_name, dst_node_ptr.name, dst_node_socket_name });
-            return error.NodeSocketConnectionIncompatible;
+            return error.SocketsIncompatible;
         }
+
+        // infallible past here
 
         dst_node_socket.connected_to_node = .{
             .item = src_node,
@@ -413,25 +422,22 @@ pub const Pipeline = struct {
     ) !void {
         // slog.debug("Copying module {any} > {s} to node {any} > {s}", .{ mod_handle, mod_socket_name, node_handle, node_socket_name });
 
-        var mod = try self.module_pool.getPtr(mod_handle);
-        var node = try self.node_pool.getPtr(node_handle);
+        var mod = self.module_pool.getPtr(mod_handle) catch return error.InvalidModule;
+        var node = self.node_pool.getPtr(node_handle) catch return error.InvalidNode;
         slog.debug("Copying connector from module '{s} > {s}' to node '{s} > {s}'", .{ mod.name, mod_socket_name, node.name, node_socket_name });
 
-        const mod_socket_idx = try mod.getSocketIndex(mod_socket_name);
-        const node_socket_idx = try node.getSocketIndex(node_socket_name);
+        const mod_socket_idx = mod.getSocketIndex(mod_socket_name) catch return error.InvalidSocket;
+        const node_socket_idx = node.getSocketIndex(node_socket_name) catch return error.InvalidSocket;
 
-        const node_socket = &(node.sockets[node_socket_idx] orelse {
-            slog.err("Destination node '{s} > {s}' is null", .{ node.name, node_socket_name });
-            return error.NodeSocketNotFound;
-        });
-        const mod_socket = &(mod.sockets[mod_socket_idx] orelse {
-            slog.err("Source module '{s} > {s}' is null", .{ mod.name, mod_socket_name });
-            return error.ModuleSocketNotFound;
-        });
+        const node_socket = &(node.sockets[node_socket_idx] orelse unreachable);
+        const mod_socket = &(mod.sockets[mod_socket_idx] orelse unreachable);
+
         if (!Socket.areSimilar(mod_socket, node_socket)) {
             slog.err("Incompatible connector copy from module '{s} > {s}' to node '{s} > {s}'", .{ mod.name, mod_socket_name, node.name, node_socket_name });
-            return error.ModuleNodeSocketConnectionIncompatible;
+            return error.SocketsIncompatible;
         }
+
+        // infallible past here
 
         // perform copy
         node_socket.* = mod_socket.*;
@@ -459,7 +465,7 @@ pub const Pipeline = struct {
     /// allocation have a connector to attach to. Called when a module or node
     /// is added; `inheritSocket` later shares the module's connector with its
     /// output nodes.
-    fn initOutputConnectorHandles(self: *Pipeline, item: anytype) !void {
+    fn initOutputConnectorHandles(self: *Pipeline, item: anytype) OperationError!void {
         // ##### with type checking #####
         // we could do duct typing here but this allows better lsp support
         switch (comptime @TypeOf(item)) {
@@ -468,7 +474,7 @@ pub const Pipeline = struct {
                 for (module.sockets) |socket| {
                     if (socket) |sock| {
                         if (sock.type.direction() == .output) {
-                            var this_sock = try module.getSocketPtr(sock.name);
+                            var this_sock = module.getSocketPtr(sock.name) catch return OperationError.InvalidSocket;
                             if (this_sock.connector_handle == null) {
                                 this_sock.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
                                 // slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.connector_handle.?, module.name, sock.name });
@@ -482,7 +488,7 @@ pub const Pipeline = struct {
                 for (node.sockets) |socket| {
                     if (socket) |sock| {
                         if (sock.type.direction() == .output) {
-                            var this_sock = try node.getSocketPtr(sock.name);
+                            var this_sock = node.getSocketPtr(sock.name) catch return OperationError.InvalidSocket;
                             if (this_sock.connector_handle == null) {
                                 this_sock.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
                                 // slog.debug("Created output connector handle {any} for node '{s} > {s}'", .{ this_sock.connector_handle.?, node.name, sock.name });
@@ -773,10 +779,10 @@ pub const Pipeline = struct {
         return handles;
     }
 
-    fn initParams(self: *Pipeline, module_handle: ModuleHandle) !void {
-        const module = try self.module_pool.getPtr(module_handle);
+    fn initParams(self: *Pipeline, module_handle: ModuleHandle) OperationError!void {
+        const module = self.module_pool.getPtr(module_handle) catch return OperationError.InvalidModule;
         if (module.initParams) |initParamsFn| {
-            try initParamsFn(self, module_handle);
+            initParamsFn(self, module_handle) catch return OperationError.InitModuleFailed;
         }
     }
 

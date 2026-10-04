@@ -104,7 +104,7 @@ pub fn getSocketIndex(mod: *const Self, name: []const u8) !usize {
             }
         }
     }
-    return error.ModuleSocketNotFound;
+    return pipeline.OperationError.InvalidSocket;
 }
 
 pub fn getSocketPtr(mod: *Self, name: []const u8) !*Socket {
@@ -112,7 +112,7 @@ pub fn getSocketPtr(mod: *Self, name: []const u8) !*Socket {
     if (mod.sockets[idx]) |*sock| {
         return sock;
     }
-    return error.ModuleSocketNotFound;
+    return pipeline.OperationError.InvalidSocket;
 }
 
 pub fn getParamIndex(mod: *const Self, name: []const u8) !usize {
@@ -123,7 +123,7 @@ pub fn getParamIndex(mod: *const Self, name: []const u8) !usize {
             }
         }
     }
-    return error.ModuleParamNotFound;
+    return pipeline.OperationError.InvalidParam;
 }
 
 pub fn getParamPtr(mod: *Self, name: []const u8) !*Param {
@@ -131,7 +131,7 @@ pub fn getParamPtr(mod: *Self, name: []const u8) !*Param {
     if (mod.params[idx]) |*param| {
         return param;
     }
-    return error.ModuleParamNotFound;
+    return pipeline.OperationError.InvalidParam;
 }
 
 pub fn params_len(mod: *Self) usize {
