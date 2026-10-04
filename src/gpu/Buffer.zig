@@ -45,15 +45,11 @@ pub const MemoryType = enum {
 
 /// size in bytes of the buffer
 pub fn init(gpu: *GPU, size_bytes: ?u64, memory_type: MemoryType) !Self {
-    var max_buffer_size: u64 = if (gpu.adapterLimits()) |limits|
+    const max_buffer_size: u64 = if (gpu.adapterLimits()) |limits|
         limits.maxBufferSize
     else
         std.math.maxInt(u64);
-
-    if (max_buffer_size == std.math.maxInt(u64)) {
-        // set to something reasonable
-        max_buffer_size = 256 * 1024 * 1024 * 12; // 256 MB x12 for RGBAf16
-    }
+    // 256 * 1024 * 1024 * 12; // 256 MB x12 for RGBAf16
 
     if (size_bytes) |s| {
         if (s > max_buffer_size) {

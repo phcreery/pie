@@ -12,7 +12,8 @@ const color = math.color;
 const Vec3f32 = math.mat3.Vec3f32;
 const Vec4f32 = shd.Vec4f32;
 
-const zon: shd.NodeDesc = @import("node.filmcurv.zon");
+const module_zon: shd.ModuleDesc = @import("module.zon");
+const node_zon: shd.NodeDesc = @import("node.filmcurv.zon");
 
 const Params = extern struct {
     brightness: f32,
@@ -21,9 +22,9 @@ const Params = extern struct {
     colormode: i32,
 };
 
-const params = shd.getParams(Params);
-const input_image = shd.getImageFromZon(zon, "input");
-const output_image = shd.getImageFromZon(zon, "output");
+const params = shd.getParams(module_zon, Params);
+const input_image = shd.getImageFromZon(node_zon, "input");
+const output_image = shd.getImageFromZon(node_zon, "output");
 
 const COLORMODE_AGX: i32 = 0;
 

@@ -1,3 +1,5 @@
+const ui = @import("ui.zig");
+pub const ParamUI = ui.ParamUI;
 const ColorProfile = @import("ColorProfile.zig");
 const std = @import("std");
 
@@ -96,5 +98,23 @@ pub const NodeDesc = struct {
     type: NodeType, // TODO: infer from sockets
     shader: ?ShaderLanguageSource = null,
     name: []const u8,
+    sockets: []const SocketDesc,
+};
+
+pub const ModuleType = enum {
+    compute,
+    source,
+    sink,
+};
+
+pub const ModuleDesc = struct {
+    name: []const u8,
+    type: ModuleType,
+    params: []const ParamDesc,
+
+    /// UI hints for the editor; index-aligned with `params`.
+    params_ui: []const ParamUI,
+
+    // The sockets describe the module's input and output interface
     sockets: []const SocketDesc,
 };

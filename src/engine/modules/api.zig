@@ -12,12 +12,15 @@ pub const ShaderSource = ModuleApi.ShaderSource;
 pub const ShaderLanguage = ModuleApi.ShaderLanguage;
 pub const ShaderLanguageSource = ModuleApi.ShaderLanguageSource;
 pub const TextureFormat = ModuleApi.TextureFormat;
-pub const SocketDesc = ModuleApi.SocketDesc;
-pub const SocketType = ModuleApi.SocketType;
+pub const NodeType = ModuleApi.NodeType;
 pub const NodeDesc = ModuleApi.NodeDesc;
 pub const Sockets = ModuleApi.Sockets;
+pub const SocketType = ModuleApi.SocketType;
+pub const SocketDesc = ModuleApi.SocketDesc;
 pub const ParamType = ModuleApi.ParamType;
 pub const ParamDesc = ModuleApi.ParamDesc;
+pub const ModuleType = ModuleApi.ModuleType;
+pub const ModuleDesc = ModuleApi.ModuleDesc;
 pub const MAX_SOCKETS = ModuleApi.MAX_SOCKETS;
 
 const ui = @import("types").ui;
@@ -38,18 +41,11 @@ pub const Connector = @import("../Connector.zig");
 pub const Param = @import("../Param.zig");
 pub const ImgParam = @import("../ImgParam.zig");
 pub const HistoryConfig = @import("../histlist.zig").HistoryConfig;
-pub const NodeType = ModuleApi.NodeType;
 
 comptime {
     std.debug.assert(gpu.MAX_BINDINGS == MAX_SOCKETS);
 }
 pub const MAX_PARAMS_PER_MODULE = 16;
-
-pub const ModuleType = enum {
-    compute,
-    source,
-    sink,
-};
 
 /// A module can have multiple nodes.
 /// They can have source and sink connectors as well, but the module must have
@@ -65,18 +61,6 @@ pub const ModuleDef = struct {
     createNodes: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
     writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: PipelineHandle, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
-};
-
-pub const ModuleDesc = struct {
-    name: []const u8,
-    type: ModuleType,
-    params: []const ParamDesc,
-
-    /// UI hints for the editor; index-aligned with `params`.
-    params_ui: []const ParamUI,
-
-    // The sockets describe the module's input and output interface
-    sockets: []const SocketDesc,
 };
 
 // ================

@@ -6,6 +6,7 @@ const types = @import("types");
 
 pub const spirv = std.spirv; // TODO: remove this line
 pub const NodeDesc = types.ModuleApi.NodeDesc;
+pub const ModuleDesc = types.ModuleApi.ModuleDesc;
 
 /// The `math` module, re-exported so shaders can reach `math.color`,
 /// `math.matrices` and `math.mat3` without declaring their own imports.
@@ -21,7 +22,68 @@ pub fn coord() Vec2u32 {
     return @as(Vec2u32, .{ global_invocation_id[0], global_invocation_id[1] });
 }
 
-pub fn getParams(T: type) *addrspace(.storage_buffer) T {
+/// Comptime check that a shader params struct `T` has the same shape as the
+/// GPU-visible params declared by `module_desc`: one field per param, in
+/// declaration order, with matching names and element types.
+///
+/// `str` params are CPU-only and never enter the params buffer, so they are
+/// skipped. This is what makes `getParams` safe: the engine packs params in
+/// declaration order, so any field count/order/type drift silently reads the
+/// wrong bytes.
+pub fn assertParamsShape(comptime module_desc: ModuleDesc, comptime T: type) void {
+    comptime {
+        switch (@typeInfo(T)) {
+            .@"struct" => {},
+            else => @compileError("shader params type must be a struct, got '" ++ @typeName(T) ++ "'"),
+        }
+
+        const field_names = std.meta.fieldNames(T);
+        const field_types = std.meta.fieldTypes(T);
+
+        var field_i: usize = 0;
+        for (module_desc.params) |param| {
+            if (param.typ == .str) continue;
+
+            if (field_i >= field_types.len) {
+                @compileError(@typeName(T) ++ " is missing a field for module param '" ++ param.name ++ "'");
+            }
+            const name = field_names[field_i];
+
+            if (!std.mem.eql(u8, name, param.name)) {
+                @compileError("shader params field '" ++ name ++ "' does not match module param '" ++ param.name ++ "'");
+            }
+
+            const expected: type = switch (param.typ) {
+                .f32 => switch (param.len) {
+                    1 => f32,
+                    2 => [2]f32,
+                    3 => [3]f32,
+                    4 => [4]f32,
+                    else => @compileError("unsupported f32 param length for '" ++ param.name ++ "'"),
+                },
+                .i32 => switch (param.len) {
+                    1 => i32,
+                    else => @compileError("unsupported i32 param length for '" ++ param.name ++ "'"),
+                },
+                .str => unreachable,
+            };
+
+            const actual = field_types[field_i];
+            if (actual != expected) {
+                @compileError("shader params field '" ++ name ++ "' is '" ++ @typeName(actual) ++ "' but module param '" ++ param.name ++ "' is '" ++ @typeName(expected) ++ "'");
+            }
+
+            field_i += 1;
+        }
+
+        if (field_i != field_types.len) {
+            @compileError(@typeName(T) ++ " has more fields than the GPU-visible module params");
+        }
+    }
+}
+
+pub fn getParams(comptime module_desc: ModuleDesc, T: type) *addrspace(.storage_buffer) T {
+    assertParamsShape(module_desc, T);
     return @extern(*addrspace(.storage_buffer) T, .{
         .name = "params",
         .decoration = .{ .descriptor = .{ .set = 0, .binding = 0 } },

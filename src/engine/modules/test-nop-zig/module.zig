@@ -2,24 +2,7 @@ const api = @import("../api.zig");
 const std = @import("std");
 
 pub const def: api.ModuleDef = .{
-    .desc = .{
-        .name = "test-nop-zig",
-        .type = .compute,
-        .params = &.{},
-        .params_ui = &.{},
-        .sockets = &.{
-            .{
-                .name = "input",
-                .type = .read,
-                .format = .rgba16float,
-            },
-            .{
-                .name = "output",
-                .type = .write,
-                .format = .rgba16float,
-            },
-        },
-    },
+    .desc = @import("module.zon"),
     .init = null,
     .deinit = null,
     .readSource = null,
