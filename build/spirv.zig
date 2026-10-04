@@ -46,17 +46,10 @@ pub fn compileZigToSpirv(
 /// SPIR-V emitted by the Zig compiler and return the patched binary.
 fn patchSpirvForNaga(
     b: *std.Build,
+    patcher: *std.Build.Step.Compile,
     obj: std.Build.LazyPath,
     file_name: []const u8,
 ) !std.Build.LazyPath {
-    const patcher = b.addExecutable(.{
-        .name = "spirv-naga-patch",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("build/spirv_naga_patch.zig"),
-            .target = b.graph.host,
-            .optimize = .ReleaseSafe,
-        }),
-    });
     const run = b.addRunArtifact(patcher);
     run.addFileArg(obj);
     var buf: [64]u8 = undefined;
@@ -72,6 +65,7 @@ pub fn compileAndEmbedModuleSpirVShader(
     file_name: []const u8,
     embed_name: []const u8,
     imports: []const std.Build.Module.Import,
+    patcher: *std.Build.Step.Compile,
 ) !void {
     var buffer: [64]u8 = undefined;
     const file_path_str = try std.fmt.bufPrint(&buffer, "src/engine/modules/{s}/{s}", .{ module_name, file_name });
@@ -84,7 +78,7 @@ pub fn compileAndEmbedModuleSpirVShader(
         &[_]std.Target.spirv.Feature{},
         imports,
     );
-    const spv_patched = try patchSpirvForNaga(b, spv, file_name);
+    const spv_patched = try patchSpirvForNaga(b, patcher, spv, file_name);
     mod.addAnonymousImport(embed_name, .{ .root_source_file = spv_patched });
 }
 
@@ -97,6 +91,14 @@ pub fn compileAndEmbedZigSpirVModules(
     comptime modules: anytype, // parsed modules.zon
     imports: []const std.Build.Module.Import,
 ) !void {
+    const patcher = b.addExecutable(.{
+        .name = "spirv-naga-patch",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("build/spirv_naga_patch.zig"),
+            .target = b.graph.host,
+        }),
+        .use_llvm = false,
+    });
     inline for (modules) |m| {
         if (@hasField(@TypeOf(m), "zig_shader")) {
             try compileAndEmbedModuleSpirVShader(
@@ -107,6 +109,7 @@ pub fn compileAndEmbedZigSpirVModules(
                 m.zig_shader,
                 m.zig_shader ++ ".spv.embed",
                 imports,
+                patcher,
             );
         }
     }

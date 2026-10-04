@@ -99,7 +99,7 @@ pub fn main(init: std.process.Init) !void {
     const out_bytes = std.mem.sliceAsBytes(words[0..w]);
     try std.Io.Dir.writeFile(std.Io.Dir.cwd(), init.io, .{ .sub_path = out_path, .data = out_bytes });
 
-    std.debug.print("spirv-naga-patch: {s} -> {s} ({d} bytes, dropped {d} Linkage capability, stripped {d} Aligned operand(s))\n", .{
-        in_path, out_path, out_bytes.len, dropped_caps, stripped_aligned,
-    });
+    // std.debug.print("spirv-naga-patch: {s} -> {s} ({d} bytes, dropped {d} Linkage capability, stripped {d} Aligned operand(s))/n", .{
+    //     in_path, out_path, out_bytes.len, dropped_caps, stripped_aligned,
+    // });
 }
