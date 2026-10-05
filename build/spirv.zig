@@ -97,7 +97,7 @@ pub fn compileAndEmbedZigSpirVModules(
             .root_source_file = b.path("build/spirv_naga_patch.zig"),
             .target = b.graph.host,
         }),
-        .use_llvm = false,
+        // .use_llvm = false,
     });
     inline for (modules) |m| {
         if (@hasField(@TypeOf(m), "zig_shader")) {
