@@ -14,11 +14,11 @@
             .name = "input",
             .type = .read,
             .format = .rgba16float,
-            // raw sensor data is linear
             .color_profile = .{
                 .white_point = .any,
                 .primaries = .camera,
-                .mapping = .linear,
+                // TODO: handle any trc and automagically linearize it
+                .trc = .linear,
             },
         },
         .{
@@ -28,7 +28,7 @@
             .color_profile = .{
                 .white_point = .d65,
                 .primaries = .srgb,
-                .mapping = .linear,
+                .trc = .linear,
             },
         },
     },

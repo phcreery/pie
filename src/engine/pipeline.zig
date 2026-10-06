@@ -1031,7 +1031,7 @@ pub const Pipeline = struct {
                             output_socket.color_profile = .{
                                 .white_point = if (declared.white_point == .any) incoming.white_point else declared.white_point,
                                 .primaries = if (declared.primaries == .any) incoming.primaries else declared.primaries,
-                                .mapping = if (declared.mapping == .any) incoming.mapping else declared.mapping,
+                                .trc = if (declared.trc == .any) incoming.trc else declared.trc,
                             };
                         } else {
                             output_socket.color_profile = incoming;

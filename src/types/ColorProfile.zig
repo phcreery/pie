@@ -9,7 +9,7 @@ pub const WhitePoint = enum(i32) {
 /// typically linear
 /// we will apply the OETF (Opto-Electronic Transfer Function) at the end of the pipeline
 /// https://en.wikipedia.org/wiki/Transfer_functions_in_imaging
-pub const Mapping = enum(i32) {
+pub const ToneResponseCurve = enum(i32) {
     any = -1, // module does not care about the mapping
     linear = 0,
     gamma_srgb = 1,
@@ -29,14 +29,14 @@ pub const Primaries = enum(i32) {
 /// carries between modules/nodes.
 white_point: WhitePoint,
 primaries: Primaries,
-mapping: Mapping,
+trc: ToneResponseCurve,
 
 const Self = @This();
 
 pub const any = Self{
     .white_point = .any,
     .primaries = .any,
-    .mapping = .any,
+    .trc = .any,
 };
 
 /// Whether `self` (an emitted profile) is accepted by `accepted` (a
@@ -45,7 +45,7 @@ pub const any = Self{
 pub fn acceptedBy(self: Self, accepted: Self) bool {
     return profileFieldCompatible(self.white_point, accepted.white_point) and
         profileFieldCompatible(self.primaries, accepted.primaries) and
-        profileFieldCompatible(self.mapping, accepted.mapping);
+        profileFieldCompatible(self.trc, accepted.trc);
 }
 
 fn profileFieldCompatible(emitted: anytype, accepted: anytype) bool {

@@ -16,12 +16,12 @@
     .sockets = .{
         .{ .name = "input", .type = .read, .format = .rgba16float, .color_profile = .{
             .primaries = .any,
-            .mapping = .linear,
+            .trc = .linear,
             .white_point = .any,
         } },
         .{ .name = "output", .type = .write, .format = .rgba16float, .color_profile = .{
             .primaries = .any,
-            .mapping = .gamma_srgb,
+            .trc = .linear,
             .white_point = .any,
         } },
     },
