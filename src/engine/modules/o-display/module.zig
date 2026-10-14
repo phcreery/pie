@@ -8,11 +8,6 @@ pub const def: api.ModuleDef = .{
         .type = .sink,
         .params = &.{},
         .params_ui = &.{},
-        // .params = init: {
-        //     var p: [api.MAX_PARAMS_PER_MODULE]?api.ParamDesc = @splat(null);
-        //     p[0] = .{ .name = "filename", .len = 256, .typ = .str };
-        //     break :init p;
-        // },
         .sockets = &.{
             .{
                 .name = "input",
