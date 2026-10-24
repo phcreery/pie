@@ -1,7 +1,7 @@
 .{
     .name = .pie,
     .version = "0.0.0",
-    .minimum_zig_version = "0.17.0-dev.1476+91a29d707",
+    .minimum_zig_version = "0.17.0",
     .fingerprint = 0x2257f47b657d2acb,
     .dependencies = .{
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
@@ -19,8 +19,12 @@
             // .url = "git+https://github.com/Altagos/dcimgui#af62ae7049a25b645003dae8883de31685cc3791",
             // .hash = "cimgui-0.1.0-44ClkR8dmgDBFr1Cx4CVsiB8n5ulQfys6WH_1UDoUOFo",
             // .path = "../dcimgui",
-            .url = "git+https://github.com/phcreery/dcimgui#db71ec2330cbdad5b561d5e03f5edc28bda85c9b",
-            .hash = "cimgui-0.1.0-44ClkS4_nACw903tZvEFrtrzO9W3rh724LkcH29Xm-Io",
+            // .url = "git+https://github.com/phcreery/dcimgui#db71ec2330cbdad5b561d5e03f5edc28bda85c9b",
+            // .hash = "cimgui-0.1.0-44ClkS4_nACw903tZvEFrtrzO9W3rh724LkcH29Xm-Io",
+            // .url = "git+https://github.com/floooh/dcimgui#8e6bfc80880a6a3b8c253e62616da86e079197ed",
+            // .hash = "cimgui-0.1.0-44ClkYOmoADXtPjsxiH9_z-D1K7Lv7bs1kYq2tM7QANg",
+            .url = "git+https://github.com/floooh/dcimgui#461f457600a70a19001c735a513a2bec4c7caae7",
+            .hash = "cimgui-0.1.0-44ClkVBEnAA-LAAR9o0cUrN7CsKHR5hsMj-Byh7sFJLK",
         },
         // .zdt = .{
         //     .url = "git+https://codeberg.org/FObersteiner/zdt#ef21e970c3fead80b4a43051f8e7ab5327efa4b1",
