@@ -10,11 +10,10 @@ const Node = @import("Node.zig");
 const Socket = @import("Socket.zig");
 const Connector = @import("Connector.zig");
 const Param = @import("Param.zig");
-const ImgParam = @import("ImgParam.zig");
 const Modules = @import("modules/modules.zig");
 const Pool = @import("pool.zig").Pool;
 const PipelineHistory = @import("pipeline_history.zig").PipelineHistory;
-const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
+const DirectedGraph = @import("zig-graph").DirectedGraph;
 const slog = std.log.scoped(.pipe);
 
 // TYPES

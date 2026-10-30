@@ -8,7 +8,7 @@ const gpu = @import("gpu");
 const wgpu = @import("wgpu");
 const ROI = @import("types").ROI;
 const console = @import("console");
-const DirectedGraph = @import("zig-graph/graph.zig").DirectedGraph;
+const DirectedGraph = @import("zig-graph").DirectedGraph;
 const Node = @import("Node.zig");
 const slog = std.log.scoped(.util);
 

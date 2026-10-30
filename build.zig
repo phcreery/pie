@@ -100,6 +100,14 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{},
     });
 
+    // ZIG-GRAPH MODULE
+    const mod_zig_graph = b.createModule(.{
+        .root_source_file = b.path("src/zig-graph/graph.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
     // GPU MODULE
     const mod_gpu = b.createModule(.{
         .root_source_file = b.path("src/gpu/root.zig"),
@@ -148,6 +156,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "stbi", .module = mod_stbi },
+            .{ .name = "zig-graph", .module = mod_zig_graph },
         },
     });
 

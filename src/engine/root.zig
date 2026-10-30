@@ -11,7 +11,7 @@ pub const serdes = @import("serdes.zig");
 pub const api = @import("modules/api.zig");
 pub const modules = @import("modules/modules.zig");
 
-pub const graph = @import("zig-graph/graph.zig");
+pub const graph = @import("zig-graph");
 pub const Pool = @import("pool.zig").Pool;
 
 pub const GPU = gpu.GPU;
@@ -38,8 +38,6 @@ pub const Pipeline = pipeline.Pipeline;
 //     // _ = @import("engine/gpu/data.zig");
 //     // _ = @import("engine/modules/shared/CFA.zig");
 //     // _ = @import("engine/modules/i-raw/i-raw.zig");
-//     // _ = @import("engine/zig-graph/graph.zig");
-//     // _ = @import("engine/zig-graph/print.zig");
 //     // _ = @import("engine/pool.zig");
 //     _ = @import("engine/Param.zig");
 //     // _ = @import("engine/ImgParam.zig");
