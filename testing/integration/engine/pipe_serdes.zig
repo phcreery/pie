@@ -142,7 +142,7 @@ test "preset deserialize skips bad lines leniently" {
         \\module:draw:01
         \\param:format:01:bogus:1
         \\
-        \\keyframe:0:1:2
+        \\bogus:0:1:2
         \\module:filmcurv:01
         \\param:filmcurv:01:brightness:abc
     ;

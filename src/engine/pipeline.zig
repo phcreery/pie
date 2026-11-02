@@ -14,6 +14,7 @@ const Modules = @import("modules/modules.zig");
 const Pool = @import("pool.zig").Pool;
 const PipelineHistory = @import("pipeline_history.zig").PipelineHistory;
 const DirectedGraph = @import("zig-graph").DirectedGraph;
+const serdes = @import("serdes.zig");
 const slog = std.log.scoped(.pipe);
 
 // TYPES
@@ -37,6 +38,7 @@ pub const OperationError = error{
     InvalidNode,
     InvalidSocket,
     InvalidParam,
+    InvalidHandle,
     SocketsIncompatible,
     InitModuleFailed,
     RecorderFailed,
@@ -235,11 +237,21 @@ pub const Pipeline = struct {
     // Public Pipeline functions
     // ================================================
 
+    pub fn save(self: *Pipeline, writer: *std.Io.Writer) OperationError!void {
+        // return serdes.serialize(self, writer);
+        return self.history.save(writer);
+    }
+
+    pub fn load(self: *Pipeline, text: []const u8) OperationError!void {
+        // return serdes.deserialize(self, text);
+        return self.history.load(text);
+    }
+
     /// Public edit op: resolve `name` from the registered repos, add the
     /// module (instance `id`), and record a `module:` delta in history.
     pub fn addModule(self: *Pipeline, id: []const u8, name: []const u8) OperationError!ModuleHandle {
         const module_handle = try self._addModule(id, name);
-        try self.history.recordModuleDelta(self.allocator, name, id);
+        try self.history.recordModuleDelta(name, id);
         return module_handle;
     }
 
@@ -306,7 +318,7 @@ pub const Pipeline = struct {
 
         try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
 
-        self.history.recordConnectDelta(self.allocator, src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name) catch return OperationError.RecorderFailed;
+        self.history.recordConnectDelta(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name) catch return OperationError.RecorderFailed;
         return;
     }
 
@@ -340,7 +352,7 @@ pub const Pipeline = struct {
         dst_mod_socket_name: []const u8,
     ) OperationError!void {
         try self._connectModules(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name);
-        self.history.recordConnectDelta(self.allocator, src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name) catch return OperationError.RecorderFailed;
+        self.history.recordConnectDelta(src_mod, src_mod_socket_name, dst_mod, dst_mod_socket_name) catch return OperationError.RecorderFailed;
         return;
     }
 
@@ -529,12 +541,12 @@ pub const Pipeline = struct {
         };
         self.dirty = true;
         mod.dirty = true;
-        self.history.recordParamDelta(self.allocator, mod_handle, param_name) catch return OperationError.RecorderFailed;
+        self.history.recordParamDelta(mod_handle, param_name) catch return OperationError.RecorderFailed;
     }
 
     pub fn disconnectModule(self: *Pipeline, dst_mod: ModuleHandle, dst_mod_socket_name: []const u8) OperationError!void {
         try self._disconnectModule(dst_mod, dst_mod_socket_name);
-        self.history.recordDisconnectDelta(self.allocator, dst_mod, dst_mod_socket_name) catch return OperationError.RecorderFailed;
+        self.history.recordDisconnectDelta(dst_mod, dst_mod_socket_name) catch return OperationError.RecorderFailed;
     }
 
     /// Disconnect a module input socket by name+instance (used by replay).
@@ -546,7 +558,7 @@ pub const Pipeline = struct {
             return OperationError.InvalidModule;
         };
         try self._disconnectModule(dst_mod, dst_mod_socket);
-        self.history.recordDisconnectDelta(self.allocator, dst_mod, dst_mod_socket) catch return OperationError.RecorderFailed;
+        self.history.recordDisconnectDelta(dst_mod, dst_mod_socket) catch return OperationError.RecorderFailed;
     }
 
     pub fn disconnectModuleByNameNoRecord(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8, dst_mod_socket: []const u8) OperationError!void {
@@ -585,7 +597,7 @@ pub const Pipeline = struct {
             return OperationError.InvalidModule;
         };
         // recorded before the removal: removing the module frees its id
-        try self.history.recordRemoveDelta(self.allocator, mod.name, mod.id);
+        try self.history.recordRemoveDelta(mod.name, mod.id);
         try self._removeModule(module_handle);
     }
 
@@ -601,7 +613,7 @@ pub const Pipeline = struct {
         self.allocator.free(kv.key);
         const mod_handle = kv.value;
         try self._removeModule(mod_handle);
-        try self.history.recordRemoveDelta(self.allocator, dst_mod_name, dst_mod_id);
+        try self.history.recordRemoveDelta(dst_mod_name, dst_mod_id);
     }
 
     pub fn removeModuleByNameNoRecord(self: *Pipeline, dst_mod_name: []const u8, dst_mod_id: []const u8) OperationError!void {

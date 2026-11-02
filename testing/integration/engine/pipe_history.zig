@@ -65,7 +65,7 @@ test "resolves names from owned repo, addModule records" {
     try std.testing.expect(pipeline.repo.get("test-i-1234") != null);
     // unknown names are not resolvable
     try std.testing.expect(pipeline.repo.get("does-not-exist") == null);
-    try std.testing.expectError(error.ModuleNotFound, pipeline.addModule("01", "does-not-exist"));
+    try std.testing.expectError(error.InvalidModule, pipeline.addModule("01", "does-not-exist"));
 
     // addModule (public edit op) DOES record
     _ = try pipeline.addModule("02", "test-i-1234");
@@ -207,4 +207,87 @@ test "history round-trips through serdes serialize output" {
     const text = w.written();
     try std.testing.expect(std.mem.indexOf(u8, text, "param:test-multiply:01:multiplier:2") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "connect:test-multiply:01:output:test-nop-glsl:01:input") != null);
+}
+
+/// Assert two serialized pipelines are semantically equal: same records,
+/// ignoring line order (pool slot order is insertion-order dependent).
+fn expectSameRecords(allocator: std.mem.Allocator, a: []const u8, b: []const u8) !void {
+    const lessThan = struct {
+        fn f(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.lessThan(u8, x, y);
+        }
+    }.f;
+
+    var la: std.ArrayList([]const u8) = .empty;
+    defer la.deinit(allocator);
+    var lb: std.ArrayList([]const u8) = .empty;
+    defer lb.deinit(allocator);
+
+    var it_a = std.mem.splitScalar(u8, a, '\n');
+    while (it_a.next()) |line| {
+        if (line.len != 0) try la.append(allocator, line);
+    }
+    var it_b = std.mem.splitScalar(u8, b, '\n');
+    while (it_b.next()) |line| {
+        if (line.len != 0) try lb.append(allocator, line);
+    }
+
+    std.mem.sort([]const u8, la.items, {}, lessThan);
+    std.mem.sort([]const u8, lb.items, {}, lessThan);
+
+    try std.testing.expectEqual(la.items.len, lb.items.len);
+    for (la.items, lb.items) |x, y| try std.testing.expectEqualStrings(x, y);
+}
+
+test "history save writes committed steps only and load commits them" {
+    const allocator = std.testing.allocator;
+    var pipe_a = try Pipeline.init(allocator, std.testing.io, null, null);
+    defer pipe_a.deinit();
+
+    _ = try buildChain(&pipe_a);
+    const full = pipe_a.history.histlist.count();
+
+    // leave a redo tail behind: only the committed steps may be saved
+    try pipe_a.undo();
+    try std.testing.expectEqual(full - 1, pipe_a.history.histlist.cursor);
+
+    var w = std.Io.Writer.Allocating.init(allocator);
+    defer w.deinit();
+    try pipe_a.save(&w.writer);
+    const saved = w.written();
+
+    // no header and no line past the cursor
+    try std.testing.expect(std.mem.indexOf(u8, saved, "history:") == null);
+    var line_count: usize = 0;
+    var lines = std.mem.splitScalar(u8, saved, '\n');
+    while (lines.next()) |line| {
+        if (line.len != 0) line_count += 1;
+    }
+    try std.testing.expectEqual(full - 1, line_count);
+
+    var pipe_b = try Pipeline.init(allocator, std.testing.io, null, null);
+    defer pipe_b.deinit();
+    try pipe_b.load(saved);
+
+    // every loaded step is committed; there is no redo tail
+    try std.testing.expectEqual(full - 1, pipe_b.history.histlist.count());
+    try std.testing.expectEqual(full - 1, pipe_b.history.histlist.cursor);
+    try std.testing.expect(!pipe_b.history.histlist.canRedo());
+    try std.testing.expect(pipe_b.history.histlist.canUndo());
+
+    // the loaded pipeline is in the same state as pipe_a's committed slice
+    var w_a = std.Io.Writer.Allocating.init(allocator);
+    defer w_a.deinit();
+    try pie.serdes.serialize(&pipe_a, &w_a.writer);
+    var w_b = std.Io.Writer.Allocating.init(allocator);
+    defer w_b.deinit();
+    try pie.serdes.serialize(&pipe_b, &w_b.writer);
+    try expectSameRecords(allocator, w_a.written(), w_b.written());
+
+    // undo keeps working on the loaded log, and redo stays empty
+    try pipe_b.undo();
+    try std.testing.expectEqual(full - 2, pipe_b.history.histlist.cursor);
+    try pipe_b.redo();
+    try std.testing.expectEqual(full - 1, pipe_b.history.histlist.cursor);
+    try std.testing.expect(!pipe_b.history.histlist.canRedo());
 }

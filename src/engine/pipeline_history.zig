@@ -3,8 +3,11 @@ const HistList = @import("histlist.zig").HistList;
 const HistoryConfig = @import("histlist.zig").HistoryConfig;
 const pipeline = @import("pipeline.zig");
 const Pipeline = pipeline.Pipeline;
+const OperationError = pipeline.OperationError;
 const ModuleHandle = pipeline.ModuleHandle;
+const Module = @import("Module.zig");
 const serdes = @import("serdes.zig");
+const colonconfig = @import("colonconfig");
 
 pub const PipelineHistory = struct {
     histlist: HistList([]const u8, []const u8),
@@ -45,8 +48,8 @@ pub const PipelineHistory = struct {
         // replay committed deltas over the empty graph
         const all = self.histlist.all();
         const end = @min(target_clamped, all.len);
-        for (all[0..end], 0..) |item, i| {
-            try serdes.apply(pipe, item.line, i);
+        for (all[0..end]) |item| {
+            try serdes.deserialize(pipe, item.line);
         }
 
         self.histlist.setCursor(end);
@@ -70,66 +73,96 @@ pub const PipelineHistory = struct {
     // History delta recorders
     // ================================================
 
-    pub fn recordParamDelta(self: *Self, allocator: std.mem.Allocator, mod_handle: ModuleHandle, param_name: []const u8) !void {
+    /// Delta construction may fail on the writer (OOM) or on unknown
+    /// module/param handles; all of it is a failed recording.
+    fn recordError(err: anyerror) OperationError {
+        return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.RecorderFailed,
+        };
+    }
+
+    pub fn recordParamDelta(self: *Self, mod_handle: ModuleHandle, param_name: []const u8) OperationError!void {
         const pipe = super(self);
         const mod = try pipe.module_pool.getPtr(mod_handle);
-        const line = try serdes.paramToLine(pipe, mod_handle, param_name);
-        defer allocator.free(line);
-        // key prefixes the value so repeated edits of the same param coalesce
-        const key = try std.mem.concat(allocator, u8, &.{ "param:", mod.name, ":", mod.id, ":", param_name });
-        defer allocator.free(key);
-        try self.histlist.appendKeyed(line, key, self.config);
+        const idx = mod.getParamIndex(param_name) catch return error.RecorderFailed;
+        const param = mod.params[idx] orelse return error.RecorderFailed;
+
+        const line = self.histlist.beginLine();
+        switch (param.value()) {
+            inline else => |v| colonconfig.writeRecord(line, serdes.ParamCfgEntry.key, .{ mod.name, mod.id, param.desc.name, v }) catch return error.RecorderFailed,
+        }
+        // the key prefixes the value so repeated edits of the same param coalesce
+        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ serdes.ParamCfgEntry.key, mod.name, mod.id, param.desc.name }) catch return error.RecorderFailed;
+        self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
-    pub fn recordModuleDelta(self: *Self, allocator: std.mem.Allocator, name: []const u8, id: []const u8) !void {
-        // const pipe = super(self);
-        const buf = try std.mem.concat(allocator, u8, &.{ "module:", name, ":", id });
-        defer allocator.free(buf);
-        try self.histlist.append(buf);
+    pub fn recordModuleDelta(self: *Self, name: []const u8, id: []const u8) OperationError!void {
+        colonconfig.writeRecord(self.histlist.beginLine(), serdes.ModuleCfgEntry.key, .{ name, id }) catch return error.RecorderFailed;
+        self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
-    pub fn recordRemoveDelta(self: *Self, allocator: std.mem.Allocator, name: []const u8, id: []const u8) !void {
-        // const pipe = super(self);
-        const buf = try std.mem.concat(allocator, u8, &.{ "removemodule:", name, ":", id });
-        defer allocator.free(buf);
-        try self.histlist.append(buf);
+    pub fn recordRemoveDelta(self: *Self, name: []const u8, id: []const u8) OperationError!void {
+        colonconfig.writeRecord(self.histlist.beginLine(), serdes.RemoveModuleCfgEntry.key, .{ name, id }) catch return error.RecorderFailed;
+        self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
     pub fn recordConnectDelta(
         self: *Self,
-        allocator: std.mem.Allocator,
         src_mod: ModuleHandle,
         src_mod_socket_name: []const u8,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
-    ) !void {
+    ) OperationError!void {
         const pipe = super(self);
         const src = try pipe.module_pool.getPtr(src_mod);
         const dst = try pipe.module_pool.getPtr(dst_mod);
-        const buf = try std.mem.concat(allocator, u8, &.{
-            "connect:",    src.name, ":",    src.id, ":",                 src_mod_socket_name, ":",
-            dst.name, ":",           dst.id, ":",    dst_mod_socket_name,
-        });
-        defer allocator.free(buf);
-        const key = try std.mem.concat(allocator, u8, &.{ "connect:", dst.name, ":", dst.id, ":", dst_mod_socket_name });
-        defer allocator.free(key);
-        try self.histlist.appendKeyed(buf, key, self.config);
+
+        const line = self.histlist.beginLine();
+        colonconfig.writeRecord(line, serdes.ConnectCfgEntry.key, .{ src.name, src.id, src_mod_socket_name, dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
+        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ serdes.ConnectCfgEntry.key, dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
+        self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
     pub fn recordDisconnectDelta(
         self: *Self,
-        allocator: std.mem.Allocator,
         dst_mod: ModuleHandle,
         dst_mod_socket_name: []const u8,
-    ) !void {
+    ) OperationError!void {
         const pipe = super(self);
         const dst = try pipe.module_pool.getPtr(dst_mod);
-        const buf = try std.mem.concat(allocator, u8, &.{
-            "connect:-1:-1:-1:", dst.name, ":", dst.id, ":", dst_mod_socket_name,
-        });
-        defer allocator.free(buf);
-        const key = try std.mem.concat(allocator, u8, &.{ "connect:", dst.name, ":", dst.id, ":", dst_mod_socket_name });
-        defer allocator.free(key);
-        try self.histlist.appendKeyed(buf, key, self.config);
+
+        const line = self.histlist.beginLine();
+        // `-1` as source type encodes an explicit disconnect
+        colonconfig.writeRecord(line, serdes.ConnectCfgEntry.key, .{ "-1", "", "", dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
+        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ serdes.ConnectCfgEntry.key, dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
+        self.histlist.commit(self.config) catch |err| return recordError(err);
+    }
+
+    // ================================================
+    // History save/load
+    // ================================================
+
+    /// Serialize the committed steps only — the redo tail past the cursor is
+    /// discarded — as one `serdes` grammar line per step.
+    pub fn save(self: *Self, writer: *std.Io.Writer) OperationError!void {
+        for (self.histlist.committed()) |item| {
+            writer.writeAll(item.line) catch return error.RecorderFailed;
+            writer.writeByte('\n') catch return error.RecorderFailed;
+        }
+    }
+
+    /// Replace the log with the text written by `save` and rebuild the
+    /// pipeline state by replaying every loaded step (all become committed).
+    pub fn load(self: *Self, data: []const u8) OperationError!void {
+        self.histlist.clear();
+
+        var lit: colonconfig.LineIterator = .init(std.Io.Reader.fixed(data));
+        while (lit.next() catch unreachable) |line| {
+            if (line.len == 0 or line[0] == '#') continue;
+            try self.histlist.append(line);
+        }
+
+        try self.replayHistory(self.histlist.count());
     }
 };

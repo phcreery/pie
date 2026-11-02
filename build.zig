@@ -108,6 +108,14 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{},
     });
 
+    // COLONCONFIG MODULE
+    const mod_colonconfig = b.createModule(.{
+        .root_source_file = b.path("src/colonconfig/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
     // GPU MODULE
     const mod_gpu = b.createModule(.{
         .root_source_file = b.path("src/gpu/root.zig"),
@@ -157,6 +165,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "stbi", .module = mod_stbi },
             .{ .name = "zig-graph", .module = mod_zig_graph },
+            .{ .name = "colonconfig", .module = mod_colonconfig },
         },
     });
 
@@ -284,6 +293,17 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     });
     const run_math_unit_tests = b.addRunArtifact(math_unit_tests);
     test_step.dependOn(&run_math_unit_tests.step);
+
+    // `colonconfig` is a standalone module dependency, so its tests are not
+    // collected by the mod_pie artifact above and need one of their own.
+    const colonconfig_unit_tests = b.addTest(.{
+        .name = "colonconfig tests",
+        .use_llvm = true,
+        .root_module = mod_colonconfig,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_colonconfig_tests = b.addRunArtifact(colonconfig_unit_tests);
+    test_step.dependOn(&run_colonconfig_tests.step);
 
     // INTEGRATION TESTS
     // first run the zig code as an executable

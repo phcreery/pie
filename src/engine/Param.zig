@@ -28,10 +28,10 @@ pub fn fromDesc(allocator: std.mem.Allocator, desc: api.ParamDesc) !Self {
     };
 }
 
-pub fn init(allocator: std.mem.Allocator, desc: api.ParamDesc, value: anytype) !Self {
+pub fn init(allocator: std.mem.Allocator, desc: api.ParamDesc, initial: anytype) !Self {
     var self = try Self.fromDesc(allocator, desc);
     errdefer self.deinit(allocator);
-    try self.set(value);
+    try self.set(initial);
     return self;
 }
 
@@ -39,8 +39,8 @@ pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
     allocator.free(self.bytes);
 }
 
-pub fn set(self: *Self, value: anytype) !void {
-    const val_as_bytes = switch (@typeInfo(@TypeOf(value))) {
+pub fn set(self: *Self, v: anytype) !void {
+    const val_as_bytes = switch (@typeInfo(@TypeOf(v))) {
         // some checks for slices
         .pointer => |slice_info| blk: {
             if (slice_info.child != u8) {
@@ -50,9 +50,9 @@ pub fn set(self: *Self, value: anytype) !void {
                 });
                 return error.InvalidTypeForParamValue;
             }
-            break :blk std.mem.sliceAsBytes(value);
+            break :blk std.mem.sliceAsBytes(v);
         },
-        else => std.mem.asBytes(&value),
+        else => std.mem.asBytes(&v),
     };
     // the value must fit the storage described by `desc`
     if (val_as_bytes.len > self.bytes.len) {
@@ -71,6 +71,22 @@ pub fn get(self: Self, T: type) T {
     return switch (@typeInfo(T)) {
         .pointer => std.mem.sliceTo(std.mem.bytesAsSlice(u8, self.bytes), 0),
         else => std.mem.bytesToValue(T, self.bytes),
+    };
+}
+
+/// The current value viewed by its declared type: numeric vectors keep
+/// their element type (serialized `:`-joined), strings lose the NUL tail.
+pub const Value = union(Type) {
+    i32: []align(1) const i32,
+    f32: []align(1) const f32,
+    str: []const u8,
+};
+
+pub fn value(self: Self) Value {
+    return switch (self.desc.typ) {
+        .i32 => .{ .i32 = std.mem.bytesAsSlice(i32, self.bytes[0 .. self.desc.len * @sizeOf(i32)]) },
+        .f32 => .{ .f32 = std.mem.bytesAsSlice(f32, self.bytes[0 .. self.desc.len * @sizeOf(f32)]) },
+        .str => .{ .str = std.mem.sliceTo(self.bytes, 0) },
     };
 }
 

@@ -1,143 +1,192 @@
-//! Plaintext (de)serialization of pipeline state in the
-//! grammar: `module:`, `connect:`, `param:` records, `:`-delimited, no
-//! whitespace trimming, `#` full-line comments.
+//! Plaintext (de)serialization of pipeline state in the grammar: `module:`,
+//! `connect:`/`feedback:`, `param:`, `removemodule:` records, `:`
+//! -delimited, no whitespace trimming, `#` full-line comments.
+//!
+//! Parsing is built on the `colonconfig` module: one CfgEntry struct per record
+//! key (fields map positionally onto the arguments; `param`'s value is the
+//! whole remainder via `colonconfig.rest`, so string values may contain
+//! `:`). `apply` stays line-ordered — it dispatches each line through the
+//! `schema` table and warn-and-continues on anything the pipeline does not
+//! understand, exactly like `deserialize` does per line.
 //!
 //! `serialize` writes modules, then connects (destination-side only), then
-//! params. `deserialize` applies onto an existing pipeline and only allocator
-//! errors propagate; module ids are owned by the pipeline (see
+//! params. `deserialize` applies onto an existing pipeline and only
+//! allocator errors propagate; module ids are owned by the pipeline (see
 //! `Pipeline._addModule`), so the lines may be transient.
 
 const std = @import("std");
-const api = @import("modules/api.zig");
 const pipeline = @import("pipeline.zig");
-const Param = @import("Param.zig");
+const colonconfig = @import("colonconfig");
 const slog = std.log.scoped(.serdes);
 
-/// Apply a single `.pst` grammar line to the pipeline. This is the same
-/// warn-and-continue handler `deserialize` uses per line, extracted so the
-/// history log can replay a recorded delta. Module names resolve against the
-/// pipeline's registered repos. Unknown commands, unknown modules/params and
-/// failed connects log a warning and are skipped; only allocator errors
-/// propagate.
-pub fn apply(pipe: *pipeline.Pipeline, line_in: []const u8, line_no: usize) !void {
-    const line = std.mem.trimEnd(u8, line_in, "\r");
-    if (line.len == 0) return;
-    if (line[0] == '#') return;
+/// Record definitions: field order maps positionally onto the arguments of
+/// each line; `key` names the record (used by `apply` and `writeEntry`).
+pub const ModuleCfgEntry = struct {
+    pub const key = "module";
 
-    var tokens = std.mem.splitScalar(u8, line, ':');
-    const cmd = tokens.next() orelse return;
+    name: []const u8,
+    id: []const u8,
+};
 
-    if (std.mem.eql(u8, cmd, "module")) {
-        return applyModule(pipe, &tokens, line_no);
-    } else if (std.mem.eql(u8, cmd, "connect") or std.mem.eql(u8, cmd, "feedback")) {
-        return applyConnect(pipe, &tokens, line_no);
-    } else if (std.mem.eql(u8, cmd, "param")) {
-        return applyParam(pipe, &tokens, line, line_no);
-    } else if (std.mem.eql(u8, cmd, "removemodule")) {
-        return applyRemoveModule(pipe, &tokens, line_no);
-    } else if (std.mem.eql(u8, cmd, "keyframe") or
-        std.mem.eql(u8, cmd, "keyframE") or
-        std.mem.eql(u8, cmd, "Keyframe") or
-        std.mem.eql(u8, cmd, "KeyframE") or
-        std.mem.eql(u8, cmd, "keyFRAME") or
-        std.mem.eql(u8, cmd, "frames") or
-        std.mem.eql(u8, cmd, "fps"))
-    {
-        slog.warn("line {d}: '{s}' records not yet supported, skipping", .{ line_no, cmd });
-        return;
-    } else {
-        slog.warn("line {d}: unknown command '{s}', skipping", .{ line_no, cmd });
-    }
+pub const ConnectCfgEntry = struct {
+    pub const key = "connect";
+
+    src: []const u8,
+    src_id: []const u8,
+    src_sock: []const u8,
+    dst: []const u8,
+    dst_id: []const u8,
+    dst_sock: []const u8,
+};
+
+pub const ParamCfgEntry = struct {
+    pub const key = "param";
+
+    name: []const u8,
+    id: []const u8,
+    param: []const u8,
+    value: []const u8,
+    pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
+};
+
+pub const RemoveModuleCfgEntry = struct {
+    pub const key = "removemodule";
+
+    name: []const u8,
+    id: []const u8,
+};
+
+/// Record kinds `apply` understands; tag names are the grammar keys.
+/// `feedback` is an alias of `connect` and shares its record.
+const Kind = enum {
+    module,
+    connect,
+    feedback,
+    param,
+    removemodule,
+};
+
+comptime {
+    if (!std.mem.eql(u8, @tagName(Kind.module), ModuleCfgEntry.key))
+        @compileError("serdes: Kind.module must match ModuleCfgEntry.key");
+    if (!std.mem.eql(u8, @tagName(Kind.connect), ConnectCfgEntry.key))
+        @compileError("serdes: Kind.connect must match ConnectCfgEntry.key");
+    if (!std.mem.eql(u8, @tagName(Kind.param), ParamCfgEntry.key))
+        @compileError("serdes: Kind.param must match ParamCfgEntry.key");
+    if (!std.mem.eql(u8, @tagName(Kind.removemodule), RemoveModuleCfgEntry.key))
+        @compileError("serdes: Kind.removemodule must match RemoveModuleCfgEntry.key");
 }
 
-fn applyModule(
-    pipe: *pipeline.Pipeline,
-    tokens: *std.mem.SplitIterator(u8, .scalar),
-    line_no: usize,
-) !void {
-    const name = tokens.next() orelse {
-        slog.warn("line {d}: missing module name, skipping", .{line_no});
+fn applyModule(pipe: *pipeline.Pipeline, cfg: ModuleCfgEntry, line_no: usize) !void {
+    if (cfg.name.len == 0 or cfg.id.len == 0) {
+        slog.warn("line {d}: incomplete module line, skipping", .{line_no});
         return;
-    };
-    const inst = tokens.next() orelse {
-        slog.warn("line {d}: missing module instance, skipping", .{line_no});
-        return;
-    };
-    const fullname = try std.mem.concat(pipe.allocator, u8, &.{ name, ":", inst });
+    }
+    const fullname = try std.mem.concat(pipe.allocator, u8, &.{ cfg.name, ":", cfg.id });
     defer pipe.allocator.free(fullname);
     if (pipe.module_name_map.contains(fullname)) return; // dedup
-    if (pipe.repo.get(name) == null) {
-        slog.warn("line {d}: unknown module '{s}', skipping", .{ line_no, name });
+    if (pipe.repo.get(cfg.name) == null) {
+        slog.warn("line {d}: unknown module '{s}', skipping", .{ line_no, cfg.name });
         return;
     }
-    _ = try pipe.addModuleNoRecord(inst, name);
+    _ = try pipe.addModuleNoRecord(cfg.id, cfg.name);
 }
 
-fn applyRemoveModule(
-    pipe: *pipeline.Pipeline,
-    tokens: *std.mem.SplitIterator(u8, .scalar),
-    line_no: usize,
-) !void {
-    const name = tokens.next() orelse {
-        slog.warn("line {d}: missing removemodule name, skipping", .{line_no});
+fn applyRemoveModule(pipe: *pipeline.Pipeline, cfg: RemoveModuleCfgEntry, line_no: usize) !void {
+    if (cfg.name.len == 0 or cfg.id.len == 0) {
+        slog.warn("line {d}: incomplete removemodule line, skipping", .{line_no});
         return;
-    };
-    const inst = tokens.next() orelse {
-        slog.warn("line {d}: missing removemodule instance, skipping", .{line_no});
-        return;
-    };
-    pipe.removeModuleByName(name, inst) catch |err| {
+    }
+    pipe.removeModuleByName(cfg.name, cfg.id) catch |err| {
         slog.warn("line {d}: removemodule failed ({}), skipping", .{ line_no, err });
     };
 }
 
-fn applyConnect(
-    pipe: *pipeline.Pipeline,
-    tokens: *std.mem.SplitIterator(u8, .scalar),
-    line_no: usize,
-) !void {
-    const src_name = tokens.next() orelse {
-        slog.warn("line {d}: missing connect source type, skipping", .{line_no});
+fn applyConnect(pipe: *pipeline.Pipeline, cfg: ConnectCfgEntry, line_no: usize) !void {
+    if (cfg.dst.len == 0 or cfg.dst_id.len == 0 or cfg.dst_sock.len == 0) {
+        slog.warn("line {d}: incomplete connect line, skipping", .{line_no});
         return;
-    };
-    const src_inst = tokens.next() orelse {
-        slog.warn("line {d}: missing connect source instance, skipping", .{line_no});
-        return;
-    };
-    const src_sock = tokens.next() orelse {
-        slog.warn("line {d}: missing connect source socket, skipping", .{line_no});
-        return;
-    };
-    const dst_name = tokens.next() orelse {
-        slog.warn("line {d}: missing connect destination type, skipping", .{line_no});
-        return;
-    };
-    const dst_inst = tokens.next() orelse {
-        slog.warn("line {d}: missing connect destination instance, skipping", .{line_no});
-        return;
-    };
-    const dst_sock = tokens.next() orelse {
-        slog.warn("line {d}: missing connect destination socket, skipping", .{line_no});
-        return;
-    };
+    }
     // A `-1` source encodes an explicit disconnect
-    if (std.mem.eql(u8, src_name, "-1")) {
-        pipe.disconnectModuleByNameNoRecord(dst_name, dst_inst, dst_sock) catch |err| {
+    if (std.mem.eql(u8, cfg.src, "-1")) {
+        pipe.disconnectModuleByNameNoRecord(cfg.dst, cfg.dst_id, cfg.dst_sock) catch |err| {
             slog.warn("line {d}: disconnect failed ({}), skipping", .{ line_no, err });
         };
         return;
     }
-    pipe.connectModulesByNameNoRecord(src_name, src_inst, src_sock, dst_name, dst_inst, dst_sock) catch |err| {
+    if (cfg.src.len == 0 or cfg.src_id.len == 0 or cfg.src_sock.len == 0) {
+        slog.warn("line {d}: incomplete connect line, skipping", .{line_no});
+        return;
+    }
+    pipe.connectModulesByNameNoRecord(cfg.src, cfg.src_id, cfg.src_sock, cfg.dst, cfg.dst_id, cfg.dst_sock) catch |err| {
         slog.warn("line {d}: connect failed ({}), skipping", .{ line_no, err });
     };
 }
 
+fn applyParam(pipe: *pipeline.Pipeline, cfg: ParamCfgEntry, line_no: usize) !void {
+    if (cfg.name.len == 0 or cfg.id.len == 0 or cfg.param.len == 0) {
+        slog.warn("line {d}: incomplete param line, skipping", .{line_no});
+        return;
+    }
+
+    const fullname = try std.mem.concat(pipe.allocator, u8, &.{ cfg.name, ":", cfg.id });
+    defer pipe.allocator.free(fullname);
+    const mod_handle = pipe.module_name_map.get(fullname) orelse {
+        slog.warn("line {d}: unknown module '{s}', skipping", .{ line_no, fullname });
+        return;
+    };
+    const mod = try pipe.module_pool.getPtr(mod_handle);
+    const idx = mod.getParamIndex(cfg.param) catch {
+        slog.warn("line {d}: unknown parameter '{s}', skipping", .{ line_no, cfg.param });
+        return;
+    };
+    const param = mod.params[idx] orelse {
+        slog.warn("line {d}: unknown parameter '{s}', skipping", .{ line_no, cfg.param });
+        return;
+    };
+    const pdesc = param.desc;
+    switch (pdesc.typ) {
+        .f32 => {
+            var value_tokens = std.mem.splitScalar(u8, cfg.value, ':');
+            for (0..pdesc.len) |i| {
+                const tok = value_tokens.next() orelse "";
+                const v: f32 = if (tok.len == 0) 0 else std.fmt.parseFloat(f32, tok) catch {
+                    slog.warn("line {d}: unparseable f32 '{s}', skipping", .{ line_no, tok });
+                    return;
+                };
+                @memcpy(param.bytes[i * 4 ..][0..4], std.mem.asBytes(&v));
+            }
+        },
+        .i32 => {
+            var value_tokens = std.mem.splitScalar(u8, cfg.value, ':');
+            for (0..pdesc.len) |i| {
+                const tok = value_tokens.next() orelse "";
+                const v: i32 = if (tok.len == 0) 0 else std.fmt.parseInt(i32, tok, 10) catch {
+                    slog.warn("line {d}: unparseable i32 '{s}', skipping", .{ line_no, tok });
+                    return;
+                };
+                @memcpy(param.bytes[i * 4 ..][0..4], std.mem.asBytes(&v));
+            }
+        },
+        .str => {
+            if (cfg.value.len >= pdesc.len) {
+                slog.warn("line {d}: string value too long for param '{s}', skipping", .{ line_no, pdesc.name });
+                return;
+            }
+            @memset(param.bytes, 0); // clear stale tail so string reads stop at the NUL
+            @memcpy(param.bytes[0..cfg.value.len], cfg.value);
+        },
+    }
+}
+
+/// This function serializes the current state of the pipeline into a colonconfig format.
+/// It should only ever be used for history compression.
 pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
     // modules
     var it = pipe.module_pool.liveHandles();
     while (it.next()) |handle| {
         const mod = try pipe.module_pool.getPtr(handle);
-        try writer.print("module:{s}:{s}\n", .{ mod.name, mod.id });
+        try colonconfig.writeEntry(writer, ModuleCfgEntry, .{ mod.name, mod.id });
     }
 
     // connects: one line per edge, from the destination side, input sockets only
@@ -150,7 +199,7 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
             const conn = sock.connected_to_module orelse continue;
             const src_mod = try pipe.module_pool.getPtr(conn.item);
             const src_sock = src_mod.sockets[conn.socket_idx] orelse continue;
-            try writer.print("connect:{s}:{s}:{s}:{s}:{s}:{s}\n", .{
+            try colonconfig.writeEntry(writer, ConnectCfgEntry, .{
                 src_mod.name, src_mod.id, src_sock.name,
                 mod.name,     mod.id,     sock.name,
             });
@@ -163,156 +212,35 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
         const mod = try pipe.module_pool.getPtr(handle);
         for (mod.params) |maybe_param| {
             const param = maybe_param orelse continue;
-            const pdesc = param.desc;
-            switch (pdesc.typ) {
-                .f32, .i32 => {
-                    try writer.print("param:{s}:{s}:{s}:", .{ mod.name, mod.id, pdesc.name });
-                    for (0..pdesc.len) |i| {
-                        if (i != 0) try writer.writeByte(':');
-                        const raw = param.bytes[i * 4 ..][0..4];
-                        switch (pdesc.typ) {
-                            .f32 => try writer.print("{d}", .{std.mem.bytesToValue(f32, raw)}),
-                            .i32 => try writer.print("{d}", .{std.mem.bytesToValue(i32, raw)}),
-                            else => unreachable,
-                        }
-                    }
-                    try writer.writeByte('\n');
-                },
-                .str => {
-                    try writer.print("param:{s}:{s}:{s}:{s}\n", .{ mod.name, mod.id, pdesc.name, param.get([]const u8) });
-                },
+            switch (param.value()) {
+                inline else => |v| try colonconfig.writeEntry(writer, ParamCfgEntry, .{
+                    mod.name, mod.id, param.desc.name, v,
+                }),
             }
         }
     }
 }
 
-pub fn applyParam(
-    pipe: *pipeline.Pipeline,
-    tokens: *std.mem.SplitIterator(u8, .scalar),
-    line: []const u8,
-    line_no: usize,
-) !void {
-    const name = tokens.next() orelse {
-        slog.warn("line {d}: missing param module type, skipping", .{line_no});
-        return;
-    };
-    const inst = tokens.next() orelse {
-        slog.warn("line {d}: missing param module instance, skipping", .{line_no});
-        return;
-    };
-    const parm = tokens.next() orelse {
-        slog.warn("line {d}: missing param name, skipping", .{line_no});
-        return;
-    };
-    // The value is the entire remainder of the line verbatim, so it may
-    // contain ':' (string params). Locate the terminating ':' of `parm`
-    // by scanning colons from the start of the line (module:inst:parm:).
-    var search_from: usize = 0;
-    var sep: ?usize = null;
-    for (0..4) |_| {
-        sep = std.mem.indexOfScalarPos(u8, line, search_from, ':') orelse break;
-        search_from = sep.? + 1;
-    }
-    const value_rest = sep orelse {
-        slog.warn("preset line {d}: malformed param line, skipping", .{line_no});
-        return;
-    };
-    const rest = line[value_rest + 1 ..];
-
-    const fullname = try std.mem.concat(pipe.allocator, u8, &.{ name, ":", inst });
-    defer pipe.allocator.free(fullname);
-    const mod_handle = pipe.module_name_map.get(fullname) orelse {
-        slog.warn("preset line {d}: unknown module '{s}', skipping", .{ line_no, fullname });
-        return;
-    };
-    const mod = try pipe.module_pool.getPtr(mod_handle);
-    const idx = mod.getParamIndex(parm) catch {
-        slog.warn("preset line {d}: unknown parameter '{s}', skipping", .{ line_no, parm });
-        return;
-    };
-    const param = mod.params[idx] orelse {
-        slog.warn("preset line {d}: unknown parameter '{s}', skipping", .{ line_no, parm });
-        return;
-    };
-    const pdesc = param.desc;
-    switch (pdesc.typ) {
-        .f32 => {
-            var value_tokens = std.mem.splitScalar(u8, rest, ':');
-            for (0..pdesc.len) |i| {
-                const tok = value_tokens.next() orelse "";
-                const v: f32 = if (tok.len == 0) 0 else std.fmt.parseFloat(f32, tok) catch {
-                    slog.warn("preset line {d}: unparseable f32 '{s}', skipping", .{ line_no, tok });
-                    return;
-                };
-                @memcpy(param.bytes[i * 4 ..][0..4], std.mem.asBytes(&v));
-            }
-        },
-        .i32 => {
-            var value_tokens = std.mem.splitScalar(u8, rest, ':');
-            for (0..pdesc.len) |i| {
-                const tok = value_tokens.next() orelse "";
-                const v: i32 = if (tok.len == 0) 0 else std.fmt.parseInt(i32, tok, 10) catch {
-                    slog.warn("preset line {d}: unparseable i32 '{s}', skipping", .{ line_no, tok });
-                    return;
-                };
-                @memcpy(param.bytes[i * 4 ..][0..4], std.mem.asBytes(&v));
-            }
-        },
-        .str => {
-            if (rest.len >= pdesc.len) {
-                slog.warn("preset line {d}: string value too long for param '{s}', skipping", .{ line_no, pdesc.name });
-                return;
-            }
-            @memset(param.bytes, 0); // clear stale tail so Param.get stops at the NUL
-            @memcpy(param.bytes[0..rest.len], rest);
-        },
-    }
-}
-
-/// Serialize a single live parameter to its `.pst` line, allocated with
-/// `@import("pipeline.zig").Pipeline.allocator`. Used to record `param:` deltas
-/// into history. Errors if the parameter has never been initialized.
-pub fn paramToLine(pipe: *pipeline.Pipeline, mod_handle: pipeline.ModuleHandle, param_name: []const u8) ![]u8 {
-    const mod = try pipe.module_pool.getPtr(mod_handle);
-    const idx = try mod.getParamIndex(param_name);
-    const param = mod.params[idx] orelse return error.ParamNotInitialized;
-    const pdesc = param.desc;
-
-    var w: std.Io.Writer.Allocating = .init(pipe.allocator);
-    errdefer w.deinit();
-
-    try w.writer.print("param:{s}:{s}:{s}:", .{ mod.name, mod.id, pdesc.name });
-    switch (pdesc.typ) {
-        .f32 => {
-            const vals = std.mem.bytesAsSlice(f32, param.bytes[0 .. pdesc.len * @sizeOf(f32)]);
-            for (vals, 0..) |v, i| {
-                if (i != 0) try w.writer.writeByte(':');
-                try w.writer.print("{d}", .{v});
-            }
-        },
-        .i32 => {
-            const vals = std.mem.bytesAsSlice(i32, param.bytes[0 .. pdesc.len * @sizeOf(i32)]);
-            for (vals, 0..) |v, i| {
-                if (i != 0) try w.writer.writeByte(':');
-                try w.writer.print("{d}", .{v});
-            }
-        },
-        .str => {
-            const s = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(param.bytes.ptr)), 0);
-            try w.writer.writeAll(s);
-        },
-    }
-
-    var al = w.toArrayList();
-    defer al.deinit(pipe.allocator);
-    return al.toOwnedSlice(pipe.allocator);
-}
-
+/// This function deserializes the colonconfig-formatted text into the pipeline state.
+/// It should only ever be used for history replay as it does not record any new history.
 pub fn deserialize(pipe: *pipeline.Pipeline, text: []const u8) !void {
     var line_no: usize = 0;
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |raw| {
+    var lit: colonconfig.LineIterator = .init(std.Io.Reader.fixed(text));
+    while (lit.next() catch unreachable) |line_in| {
         line_no += 1;
-        try apply(pipe, raw, line_no);
+        const line = std.mem.trimEnd(u8, line_in, "\r");
+        if (line.len == 0 or line[0] == '#') continue;
+
+        const split = colonconfig.splitKey(line);
+        const kind = std.meta.stringToEnum(Kind, split.key) orelse {
+            slog.warn("line {d}: unknown key '{s}', skipping", .{ line_no, split.key });
+            continue;
+        };
+        switch (kind) {
+            .module => try applyModule(pipe, colonconfig.parseArgs(ModuleCfgEntry, split.args), line_no),
+            .connect, .feedback => try applyConnect(pipe, colonconfig.parseArgs(ConnectCfgEntry, split.args), line_no),
+            .param => try applyParam(pipe, colonconfig.parseArgs(ParamCfgEntry, split.args), line_no),
+            .removemodule => try applyRemoveModule(pipe, colonconfig.parseArgs(RemoveModuleCfgEntry, split.args), line_no),
+        }
     }
 }

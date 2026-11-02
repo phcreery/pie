@@ -39,6 +39,10 @@ pub fn HistList(comptime TKey: type, comptime TValue: type) type {
         /// Committed marker. `items[0..cursor]` is undoable state; `items[cursor..]`
         /// is the redo tail.
         cursor: usize = 0,
+        /// Reusable buffers for building a delta line and its coalescing key
+        /// without a per-call allocation; see `beginLine`/`keyWriter`/`commit`.
+        line_buf: std.Io.Writer.Allocating,
+        key_buf: std.Io.Writer.Allocating,
 
         pub const Item = struct {
             /// Owned by `History.arena`, so it stays stable across appends.
@@ -59,10 +63,14 @@ pub fn HistList(comptime TKey: type, comptime TValue: type) type {
                 .arena = arena,
                 .io = io,
                 .items = .empty,
+                .line_buf = .init(allocator),
+                .key_buf = .init(allocator),
             };
         }
 
         pub fn deinit(self: *Self) void {
+            self.line_buf.deinit();
+            self.key_buf.deinit();
             self.arena.deinit();
             self.* = undefined;
         }
@@ -108,6 +116,40 @@ pub fn HistList(comptime TKey: type, comptime TValue: type) type {
         /// The caller is responsible for actually rebuilding pipeline state.
         pub fn setCursor(self: *Self, n: usize) void {
             self.cursor = @min(n, self.items.items.len);
+        }
+
+        /// Drop every recorded step (keeps allocated storage and the arena).
+        pub fn clear(self: *Self) void {
+            self.items.items.len = 0;
+            self.cursor = 0;
+        }
+
+        // ----- building deltas -----
+
+        /// Start a new delta: clears the line and key buffers and returns
+        /// the writer for the line. Write it (e.g. with
+        /// `colonconfig.writeRecord`), optionally write a coalescing key via
+        /// `keyWriter`, then `commit`.
+        pub fn beginLine(self: *Self) *std.Io.Writer {
+            self.line_buf.clearRetainingCapacity();
+            self.key_buf.clearRetainingCapacity();
+            return &self.line_buf.writer;
+        }
+
+        /// Writer for the current delta's coalescing key (valid between
+        /// `beginLine` and `commit`). Leaving it empty appends uncoalesced.
+        pub fn keyWriter(self: *Self) *std.Io.Writer {
+            return &self.key_buf.writer;
+        }
+
+        /// Push the line/key written since `beginLine`.
+        pub fn commit(self: *Self, cfg: HistoryConfig) !void {
+            const key = self.key_buf.written();
+            if (key.len == 0) {
+                try self.append(self.line_buf.written());
+            } else {
+                try self.appendKeyed(self.line_buf.written(), key, cfg);
+            }
         }
 
         /// Append a delta line without coalescing.
