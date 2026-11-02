@@ -84,7 +84,7 @@ pub fn recommendFormat(
     format: *const Format,
     options: Options,
 ) !Graph {
-    try serdes.deserialize(pipe, format.graph);
+    try serdes.deserialize(pipe, std.Io.Reader.fixed(format.graph));
 
     var sources = try pipe.modulesOfType(.source);
     defer sources.deinit(pipe.allocator);

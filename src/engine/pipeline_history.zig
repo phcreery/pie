@@ -49,7 +49,7 @@ pub const PipelineHistory = struct {
         const all = self.histlist.all();
         const end = @min(target_clamped, all.len);
         for (all[0..end]) |item| {
-            try serdes.deserialize(pipe, item.line);
+            try serdes.deserialize(pipe, std.Io.Reader.fixed(item.line));
         }
 
         self.histlist.setCursor(end);
@@ -89,7 +89,7 @@ pub const PipelineHistory = struct {
         const param = mod.params[idx] orelse return error.RecorderFailed;
 
         const line = self.histlist.beginLine();
-        serdes.cc.writeRecord(line, .{ .param = .{
+        serdes.PresetConfig.writeRecord(line, .{ .param = .{
             .name = mod.name,
             .id = mod.id,
             .param = param.desc.name,
@@ -101,12 +101,14 @@ pub const PipelineHistory = struct {
     }
 
     pub fn recordModuleDelta(self: *Self, name: []const u8, id: []const u8) OperationError!void {
-        serdes.cc.writeRecord(self.histlist.beginLine(), .{ .module = .{ .name = name, .id = id } }) catch return error.RecorderFailed;
+        const line = self.histlist.beginLine();
+        serdes.PresetConfig.writeRecord(line, .{ .module = .{ .name = name, .id = id } }) catch return error.RecorderFailed;
         self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
     pub fn recordRemoveDelta(self: *Self, name: []const u8, id: []const u8) OperationError!void {
-        serdes.cc.writeRecord(self.histlist.beginLine(), .{ .removemodule = .{ .name = name, .id = id } }) catch return error.RecorderFailed;
+        const line = self.histlist.beginLine();
+        serdes.PresetConfig.writeRecord(line, .{ .removemodule = .{ .name = name, .id = id } }) catch return error.RecorderFailed;
         self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
@@ -122,7 +124,7 @@ pub const PipelineHistory = struct {
         const dst = try pipe.module_pool.getPtr(dst_mod);
 
         const line = self.histlist.beginLine();
-        serdes.cc.writeRecord(line, .{ .connect = .{
+        serdes.PresetConfig.writeRecord(line, .{ .connect = .{
             .src = src.name,
             .src_id = src.id,
             .src_sock = src_mod_socket_name,
@@ -144,7 +146,7 @@ pub const PipelineHistory = struct {
 
         const line = self.histlist.beginLine();
         // `-1` as source type encodes an explicit disconnect
-        serdes.cc.writeRecord(line, .{ .connect = .{
+        serdes.PresetConfig.writeRecord(line, .{ .connect = .{
             .src = "-1",
             .src_id = "",
             .src_sock = "",
@@ -169,12 +171,12 @@ pub const PipelineHistory = struct {
         }
     }
 
-    /// Replace the log with the text written by `save` and rebuild the
+    /// Replace the log with the lines written by `save` and rebuild the
     /// pipeline state by replaying every loaded step (all become committed).
-    pub fn load(self: *Self, data: []const u8) OperationError!void {
+    pub fn load(self: *Self, reader: std.Io.Reader) OperationError!void {
         self.histlist.clear();
 
-        var lit: colonconfig.LineIterator = .init(std.Io.Reader.fixed(data));
+        var lit: colonconfig.LineIterator = .init(reader);
         while (lit.next() catch unreachable) |line| {
             if (line.len == 0 or line[0] == '#') continue;
             try self.histlist.append(line);

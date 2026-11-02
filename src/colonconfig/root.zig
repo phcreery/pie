@@ -38,7 +38,7 @@
 //!
 //! const Config = colonconfig.ColonConfig(Schema);
 //! var config = Config.init(allocator);
-//! const doc = try config.parse(file);
+//! const doc = try config.parse(std.Io.Reader.fixed(file));
 //! defer doc.deinit();
 //!
 //! var it = doc.iter(.module);
@@ -169,11 +169,11 @@ fn argFor(comptime CfgEntry: type, comptime field_idx: usize) i64 {
 }
 
 /// A parsed document: typed entries grouped per command key, plus the raw
-/// text. All string fields point into `text`; `deinit` frees the groups
-/// (and the text if this doc read it from a file).
+/// text. All string fields point into `text`; `deinit` frees the groups and
+/// the text.
 fn DocOf(comptime Schema: type) type {
     return struct {
-        /// Raw source text. Arena-owned iff created by `ColonConfig.read`.
+        /// Raw source text, owned by the doc's arena.
         text: []const u8,
         arena_state: ?std.heap.ArenaAllocator = null,
         groups: []Group = &.{},
@@ -272,19 +272,24 @@ pub fn ColonConfig(comptime Schema: type) type {
             return .{ .gpa = gpa };
         }
 
-        /// Parse in-memory text. The text must outlive the doc and every
-        /// entry taken from it. `deinit` the doc when done.
-        pub fn parse(self: Self, text: []const u8) Allocator.Error!Doc {
+        /// Parse everything remaining in `reader`. The bytes are copied into
+        /// the doc's arena so `write` can re-emit them. `deinit` the doc when
+        /// done.
+        pub fn parse(self: Self, reader: std.Io.Reader) !Doc {
             var arena = std.heap.ArenaAllocator.init(self.gpa);
             errdefer arena.deinit();
-            var doc = try self.parseAlloc(arena.allocator(), text);
+            const a = arena.allocator();
+            var r = reader;
+            const text = try r.allocRemaining(a, .unlimited);
+            var doc = try self.parseAlloc(a, text);
             doc.arena_state = arena;
             return doc;
         }
 
-        /// Parse using `a` for the entry groups; the returned doc does not
-        /// own anything (`arena_state` is null) and `deinit` is a no-op —
-        /// the caller frees `a`. Also the building block for `read`.
+        /// Parse `text` using `a` for the entry groups; the returned doc does
+        /// not own anything (`arena_state` is null) and `deinit` is a no-op —
+        /// the caller owns `a` and `text`. Also the building block for
+        /// `parse`/`read`.
         fn parseAlloc(self: Self, a: Allocator, text: []const u8) Allocator.Error!Doc {
             _ = self;
             var groups = try a.alloc(Group, info.field_names.len);
@@ -520,7 +525,7 @@ test "colonconfig api test" {
 
     const cc: ColonConfig(Schema) = .init(allocator);
 
-    const doc = try cc.parse(file);
+    const doc = try cc.parse(std.Io.Reader.fixed(file));
     defer doc.deinit();
 
     var mods = doc.iter(.module);
@@ -573,7 +578,7 @@ test "missing keys and unknown lines are skipped, comments preserved in write" {
         \\garbage without a colon
         \\module:format:02
     ;
-    const doc = try cc.parse(file);
+    const doc = try cc.parse(std.Io.Reader.fixed(file));
     defer doc.deinit();
 
     var it = doc.iter(.module);
@@ -599,7 +604,7 @@ test "value may contain colons when the field is colonconfig.rest" {
     };
     const cc = ColonConfig(Schema).init(std.testing.allocator);
 
-    const doc = try cc.parse("param:mod:01:path:a:b:c");
+    const doc = try cc.parse(std.Io.Reader.fixed("param:mod:01:path:a:b:c"));
     defer doc.deinit();
 
     var it = doc.iter(.param);
@@ -622,7 +627,7 @@ test "empty value is an explicit empty string" {
     };
     const cc = ColonConfig(Schema).init(std.testing.allocator);
 
-    const doc = try cc.parse("param:mod:01:scale:");
+    const doc = try cc.parse(std.Io.Reader.fixed("param:mod:01:scale:"));
     defer doc.deinit();
     var it = doc.iter(.param);
     const p = it.next().?;
@@ -638,7 +643,7 @@ test "doc with no matching entries iterates empty" {
     };
     const cc = ColonConfig(Schema).init(std.testing.allocator);
 
-    const doc = try cc.parse("");
+    const doc = try cc.parse(std.Io.Reader.fixed(""));
     defer doc.deinit();
     var it = doc.iter(.module);
     try std.testing.expect(it.next() == null);
@@ -655,7 +660,7 @@ test "crlf is tolerated" {
     };
     const cc = ColonConfig(Schema).init(std.testing.allocator);
 
-    const doc = try cc.parse("param:x:y:z:1\r\nparam:a:b:c:d\r\n");
+    const doc = try cc.parse(std.Io.Reader.fixed("param:x:y:z:1\r\nparam:a:b:c:d\r\n"));
     defer doc.deinit();
     var it = doc.iter(.param);
     const p = it.next().?;

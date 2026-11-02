@@ -241,7 +241,7 @@ pub const Pipeline = struct {
     }
 
     pub fn load(self: *Pipeline, text: []const u8) OperationError!void {
-        return self.history.load(text);
+        return self.history.load(std.Io.Reader.fixed(text));
     }
 
     /// Public edit op: resolve `name` from the registered repos, add the
