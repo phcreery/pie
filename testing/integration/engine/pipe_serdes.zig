@@ -2,12 +2,11 @@ const std = @import("std");
 const pie = @import("pie");
 
 const Pipeline = pie.Pipeline;
-const Modules = pie.modules;
 
 /// Darkroom-style chain: i-raw -> format -> denoise -> demosaic -> crop ->
 /// color -> filmcurv -> o-display, all instances "01", with darkroom's exact
-/// params set (several non-default). Uses the non-recording primitives so the
-/// serdes round-trip exercises the raw pipeline (not the history).
+/// params set (several non-default). Built through the recording edit ops so
+/// `save`/`load` (the pipeline-level API under test) capture every step.
 fn buildChain(p: *Pipeline) !void {
     const iraw = try p.addModule("01", "i-raw");
     const format = try p.addModule("01", "format");
@@ -38,7 +37,7 @@ fn buildChain(p: *Pipeline) !void {
     try p.connectModules(filmcurv, "output", odisplay, "input");
 }
 
-test "preset serialize emits vkdt-style lines" {
+test "save emits vkdt-style lines for the recorded graph" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -49,16 +48,17 @@ test "preset serialize emits vkdt-style lines" {
 
     var w = std.Io.Writer.Allocating.init(allocator);
     defer w.deinit();
-    try pie.serdes.serialize(&pipeline, &w.writer);
+    try pipeline.save(&w.writer);
     const text = w.written();
 
     try std.testing.expect(std.mem.indexOf(u8, text, "module:i-raw:01\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "connect:i-raw:01:output:format:01:input\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "param:i-raw:01:filename:testing/images/DSC_6765.NEF\n") != null);
-    // never-initialized params are not serialized
+    // only edits that happened are recorded; untouched params are not present
+    try std.testing.expect(std.mem.indexOf(u8, text, "param:format:01:") == null);
 }
 
-test "preset round trip preserves pipeline state" {
+test "save/load round trip preserves pipeline state" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -68,20 +68,19 @@ test "preset round trip preserves pipeline state" {
 
     var w_a = std.Io.Writer.Allocating.init(allocator);
     defer w_a.deinit();
-    try pie.serdes.serialize(&pipe_a, &w_a.writer);
+    try pipe_a.save(&w_a.writer);
     const text_a = w_a.written();
-
 
     var pipe_b = try Pipeline.init(allocator, io, null, null);
     defer pipe_b.deinit();
-    try pie.serdes.deserialize(&pipe_b, text_a);
+    try pipe_b.load(text_a);
 
     var w_b = std.Io.Writer.Allocating.init(allocator);
     defer w_b.deinit();
-    try pie.serdes.serialize(&pipe_b, &w_b.writer);
+    try pipe_b.save(&w_b.writer);
     try std.testing.expectEqualStrings(text_a, w_b.written());
 
-    // structural checks on the deserialized pipeline
+    // structural checks on the loaded pipeline
     try std.testing.expectEqual(pipe_a.module_name_map.count(), pipe_b.module_name_map.count());
 
     const color_handle = pipe_b.module_name_map.get("color:01").?;
@@ -95,7 +94,7 @@ test "preset round trip preserves pipeline state" {
     try std.testing.expectEqual(pipe_b.module_name_map.get("demosaic:01").?, crop_conn.item);
 }
 
-test "preset deserialize accepts vkdt syntax" {
+test "load accepts vkdt syntax" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -111,8 +110,7 @@ test "preset deserialize accepts vkdt syntax" {
         \\module:format:01
     ;
 
-
-    try pie.serdes.deserialize(&pipeline, text);
+    try pipeline.load(text);
 
     // duplicate module line is deduped
     try std.testing.expectEqual(@as(usize, 2), pipeline.module_name_map.count());
@@ -130,7 +128,7 @@ test "preset deserialize accepts vkdt syntax" {
     try std.testing.expectEqualStrings("path/with space.NEF", filename);
 }
 
-test "preset deserialize skips bad lines leniently" {
+test "load skips bad lines leniently" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -147,9 +145,8 @@ test "preset deserialize skips bad lines leniently" {
         \\param:filmcurv:01:brightness:abc
     ;
 
-
     // no error return: bad lines are warned and skipped
-    try pie.serdes.deserialize(&pipeline, text);
+    try pipeline.load(text);
 
     try std.testing.expect(pipeline.module_name_map.contains("format:01"));
     try std.testing.expect(!pipeline.module_name_map.contains("draw:01"));

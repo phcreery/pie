@@ -191,25 +191,7 @@ test "replay invalidates redo tail on new edits" {
     try std.testing.expect(!pipeline.history.histlist.canRedo());
 }
 
-test "history round-trips through serdes serialize output" {
-    const allocator = std.testing.allocator;
-    var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
-    defer pipeline.deinit();
-
-    _ = try buildChain(&pipeline);
-
-    var w = std.Io.Writer.Allocating.init(allocator);
-    defer w.deinit();
-    try pie.serdes.serialize(&pipeline, &w.writer);
-
-    // The committed history lines must be a subset of the serialized graph
-    // (replay 'delta log' + static serialize agree on the same grammar).
-    const text = w.written();
-    try std.testing.expect(std.mem.indexOf(u8, text, "param:test-multiply:01:multiplier:2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, text, "connect:test-multiply:01:output:test-nop-glsl:01:input") != null);
-}
-
-/// Assert two serialized pipelines are semantically equal: same records,
+/// Assert two saved pipelines are semantically equal: same records,
 /// ignoring line order (pool slot order is insertion-order dependent).
 fn expectSameRecords(allocator: std.mem.Allocator, a: []const u8, b: []const u8) !void {
     const lessThan = struct {
@@ -278,10 +260,10 @@ test "history save writes committed steps only and load commits them" {
     // the loaded pipeline is in the same state as pipe_a's committed slice
     var w_a = std.Io.Writer.Allocating.init(allocator);
     defer w_a.deinit();
-    try pie.serdes.serialize(&pipe_a, &w_a.writer);
+    try pipe_a.save(&w_a.writer);
     var w_b = std.Io.Writer.Allocating.init(allocator);
     defer w_b.deinit();
-    try pie.serdes.serialize(&pipe_b, &w_b.writer);
+    try pipe_b.save(&w_b.writer);
     try expectSameRecords(allocator, w_a.written(), w_b.written());
 
     // undo keeps working on the loaded log, and redo stays empty

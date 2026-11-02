@@ -89,21 +89,24 @@ pub const PipelineHistory = struct {
         const param = mod.params[idx] orelse return error.RecorderFailed;
 
         const line = self.histlist.beginLine();
-        switch (param.value()) {
-            inline else => |v| colonconfig.writeRecord(line, serdes.ParamCfgEntry.key, .{ mod.name, mod.id, param.desc.name, v }) catch return error.RecorderFailed,
-        }
+        serdes.cc.writeRecord(line, .{ .param = .{
+            .name = mod.name,
+            .id = mod.id,
+            .param = param.desc.name,
+            .value = serdes.schemaValue(param.value()),
+        } }) catch return error.RecorderFailed;
         // the key prefixes the value so repeated edits of the same param coalesce
-        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ serdes.ParamCfgEntry.key, mod.name, mod.id, param.desc.name }) catch return error.RecorderFailed;
+        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ @tagName(.param), mod.name, mod.id, param.desc.name }) catch return error.RecorderFailed;
         self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
     pub fn recordModuleDelta(self: *Self, name: []const u8, id: []const u8) OperationError!void {
-        colonconfig.writeRecord(self.histlist.beginLine(), serdes.ModuleCfgEntry.key, .{ name, id }) catch return error.RecorderFailed;
+        serdes.cc.writeRecord(self.histlist.beginLine(), .{ .module = .{ .name = name, .id = id } }) catch return error.RecorderFailed;
         self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
     pub fn recordRemoveDelta(self: *Self, name: []const u8, id: []const u8) OperationError!void {
-        colonconfig.writeRecord(self.histlist.beginLine(), serdes.RemoveModuleCfgEntry.key, .{ name, id }) catch return error.RecorderFailed;
+        serdes.cc.writeRecord(self.histlist.beginLine(), .{ .removemodule = .{ .name = name, .id = id } }) catch return error.RecorderFailed;
         self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
@@ -119,8 +122,15 @@ pub const PipelineHistory = struct {
         const dst = try pipe.module_pool.getPtr(dst_mod);
 
         const line = self.histlist.beginLine();
-        colonconfig.writeRecord(line, serdes.ConnectCfgEntry.key, .{ src.name, src.id, src_mod_socket_name, dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
-        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ serdes.ConnectCfgEntry.key, dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
+        serdes.cc.writeRecord(line, .{ .connect = .{
+            .src = src.name,
+            .src_id = src.id,
+            .src_sock = src_mod_socket_name,
+            .dst = dst.name,
+            .dst_id = dst.id,
+            .dst_sock = dst_mod_socket_name,
+        } }) catch return error.RecorderFailed;
+        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ @tagName(.connect), dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
         self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 
@@ -134,8 +144,15 @@ pub const PipelineHistory = struct {
 
         const line = self.histlist.beginLine();
         // `-1` as source type encodes an explicit disconnect
-        colonconfig.writeRecord(line, serdes.ConnectCfgEntry.key, .{ "-1", "", "", dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
-        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ serdes.ConnectCfgEntry.key, dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
+        serdes.cc.writeRecord(line, .{ .connect = .{
+            .src = "-1",
+            .src_id = "",
+            .src_sock = "",
+            .dst = dst.name,
+            .dst_id = dst.id,
+            .dst_sock = dst_mod_socket_name,
+        } }) catch return error.RecorderFailed;
+        self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ @tagName(.connect), dst.name, dst.id, dst_mod_socket_name }) catch return error.RecorderFailed;
         self.histlist.commit(self.config) catch |err| return recordError(err);
     }
 

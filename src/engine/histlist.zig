@@ -128,7 +128,7 @@ pub fn HistList(comptime TKey: type, comptime TValue: type) type {
 
         /// Start a new delta: clears the line and key buffers and returns
         /// the writer for the line. Write it (e.g. with
-        /// `colonconfig.writeRecord`), optionally write a coalescing key via
+        /// `ColonConfig.writeRecord`), optionally write a coalescing key via
         /// `keyWriter`, then `commit`.
         pub fn beginLine(self: *Self) *std.Io.Writer {
             self.line_buf.clearRetainingCapacity();

@@ -1,36 +1,19 @@
-//! Plaintext (de)serialization of pipeline state in the grammar: `module:`,
-//! `connect:`/`feedback:`, `param:`, `removemodule:` records, `:`
-//! -delimited, no whitespace trimming, `#` full-line comments.
-//!
-//! Parsing is built on the `colonconfig` module: one CfgEntry struct per record
-//! key (fields map positionally onto the arguments; `param`'s value is the
-//! whole remainder via `colonconfig.rest`, so string values may contain
-//! `:`). `apply` stays line-ordered — it dispatches each line through the
-//! `schema` table and warn-and-continues on anything the pipeline does not
-//! understand, exactly like `deserialize` does per line.
-//!
-//! `serialize` writes modules, then connects (destination-side only), then
-//! params. `deserialize` applies onto an existing pipeline and only
-//! allocator errors propagate; module ids are owned by the pipeline (see
-//! `Pipeline._addModule`), so the lines may be transient.
-
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const colonconfig = @import("colonconfig");
+const Param = @import("Param.zig");
 const slog = std.log.scoped(.serdes);
 
-/// Record definitions: field order maps positionally onto the arguments of
-/// each line; `key` names the record (used by `apply` and `writeEntry`).
-pub const ModuleCfgEntry = struct {
-    pub const key = "module";
+pub const cc = colonconfig.ColonConfig(Schema);
 
+/// Record payloads: field order maps positionally onto the arguments of each
+/// line. The tag names of `Schema` are the grammar keys.
+pub const ModuleCfgEntry = struct {
     name: []const u8,
     id: []const u8,
 };
 
 pub const ConnectCfgEntry = struct {
-    pub const key = "connect";
-
     src: []const u8,
     src_id: []const u8,
     src_sock: []const u8,
@@ -40,42 +23,27 @@ pub const ConnectCfgEntry = struct {
 };
 
 pub const ParamCfgEntry = struct {
-    pub const key = "param";
-
     name: []const u8,
     id: []const u8,
     param: []const u8,
-    value: []const u8,
+    value: colonconfig.Value,
     pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
 };
 
 pub const RemoveModuleCfgEntry = struct {
-    pub const key = "removemodule";
-
     name: []const u8,
     id: []const u8,
 };
 
-/// Record kinds `apply` understands; tag names are the grammar keys.
-/// `feedback` is an alias of `connect` and shares its record.
-const Kind = enum {
-    module,
-    connect,
-    feedback,
-    param,
-    removemodule,
+/// Every record the grammar understands; tag names are the grammar keys.
+/// `feedback` is an alias of `connect` and shares its payload.
+pub const Schema = union(enum) {
+    module: ModuleCfgEntry,
+    connect: ConnectCfgEntry,
+    feedback: ConnectCfgEntry,
+    param: ParamCfgEntry,
+    removemodule: RemoveModuleCfgEntry,
 };
-
-comptime {
-    if (!std.mem.eql(u8, @tagName(Kind.module), ModuleCfgEntry.key))
-        @compileError("serdes: Kind.module must match ModuleCfgEntry.key");
-    if (!std.mem.eql(u8, @tagName(Kind.connect), ConnectCfgEntry.key))
-        @compileError("serdes: Kind.connect must match ConnectCfgEntry.key");
-    if (!std.mem.eql(u8, @tagName(Kind.param), ParamCfgEntry.key))
-        @compileError("serdes: Kind.param must match ParamCfgEntry.key");
-    if (!std.mem.eql(u8, @tagName(Kind.removemodule), RemoveModuleCfgEntry.key))
-        @compileError("serdes: Kind.removemodule must match RemoveModuleCfgEntry.key");
-}
 
 fn applyModule(pipe: *pipeline.Pipeline, cfg: ModuleCfgEntry, line_no: usize) !void {
     if (cfg.name.len == 0 or cfg.id.len == 0) {
@@ -128,6 +96,13 @@ fn applyParam(pipe: *pipeline.Pipeline, cfg: ParamCfgEntry, line_no: usize) !voi
         slog.warn("line {d}: incomplete param line, skipping", .{line_no});
         return;
     }
+    const value_text = switch (cfg.value) {
+        .text => |s| s,
+        else => {
+            slog.warn("line {d}: param value must be text, skipping", .{line_no});
+            return;
+        },
+    };
 
     const fullname = try std.mem.concat(pipe.allocator, u8, &.{ cfg.name, ":", cfg.id });
     defer pipe.allocator.free(fullname);
@@ -140,43 +115,55 @@ fn applyParam(pipe: *pipeline.Pipeline, cfg: ParamCfgEntry, line_no: usize) !voi
         slog.warn("line {d}: unknown parameter '{s}', skipping", .{ line_no, cfg.param });
         return;
     };
-    const param = mod.params[idx] orelse {
+    const param = if (mod.params[idx]) |*p| p else {
         slog.warn("line {d}: unknown parameter '{s}', skipping", .{ line_no, cfg.param });
         return;
     };
     const pdesc = param.desc;
     switch (pdesc.typ) {
         .f32 => {
-            var value_tokens = std.mem.splitScalar(u8, cfg.value, ':');
-            for (0..pdesc.len) |i| {
+            const values = std.mem.bytesAsSlice(f32, param.bytes);
+            var value_tokens = std.mem.splitScalar(u8, value_text, ':');
+            for (values) |*value| {
                 const tok = value_tokens.next() orelse "";
-                const v: f32 = if (tok.len == 0) 0 else std.fmt.parseFloat(f32, tok) catch {
+                value.* = if (tok.len == 0) 0 else std.fmt.parseFloat(f32, tok) catch {
                     slog.warn("line {d}: unparseable f32 '{s}', skipping", .{ line_no, tok });
                     return;
                 };
-                @memcpy(param.bytes[i * 4 ..][0..4], std.mem.asBytes(&v));
             }
         },
         .i32 => {
-            var value_tokens = std.mem.splitScalar(u8, cfg.value, ':');
-            for (0..pdesc.len) |i| {
+            const values = std.mem.bytesAsSlice(i32, param.bytes);
+            var value_tokens = std.mem.splitScalar(u8, value_text, ':');
+            for (values) |*value| {
                 const tok = value_tokens.next() orelse "";
-                const v: i32 = if (tok.len == 0) 0 else std.fmt.parseInt(i32, tok, 10) catch {
+                value.* = if (tok.len == 0) 0 else std.fmt.parseInt(i32, tok, 10) catch {
                     slog.warn("line {d}: unparseable i32 '{s}', skipping", .{ line_no, tok });
                     return;
                 };
-                @memcpy(param.bytes[i * 4 ..][0..4], std.mem.asBytes(&v));
             }
         },
         .str => {
-            if (cfg.value.len >= pdesc.len) {
+            if (value_text.len >= pdesc.len) {
                 slog.warn("line {d}: string value too long for param '{s}', skipping", .{ line_no, pdesc.name });
                 return;
             }
             @memset(param.bytes, 0); // clear stale tail so string reads stop at the NUL
-            @memcpy(param.bytes[0..cfg.value.len], cfg.value);
+            param.set(value_text) catch {
+                slog.warn("line {d}: failed to set string param '{s}', skipping", .{ line_no, pdesc.name });
+                return;
+            };
         },
     }
+}
+
+/// Adapt a live param value to the schema's write representation.
+pub fn schemaValue(value: Param.Value) colonconfig.Value {
+    return switch (value) {
+        .i32 => |xs| .{ .i32 = xs },
+        .f32 => |xs| .{ .f32 = xs },
+        .str => |s| .{ .text = s },
+    };
 }
 
 /// This function serializes the current state of the pipeline into a colonconfig format.
@@ -186,7 +173,7 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
     var it = pipe.module_pool.liveHandles();
     while (it.next()) |handle| {
         const mod = try pipe.module_pool.getPtr(handle);
-        try colonconfig.writeEntry(writer, ModuleCfgEntry, .{ mod.name, mod.id });
+        try cc.writeEntry(writer, .{ .module = .{ .name = mod.name, .id = mod.id } });
     }
 
     // connects: one line per edge, from the destination side, input sockets only
@@ -199,10 +186,14 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
             const conn = sock.connected_to_module orelse continue;
             const src_mod = try pipe.module_pool.getPtr(conn.item);
             const src_sock = src_mod.sockets[conn.socket_idx] orelse continue;
-            try colonconfig.writeEntry(writer, ConnectCfgEntry, .{
-                src_mod.name, src_mod.id, src_sock.name,
-                mod.name,     mod.id,     sock.name,
-            });
+            try cc.writeEntry(writer, .{ .connect = .{
+                .src = src_mod.name,
+                .src_id = src_mod.id,
+                .src_sock = src_sock.name,
+                .dst = mod.name,
+                .dst_id = mod.id,
+                .dst_sock = sock.name,
+            } });
         }
     }
 
@@ -212,11 +203,12 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
         const mod = try pipe.module_pool.getPtr(handle);
         for (mod.params) |maybe_param| {
             const param = maybe_param orelse continue;
-            switch (param.value()) {
-                inline else => |v| try colonconfig.writeEntry(writer, ParamCfgEntry, .{
-                    mod.name, mod.id, param.desc.name, v,
-                }),
-            }
+            try cc.writeEntry(writer, .{ .param = .{
+                .name = mod.name,
+                .id = mod.id,
+                .param = param.desc.name,
+                .value = schemaValue(param.value()),
+            } });
         }
     }
 }
@@ -224,23 +216,13 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
 /// This function deserializes the colonconfig-formatted text into the pipeline state.
 /// It should only ever be used for history replay as it does not record any new history.
 pub fn deserialize(pipe: *pipeline.Pipeline, text: []const u8) !void {
-    var line_no: usize = 0;
-    var lit: colonconfig.LineIterator = .init(std.Io.Reader.fixed(text));
-    while (lit.next() catch unreachable) |line_in| {
-        line_no += 1;
-        const line = std.mem.trimEnd(u8, line_in, "\r");
-        if (line.len == 0 or line[0] == '#') continue;
-
-        const split = colonconfig.splitKey(line);
-        const kind = std.meta.stringToEnum(Kind, split.key) orelse {
-            slog.warn("line {d}: unknown key '{s}', skipping", .{ line_no, split.key });
-            continue;
-        };
-        switch (kind) {
-            .module => try applyModule(pipe, colonconfig.parseArgs(ModuleCfgEntry, split.args), line_no),
-            .connect, .feedback => try applyConnect(pipe, colonconfig.parseArgs(ConnectCfgEntry, split.args), line_no),
-            .param => try applyParam(pipe, colonconfig.parseArgs(ParamCfgEntry, split.args), line_no),
-            .removemodule => try applyRemoveModule(pipe, colonconfig.parseArgs(RemoveModuleCfgEntry, split.args), line_no),
+    var it = cc.EntryIterator.init(std.Io.Reader.fixed(text));
+    while (it.next() catch unreachable) |entry| {
+        switch (entry) {
+            .module => |cfg| try applyModule(pipe, cfg, it.line_no),
+            .connect, .feedback => |cfg| try applyConnect(pipe, cfg, it.line_no),
+            .param => |cfg| try applyParam(pipe, cfg, it.line_no),
+            .removemodule => |cfg| try applyRemoveModule(pipe, cfg, it.line_no),
         }
     }
 }

@@ -14,7 +14,6 @@ const Modules = @import("modules/modules.zig");
 const Pool = @import("pool.zig").Pool;
 const PipelineHistory = @import("pipeline_history.zig").PipelineHistory;
 const DirectedGraph = @import("zig-graph").DirectedGraph;
-const serdes = @import("serdes.zig");
 const slog = std.log.scoped(.pipe);
 
 // TYPES
@@ -238,12 +237,10 @@ pub const Pipeline = struct {
     // ================================================
 
     pub fn save(self: *Pipeline, writer: *std.Io.Writer) OperationError!void {
-        // return serdes.serialize(self, writer);
         return self.history.save(writer);
     }
 
     pub fn load(self: *Pipeline, text: []const u8) OperationError!void {
-        // return serdes.deserialize(self, text);
         return self.history.load(text);
     }
 

@@ -12,37 +12,50 @@
 //! - Blank lines and lines starting with `#` are ignored.
 //! - No escaping: no field except the last may contain `:`.
 //!
-//! Parsing is schema-driven and comptime: declare one struct per command
-//! key whose fields map positionally onto the arguments (0, 1, 2, ...),
-//! then build a `ColonConfig` with that schema and parse text into typed
-//! entries. All string fields remain views into the source text (including
-//! comptime strings); the doc allocates only its per-key lists. A field
-//! that must consume the whole remainder (a value containing `:`) is marked
-//! with `colonconfig.rest` in an optional `idx_map` decl.
+//! Parsing is schema-driven and comptime: declare one tagged union whose tag
+//! names are the command keys and whose payloads are structs holding that
+//! record's arguments, in order. The tag name *is* the key, so no separate
+//! `key` declaration is needed. All string fields remain views into the
+//! source text (including comptime strings); the doc allocates only its
+//! per-tag lists. A field that must consume the whole remainder (a value
+//! containing `:`) is marked with `colonconfig.rest` in an optional `idx_map`
+//! decl.
 //!
 //! `doc.write` re-emits the raw text (comments, blank lines and unknown
 //! keys preserved), so round-trips through `read`/`writeToFile` are exact.
+//! `EntryIterator` is the line-ordered form: it yields one typed union value
+//! per recognized line, skipping blank lines, comments and unknown keys.
 //!
 //! Example:
 //!
 //! ```zig
-//! const ModuleCfgEntry = struct {
-//!     module: []const u8,
-//!     module_id: []const u8,
+//! const Schema = union(enum) {
+//!     module: struct {
+//!         module: []const u8,
+//!         module_id: []const u8,
+//!     },
 //! };
 //!
-//! const cc = colonconfig.ColonConfig(.{ .module = ModuleCfgEntry }).init(allocator);
-//! const doc = try cc.parse(file);
+//! const Config = colonconfig.ColonConfig(Schema);
+//! var config = Config.init(allocator);
+//! const doc = try config.parse(file);
 //! defer doc.deinit();
 //!
-//! var it = doc.iter(ModuleCfgEntry);
+//! var it = doc.iter(.module);
 //! while (it.next()) |m| {
 //!     // m.module, m.module_id
 //! }
+//!
+//! var lines = Config.EntryIterator.init(std.Io.Reader.fixed(file));
+//! while (try lines.next()) |entry| switch (entry) {
+//!     .module => |m| { ... },
+//! };
 //! ```
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+
+const slog = std.log.scoped(.colonconfig);
 
 /// Alias so decls/tests inside this file can write `colonconfig.rest` /
 /// `colonconfig.ColonConfig(...)` the same way importing code does.
@@ -52,6 +65,21 @@ const colonconfig = @This();
 /// remainder of the line after the previous field, verbatim (`:` allowed
 /// inside). Any comptime string equal to `"rest"` works.
 pub const rest: []const u8 = "rest";
+
+/// A schema field whose written representation depends on the producer.
+/// Parsing always yields `.text` (the raw `:`-free/remainder string); writers
+/// may pass numeric slices to emit them `:`-joined without formatting first.
+pub const Value = union(enum) {
+    text: []const u8,
+    i32: []align(1) const i32,
+    f32: []align(1) const f32,
+};
+
+/// Coerce one parsed argument to a CfgEntry field type.
+fn argValue(comptime typ: type, s: []const u8) typ {
+    if (comptime typ == Value) return .{ .text = s };
+    return s;
+}
 
 /// Splits `key:args...`. A line without `:` has the whole line as `key`
 /// and empty `args`.
@@ -72,9 +100,9 @@ pub fn parseArgs(comptime CfgEntry: type, args: []const u8) CfgEntry {
     // pos = index of the next unconsumed token.
     var pos: usize = 0;
     const info = @typeInfo(CfgEntry).@"struct";
-    inline for (info.field_names, 0..) |name, i| {
+    inline for (info.field_names, info.field_types, 0..) |name, typ, i| {
         switch (argFor(CfgEntry, i)) {
-            -1 => @field(value, name) = t.rest() orelse "",
+            -1 => @field(value, name) = argValue(typ, t.rest() orelse ""),
             else => |idx| {
                 // Skip ahead to the absolute argument index, then take it.
                 const target: usize = @intCast(idx);
@@ -84,7 +112,7 @@ pub fn parseArgs(comptime CfgEntry: type, args: []const u8) CfgEntry {
                         break;
                     }
                 }
-                @field(value, name) = t.next() orelse "";
+                @field(value, name) = argValue(typ, t.next() orelse "");
                 pos = target + 1;
             },
         }
@@ -100,13 +128,13 @@ fn isRestMarker(comptime a: anytype) bool {
     return comptime std.mem.eql(u8, a, rest);
 }
 
-/// Validates a CfgEntry at comptime: every field must be `[]const u8` and the
-/// optional `idx_map` mapping must be well-formed.
+/// Validates a CfgEntry at comptime: every field must be `[]const u8` or
+/// `colonconfig.Value`, and the optional `idx_map` mapping must be well-formed.
 fn validateCfgEntry(comptime CfgEntry: type) void {
     const info = @typeInfo(CfgEntry).@"struct";
     inline for (info.field_names, info.field_types) |name, typ| {
-        if (typ != []const u8)
-            @compileError("colonconfig: CfgEntry '" ++ @typeName(CfgEntry) ++ "' field '" ++ name ++ "' must be []const u8");
+        if (typ != []const u8 and typ != Value)
+            @compileError("colonconfig: CfgEntry '" ++ @typeName(CfgEntry) ++ "' field '" ++ name ++ "' must be []const u8 or colonconfig.Value");
     }
     if (!@hasDecl(CfgEntry, "idx_map")) return;
     const args = CfgEntry.idx_map;
@@ -143,102 +171,105 @@ fn argFor(comptime CfgEntry: type, comptime field_idx: usize) i64 {
 /// A parsed document: typed entries grouped per command key, plus the raw
 /// text. All string fields point into `text`; `deinit` frees the groups
 /// (and the text if this doc read it from a file).
-pub const Doc = struct {
-    /// Raw source text. Arena-owned iff created by `ColonConfig.read`.
-    text: []const u8,
-    arena_state: ?std.heap.ArenaAllocator = null,
-    groups: []Group = &.{},
+fn DocOf(comptime Schema: type) type {
+    return struct {
+        /// Raw source text. Arena-owned iff created by `ColonConfig.read`.
+        text: []const u8,
+        arena_state: ?std.heap.ArenaAllocator = null,
+        groups: []Group = &.{},
 
-    /// Free the doc's groups and (if `read`-created) its text. Works on a
-    /// `const` doc: `defer doc.deinit()`. The doc should not be reused.
-    pub fn deinit(self: Doc) void {
-        if (self.arena_state) |a| {
-            var arena = a;
-            arena.deinit();
-        }
-    }
+        const Self = @This();
 
-    /// Iterate the parsed entries for `CfgEntry`'s key, in file order. Empty
-    /// iterator when the file has no such entry.
-    pub fn iter(self: *const Doc, comptime CfgEntry: type) Iter(CfgEntry) {
-        for (self.groups) |g| {
-            if (std.mem.eql(u8, g.type_name, @typeName(CfgEntry))) {
-                const bytes: [*]const u8 = @ptrCast(g.values.items.ptr);
-                const typed: []const CfgEntry = @ptrCast(@alignCast(bytes[0 .. g.len * @sizeOf(CfgEntry)]));
-                return .{ .items = typed };
+        /// Free the doc's groups and (if `read`-created) its text. Works on a
+        /// `const` doc: `defer doc.deinit()`. The doc should not be reused.
+        pub fn deinit(self: Self) void {
+            if (self.arena_state) |a| {
+                var arena = a;
+                arena.deinit();
             }
         }
-        return .{ .items = &.{} };
-    }
 
-    /// Serialize back to a writer: the raw text, plus a trailing newline if
-    /// the last line lacks one. Round-trips `parse`/`read` exactly.
-    pub fn write(self: *const Doc, w: *std.Io.Writer) std.Io.Writer.Error!void {
-        try w.writeAll(self.text);
-        if (self.text.len != 0 and self.text[self.text.len - 1] != '\n') try w.writeByte('\n');
-    }
-
-    /// Serialize straight to a file on disk.
-    pub fn writeToFile(self: *const Doc, gpa: Allocator, io: std.Io, path: []const u8) !void {
-        if (self.text.len == 0 or self.text[self.text.len - 1] == '\n') {
-            return std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = path, .data = self.text });
+        /// Iterate the parsed entries for `tag`, in file order. Empty
+        /// iterator when the file has no such entry.
+        pub fn iter(self: *const Self, comptime tag: std.meta.Tag(Schema)) Iter(Schema, tag) {
+            for (self.groups) |g| {
+                if (std.mem.eql(u8, g.key, @tagName(tag))) {
+                    const CfgEntry = @FieldType(Schema, @tagName(tag));
+                    const ptrs: [*]const *const CfgEntry = @ptrCast(g.values.items.ptr);
+                    return .{ .items = ptrs[0..g.len] };
+                }
+            }
+            return .{ .items = &.{} };
         }
-        // Keep the trailing-newline invariant when writing back hand-edited
-        // text that ended without one.
-        const buf = try gpa.alloc(u8, self.text.len + 1);
-        defer gpa.free(buf);
-        @memcpy(buf[0..self.text.len], self.text);
-        buf[self.text.len] = '\n';
-        return std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = path, .data = buf });
-    }
-};
 
-/// Type-erased per-key group of parsed entries.
+        /// Serialize back to a writer: the raw text, plus a trailing newline if
+        /// the last line lacks one. Round-trips `parse`/`read` exactly.
+        pub fn write(self: *const Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
+            try w.writeAll(self.text);
+            if (self.text.len != 0 and self.text[self.text.len - 1] != '\n') try w.writeByte('\n');
+        }
+
+        /// Serialize straight to a file on disk.
+        pub fn writeToFile(self: *const Self, gpa: Allocator, io: std.Io, path: []const u8) !void {
+            if (self.text.len == 0 or self.text[self.text.len - 1] == '\n') {
+                return std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = path, .data = self.text });
+            }
+            // Keep the trailing-newline invariant when writing back hand-edited
+            // text that ended without one.
+            const buf = try gpa.alloc(u8, self.text.len + 1);
+            defer gpa.free(buf);
+            @memcpy(buf[0..self.text.len], self.text);
+            buf[self.text.len] = '\n';
+            return std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = path, .data = buf });
+        }
+    };
+}
+
+/// Type-erased per-tag group of parsed entries.
 const Group = struct {
-    /// The group's CfgEntry type name; `Doc.iter` matches against it.
-    type_name: []const u8,
-    /// Arena-backed list of CfgEntry values, contiguous, `len` elements.
-    values: std.ArrayListUnmanaged(u8) = .empty,
+    /// The group's tag name; `Doc.iter` matches against it.
+    key: []const u8,
+    /// Arena-backed pointers to CfgEntry values, `len` elements.
+    values: std.ArrayListUnmanaged(*anyopaque) = .empty,
     /// Element count.
     len: usize = 0,
 };
 
 /// Typed entry iterator over a doc.
-fn Iter(comptime CfgEntry: type) type {
-    comptime validateCfgEntry(CfgEntry);
+fn Iter(comptime Schema: type, comptime tag: std.meta.Tag(Schema)) type {
+    const CfgEntry = @FieldType(Schema, @tagName(tag));
     return struct {
-        items: []const CfgEntry,
+        items: []const *const CfgEntry,
         index: usize = 0,
 
         /// The next entry, or null when exhausted.
         pub fn next(it: *@This()) ?CfgEntry {
             if (it.index >= it.items.len) return null;
             it.index += 1;
-            return it.items[it.index - 1];
+            return it.items[it.index - 1].*;
         }
     };
 }
 
-/// Build a ColonConfig over a comptime schema: the keys are the command
-/// names and the values are the CfgEntry types parsed from those keys' lines.
-/// Instantiate with `ColonConfig(.{ .module = ModuleCfgEntry }).init(gpa)`. A
-/// ColonConfig is immutable after construction and carries only the
-/// allocator; `parse`/`read` return docs and never mutate it.
-pub fn ColonConfig(comptime schema: anytype) type {
-    comptime validateSchema(schema);
-    const keys = std.meta.fieldNames(@TypeOf(schema));
+/// Build a ColonConfig over a tagged-union schema: the tag names are the
+/// command keys and the payload structs are parsed from those keys' lines.
+/// Instantiate with `ColonConfig(Schema).init(gpa)`. A ColonConfig is immutable
+/// after construction and carries only the allocator; `parse`/`read` return
+/// docs and never mutate it.
+pub fn ColonConfig(comptime Schema: type) type {
+    comptime validateSchema(Schema);
+    const info = @typeInfo(Schema).@"union";
     return struct {
         gpa: Allocator,
 
         const Self = @This();
 
+        /// The parsed-document type for this schema.
+        pub const Doc = DocOf(Schema);
+
         /// Construct a ColonConfig. Infallible: it only stores `gpa`.
         pub fn init(gpa: Allocator) Self {
             return .{ .gpa = gpa };
-        }
-
-        fn DefOf(comptime i: usize) type {
-            return @field(schema, keys[i]);
         }
 
         /// Parse in-memory text. The text must outlive the doc and every
@@ -256,20 +287,20 @@ pub fn ColonConfig(comptime schema: anytype) type {
         /// the caller frees `a`. Also the building block for `read`.
         fn parseAlloc(self: Self, a: Allocator, text: []const u8) Allocator.Error!Doc {
             _ = self;
-            var groups = try a.alloc(Group, keys.len);
-            inline for (keys, 0..) |_, i| {
-                groups[i] = .{ .type_name = @typeName(DefOf(i)) };
+            var groups = try a.alloc(Group, info.field_names.len);
+            inline for (info.field_names, 0..) |name, i| {
+                groups[i] = .{ .key = name };
             }
 
-            var lit = LineIterator{ .reader = std.Io.Reader.fixed(text) };
+            var lit: LineIterator = .init(std.Io.Reader.fixed(text));
             while (lit.next() catch unreachable) |line| {
                 if (line.len == 0 or line[0] == '#') continue;
                 const colon = std.mem.indexOfScalar(u8, line, ':');
                 const key = line[0 .. colon orelse line.len];
                 const args = if (colon) |c| line[c + 1 ..] else "";
-                inline for (keys, 0..) |_, i| {
-                    if (std.mem.eql(u8, key, keys[i])) {
-                        try appendEntry(a, &groups[i], DefOf(i), args);
+                inline for (info.field_names, info.field_types, 0..) |name, typ, i| {
+                    if (std.mem.eql(u8, key, name)) {
+                        try appendEntry(a, &groups[i], typ, args);
                     }
                 }
             }
@@ -288,15 +319,76 @@ pub fn ColonConfig(comptime schema: anytype) type {
             doc.text = text;
             return doc;
         }
+
+        /// Typed line iterator over this schema's records. Yields one union
+        /// value per recognized line; blank lines, `#` comments and lines
+        /// whose key matches no tag are skipped (unknown keys are logged once
+        /// per line).
+        pub const EntryIterator = struct {
+            lines: LineIterator,
+            /// 1-based number of the last line the underlying iterator returned.
+            line_no: usize = 0,
+
+            pub const Error = LineIterator.Error;
+
+            pub fn init(reader: std.Io.Reader) @This() {
+                return .{ .lines = .init(reader) };
+            }
+
+            /// The next recognized entry, or null at end of input.
+            pub fn next(self: *@This()) Error!?Schema {
+                while (try self.lines.next()) |line| {
+                    self.line_no += 1;
+                    if (line.len == 0 or line[0] == '#') continue;
+                    const split = splitKey(line);
+                    inline for (info.field_names, info.field_types) |name, typ| {
+                        if (std.mem.eql(u8, split.key, name)) {
+                            return @unionInit(Schema, name, parseArgs(typ, split.args));
+                        }
+                    }
+                    slog.warn("line {d}: unknown key '{s}', skipping", .{ self.line_no, split.key });
+                }
+                return null;
+            }
+        };
+
+        /// Write one record frame, without a line terminator: `tag:arg0:...`.
+        /// The tag names the record and the payload's fields are written in
+        /// declaration order. String fields are written verbatim and `Value`
+        /// fields as their active variant (numeric slices `:`-joined). A
+        /// string containing `:` must be the last field (`colonconfig.rest`).
+        pub fn writeRecord(w: *std.Io.Writer, entry: Schema) std.Io.Writer.Error!void {
+            switch (entry) {
+                inline else => |payload| {
+                    const tag = std.meta.activeTag(entry);
+                    const payload_info = @typeInfo(@TypeOf(payload)).@"struct";
+                    try w.writeAll(@tagName(tag));
+                    inline for (payload_info.field_names, payload_info.field_types) |name, typ| {
+                        try w.writeByte(':');
+                        const field = @field(payload, name);
+                        if (comptime typ == Value) {
+                            try writeValue(w, field);
+                        } else {
+                            try w.writeAll(field);
+                        }
+                    }
+                },
+            }
+        }
+
+        /// Write one record line: `tag:arg0:...\n`; see `writeRecord`.
+        pub fn writeEntry(w: *std.Io.Writer, entry: Schema) std.Io.Writer.Error!void {
+            try writeRecord(w, entry);
+            try w.writeByte('\n');
+        }
     };
 }
 
 /// Stores a CfgEntry value copy into a group.
 fn storeValue(a: Allocator, g: *Group, comptime CfgEntry: type, value: CfgEntry) Allocator.Error!void {
-    const old_len = g.values.items.len;
-    try g.values.resize(a, old_len + @sizeOf(CfgEntry));
-    const slot: *CfgEntry = @ptrCast(@alignCast(g.values.items[old_len..][0..@sizeOf(CfgEntry)]));
+    const slot = try a.create(CfgEntry);
     slot.* = value;
+    try g.values.append(a, @ptrCast(slot));
     g.len += 1;
 }
 
@@ -305,19 +397,13 @@ fn appendEntry(a: Allocator, g: *Group, comptime CfgEntry: type, args: []const u
     try storeValue(a, g, CfgEntry, parseArgs(CfgEntry, args));
 }
 
-/// Validates the ColonConfig schema: tuple of unique comptime keys, each with a
-/// struct CfgEntry (validated via `validateCfgEntry` at instantiation).
-fn validateSchema(comptime schema: anytype) void {
-    const keys = std.meta.fieldNames(@TypeOf(schema));
-    if (@typeInfo(@TypeOf(schema)).@"struct".is_tuple)
-        @compileError("colonconfig: schema must use named keys (.{ .module = ModuleCfgEntry, ... })");
-    inline for (keys, 0..) |key, i| {
-        validateCfgEntry(@field(schema, key));
-        inline for (keys[0..i]) |other| {
-            if (std.mem.eql(u8, key, other))
-                @compileError("colonconfig: duplicate key '" ++ key ++ "' in ColonConfig schema");
-        }
-    }
+/// Validates the ColonConfig schema: a tagged union whose payloads are
+/// CfgEntry structs (validated via `validateCfgEntry`).
+fn validateSchema(comptime Schema: type) void {
+    const info = @typeInfo(Schema);
+    if (info != .@"union" or info.@"union".tag_type == null)
+        @compileError("colonconfig: schema must be a tagged union, e.g. union(enum) { .module = ModuleCfgEntry }");
+    inline for (info.@"union".field_types) |typ| validateCfgEntry(typ);
 }
 
 /// Raw line iteration over any `std.Io.Reader`.
@@ -386,53 +472,15 @@ pub const Tokenizer = struct {
     }
 };
 
-/// Write one record frame, without a line terminator: `key:arg0:arg1...`.
-/// String arguments are written verbatim; integers and floats are formatted
-/// decimal; slices of integers/floats are written `:`-joined (dynamic value
-/// lists, e.g. vector params). A value containing `:` must be the last
-/// argument.
-pub fn writeRecord(w: *std.Io.Writer, key: []const u8, args: anytype) std.Io.Writer.Error!void {
-    try w.writeAll(key);
-    inline for (args) |a| {
-        try w.writeByte(':');
-        try writeArg(w, a);
+fn writeValue(w: *std.Io.Writer, value: Value) std.Io.Writer.Error!void {
+    switch (value) {
+        .text => |s| try w.writeAll(s),
+        .i32 => |values| try writeNumberList(i32, w, values),
+        .f32 => |values| try writeNumberList(f32, w, values),
     }
 }
 
-/// Write one record line: `CfgEntry.key:arg0:...\n`, with `key` taken from
-/// the CfgEntry's `pub const key` declaration and one argument per CfgEntry
-/// field. Arguments are formatted as in `writeRecord`.
-pub fn writeEntry(w: *std.Io.Writer, comptime CfgEntry: type, args: anytype) std.Io.Writer.Error!void {
-    comptime {
-        if (@typeInfo(CfgEntry) != .@"struct" or !@hasDecl(CfgEntry, "key"))
-            @compileError("colonconfig: '" ++ @typeName(CfgEntry) ++ "' needs a `pub const key` for writeEntry");
-        const n_fields = @typeInfo(CfgEntry).@"struct".field_types.len;
-        const n_args = @typeInfo(@TypeOf(args)).@"struct".field_types.len;
-        if (n_args != n_fields)
-            @compileError("colonconfig: writeEntry for '" ++ @typeName(CfgEntry) ++ "' needs " ++ std.fmt.comptimePrint("{d}", .{n_fields}) ++ " arguments, got " ++ std.fmt.comptimePrint("{d}", .{n_args}));
-    }
-    try writeRecord(w, CfgEntry.key, args);
-    try w.writeByte('\n');
-}
-
-fn writeArg(w: *std.Io.Writer, a: anytype) std.Io.Writer.Error!void {
-    switch (@typeInfo(@TypeOf(a))) {
-        .int, .comptime_int => return w.print("{d}", .{a}),
-        .float, .comptime_float => return w.print("{d}", .{a}),
-        .pointer => |p| switch (p.size) {
-            .slice => switch (@typeInfo(p.child)) {
-                // byte slices are strings; only non-u8 ints format as lists
-                .int => if (p.child == u8) return w.writeAll(a) else return writeNumberList(w, a),
-                .float => return writeNumberList(w, a),
-                else => return w.writeAll(a),
-            },
-            else => return w.writeAll(a),
-        },
-        else => @compileError("colonconfig: unsupported writeEntry argument type " ++ @typeName(@TypeOf(a))),
-    }
-}
-
-fn writeNumberList(w: *std.Io.Writer, values: anytype) std.Io.Writer.Error!void {
+fn writeNumberList(comptime T: type, w: *std.Io.Writer, values: []align(1) const T) std.Io.Writer.Error!void {
     for (values, 0..) |v, i| {
         if (i != 0) try w.writeByte(':');
         try w.print("{d}", .{v});
@@ -442,27 +490,26 @@ fn writeNumberList(w: *std.Io.Writer, values: anytype) std.Io.Writer.Error!void 
 test "colonconfig api test" {
     const allocator = std.testing.allocator;
 
-    // this is an example for the API might look like
-    const ModuleCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
-    };
-
-    const ConnectionCfgEntry = struct {
-        from: []const u8,
-        from_id: []const u8,
-        output: []const u8,
-        to: []const u8,
-        to_id: []const u8,
-        input: []const u8,
-    };
-
-    const ParamCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
-        name: []const u8,
-        value: []const u8,
-        pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
+    const Schema = union(enum) {
+        module: struct {
+            module: []const u8,
+            module_id: []const u8,
+        },
+        connect: struct {
+            from: []const u8,
+            from_id: []const u8,
+            output: []const u8,
+            to: []const u8,
+            to_id: []const u8,
+            input: []const u8,
+        },
+        param: struct {
+            module: []const u8,
+            module_id: []const u8,
+            name: []const u8,
+            value: []const u8,
+            pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
+        },
     };
 
     const file =
@@ -471,16 +518,12 @@ test "colonconfig api test" {
         \\param:i-raw:01:filename:testing/images/DSC_6765.NEF
     ;
 
-    const cc: ColonConfig(.{
-        .module = ModuleCfgEntry,
-        .connect = ConnectionCfgEntry,
-        .param = ParamCfgEntry,
-    }) = .init(allocator);
+    const cc: ColonConfig(Schema) = .init(allocator);
 
     const doc = try cc.parse(file);
     defer doc.deinit();
 
-    var mods = doc.iter(ModuleCfgEntry);
+    var mods = doc.iter(.module);
     var n_modules: usize = 0;
     while (mods.next()) |m| {
         try std.testing.expectEqualStrings("i-raw", m.module);
@@ -489,7 +532,7 @@ test "colonconfig api test" {
     }
     try std.testing.expectEqual(@as(usize, 1), n_modules);
 
-    var conns = doc.iter(ConnectionCfgEntry);
+    var conns = doc.iter(.connect);
     var n_conns: usize = 0;
     while (conns.next()) |c| {
         try std.testing.expectEqualStrings("i-raw", c.from);
@@ -502,7 +545,7 @@ test "colonconfig api test" {
     }
     try std.testing.expectEqual(@as(usize, 1), n_conns);
 
-    var params = doc.iter(ParamCfgEntry);
+    var params = doc.iter(.param);
     var n_params: usize = 0;
     while (params.next()) |p| {
         try std.testing.expectEqualStrings("i-raw", p.module);
@@ -515,11 +558,13 @@ test "colonconfig api test" {
 }
 
 test "missing keys and unknown lines are skipped, comments preserved in write" {
-    const ModuleCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
+    const Schema = union(enum) {
+        module: struct {
+            module: []const u8,
+            module_id: []const u8,
+        },
     };
-    const cc: ColonConfig(.{ .module = ModuleCfgEntry }) = .init(std.testing.allocator);
+    const cc: ColonConfig(Schema) = .init(std.testing.allocator);
 
     const file =
         \\# a comment
@@ -531,7 +576,7 @@ test "missing keys and unknown lines are skipped, comments preserved in write" {
     const doc = try cc.parse(file);
     defer doc.deinit();
 
-    var it = doc.iter(ModuleCfgEntry);
+    var it = doc.iter(.module);
     try std.testing.expectEqualStrings("i-raw", it.next().?.module);
     try std.testing.expectEqualStrings("format", it.next().?.module);
     try std.testing.expect(it.next() == null);
@@ -543,68 +588,76 @@ test "missing keys and unknown lines are skipped, comments preserved in write" {
 }
 
 test "value may contain colons when the field is colonconfig.rest" {
-    const ParamCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
-        name: []const u8,
-        value: []const u8,
-        pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
+    const Schema = union(enum) {
+        param: struct {
+            module: []const u8,
+            module_id: []const u8,
+            name: []const u8,
+            value: colonconfig.Value,
+            pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
+        },
     };
-    const cc = ColonConfig(.{ .param = ParamCfgEntry }).init(std.testing.allocator);
+    const cc = ColonConfig(Schema).init(std.testing.allocator);
 
     const doc = try cc.parse("param:mod:01:path:a:b:c");
     defer doc.deinit();
 
-    var it = doc.iter(ParamCfgEntry);
+    var it = doc.iter(.param);
     const p = it.next().?;
     try std.testing.expectEqualStrings("mod", p.module);
     try std.testing.expectEqualStrings("01", p.module_id);
     try std.testing.expectEqualStrings("path", p.name);
-    try std.testing.expectEqualStrings("a:b:c", p.value);
+    try std.testing.expectEqualStrings("a:b:c", p.value.text);
     try std.testing.expect(it.next() == null);
 }
 
 test "empty value is an explicit empty string" {
-    const ParamCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
-        name: []const u8,
-        value: []const u8,
+    const Schema = union(enum) {
+        param: struct {
+            module: []const u8,
+            module_id: []const u8,
+            name: []const u8,
+            value: []const u8,
+        },
     };
-    const cc = ColonConfig(.{ .param = ParamCfgEntry }).init(std.testing.allocator);
+    const cc = ColonConfig(Schema).init(std.testing.allocator);
 
     const doc = try cc.parse("param:mod:01:scale:");
     defer doc.deinit();
-    var it = doc.iter(ParamCfgEntry);
+    var it = doc.iter(.param);
     const p = it.next().?;
     try std.testing.expectEqualStrings("", p.value);
 }
 
 test "doc with no matching entries iterates empty" {
-    const ModuleCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
+    const Schema = union(enum) {
+        module: struct {
+            module: []const u8,
+            module_id: []const u8,
+        },
     };
-    const cc = ColonConfig(.{ .module = ModuleCfgEntry }).init(std.testing.allocator);
+    const cc = ColonConfig(Schema).init(std.testing.allocator);
 
     const doc = try cc.parse("");
     defer doc.deinit();
-    var it = doc.iter(ModuleCfgEntry);
+    var it = doc.iter(.module);
     try std.testing.expect(it.next() == null);
 }
 
 test "crlf is tolerated" {
-    const ParamCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
-        name: []const u8,
-        value: []const u8,
+    const Schema = union(enum) {
+        param: struct {
+            module: []const u8,
+            module_id: []const u8,
+            name: []const u8,
+            value: []const u8,
+        },
     };
-    const cc = ColonConfig(.{ .param = ParamCfgEntry }).init(std.testing.allocator);
+    const cc = ColonConfig(Schema).init(std.testing.allocator);
 
     const doc = try cc.parse("param:x:y:z:1\r\nparam:a:b:c:d\r\n");
     defer doc.deinit();
-    var it = doc.iter(ParamCfgEntry);
+    var it = doc.iter(.param);
     const p = it.next().?;
     try std.testing.expectEqualStrings("x", p.module);
     try std.testing.expectEqualStrings("y", p.module_id);
@@ -616,18 +669,20 @@ test "read and writeToFile round-trip through the filesystem" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const ModuleCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
+    const Schema = union(enum) {
+        module: struct {
+            module: []const u8,
+            module_id: []const u8,
+        },
+        param: struct {
+            module: []const u8,
+            module_id: []const u8,
+            name: []const u8,
+            value: []const u8,
+            pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
+        },
     };
-    const ParamCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
-        name: []const u8,
-        value: []const u8,
-        pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
-    };
-    const cc = ColonConfig(.{ .module = ModuleCfgEntry, .param = ParamCfgEntry }).init(allocator);
+    const cc = ColonConfig(Schema).init(allocator);
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -648,11 +703,11 @@ test "read and writeToFile round-trip through the filesystem" {
 
     try std.testing.expectEqualStrings(original, doc.text);
 
-    var mods = doc.iter(ModuleCfgEntry);
+    var mods = doc.iter(.module);
     try std.testing.expectEqualStrings("i-raw", mods.next().?.module);
     try std.testing.expect(mods.next() == null);
 
-    var params = doc.iter(ParamCfgEntry);
+    var params = doc.iter(.param);
     try std.testing.expectEqualStrings("testing/images/DSC_6765.NEF", params.next().?.value);
 
     try doc.writeToFile(allocator, io, path);
@@ -663,40 +718,84 @@ test "read and writeToFile round-trip through the filesystem" {
 }
 
 test "read of missing file errors" {
-    const ModuleCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
+    const Schema = union(enum) {
+        module: struct {
+            module: []const u8,
+            module_id: []const u8,
+        },
     };
-    const cc = ColonConfig(.{ .module = ModuleCfgEntry }).init(std.testing.allocator);
+    const cc = ColonConfig(Schema).init(std.testing.allocator);
     try std.testing.expectError(error.FileNotFound, cc.read(std.testing.io, "colonconfig_missing_file.zzz"));
 }
 
-test "writeEntry writes one record with the key from the CfgEntry" {
-    const ModuleCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
-        pub const key = "module";
+test "writeEntry names the key from the tag" {
+    const Schema = union(enum) {
+        module: struct { name: []const u8, id: []const u8 },
+        param: struct { name: []const u8, id: []const u8, param: []const u8, value: colonconfig.Value },
     };
-    const ParamCfgEntry = struct {
-        module: []const u8,
-        module_id: []const u8,
-        name: []const u8,
-        value: []const u8,
-        pub const key = "param";
-        pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
-    };
+    const Config = ColonConfig(Schema);
 
     var w: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer w.deinit();
-    try writeEntry(&w.writer, ModuleCfgEntry, .{ "i-raw", "01" });
-    try writeEntry(&w.writer, ParamCfgEntry, .{ "i-raw", "01", "exposure", "1.5" });
-    // slices of numbers write as a ':'-joined dynamic value list
-    const gains: []const f32 = &.{ 1.5, -2.0 };
-    try writeEntry(&w.writer, ParamCfgEntry, .{ "i-raw", "01", "gain", gains });
+    try Config.writeEntry(&w.writer, .{ .module = .{ .name = "i-raw", .id = "01" } });
+    try Config.writeEntry(&w.writer, .{ .param = .{
+        .name = "i-raw",
+        .id = "01",
+        .param = "exposure",
+        .value = .{ .text = "1.5" },
+    } });
+    // numeric values write as a ':'-joined dynamic list
+    const gains: []align(1) const f32 = &.{ 1.5, -2.0 };
+    try Config.writeEntry(&w.writer, .{ .param = .{
+        .name = "i-raw",
+        .id = "01",
+        .param = "gain",
+        .value = .{ .f32 = gains },
+    } });
     try std.testing.expectEqualStrings(
         "module:i-raw:01\nparam:i-raw:01:exposure:1.5\nparam:i-raw:01:gain:1.5:-2\n",
         w.written(),
     );
+}
+
+test "entry iterator yields typed entries line by line" {
+    const Schema = union(enum) {
+        module: struct {
+            module: []const u8,
+            module_id: []const u8,
+        },
+        param: struct {
+            module: []const u8,
+            module_id: []const u8,
+            name: []const u8,
+            value: []const u8,
+            pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
+        },
+    };
+
+    const text =
+        \\# comment
+        \\
+        \\module:i-raw:01
+        \\unknown:record:skipped
+        \\param:i-raw:01:filename:a/b:c.NEF
+    ;
+    const Config = ColonConfig(Schema);
+    var it = Config.EntryIterator.init(std.Io.Reader.fixed(text));
+
+    const first = (try it.next()).?;
+    try std.testing.expectEqual(std.meta.Tag(Schema).module, std.meta.activeTag(first));
+    try std.testing.expectEqualStrings("i-raw", first.module.module);
+    try std.testing.expectEqualStrings("01", first.module.module_id);
+    try std.testing.expectEqual(@as(usize, 3), it.line_no);
+
+    const second = (try it.next()).?;
+    try std.testing.expectEqual(std.meta.Tag(Schema).param, std.meta.activeTag(second));
+    try std.testing.expectEqualStrings("a/b:c.NEF", second.param.value);
+    try std.testing.expectEqual(std.meta.Tag(Schema).param, std.meta.activeTag(second));
+    try std.testing.expectEqual(@as(usize, 5), it.line_no);
+
+    try std.testing.expect((try it.next()) == null);
 }
 
 test "splitKey and parseArgs power line-ordered apply" {
