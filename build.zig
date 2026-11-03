@@ -84,6 +84,14 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{},
     });
 
+    // CFA MODULE
+    const mod_cfa = b.createModule(.{
+        .root_source_file = b.path("src/cfa/CFA.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
     // MATH MODULE
     const mod_math = b.createModule(.{
         .root_source_file = b.path("src/math/root.zig"),
@@ -111,6 +119,14 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     // COLONCONFIG MODULE
     const mod_colonconfig = b.createModule(.{
         .root_source_file = b.path("src/colonconfig/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
+    // POOL MODULE
+    const mod_pool = b.createModule(.{
+        .root_source_file = b.path("src/pool/pool.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{},
@@ -166,6 +182,8 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "stbi", .module = mod_stbi },
             .{ .name = "zig-graph", .module = mod_zig_graph },
             .{ .name = "colonconfig", .module = mod_colonconfig },
+            .{ .name = "pool", .module = mod_pool },
+            .{ .name = "CFA", .module = mod_cfa },
         },
     });
 
@@ -271,20 +289,50 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     });
     mod_app.addOptions("build_options", mod_options);
 
-    // TESTS
     // UNIT TESTS
+    const test_step = b.step("test", "Run unit tests");
+
+    // PIE
     const unit_tests = b.addTest(.{
-        .name = "unit tests",
+        .name = "pie unit tests",
         .use_llvm = true,
         .root_module = mod_pie,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
-    const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
 
-    // `math` is a module dependency, so its tests are not collected by the
-    // mod_pie artifact above and need one of their own.
+    // GPU
+    const gpu_unit_tests = b.addTest(.{
+        .name = "gpu unit tests",
+        .use_llvm = true,
+        .root_module = mod_gpu,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_gpu_unit_tests = b.addRunArtifact(gpu_unit_tests);
+    test_step.dependOn(&run_gpu_unit_tests.step);
+
+    // POOL
+    const pool_unit_tests = b.addTest(.{
+        .name = "pool unit tests",
+        .use_llvm = true,
+        .root_module = mod_pool,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_pool_unit_tests = b.addRunArtifact(pool_unit_tests);
+    test_step.dependOn(&run_pool_unit_tests.step);
+
+    // CFA
+    const cfa_unit_tests = b.addTest(.{
+        .name = "cfa unit tests",
+        .use_llvm = true,
+        .root_module = mod_cfa,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_cfa_unit_tests = b.addRunArtifact(cfa_unit_tests);
+    test_step.dependOn(&run_cfa_unit_tests.step);
+
+    // MATH
     const math_unit_tests = b.addTest(.{
         .name = "math unit tests",
         .use_llvm = true,
@@ -294,10 +342,9 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     const run_math_unit_tests = b.addRunArtifact(math_unit_tests);
     test_step.dependOn(&run_math_unit_tests.step);
 
-    // `colonconfig` is a standalone module dependency, so its tests are not
-    // collected by the mod_pie artifact above and need one of their own.
+    // COLONCONFIG
     const colonconfig_unit_tests = b.addTest(.{
-        .name = "colonconfig tests",
+        .name = "colonconfig unit tests",
         .use_llvm = true,
         .root_module = mod_colonconfig,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },

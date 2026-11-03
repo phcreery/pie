@@ -4,7 +4,7 @@ const std = @import("std");
 const gpu = @import("gpu");
 pub const math = @import("math");
 pub const ROI = @import("types").ROI;
-pub const CFA = @import("types").CFA;
+pub const CFA = @import("CFA");
 
 const ModuleApi = @import("types").ModuleApi;
 pub const ShaderTypeEnum = ModuleApi.ShaderTypeEnum;

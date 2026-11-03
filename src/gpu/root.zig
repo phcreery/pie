@@ -52,3 +52,7 @@ pub const BindGroupLayoutTextureEntry = BindGroupLayoutEntry.BindGroupLayoutText
 pub const BindGroupLayoutBufferEntryType = BindGroupLayoutEntry.BindGroupLayoutBufferEntryType;
 pub const BindGroupLayoutBufferEntry = BindGroupLayoutEntry.BindGroupLayoutBufferEntry;
 pub const GPU = @import("GPU.zig");
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

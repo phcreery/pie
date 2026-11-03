@@ -10,35 +10,12 @@ pub const history = @import("histlist.zig");
 pub const serdes = @import("serdes.zig");
 pub const api = @import("modules/api.zig");
 pub const modules = @import("modules/modules.zig");
-
-pub const graph = @import("zig-graph");
-pub const Pool = @import("pool.zig").Pool;
-
-pub const GPU = gpu.GPU;
-pub const Buffer = gpu.Buffer;
-pub const Encoder = gpu.Encoder;
-pub const ComputePipeline = gpu.ComputePipeline;
-pub const Texture = gpu.Texture;
-pub const TextureFormat = gpu.TextureFormat;
+pub const Param = @import("Param.zig");
+pub const ImgParam = @import("ImgParam.zig");
 
 pub const Pipeline = pipeline.Pipeline;
 
-// pub const PIE = struct {
-//     allocator: std.mem.Allocator,
-//     io: std.Io,
-//     gpu: *gpu.GPU,
-
-//     // TODO: multiple pipeline suppot
-//     // currently just one pipeline
-//     pipeline: *pipeline.Pipeline,
-// };
-
-// test {
-//     // _ = @import("engine/gpu.zig");
-//     // _ = @import("engine/gpu/data.zig");
-//     // _ = @import("engine/modules/shared/CFA.zig");
-//     // _ = @import("engine/modules/i-raw/i-raw.zig");
-//     // _ = @import("engine/pool.zig");
-//     _ = @import("engine/Param.zig");
-//     // _ = @import("engine/ImgParam.zig");
-// }
+test {
+    @import("std").testing.refAllDecls(@This());
+    // _ = @import("modules/shared/CFA.zig");
+}
