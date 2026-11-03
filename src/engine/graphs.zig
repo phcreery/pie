@@ -108,7 +108,7 @@ pub fn recommendFormat(
         // swap the current sink with the output module
         const display_module_handle = try pipe.module_pool.getPtr(sink);
         try pipe.removeModuleByNameNoRecord(display_module_handle.name, display_module_handle.id);
-        sink = try pipe.addModuleNoRecord("01", options.output_module);
+        sink = try pipe.addModuleNoRecord(options.output_module, "01");
     }
 
     try pipe.connectModulesNoRecord(tail.module, tail.socket, sink, "input");
@@ -138,7 +138,7 @@ fn upstream(pipe: *pipeline.Pipeline, handle: pipeline.ModuleHandle) !Link {
 
 /// Append a `downscale` capping the longest edge, returning the new tail.
 fn appendDownscale(pipe: *pipeline.Pipeline, tail: Link, max_edge: u32) !Link {
-    const downscale = try pipe.addModuleNoRecord("01", "downscale");
+    const downscale = try pipe.addModuleNoRecord("downscale", "01");
     try pipe.setModuleParam(downscale, "max_edge", i32, @intCast(max_edge));
     try pipe.connectModulesNoRecord(tail.module, tail.socket, downscale, "input");
     return .{ .module = downscale, .socket = "output" };

@@ -18,17 +18,17 @@ fn build(
     _ = allocator;
     _ = io;
 
-    const mod_i_raw = try pipe.addModule("01", "i-raw");
-    const mod_format = try pipe.addModule("01", "format");
-    const mod_denoise = try pipe.addModule("01", "denoise");
+    const mod_i_raw = try pipe.addModule("i-raw", "01");
+    const mod_format = try pipe.addModule("format", "01");
+    const mod_denoise = try pipe.addModule("denoise", "01");
     // const mod_whitebalance = try pipeline.addModule(modules.get("whitebalance").?);
-    const mod_demosaic = try pipe.addModule("01", "demosaic");
-    const mod_crop = try pipe.addModule("01", "crop");
-    const mod_color = try pipe.addModule("01", "color");
-    const mod_filmcurv = try pipe.addModule("01", "filmcurv");
+    const mod_demosaic = try pipe.addModule("demosaic", "01");
+    const mod_crop = try pipe.addModule("crop", "01");
+    const mod_color = try pipe.addModule("color", "01");
+    const mod_filmcurv = try pipe.addModule("filmcurv", "01");
     // const mod_test_nop_glsl = try pipeline.addModule(modules.get("test-nop-glsl").?);
     // const mod_test_nop_zig = try pipeline.addModule(modules.get("test-nop-zig").?);
-    const mod_o_ppm = try pipe.addModule("01", "o-ppm");
+    const mod_o_ppm = try pipe.addModule("o-ppm", "01");
 
     try pipe.setModuleParam(mod_i_raw, "filename", []const u8, input_filename);
     try pipe.setModuleParam(mod_i_raw, "wb_mode", i32, 0);

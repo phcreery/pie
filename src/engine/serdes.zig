@@ -26,7 +26,7 @@ pub const ModuleCfgEntry = struct {
             slog.warn("line {d}: unknown module '{s}', skipping", .{ line_no, self.name });
             return;
         }
-        _ = try pipe.addModuleNoRecord(self.id, self.name);
+        _ = try pipe.addModuleNoRecord(self.name, self.id);
     }
 };
 

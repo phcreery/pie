@@ -57,12 +57,12 @@ test "simple test modules" {
     var pipeline = try Pipeline.init(allocator, io, &gpu_instance, pipeline_config);
     defer pipeline.deinit();
 
-    const mod_test_i_1234 = try pipeline.addModule("01", "test-i-1234");
-    const mod_test_multiply = try pipeline.addModule("01", "test-multiply");
-    const mod_test_2nodes = try pipeline.addModule("01", "test-2nodes");
-    const mod_test_nop_glsl = try pipeline.addModule("01", "test-nop-glsl");
-    const mod_test_nop_zig = try pipeline.addModule("01", "test-nop-zig");
-    const mod_test_o_2468 = try pipeline.addModule("01", "test-o-2468");
+    const mod_test_i_1234 = try pipeline.addModule("test-i-1234", "01");
+    const mod_test_multiply = try pipeline.addModule("test-multiply", "01");
+    const mod_test_2nodes = try pipeline.addModule("test-2nodes", "01");
+    const mod_test_nop_glsl = try pipeline.addModule("test-nop-glsl", "01");
+    const mod_test_nop_zig = try pipeline.addModule("test-nop-zig", "01");
+    const mod_test_o_2468 = try pipeline.addModule("test-o-2468", "01");
 
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0);
     // try pipeline.setModuleParam(mod_test_multiply, "adder", @as(f32, 1.0), .{});

@@ -9,14 +9,12 @@ test "fullsize through pipeline" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-
     const cp_out = console.console.UTF8ConsoleOutput.init();
     defer cp_out.deinit();
 
     var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
-    
     const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
         .download_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
@@ -25,13 +23,13 @@ test "fullsize through pipeline" {
     var pipeline = Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    const mod_i_raw = try pipeline.addModule("01", "i-raw");
-    const mod_format = try pipeline.addModule("01", "format");
-    const mod_denoise = try pipeline.addModule("01", "denoise");
-    const mod_demosaic = try pipeline.addModule("01", "demosaic");
-    const mod_color = try pipeline.addModule("01", "color");
-    const mod_filmcurv = try pipeline.addModule("01", "filmcurv");
-    const mod_o_png = try pipeline.addModule("01", "o-png");
+    const mod_i_raw = try pipeline.addModule("i-raw", "01");
+    const mod_format = try pipeline.addModule("format", "01");
+    const mod_denoise = try pipeline.addModule("denoise", "01");
+    const mod_demosaic = try pipeline.addModule("demosaic", "01");
+    const mod_color = try pipeline.addModule("color", "01");
+    const mod_filmcurv = try pipeline.addModule("filmcurv", "01");
+    const mod_o_png = try pipeline.addModule("o-png", "01");
 
     try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, "testing/images/DSC_6765.NEF");
     try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 1);

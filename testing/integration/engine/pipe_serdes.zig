@@ -8,14 +8,14 @@ const Pipeline = pie.Pipeline;
 /// params set (several non-default). Built through the recording edit ops so
 /// `save`/`load` (the pipeline-level API under test) capture every step.
 fn buildChain(p: *Pipeline) !void {
-    const iraw = try p.addModule("01", "i-raw");
-    const format = try p.addModule("01", "format");
-    const denoise = try p.addModule("01", "denoise");
-    const demosaic = try p.addModule("01", "demosaic");
-    const crop = try p.addModule("01", "crop");
-    const color = try p.addModule("01", "color");
-    const filmcurv = try p.addModule("01", "filmcurv");
-    const odisplay = try p.addModule("01", "o-display");
+    const iraw = try p.addModule("i-raw", "01");
+    const format = try p.addModule("format", "01");
+    const denoise = try p.addModule("denoise", "01");
+    const demosaic = try p.addModule("demosaic", "01");
+    const crop = try p.addModule("crop", "01");
+    const color = try p.addModule("color", "01");
+    const filmcurv = try p.addModule("filmcurv", "01");
+    const odisplay = try p.addModule("o-display", "01");
 
     try p.setModuleParam(iraw, "filename", []const u8, "testing/images/DSC_6765.NEF");
     try p.setModuleParam(iraw, "wb_mode", i32, 0);

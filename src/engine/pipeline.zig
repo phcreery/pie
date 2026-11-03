@@ -246,19 +246,19 @@ pub const Pipeline = struct {
 
     /// Public edit op: resolve `name` from the registered repos, add the
     /// module (instance `id`), and record a `module:` delta in history.
-    pub fn addModule(self: *Pipeline, id: []const u8, name: []const u8) OperationError!ModuleHandle {
-        const module_handle = try self._addModule(id, name);
+    pub fn addModule(self: *Pipeline, name: []const u8, id: []const u8) OperationError!ModuleHandle {
+        const module_handle = try self._addModule(name, id);
         try self.history.recordModuleDelta(name, id);
         return module_handle;
     }
 
     /// Internal primitive: add a module, no history recorded.
     /// Prefer `addModule` (which records a delta) from user-facing editing code.
-    pub fn addModuleNoRecord(self: *Pipeline, id: []const u8, name: []const u8) OperationError!ModuleHandle {
-        return self._addModule(id, name);
+    pub fn addModuleNoRecord(self: *Pipeline, name: []const u8, id: []const u8) OperationError!ModuleHandle {
+        return self._addModule(name, id);
     }
 
-    fn _addModule(self: *Pipeline, id: []const u8, name: []const u8) OperationError!ModuleHandle {
+    fn _addModule(self: *Pipeline, name: []const u8, id: []const u8) OperationError!ModuleHandle {
         slog.debug("Adding module to pipeline: '{s}'", .{name});
         const module_def = self.repo.get(name) orelse return error.InvalidModule;
         // the module dupes its own id, so transient strings are fine here

@@ -11,9 +11,9 @@ fn buildChain(p: *Pipeline) !struct {
     multiply: P.ModuleHandle,
     nop: P.ModuleHandle,
 } {
-    const iraw = try p.addModule("01", "test-i-1234");
-    const multiply = try p.addModule("01", "test-multiply");
-    const nop = try p.addModule("01", "test-nop-glsl");
+    const iraw = try p.addModule("test-i-1234", "01");
+    const multiply = try p.addModule("test-multiply", "01");
+    const nop = try p.addModule("test-nop-glsl", "01");
 
     try p.setModuleParam(multiply, "multiplier", f32, 1.0);
     try p.setModuleParam(multiply, "multiplier", f32, 2.0);
@@ -65,10 +65,10 @@ test "resolves names from owned repo, addModule records" {
     try std.testing.expect(pipeline.repo.get("test-i-1234") != null);
     // unknown names are not resolvable
     try std.testing.expect(pipeline.repo.get("does-not-exist") == null);
-    try std.testing.expectError(error.InvalidModule, pipeline.addModule("01", "does-not-exist"));
+    try std.testing.expectError(error.InvalidModule, pipeline.addModule("does-not-exist", "01"));
 
     // addModule (public edit op) DOES record
-    _ = try pipeline.addModule("02", "test-i-1234");
+    _ = try pipeline.addModule("test-i-1234", "02");
     try std.testing.expectEqual(@as(usize, 1), pipeline.history.histlist.count());
     try std.testing.expectEqualStrings("module:test-i-1234:02", pipeline.history.histlist.committed()[0].line);
 }
@@ -78,7 +78,7 @@ test "coalescing merges repeated edits of the same param" {
     var pipeline = try Pipeline.init(allocator, std.testing.io, null, null);
     defer pipeline.deinit();
 
-    const m = try pipeline.addModule("01", "test-multiply");
+    const m = try pipeline.addModule("test-multiply", "01");
 
     // with coalesce enabled, two quick edits of 'multiplier' collapse to one step
     pipeline.history.config = .{ .window_secs = 60.0 };
@@ -184,7 +184,7 @@ test "replay invalidates redo tail on new edits" {
     try std.testing.expectEqual(full - 1, pipeline.history.histlist.cursor);
 
     // a new edit after undo drops the redo tail
-    const m = try pipeline.addModule("09", "test-i-1234");
+    const m = try pipeline.addModule("test-i-1234", "09");
     _ = m;
     try std.testing.expectEqual(full, pipeline.history.histlist.cursor);
     try std.testing.expectEqual(full, pipeline.history.histlist.count()); // nothing beyond cursor

@@ -19,7 +19,6 @@ test "param change only re-runs the dirty module node and its downstream success
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-
     var gpu_instance = try pie.gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
@@ -30,10 +29,10 @@ test "param change only re-runs the dirty module node and its downstream success
     var pipeline = try Pipeline.init(allocator, io, &gpu_instance, config);
     defer pipeline.deinit();
 
-    const mod_i = try pipeline.addModule("01", "test-i-1234");
-    const mod_mult = try pipeline.addModule("01", "test-multiply");
-    const mod_nop = try pipeline.addModule("01", "test-nop-glsl");
-    const mod_o = try pipeline.addModule("01", "test-o-2468");
+    const mod_i = try pipeline.addModule("test-i-1234", "01");
+    const mod_mult = try pipeline.addModule("test-multiply", "01");
+    const mod_nop = try pipeline.addModule("test-nop-glsl", "01");
+    const mod_o = try pipeline.addModule("test-o-2468", "01");
 
     try pipeline.setModuleParam(mod_mult, "multiplier", f32, 2.0);
 
@@ -71,7 +70,6 @@ test "changing a mid-chain param does not re-run upstream nodes" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-
     var gpu_instance = try pie.gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
@@ -82,9 +80,9 @@ test "changing a mid-chain param does not re-run upstream nodes" {
     var pipeline = try Pipeline.init(allocator, io, &gpu_instance, config);
     defer pipeline.deinit();
 
-    const mod_i = try pipeline.addModule("01", "test-i-1234");
-    const mod_mult = try pipeline.addModule("01", "test-multiply");
-    const mod_o = try pipeline.addModule("01", "test-o-2468");
+    const mod_i = try pipeline.addModule("test-i-1234", "01");
+    const mod_mult = try pipeline.addModule("test-multiply", "01");
+    const mod_o = try pipeline.addModule("test-o-2468", "01");
 
     try pipeline.setModuleParam(mod_mult, "multiplier", f32, 2.0);
 
@@ -109,7 +107,6 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-
     var gpu_instance = try pie.gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
@@ -121,11 +118,11 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
     var pipeline = try Pipeline.init(allocator, io, &gpu_instance, config);
     defer pipeline.deinit();
 
-    const mod_raw = try pipeline.addModule("01", "i-raw");
-    const mod_format = try pipeline.addModule("01", "format");
-    const mod_demosaic = try pipeline.addModule("01", "demosaic");
-    const mod_disp = try pipeline.addModule("01", "o-display");
-    const mod_swap = try pipeline.addModule("01", "test-swap-roi"); // todo: swap with crop module
+    const mod_raw = try pipeline.addModule("i-raw", "01");
+    const mod_format = try pipeline.addModule("format", "01");
+    const mod_demosaic = try pipeline.addModule("demosaic", "01");
+    const mod_disp = try pipeline.addModule("o-display", "01");
+    const mod_swap = try pipeline.addModule("test-swap-roi", "01"); // todo: swap with crop module
 
     try pipeline.setModuleParam(mod_raw, "filename", []const u8, "testing/images/DSC_6765.NEF");
 
