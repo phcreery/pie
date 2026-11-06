@@ -1,4 +1,5 @@
 pub const mat3 = @import("mat3.zig");
+pub const vec3 = @import("vec3.zig");
 pub const matrices = @import("matrices.zig");
 pub const color = @import("color.zig");
 
@@ -31,6 +32,7 @@ pub inline fn fract(x: f32) f32 {
 
 test {
     _ = mat3;
+    _ = vec3;
     _ = matrices;
     _ = color;
 }

@@ -4,6 +4,7 @@ const ROI = @import("types").ROI;
 pub const Module = @import("Module.zig");
 pub const Node = @import("Node.zig");
 pub const gpu = @import("gpu");
+pub const GPU = gpu.GPU;
 pub const pipeline = @import("pipeline.zig");
 pub const graphs = @import("graphs.zig");
 pub const history = @import("histlist.zig");

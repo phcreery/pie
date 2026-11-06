@@ -67,8 +67,8 @@ const shader_code: []const u8 =
 ;
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "multiplier", @as(f32, 3.0));
-    try api.initParamNamed(pipe, mod, "adder", @as(f32, 3.0));
+    try api.initParam(pipe, mod, "multiplier", @as(f32, 3.0));
+    try api.initParam(pipe, mod, "adder", @as(f32, 3.0));
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

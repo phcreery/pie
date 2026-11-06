@@ -84,7 +84,7 @@ fn reload(allocator: std.mem.Allocator, mod: *api.Module, filename: []const u8) 
 }
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "filename", @as([]const u8, ""));
+    try api.initParam(pipe, mod, "filename", @as([]const u8, ""));
 }
 
 pub fn init(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHandle, mod_handle: api.ModuleHandle) !void {

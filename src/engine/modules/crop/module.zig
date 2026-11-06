@@ -34,8 +34,8 @@ pub const def: api.ModuleDef = .{
 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "rotation", @as(f32, 0.0));
-    try api.initParamNamed(pipe, mod, "meta_rotation_deg", @as(f32, 0.0));
+    try api.initParam(pipe, mod, "rotation", @as(f32, 0.0));
+    try api.initParam(pipe, mod, "meta_rotation_deg", @as(f32, 0.0));
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

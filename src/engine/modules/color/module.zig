@@ -1,27 +1,32 @@
 const api = @import("../api.zig");
 const std = @import("std");
 const temp_tint = @import("./temp_tint.zig");
+const slog = std.log.scoped(.color);
 
 pub const def: api.ModuleDef = .{
     .desc = @import("module.zon"),
     .initParams = initParams,
     .modifyOut = modifyOut,
+    .commitParams = commitParams,
     .createNodes = createNodes,
 };
 
 const default_wb_temp: f32 = 6500.0; // D65 daylight
 const default_wb_tint: f32 = 0.0;
-const default_wb_coeff: [3]f32 = .{ 1.0, 1.0, 1.0 }; // hardcoded from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
+/// `wb_coeff` sentinel: all-zero means "derive from the camera"
+const auto_wb_coeff: [3]f32 = .{ 0.0, 0.0, 0.0 };
+/// What the shader gets when there is no camera data and no user override.
+const neutral_wb_coeff: [3]f32 = .{ 1.0, 1.0, 1.0 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "wb_temp", default_wb_temp);
-    try api.initParamNamed(pipe, mod, "wb_tint", default_wb_tint);
+    try api.initParam(pipe, mod, "wb_temp", default_wb_temp);
+    try api.initParam(pipe, mod, "wb_tint", default_wb_tint);
 
-    // 1.90625, 1, 1.4921875    cam_mul
-    // 0.8191, 1, 1.3340, 1.0   hardcoded from 1/(rec2020_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
-    // 0.70393723, 1, 1.3611937 hardcoded from 1/(srgb_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
-    // try api.initParamNamed(pipe, mod, "wb_coeff", [3]f32{ 0.70393723, 1, 1.3611937 });
-    try api.initParamNamed(pipe, mod, "wb_coeff", default_wb_coeff);
+    // User override; all-zero = auto. `commitParams` resolves it against the
+    // source image's camera matrix and raw white balance
+    // (`api.math.color.srgbPreWbCoeff`, see color.ipynb).
+    try api.initParam(pipe, mod, "wb_coeff", auto_wb_coeff);
+    try api.initParam(pipe, mod, "commited_wb_coeff", neutral_wb_coeff);
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
@@ -29,6 +34,22 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const input_socket = try api.getModSocket(pipe, mod, "input");
     var output_socket = try api.getModSocket(pipe, mod, "output");
     output_socket.roi = input_socket.roi;
+}
+
+pub fn commitParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
+    const m = try api.getModule(pipe, mod);
+
+    const wb_coeff = try api.getParam(pipe, mod, "wb_coeff", [3]f32);
+    const is_auto = std.meta.eql(wb_coeff, auto_wb_coeff);
+
+    const effective_wb_coeff: [3]f32 = if (!is_auto)
+        wb_coeff
+    else if (m.img_param) |img_param|
+        api.math.color.srgbPreWbCoeff(img_param.xyz_d65_from_cam, img_param.white_balance)
+    else
+        neutral_wb_coeff;
+
+    try api.initParam(pipe, mod, "commited_wb_coeff", effective_wb_coeff);
 
     // Temp/tint is now applied post-demosaic in color.wgsl as a relative
     // camera-space correction before camera->sRGB conversion.

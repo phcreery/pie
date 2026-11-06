@@ -33,7 +33,7 @@ pub const def: api.ModuleDef = .{
 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "max_edge", @as(i32, 256));
+    try api.initParam(pipe, mod, "max_edge", @as(i32, 256));
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

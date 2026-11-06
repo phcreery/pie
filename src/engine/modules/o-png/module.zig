@@ -1,6 +1,7 @@
 const api = @import("../api.zig");
 const std = @import("std");
 const zigimg = @import("zigimg");
+const slog = std.log.scoped(.@"o-png");
 
 pub const def: api.ModuleDef = .{
     .desc = .{
@@ -25,7 +26,7 @@ pub const def: api.ModuleDef = .{
 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "output.png"));
+    try api.initParam(pipe, mod, "filename", @as([]const u8, "output.png"));
 }
 
 pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyopaque) !void {
@@ -38,24 +39,24 @@ pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHan
     // EXPORT PNG
     {
         // convert f16 slice to f32 slice
-        std.log.info("Casting f16 to f32", .{});
+        slog.info("Casting f16 to f32", .{});
         const output_slice = try allocator.alloc(f32, download_buffer_slice.len);
         defer allocator.free(output_slice);
         for (download_buffer_slice, 0..) |value, i| {
             output_slice[i] = @as(f32, value);
         }
-        std.log.info("Casting to bytes", .{});
+        slog.info("Casting to bytes", .{});
         const byte_array2 = std.mem.sliceAsBytes(output_slice);
 
-        std.log.info("Giving to zigimg", .{});
+        slog.info("Giving to zigimg", .{});
         var zig_image = try zigimg.Image.fromRawPixels(allocator, socket.roi.?.w, socket.roi.?.h, byte_array2[0..], .float32);
         defer zig_image.deinit(allocator);
 
-        std.log.info("Converting to RGBA64", .{});
+        slog.info("Converting to RGBA64", .{});
         try zig_image.convert(allocator, .rgba64);
 
         const filename = try api.getParam(pipe, mod, "filename", []const u8);
-        std.log.info("Writing PNG to file {s}", .{filename});
+        slog.info("Writing PNG to file {s}", .{filename});
         var write_buffer2: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
         try zig_image.writeToFilePath(allocator, io, filename, write_buffer2[0..], .{ .png = .{} });
     }

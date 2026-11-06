@@ -2,8 +2,19 @@
 
 const mat3 = @import("mat3.zig");
 
+/// CIE XYZ (D65) -> linear sRGB (Rec.709 primaries, D65).
+///
+/// Bruce Lindbloom's published sRGB D65 matrix, the one the `color.ipynb`
+/// reference calculation (and the `color` module's pre-white-balance
+/// derivation) uses.
+pub const xyz_to_srgb = mat3.Mat3f32{ .rows = .{
+    .{ 3.2404542, -1.5371385, -0.4985314 },
+    .{ -0.9692660, 1.8760108, 0.0415560 },
+    .{ 0.0556434, -0.2040259, 1.0572252 },
+} };
+
 /// linear sRGB (Rec.709 primaries, D65) -> linear Rec.2020.
-pub const srgb_to_rec2020 = mat3.Mat3f32{ .rows = .{
+pub const rec2020_from_srgb = mat3.Mat3f32{ .rows = .{
     .{ 0.6274083694, 0.3292853862, 0.0433133745 },
     .{ 0.0690961995, 0.9195258911, 0.0113621363 },
     .{ 0.0163938775, 0.0880264019, 0.8957284939 },
@@ -11,7 +22,7 @@ pub const srgb_to_rec2020 = mat3.Mat3f32{ .rows = .{
 
 /// linear Rec.2020 -> linear sRGB (Rec.709 primaries, D65).
 /// Exact inverse of `srgb_to_rec2020` to the printed precision.
-pub const rec2020_to_srgb = mat3.Mat3f32{ .rows = .{
+pub const srgb_from_rec2020 = mat3.Mat3f32{ .rows = .{
     .{ 1.6604791628, -0.5876504078, -0.0728390268 },
     .{ -0.1245495865, 1.1329177667, -0.0083481806 },
     .{ -0.0181506339, -0.1005804845, 1.1185632490 },
@@ -32,7 +43,7 @@ pub const agx_inset_inv = mat3.Mat3f32{ .rows = .{
 
 test "srgb <-> rec2020 are inverses" {
     const testing = @import("std").testing;
-    const product = srgb_to_rec2020.mul(rec2020_to_srgb);
+    const product = rec2020_from_srgb.mul(srgb_from_rec2020);
     inline for (0..3) |r| {
         inline for (0..3) |c| {
             const expected: f32 = if (r == c) 1.0 else 0.0;

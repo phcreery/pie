@@ -3,6 +3,7 @@ const pie = @import("pie");
 const libraw = @import("libraw");
 const zigimg = @import("zigimg");
 const console = @import("console");
+const slog = std.log.scoped(.targets);
 
 const gpu = pie.gpu;
 const Pipeline = pie.Pipeline;
@@ -191,7 +192,7 @@ fn libraw_dcraw_process(
     // first check if target_filename already exists, if so, skip processing
     if (!force) {
         if (std.Io.Dir.cwd().openFile(io, target_filename, .{})) |_| {
-            std.log.info("Target file {s} already exists, skipping DCRAW processing", .{target_filename});
+            slog.info("Target file {s} already exists, skipping DCRAW processing", .{target_filename});
             return;
         } else |err| {
             if (err != std.Io.File.OpenError.FileNotFound) {
@@ -200,7 +201,7 @@ fn libraw_dcraw_process(
         }
     }
 
-    std.log.info("DCRAW processing...", .{});
+    slog.info("DCRAW processing...", .{});
 
     const contents = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, input_filename, allocator, .unlimited);
     defer allocator.free(contents);
@@ -229,11 +230,11 @@ fn libraw_dcraw_process(
     if (ret3 != libraw.LIBRAW_SUCCESS) {
         return error.DcrawProcessFailed;
     }
-    std.log.info("DCRAW processed successfully", .{});
+    slog.info("DCRAW processed successfully", .{});
 
     // libraw_dcraw_make_mem_image
 
-    std.log.info("Writing to {s}", .{target_filename});
+    slog.info("Writing to {s}", .{target_filename});
     const ret4 = libraw.libraw_dcraw_ppm_tiff_writer(libraw_rp, target_filename.ptr);
     if (ret4 != libraw.LIBRAW_SUCCESS) {
         return error.DcrawWriteFailed;
@@ -262,11 +263,6 @@ test "test targets" {
     var gpu_instance = try gpu.GPU.init(allocator, io);
     defer gpu_instance.deinit();
 
-    
-    var arena_instance = std.heap.ArenaAllocator.init(allocator);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
-
     const pipeline_config: pie.pipeline.PipelineConfig = .{
         .upload_buffer_size_bytes = 75e6,
         .download_buffer_size_bytes = 75e6,
@@ -274,7 +270,6 @@ test "test targets" {
 
     var pipeline = Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
-
 
     const config: TargetConfig = @import("001_DSC_6765/target.zig").config;
     const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";
@@ -289,7 +284,7 @@ test "test targets" {
         return error.NoBuildFunction;
     }
 
-    try pipeline.run(arena);
+    try pipeline.run();
 
     const target_stats = try readImageStats(allocator, io, target_filename);
     const output_stats = try readImageStats(allocator, io, output_filename);

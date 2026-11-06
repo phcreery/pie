@@ -62,7 +62,7 @@ pub fn init(gpu: *GPU, size_bytes: ?u64, memory_type: MemoryType) !Self {
     // Finally we create a buffer which can be read by the CPU. This buffer is how we will read
     // the data. We need to use a separate buffer because we need to have a usage of `MAP_READ`,
     // and that usage can only be used with `COPY_DST`.
-    slog.info("Creating Buffer with size {B:.4}", .{buffer_size_bytes});
+    slog.debug("Creating Buffer with size {B:.4}", .{buffer_size_bytes});
     const buffer = try gpu.device.createBuffer(.{
         .label = "buffer",
         .usage = memory_type.toGPUBufferUsage(),

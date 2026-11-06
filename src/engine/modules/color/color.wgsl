@@ -3,7 +3,8 @@ enable f16;
 struct Params {
     wb_temp: f32,
     wb_tint: f32,
-    wb_coeff: vec3<f32>,
+    wb_coeff: vec3<f32>,           // user override (0 = auto); not read here
+    commited_wb_coeff: vec3<f32>,  // resolved by the module's commitParams
 };
 
 struct ImgParams {
@@ -104,7 +105,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // white balance
     // hmm, vkdt's call cat16(w0, vec3(1.0), params.mul.rgb) with mul=1/w0 DOES produce approximately white (within 1.5% — the small error is because 1/w0 is only approximately the right value due to the
     // g-normalization and the fact that cone-space scaling isn't exactly the same as RGB-space inversion).
-    rgb_srgb_linear = cat16(rgb_srgb_linear, vec3f(1.0), params.wb_coeff.rgb);
+    rgb_srgb_linear = cat16(rgb_srgb_linear, vec3f(1.0), params.commited_wb_coeff);
 
     let out_px = vec4<f32>(rgb_srgb_linear, px.a);
     textureStore(output, coords, out_px);

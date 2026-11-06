@@ -94,20 +94,20 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !Self {
 
     const limits = try adapter.getLimits();
 
-    slog.info("Adapter limits:", .{});
-    slog.info("- max_bind_groups: {d}", .{limits.maxBindGroups});
-    slog.info("- max_bindings_per_bind_group: {d}", .{limits.maxBindingsPerBindGroup});
-    slog.info("- max_texture_dimension_2d: {d}", .{limits.maxTextureDimension2D});
-    slog.info("- max_compute_invocations_per_workgroup: {d}", .{limits.maxComputeInvocationsPerWorkgroup});
-    slog.info("- max_compute_workgroup_size_x: {d}", .{limits.maxComputeWorkgroupSizeX});
-    slog.info("- max_compute_workgroup_size_y: {d}", .{limits.maxComputeWorkgroupSizeY});
-    slog.info("- max_compute_workgroup_size_z: {d}", .{limits.maxComputeWorkgroupSizeZ});
-    slog.info("- max_compute_workgroups_per_dimension: {d}", .{limits.maxComputeWorkgroupsPerDimension});
-    slog.info("- max_buffer_size: {B:.2}", .{limits.maxBufferSize});
-    slog.info("- max_uniform_buffer_binding_size: {B:.2}", .{limits.maxUniformBufferBindingSize});
-    slog.info("- max_storage_buffer_binding_size: {B:.2}", .{limits.maxStorageBufferBindingSize});
-    slog.info("- min_uniform_buffer_offset_alignment: {d}", .{limits.minUniformBufferOffsetAlignment});
-    slog.info("- min_storage_buffer_offset_alignment: {d}", .{limits.minStorageBufferOffsetAlignment});
+    slog.debug("Adapter limits:", .{});
+    slog.debug("- max_bind_groups: {d}", .{limits.maxBindGroups});
+    slog.debug("- max_bindings_per_bind_group: {d}", .{limits.maxBindingsPerBindGroup});
+    slog.debug("- max_texture_dimension_2d: {d}", .{limits.maxTextureDimension2D});
+    slog.debug("- max_compute_invocations_per_workgroup: {d}", .{limits.maxComputeInvocationsPerWorkgroup});
+    slog.debug("- max_compute_workgroup_size_x: {d}", .{limits.maxComputeWorkgroupSizeX});
+    slog.debug("- max_compute_workgroup_size_y: {d}", .{limits.maxComputeWorkgroupSizeY});
+    slog.debug("- max_compute_workgroup_size_z: {d}", .{limits.maxComputeWorkgroupSizeZ});
+    slog.debug("- max_compute_workgroups_per_dimension: {d}", .{limits.maxComputeWorkgroupsPerDimension});
+    slog.debug("- max_buffer_size: {B:.2}", .{limits.maxBufferSize});
+    slog.debug("- max_uniform_buffer_binding_size: {B:.2}", .{limits.maxUniformBufferBindingSize});
+    slog.debug("- max_storage_buffer_binding_size: {B:.2}", .{limits.maxStorageBufferBindingSize});
+    slog.debug("- min_uniform_buffer_offset_alignment: {d}", .{limits.minUniformBufferOffsetAlignment});
+    slog.debug("- min_storage_buffer_offset_alignment: {d}", .{limits.minStorageBufferOffsetAlignment});
 
     const shader_cache = ShaderMap.init(allocator);
 

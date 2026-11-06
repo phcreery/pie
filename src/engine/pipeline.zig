@@ -667,7 +667,7 @@ pub const Pipeline = struct {
         _ = self.run_arena.reset(.retain_capacity);
         const arena = self.run_arena.allocator();
 
-        slog.info("Running pipeline", .{});
+        slog.info("Running pipeline...", .{});
 
         try self.perf.startRun();
 
@@ -719,14 +719,14 @@ pub const Pipeline = struct {
         }
 
         if (self.dirty) {
-            // re-run modifyOut so modules can update output rois/format from the
-            // changed params (e.g. swap-roi); then detect stale connector textures
             try self.runModulesModifyOut();
             try self.perf.timerLap("runModulesModifyOut2");
             try self.runNodeSyncSockets();
             try self.perf.timerLap("runNodeSyncSockets");
             try self.runNodesInitConnectorTextures(.{ .refresh = true });
             try self.perf.timerLap("runNodesInitConnectorTextures(refresh)");
+            try self.runModulesCommitParams();
+            try self.perf.timerLap("runModulesCommitParams");
 
             try self.runModulesUploadParams(arena);
             try self.perf.timerLap("runModulesUploadParams");
@@ -941,6 +941,21 @@ pub const Pipeline = struct {
         module.img_param_handle = try self.param_buffer_pool.add(null);
         if (module.params_len() != 0) {
             module.param_handle = try self.param_buffer_pool.add(null);
+        }
+    }
+
+    /// set roi out for each module based on connected modules
+    /// and call modifyOut if defined
+    /// we also propagate img_param and color_profile down the pipeline here
+    fn runModulesCommitParams(self: *Pipeline) RunError!void {
+        for (self.module_execution_order.items) |module_handle| {
+            const module = self.module_pool.getPtr(module_handle) catch return error.InvariantViolated;
+            if (module.commitParams) |commitParamsFn| {
+                commitParamsFn(self, module_handle) catch |err| {
+                    slog.err("module '{s}' commitParams failed: {s}", .{ module.name, @errorName(err) });
+                    return error.InvalidGraph;
+                };
+            }
         }
     }
 

@@ -31,7 +31,7 @@ pub const def: api.ModuleDef = .{
 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "value", @as(i32, 1.0));
+    try api.initParam(pipe, mod, "value", @as(i32, 1.0));
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

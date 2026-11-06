@@ -58,6 +58,7 @@ pub const ModuleDef = struct {
     init: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
     deinit: ?*const fn (allocator: std.mem.Allocator, pipe: PipelineHandle, mod: ModuleHandle) void = null,
     modifyOut: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
+    commitParams: ?*const fn (pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) anyerror!void = null,
     createNodes: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
     writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: PipelineHandle, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
@@ -76,14 +77,7 @@ pub fn copyToStaging(mapped: *anyopaque, src: []const u8, width: u32, height: u3
     gpu.data.copyDenseToStaging(mapped, src, width, height, bpp);
 }
 
-pub fn initParam(pipe: PipelineHandle, desc: ParamDesc, value: anytype) !Param {
-    const param = try Param.init(pipe.allocator, desc, value);
-    return param;
-}
-
-/// Write the initial value of a declared param. Params are created (zero
-/// valued) when the module is registered, so this only sets the value.
-pub fn initParamNamed(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
+pub fn initParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     const param = try mod.getParamPtr(param_name);
     try param.set(value);

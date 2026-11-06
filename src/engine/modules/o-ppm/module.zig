@@ -26,7 +26,7 @@ pub const def: api.ModuleDef = .{
 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "output.ppm"));
+    try api.initParam(pipe, mod, "filename", @as([]const u8, "output.ppm"));
 }
 
 pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHandle, mod: api.ModuleHandle, mapped: *anyopaque) !void {

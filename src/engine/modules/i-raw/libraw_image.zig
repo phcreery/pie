@@ -6,6 +6,13 @@ const std = @import("std");
 /// can both decode raw files. Serialize every libraw call.
 var libraw_mutex: std.Io.Mutex = .init;
 
+// https://exiftool.org/TagNames/EXIF.html#LightSource
+pub const WBCoeffs = struct {
+    a: [4]i32,
+    d55: [4]i32,
+    d65: [4]i32,
+};
+
 pub const RawImage = struct {
     width: usize,
     height: usize,
@@ -16,6 +23,7 @@ pub const RawImage = struct {
     white: [4]u32,
     cam_mul: [4]f32,
     pre_mul: [4]f32,
+    wb_coeffs: WBCoeffs,
     cam_xyz_all: [4][3]f32,
     cam_xyz: [3][3]f32,
     filters: api.CFA,
@@ -31,6 +39,9 @@ pub const RawImage = struct {
         defer allocator.free(buf);
 
         const libraw_rp = libraw.libraw_init(0);
+
+        libraw_rp.*.params.use_camera_wb = 0;
+        libraw_rp.*.params.use_auto_wb = 0;
 
         const ret = libraw.libraw_open_buffer(libraw_rp, buf.ptr, buf.len);
         if (ret != libraw.LIBRAW_SUCCESS) return error.OpenFailed;
@@ -49,6 +60,11 @@ pub const RawImage = struct {
         const data_maximum: u32 = libraw_rp.*.rawdata.color.data_maximum;
         const flip = libraw_rp.*.rawdata.sizes.flip;
         const user_flip = libraw_rp.*.params.user_flip;
+        const wb_coeffs: WBCoeffs = .{
+            .a = libraw_rp.*.rawdata.color.WB_Coeffs[17],
+            .d55 = libraw_rp.*.rawdata.color.WB_Coeffs[20],
+            .d65 = libraw_rp.*.rawdata.color.WB_Coeffs[21],
+        };
 
         // 1 = Daylight, 2 = Fluorescent, 4 = Tungsten, 21 = D65 i think
         // const illuminant0 = libraw_rp.*.rawdata.color.dng_color[0].illuminant;
@@ -105,6 +121,7 @@ pub const RawImage = struct {
             .white = white,
             .cam_mul = cam_mul,
             .pre_mul = pre_mul,
+            .wb_coeffs = wb_coeffs,
             .cam_xyz_all = cam_xyz_all,
             .cam_xyz = cam_xyz,
             .filters = try api.CFA.fromLibraw(libraw_rp.*.rawdata.iparams.cdesc[0..], libraw_rp.*.rawdata.iparams.filters),
@@ -119,6 +136,9 @@ pub const RawImage = struct {
         try writer.print("white: {d}, {d}, {d}, {d}\n", .{ self.white[0], self.white[1], self.white[2], self.white[3] });
         try writer.print("cam_mul: {d}, {d}, {d}, {d}\n", .{ self.cam_mul[0], self.cam_mul[1], self.cam_mul[2], self.cam_mul[3] });
         try writer.print("pre_mul: {d}, {d}, {d}, {d}\n", .{ self.pre_mul[0], self.pre_mul[1], self.pre_mul[2], self.pre_mul[3] });
+        try writer.print("wb_coeffs.a: {d}, {d}, {d}\n", .{ self.wb_coeffs.a[0], self.wb_coeffs.a[1], self.wb_coeffs.a[2] });
+        try writer.print("wb_coeffs.d55: {d}, {d}, {d}\n", .{ self.wb_coeffs.d55[0], self.wb_coeffs.d55[1], self.wb_coeffs.d55[2] });
+        try writer.print("wb_coeffs.d65: {d}, {d}, {d}\n", .{ self.wb_coeffs.d65[0], self.wb_coeffs.d65[1], self.wb_coeffs.d65[2] });
     }
 
     pub fn deinit(self: *RawImage) void {

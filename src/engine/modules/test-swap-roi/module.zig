@@ -33,7 +33,7 @@ pub const def: api.ModuleDef = .{
 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "swap_roi", @as(i32, 0));
+    try api.initParam(pipe, mod, "swap_roi", @as(i32, 0));
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {

@@ -1,7 +1,9 @@
 // Mat3 kept close to https://github.com/kooparse/zalgebra/blob/main/src/mat3.zig
 
-/// 3-component f32 vector.
-pub const Vec3f32 = @Vector(3, f32);
+const vec3 = @import("vec3.zig");
+
+/// 3-component f32 vector, defined in `vec3.zig`.
+pub const Vec3f32 = vec3.Vec3f32;
 
 /// Row-major 3x3 matrix: `m.rows[r][c]` is row `r`, column `c`.
 ///

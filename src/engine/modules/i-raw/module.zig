@@ -86,11 +86,11 @@ pub fn deinit(allocator: std.mem.Allocator, pipe: api.PipelineHandle, mod: api.M
 }
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParamNamed(pipe, mod, "filename", @as([]const u8, "input.raw"));
-    try api.initParamNamed(pipe, mod, "wb_mode", @backingInt(WbMode.pre_mul));
+    try api.initParam(pipe, mod, "filename", @as([]const u8, "input.raw"));
+    try api.initParam(pipe, mod, "wb_mode", @backingInt(WbMode.pre_mul));
 }
 
-fn computeCamToSrgb(raw_image: *RawImage) [3][3]f32 {
+fn computeSrgbFromCam(raw_image: *RawImage) [3][3]f32 {
     const srgb_from_xyz: [3][3]f32 = .{
         .{ 3.2409699, -1.5373832, -0.49861076 },
         .{ -0.96924365, 1.8759675, 0.04155506 },
@@ -208,14 +208,14 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         },
         .white_balance = selected_wb,
         .orientation = orientation,
-        .srgb_from_cam = computeCamToSrgb(raw_image),
+        .srgb_from_cam = computeSrgbFromCam(raw_image),
         .xyz_d65_from_cam = xyz_d65_from_cam,
     };
 
     var stdout_buffer: [4096]u8 = undefined;
     var writer = std.Io.File.stdout().writer(pipe.io, &stdout_buffer);
     const stdout = &writer.interface;
-    // try raw_image.print(stdout);
+    try raw_image.print(stdout);
     // try m.img_param.?.print(stdout);
     try stdout.flush();
 
