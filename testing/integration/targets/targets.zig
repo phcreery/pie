@@ -241,17 +241,23 @@ fn libraw_dcraw_process(
     }
 }
 
+/// One integration target: the vkdt-style graph that renders it. The cfg names
+/// both endpoints in its `filename` params, so it can be replayed as-is.
 pub const TargetConfig = struct {
-    input_filename: []const u8,
     name: []const u8,
-    build: ?*const fn (
-        allocator: std.mem.Allocator,
-        io: std.Io,
-        pipeline: *Pipeline,
-        input_filename: []const u8,
-        output_filename: []const u8,
-    ) anyerror!void = null,
+    cfg_filename: []const u8,
 };
+
+/// The loaded graph's single source and sink.
+fn endpoints(pipeline: *Pipeline) !struct { source: pie.pipeline.ModuleHandle, sink: pie.pipeline.ModuleHandle } {
+    var sources = try pipeline.modulesOfType(.source);
+    defer sources.deinit(pipeline.allocator);
+    var sinks = try pipeline.modulesOfType(.sink);
+    defer sinks.deinit(pipeline.allocator);
+    if (sources.items.len != 1 or sinks.items.len != 1) return error.InvalidGraph;
+
+    return .{ .source = sources.items[0], .sink = sinks.items[0] };
+}
 
 test "test targets" {
     const allocator = std.testing.allocator;
@@ -271,18 +277,24 @@ test "test targets" {
     var pipeline = Pipeline.init(allocator, io, &gpu_instance, pipeline_config) catch unreachable;
     defer pipeline.deinit();
 
-    const config: TargetConfig = @import("001_DSC_6765/target.zig").config;
+    const config: TargetConfig = .{
+        .name = "001_DSC_6765",
+        .cfg_filename = "testing/integration/targets/001_DSC_6765/target.cfg",
+    };
     const target_filename = "testing/integration/targets/" ++ config.name ++ "/target.ppm";
-    const input_filename = config.input_filename;
+
+    const cfg = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, config.cfg_filename, allocator, .unlimited);
+    defer allocator.free(cfg);
+    try pipeline.load(cfg);
+
+    // The fixture comes from the cfg; point the sink at the file we score.
+    const graph = try endpoints(&pipeline);
+    const input_param = pipeline.getModuleParamPtr(graph.source, "filename") orelse return error.InvalidGraph;
+    const input_filename = input_param.get([]const u8);
     const output_filename = "testing/integration/targets/" ++ config.name ++ "/output.ppm";
+    try pipeline.setModuleParam(graph.sink, "filename", []const u8, output_filename);
 
     try libraw_dcraw_process(allocator, io, input_filename, target_filename, false);
-
-    if (config.build) |build_fn| {
-        try build_fn(allocator, io, &pipeline, input_filename, output_filename);
-    } else {
-        return error.NoBuildFunction;
-    }
 
     try pipeline.run();
 

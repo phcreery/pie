@@ -520,8 +520,8 @@ pub const Pipeline = struct {
     }
 
     pub fn getModuleParamPtr(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8) ?*api.Param {
-        const mod = self.module_pool.getPtr(mod_handle) orelse return null;
-        return mod.getParamPtr(param_name);
+        const mod = self.module_pool.getPtr(mod_handle) catch return null;
+        return mod.getParamPtr(param_name) catch null;
     }
 
     pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) OperationError!void {
