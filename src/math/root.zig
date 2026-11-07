@@ -1,18 +1,8 @@
 pub const mat3 = @import("mat3.zig");
+pub const Mat3 = mat3.Mat3;
 pub const vec3 = @import("vec3.zig");
 pub const matrices = @import("matrices.zig");
 pub const color = @import("color.zig");
-
-pub fn mat3x3Mul(C: anytype, A: anytype, B: anytype) void {
-    const N = A.len;
-    for (0..N) |i| {
-        for (0..N) |j| {
-            for (0..N) |k| {
-                C[i][j] += A[i][k] * B[k][j];
-            }
-        }
-    }
-}
 
 /// Floor for values feeding `powf`/`log2` in `powf` and the curve.
 pub const EPSILON: f32 = 1e-7;

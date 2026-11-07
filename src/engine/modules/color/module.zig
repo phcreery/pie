@@ -24,7 +24,8 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
     // User override; all-zero = auto. `commitParams` resolves it against the
     // source image's camera matrix and raw white balance
-    // (`api.math.color.srgbPreWbCoeff`, see color.ipynb).
+    // (`api.math.color.preWbCoeff`, see color.ipynb), in the working
+    // space the node shader decodes to (linear Rec.2020).
     try api.initParam(pipe, mod, "wb_coeff", auto_wb_coeff);
     try api.initParam(pipe, mod, "commited_wb_coeff", neutral_wb_coeff);
 }
@@ -45,11 +46,12 @@ pub fn commitParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const effective_wb_coeff: [3]f32 = if (!is_auto)
         wb_coeff
     else if (m.img_param) |img_param|
-        api.math.color.srgbPreWbCoeff(img_param.xyz_d65_from_cam, img_param.white_balance)
+        api.math.color.preWbCoeff(img_param.xyz_d65_from_cam, img_param.white_balance)
     else
         neutral_wb_coeff;
 
     try api.initParam(pipe, mod, "commited_wb_coeff", effective_wb_coeff);
+    // try api.initParam(pipe, mod, "wb_coeff", effective_wb_coeff);
 
     // Temp/tint is now applied post-demosaic in color.wgsl as a relative
     // camera-space correction before camera->sRGB conversion.
@@ -83,23 +85,7 @@ pub fn commitParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const mod_output_sock = try api.getModSocket(pipe, mod, "output");
-    const node_color = try api.addNode(pipe, mod, .{
-        .type = .compute,
-        .shader = .{ .wgsl = .{ .string = @embedFile("./color.wgsl") } },
-        .name = "color",
-        .sockets = &.{
-            .{
-                .name = "input",
-                .type = .read,
-                .format = .rgba16float,
-            },
-            .{
-                .name = "output",
-                .type = .write,
-                .format = .rgba16float,
-            },
-        },
-    });
+    const node_color = try api.addNode(pipe, mod, @import("node.color.zon"));
     try api.setNodeRunSize(pipe, node_color, mod_output_sock.roi.?);
     try api.inheritSocket(pipe, mod, "input", node_color, "input");
     try api.inheritSocket(pipe, mod, "output", node_color, "output");

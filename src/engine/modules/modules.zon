@@ -1,4 +1,5 @@
 .{
     .{ .name = "test-nop-zig", .zig_shader = "node.nop.zig" },
     .{ .name = "filmcurv", .zig_shader = "node.filmcurv.zig" },
+    .{ .name = "color", .zig_shader = "node.color.zig" },
 }

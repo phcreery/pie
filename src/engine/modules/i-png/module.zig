@@ -153,7 +153,7 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod_handle: api.ModuleHandle) !void {
         .white = .{ 1.0, 1.0, 1.0, 1.0 },
         .white_balance = .{ 1.0, 1.0, 1.0, 1.0 },
         .orientation = .normal,
-        .srgb_from_cam = identity_3x3,
+        .rec2020_from_cam = identity_3x3,
         .xyz_d65_from_cam = identity_3x3,
     };
 }

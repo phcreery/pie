@@ -4,6 +4,7 @@ const vec3 = @import("vec3.zig");
 
 /// 3-component f32 vector, defined in `vec3.zig`.
 pub const Vec3f32 = vec3.Vec3f32;
+pub const Mat3f32 = Mat3(f32);
 
 /// Row-major 3x3 matrix: `m.rows[r][c]` is row `r`, column `c`.
 ///
@@ -117,8 +118,6 @@ pub fn Mat3(comptime T: type) type {
         }
     };
 }
-
-pub const Mat3f32 = Mat3(f32);
 
 /// Calculate determinant of the given 3x3 matrix.
 pub fn det(T: type, data: [3][3]T) T {

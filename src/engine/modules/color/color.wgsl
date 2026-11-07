@@ -12,7 +12,7 @@ struct ImgParams {
     white:          vec4<f32>,
     white_balance:  vec4<f32>,
     orientation:    i32,
-    srgb_from_cam:  mat3x3<f32>,
+    rec2020_from_cam:  mat3x3<f32>,
     xyz_d65_from_cam:   mat3x3<f32>,
 };
 
@@ -48,48 +48,45 @@ fn cat16(rec2020_d65: vec3<f32>, rec2020_src: vec3<f32>, rec2020_dst: vec3<f32>)
         vec3<f32>( 0.38752654,  0.62144744, -0.00897398),
         vec3<f32>(-0.01584150, -0.03412294,  1.04996444)
     ));
-    // let rec2020_to_xyz = transpose(mat3x3<f32>(
-    //     vec3<f32>(0.636958048301290991, 0.144616903586208406, 0.168880975164172054),
-    //     vec3<f32>(0.26270021201126692, 0.677998071518871148, 0.0593017164698619384),
-    //     vec3<f32>(4.9999999999999999e-17, 0.0280726930490874452, 1.06098505771079066)
-    // ));
-    // let xyz_to_rec2020 = transpose(mat3x3<f32>(
-    //     vec3<f32>(1.71665119, -0.35567078, -0.25336628),
-    //     vec3<f32>(-0.66668435,  1.61648124,  0.01576855),
-    //     vec3<f32>(0.01763986, -0.04277061, 0.94210312)
-    // ));
-    let xyz_to_rec709 = transpose(mat3x3<f32>(
-        vec3<f32>(3.24096994190452348, -1.53738317757009435, -0.498610760293003552),
-        vec3<f32>(-0.969243636280879506, 1.87596750150771996, 0.0415550574071755843),
-        vec3<f32>(0.0556300796969936354, -0.20397695888897649, 1.05697151424287816)
+    let rec2020_to_xyz = transpose(mat3x3<f32>(
+        vec3<f32>(0.636958048301290991, 0.144616903586208406, 0.168880975164172054),
+        vec3<f32>(0.26270021201126692, 0.677998071518871148, 0.0593017164698619384),
+        vec3<f32>(4.9999999999999999e-17, 0.0280726930490874452, 1.06098505771079066)
     ));
-    let rec709_to_xyz = transpose(mat3x3<f32>(
-        vec3<f32>(0.412390799265959229, 0.357584339383878125, 0.180480788401834347),
-        vec3<f32>(0.212639005871510217, 0.71516867876775625, 0.0721923153607337414),
-        vec3<f32>(0.0193308187155918181, 0.119194779794626018, 0.950532152249661033)
+    let xyz_to_rec2020 = transpose(mat3x3<f32>(
+        vec3<f32>(1.71665119, -0.35567078, -0.25336628),
+        vec3<f32>(-0.66668435,  1.61648124,  0.01576855),
+        vec3<f32>(0.01763986, -0.04277061, 0.94210312)
     ));
+    // let xyz_to_rec709 = transpose(mat3x3<f32>(
+    //     vec3<f32>(3.24096994190452348, -1.53738317757009435, -0.498610760293003552),
+    //     vec3<f32>(-0.969243636280879506, 1.87596750150771996, 0.0415550574071755843),
+    //     vec3<f32>(0.0556300796969936354, -0.20397695888897649, 1.05697151424287816)
+    // ));
+    // let rec709_to_xyz = transpose(mat3x3<f32>(
+    //     vec3<f32>(0.412390799265959229, 0.357584339383878125, 0.180480788401834347),
+    //     vec3<f32>(0.212639005871510217, 0.71516867876775625, 0.0721923153607337414),
+    //     vec3<f32>(0.0193308187155918181, 0.119194779794626018, 0.950532152249661033)
+    // ));
 
-    // let cl_src = M16 * rec2020_to_xyz * rec2020_src;
-    // let cl_dst = M16 * rec2020_to_xyz * rec2020_dst;
-    // var cl = M16 * rec2020_to_xyz * rec2020_d65;
-    // cl *= cl_dst / cl_src;
-    // return xyz_to_rec2020 * M16i * cl;
+    let cl_src = M16 * rec2020_to_xyz * rec2020_src;
+    let cl_dst = M16 * rec2020_to_xyz * rec2020_dst;
+    var cl = M16 * rec2020_to_xyz * rec2020_d65;
+    cl *= cl_dst / cl_src;
+    return xyz_to_rec2020 * M16i * cl;
 
     // well ... because we're actually in srgb 
-    let cl_src = M16 * rec709_to_xyz * rec2020_src;
-    let cl_dst = M16 * rec709_to_xyz * rec2020_dst;
-    var cl = M16 * rec709_to_xyz * rec2020_d65;
-    cl *= cl_dst / cl_src;
-    return xyz_to_rec709 * M16i * cl;
+    // let cl_src = M16 * rec709_to_xyz * rec2020_src;
+    // let cl_dst = M16 * rec709_to_xyz * rec2020_dst;
+    // var cl = M16 * rec709_to_xyz * rec2020_d65;
+    // cl *= cl_dst / cl_src;
+    // return xyz_to_rec709 * M16i * cl;
 
 }
 
 fn decode_colour(rgb_cam: vec3<f32>) -> vec3<f32> {
-    // decode the camera-space color to linear sRGB
-    // return mul3x3Rows(img_params.srgb_from_cam, rgb_cam);
-
     // becasue wgsl mat3x3 layout is column-major, we need to transpose
-    return transpose(img_params.srgb_from_cam) * rgb_cam;
+    return transpose(img_params.rec2020_from_cam) * rgb_cam;
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -100,13 +97,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let rgb_cam = vec3<f32>(px.r, px.g, px.b);
 
     // cam -> rgb
-    var rgb_srgb_linear = decode_colour(rgb_cam);
+    var rgb_rec2020_linear = decode_colour(rgb_cam);
 
     // white balance
     // hmm, vkdt's call cat16(w0, vec3(1.0), params.mul.rgb) with mul=1/w0 DOES produce approximately white (within 1.5% — the small error is because 1/w0 is only approximately the right value due to the
     // g-normalization and the fact that cone-space scaling isn't exactly the same as RGB-space inversion).
-    rgb_srgb_linear = cat16(rgb_srgb_linear, vec3f(1.0), params.commited_wb_coeff);
+    rgb_rec2020_linear = cat16(rgb_rec2020_linear, vec3f(1.0), params.commited_wb_coeff);
 
-    let out_px = vec4<f32>(rgb_srgb_linear, px.a);
+    let out_px = vec4<f32>(rgb_rec2020_linear, px.a);
     textureStore(output, coords, out_px);
 }

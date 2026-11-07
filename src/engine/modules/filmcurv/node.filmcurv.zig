@@ -89,16 +89,17 @@ export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
     const px = shd.imageFetch(input_image, coord);
 
-    const rgb_srgb_linear = @max(Vec3f32{ px[0], px[1], px[2] }, ZERO);
-    const rgb_rec2020_linear = color.srgbToRec2020(rgb_srgb_linear);
-    const rgb_display_rec2020_linear = applyFilmCurve(rgb_rec2020_linear);
-    const rgb_display_srgb_linear = @max(color.rec2020ToSrgb(rgb_display_rec2020_linear), ZERO);
-    const rgb_display = color.linearToSrgbVec3(rgb_display_srgb_linear);
+    const rgb_rec2020_linear = @max(Vec3f32{ px[0], px[1], px[2] }, ZERO);
+    const rgb_rec2020_linear_display = applyFilmCurve(rgb_rec2020_linear);
+
+    // temporary conversion from Rec.2020 linear to sRGB for display purposes
+    const rgb_srgb_linear_display = math.matrices.srgb_from_rec2020.mulVec(rgb_rec2020_linear_display);
+    const rgb_srgb_display = color.linearToSrgbVec3(rgb_srgb_linear_display);
 
     shd.imageWrite(output_image, coord, Vec4f32{
-        rgb_display[0],
-        rgb_display[1],
-        rgb_display[2],
+        rgb_srgb_display[0],
+        rgb_srgb_display[1],
+        rgb_srgb_display[2],
         px[3],
     });
 }

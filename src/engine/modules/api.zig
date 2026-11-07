@@ -39,8 +39,9 @@ pub const Node = @import("../Node.zig");
 pub const Socket = @import("../Socket.zig");
 pub const Connector = @import("../Connector.zig");
 pub const Param = @import("../Param.zig");
-pub const ImgParam = @import("../ImgParam.zig");
 pub const HistoryConfig = @import("../histlist.zig").HistoryConfig;
+
+pub const ImgParam = @import("types").ImgParam;
 
 comptime {
     std.debug.assert(gpu.MAX_BINDINGS == MAX_SOCKETS);
@@ -74,7 +75,7 @@ pub fn compileShader(pipe: PipelineHandle, shader_source: gpu.ShaderSource) !gpu
 }
 
 pub fn copyToStaging(mapped: *anyopaque, src: []const u8, width: u32, height: u32, bpp: u32) void {
-    gpu.data.copyDenseToStaging(mapped, src, width, height, bpp);
+    gpu.copyDenseToStaging(mapped, src, width, height, bpp);
 }
 
 pub fn initParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {

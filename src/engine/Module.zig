@@ -2,7 +2,7 @@ const std = @import("std");
 const api = @import("modules/api.zig");
 const pipeline = @import("pipeline.zig");
 const Param = @import("Param.zig");
-const ImgParam = @import("ImgParam.zig");
+const ImgParams = @import("types").ImgParams;
 const Socket = api.Socket;
 const slog = std.log.scoped(.mod);
 
@@ -33,7 +33,7 @@ param_mapped_slice_ptr: ?*anyopaque = null,
 param_offset: ?usize = null,
 param_size: ?usize = null,
 
-img_param: ?ImgParam.ImgParams = null,
+img_param: ?ImgParams = null,
 img_param_handle: ?pipeline.ParamBufferHandle = null,
 img_param_mapped_slice_ptr: ?*anyopaque = null,
 img_param_offset: ?usize = null,

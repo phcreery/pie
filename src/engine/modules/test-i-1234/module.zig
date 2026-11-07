@@ -42,7 +42,7 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         //     .{ 0.0, 1.0, 0.0 },
         //     .{ 0.0, 0.0, 1.0 },
         // },
-        .srgb_from_cam = .{
+        .rec2020_from_cam = .{
             .{ 1.0, 0.0, 0.0 },
             .{ 0.0, 1.0, 0.0 },
             .{ 0.0, 0.0, 1.0 },

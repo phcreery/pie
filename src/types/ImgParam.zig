@@ -1,6 +1,7 @@
 const std = @import("std");
 // const CFA = @import("modules/shared/CFA.zig");
 const slog = std.log.scoped(.imgparam);
+const std140 = @import("std140.zig");
 
 // see: https://github.com/hanatos/vkdt/blob/master/src/pipe/module.h#L52
 
@@ -29,10 +30,12 @@ pub const ImgParams = struct {
     // rec2020_from_cam: [3][3]f32,
 
     // sRGB <- camera color space conversion matrix (temporary for now)
-    srgb_from_cam: [3][3]f32,
+    // srgb_from_cam: [3][3]f32,
+
+    rec2020_from_cam: [3][3]f32 align(16),
 
     // XYZ <- camera color space conversion matrix. XYZ is in D65 white point, linear. Similar to Adobe DNG ColorMatrix2, but with the two green channels collapsed into one.
-    xyz_d65_from_cam: [3][3]f32,
+    xyz_d65_from_cam: [3][3]f32 align(16),
 
     pub fn print(
         self: *ImgParams,
@@ -58,10 +61,15 @@ pub const ImgParams = struct {
             self.white_balance[2],
             self.white_balance[3],
         });
-        try writer.print("srgb_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
-            self.srgb_from_cam[0][0], self.srgb_from_cam[0][1], self.srgb_from_cam[0][2],
-            self.srgb_from_cam[1][0], self.srgb_from_cam[1][1], self.srgb_from_cam[1][2],
-            self.srgb_from_cam[2][0], self.srgb_from_cam[2][1], self.srgb_from_cam[2][2],
+        // try writer.print("srgb_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
+        //     self.srgb_from_cam[0][0], self.srgb_from_cam[0][1], self.srgb_from_cam[0][2],
+        //     self.srgb_from_cam[1][0], self.srgb_from_cam[1][1], self.srgb_from_cam[1][2],
+        //     self.srgb_from_cam[2][0], self.srgb_from_cam[2][1], self.srgb_from_cam[2][2],
+        // });
+        try writer.print("rec2020_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
+            self.rec2020_from_cam[0][0], self.rec2020_from_cam[0][1], self.rec2020_from_cam[0][2],
+            self.rec2020_from_cam[1][0], self.rec2020_from_cam[1][1], self.rec2020_from_cam[1][2],
+            self.rec2020_from_cam[2][0], self.rec2020_from_cam[2][1], self.rec2020_from_cam[2][2],
         });
         try writer.print("xyz_d65_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
             self.xyz_d65_from_cam[0][0], self.xyz_d65_from_cam[0][1], self.xyz_d65_from_cam[0][2],
@@ -70,3 +78,7 @@ pub const ImgParams = struct {
         });
     }
 };
+
+/// The `img_params` uniform buffer as the shaders see it: `ImgParams` packed by
+/// `types.std140.layoutStruct` and respelled as an extern struct by `std140`.
+pub const ImgParamsGpu = std140.GpuStruct(ImgParams);

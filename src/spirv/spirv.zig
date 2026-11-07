@@ -90,6 +90,19 @@ pub fn getParams(comptime module_desc: ModuleDesc, T: type) *addrspace(.storage_
     });
 }
 
+/// `T` must be the std140 view of the CPU struct: `types.ImgParamsGpu`.
+pub fn getImgParams(comptime module_desc: ModuleDesc, comptime T: type) *addrspace(.uniform) const T {
+    comptime {
+        if (T != @import("types").ImgParamsGpu) {
+            @compileError("getImgParams expects types.ImgParamsGpu, got '" ++ @typeName(T) ++ "'");
+        }
+    }
+    return @extern(*addrspace(.uniform) const T, .{
+        .name = "img_params",
+        .decoration = .{ .descriptor = .{ .set = 0, .binding = if (module_desc.params.len == 0) 0 else 1 } },
+    });
+}
+
 fn getSocketIdx(comptime desc: NodeDesc, comptime name: []const u8) usize {
     for (desc.sockets, 0..) |socket, i| {
         if (std.mem.eql(u8, socket.name, name)) {

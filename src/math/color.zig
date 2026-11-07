@@ -5,7 +5,7 @@
 
 const math = @import("root.zig");
 const mat3 = @import("mat3.zig");
-const matrices = @import("matrices.zig"); // color matrices, exported as `math.matrices`
+pub const matrices = @import("matrices.zig"); // color matrices, exported as `math.matrices`
 const vec3 = @import("vec3.zig");
 
 pub const Vec3f32 = mat3.Vec3f32;
@@ -26,48 +26,37 @@ pub inline fn linearToSrgbVec3(v: Vec3f32) Vec3f32 {
 }
 
 // ---------------------------------------------------------------------------
-// Linear light color space conversions (matrices in matrices.zig)
-// ---------------------------------------------------------------------------
-
-pub inline fn srgbToRec2020(rgb: Vec3f32) Vec3f32 {
-    return matrices.rec2020_from_srgb.mulVec(rgb);
-}
-
-pub inline fn rec2020ToSrgb(rgb: Vec3f32) Vec3f32 {
-    return matrices.srgb_from_rec2020.mulVec(rgb);
-}
-
-// ---------------------------------------------------------------------------
 // White balance
 // ---------------------------------------------------------------------------
 
-/// Pre-white-balance multipliers in linear sRGB: the gains the raw-domain
-/// white balance leaves behind, expressed in the space `color.wgsl` decodes to.
+/// Pre-white-balance multipliers in `rec2020_from_xyz`: the gains the raw-domain
+/// white balance leaves behind, expressed in the space the consumer decodes to
+/// (`color` now decodes to linear Rec.2020, see `node.color.zig`).
 ///
-/// This is vkdt's `1 / (srgb_from_xyz * xyz_d65_from_cam * (1 / cam_mul))`,
+/// This is vkdt's `1 / (rec2020_from_xyz * xyz_d65_from_cam * (1 / cam_mul))`,
 /// normalized so green is exactly 1.0:
 ///
 ///     xyz   = xyz_d65_from_cam * (1 / cam_mul)  // camera gains, camera -> XYZ
-///     rgb   = xyz_to_srgb * xyz                 // ... in linear sRGB
+///     rgb   = rec2020_from_xyz * xyz              // ... in the working space
 ///     coeff = 1 / (rgb / rgb.g)
 ///
 /// `cam_mul` is the as-shot (or daylight) camera white balance, `xyz_d65_from_cam`
 /// the camera -> XYZ (D65) matrix.
-pub fn srgbPreWbCoeff(xyz_d65_from_cam: [3][3]f32, cam_mul: [4]f32) [3]f32 {
+pub fn preWbCoeff(xyz_d65_from_cam: [3][3]f32, cam_mul: [4]f32) [3]f32 {
     const inv_gain = Vec3f32{
         recipOrOne(cam_mul[0]),
         recipOrOne(cam_mul[1]),
         recipOrOne(cam_mul[2]),
     };
     const xyz = Mat3f32.fromArray(xyz_d65_from_cam).mulVec(inv_gain);
-    const srgb = matrices.xyz_to_srgb.mulVec(xyz);
+    const rgb = matrices.rec2020_from_xyz.mulVec(xyz);
 
     // Green is the reference channel; a non-positive green means the camera
     // matrix is not usable, so fall back to neutral.
-    const green = srgb[1];
+    const green = rgb[1];
     if (!(green > 1e-6)) return .{ 1.0, 1.0, 1.0 };
 
-    const coeff = vec3.recip(srgb / vec3.splat(green));
+    const coeff = vec3.recip(rgb / vec3.splat(green));
     return .{ coeff[0], coeff[1], coeff[2] };
 }
 
@@ -75,7 +64,7 @@ inline fn recipOrOne(v: f32) f32 {
     return if (v > 1e-6) 1.0 / v else 1.0;
 }
 
-test "srgbPreWbCoeff matches the color.ipynb reference" {
+test "rec2020 preWbCoeff matches the color.ipynb reference" {
     const testing = @import("std").testing;
     // DSC_6765.NEF: as-shot camera white balance and XYZ<-camera from LibRaw.
     const cam_mul = [4]f32{ 1.90625, 1.0, 1.4921875, 1.0 };
@@ -85,13 +74,13 @@ test "srgbPreWbCoeff matches the color.ipynb reference" {
         .{ 0.12701747, -0.2259345, 1.4544346 },
     };
 
-    const coeff = srgbPreWbCoeff(xyz_d65_from_cam, cam_mul);
-    try testing.expectApproxEqAbs(@as(f32, 0.7039373), coeff[0], 1e-6);
+    const coeff = preWbCoeff(xyz_d65_from_cam, cam_mul);
+    try testing.expectApproxEqAbs(@as(f32, 0.8191874), coeff[0], 1e-6);
     try testing.expectApproxEqAbs(@as(f32, 1.0), coeff[1], 1e-6);
-    try testing.expectApproxEqAbs(@as(f32, 1.3611942), coeff[2], 1e-6);
+    try testing.expectApproxEqAbs(@as(f32, 1.3340929), coeff[2], 1e-6);
 
     // A singular camera matrix must not produce NaN/inf multipliers.
-    const neutral = srgbPreWbCoeff(
+    const neutral = preWbCoeff(
         [3][3]f32{ .{ 0.0, 0.0, 0.0 }, .{ 0.0, 0.0, 0.0 }, .{ 0.0, 0.0, 0.0 } },
         .{ 0.0, 0.0, 0.0, 0.0 },
     );

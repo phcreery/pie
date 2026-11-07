@@ -312,6 +312,16 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     const run_gpu_unit_tests = b.addRunArtifact(gpu_unit_tests);
     test_step.dependOn(&run_gpu_unit_tests.step);
 
+    // TYPES
+    const types_unit_tests = b.addTest(.{
+        .name = "types unit tests",
+        .use_llvm = true,
+        .root_module = mod_types,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_types_unit_tests = b.addRunArtifact(types_unit_tests);
+    test_step.dependOn(&run_types_unit_tests.step);
+
     // POOL
     const pool_unit_tests = b.addTest(.{
         .name = "pool unit tests",

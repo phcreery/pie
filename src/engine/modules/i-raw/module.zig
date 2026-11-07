@@ -3,6 +3,7 @@ const slog = std.log.scoped(.@"i-raw");
 const RawImage = @import("libraw_image.zig").RawImage;
 
 const api = @import("../api.zig");
+const math = @import("math");
 
 const WbMode = enum(i32) {
     cam_mul = 0, // White balance coefficients (as shot). Either read from file or calculated.
@@ -90,20 +91,12 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParam(pipe, mod, "wb_mode", @backingInt(WbMode.pre_mul));
 }
 
-fn computeSrgbFromCam(raw_image: *RawImage) [3][3]f32 {
-    const srgb_from_xyz: [3][3]f32 = .{
-        .{ 3.2409699, -1.5373832, -0.49861076 },
-        .{ -0.96924365, 1.8759675, 0.04155506 },
-        .{ 0.05563008, -0.20397696, 1.0569715 },
-    };
-    const xyz_from_srgb = api.math.mat3.inv(f32, srgb_from_xyz);
+fn computeRec2020FromCam(raw_image: *RawImage) [3][3]f32 {
+    const xyz_from_cam = math.Mat3(f32).fromArray(raw_image.cam_xyz).inv();
+    const rec2020_from_xyz = math.matrices.rec2020_from_xyz;
 
-    //   raw_image.cam_xyz is CAM<-XYZ.
-    // Convert that into CAM<-sRGB first, normalize each camera row,
-    // then invert to obtain sRGB<-CAM.
-    var cam_from_srgb: [3][3]f32 = @splat(@splat(0.0));
-    api.math.mat3x3Mul(&cam_from_srgb, raw_image.cam_xyz, xyz_from_srgb);
-    return api.math.mat3.inv(f32, cam_from_srgb);
+    const rec2020_from_cam = rec2020_from_xyz.mul(xyz_from_cam);
+    return rec2020_from_cam.toArray();
 }
 
 fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
@@ -208,7 +201,7 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         },
         .white_balance = selected_wb,
         .orientation = orientation,
-        .srgb_from_cam = computeSrgbFromCam(raw_image),
+        .rec2020_from_cam = computeRec2020FromCam(raw_image),
         .xyz_d65_from_cam = xyz_d65_from_cam,
     };
 
