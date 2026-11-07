@@ -11,23 +11,22 @@ pub const def: api.ModuleDef = .{
     .createNodes = createNodes,
 };
 
-const default_wb_temp: f32 = 6500.0; // D65 daylight
-const default_wb_tint: f32 = 0.0;
+// const default_wb_temp: f32 = 6500.0; // D65 daylight
+// const default_wb_tint: f32 = 0.0;
 /// `wb_coeff` sentinel: all-zero means "derive from the camera"
 const auto_wb_coeff: [3]f32 = .{ 0.0, 0.0, 0.0 };
 /// What the shader gets when there is no camera data and no user override.
 const neutral_wb_coeff: [3]f32 = .{ 1.0, 1.0, 1.0 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    try api.initParam(pipe, mod, "wb_temp", default_wb_temp);
-    try api.initParam(pipe, mod, "wb_tint", default_wb_tint);
+    // try api.initParam(pipe, mod, "wb_temp", default_wb_temp);
+    // try api.initParam(pipe, mod, "wb_tint", default_wb_tint);
 
     // User override; all-zero = auto. `commitParams` resolves it against the
     // source image's camera matrix and raw white balance
     // (`api.math.color.preWbCoeff`, see color.ipynb), in the working
     // space the node shader decodes to (linear Rec.2020).
     try api.initParam(pipe, mod, "wb_coeff", auto_wb_coeff);
-    try api.initParam(pipe, mod, "commited_wb_coeff", neutral_wb_coeff);
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
@@ -43,15 +42,13 @@ pub fn commitParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const wb_coeff = try api.getParam(pipe, mod, "wb_coeff", [3]f32);
     const is_auto = std.meta.eql(wb_coeff, auto_wb_coeff);
 
-    const effective_wb_coeff: [3]f32 = if (!is_auto)
-        wb_coeff
-    else if (m.img_param) |img_param|
-        api.math.color.preWbCoeff(img_param.xyz_d65_from_cam, img_param.white_balance)
-    else
-        neutral_wb_coeff;
-
-    try api.initParam(pipe, mod, "commited_wb_coeff", effective_wb_coeff);
-    // try api.initParam(pipe, mod, "wb_coeff", effective_wb_coeff);
+    if (is_auto) {
+        const effective_wb_coeff = if (m.img_param) |img_param|
+            api.math.color.preWbCoeff(img_param.xyz_d65_from_cam, img_param.white_balance)
+        else
+            neutral_wb_coeff;
+        try api.initParam(pipe, mod, "wb_coeff", effective_wb_coeff);
+    }
 
     // Temp/tint is now applied post-demosaic in color.wgsl as a relative
     // camera-space correction before camera->sRGB conversion.

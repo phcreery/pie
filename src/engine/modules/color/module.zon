@@ -2,10 +2,9 @@
     .name = "color",
     .type = .compute,
     .params = .{
-        .{ .name = "wb_temp", .len = 1, .typ = .f32 },
-        .{ .name = "wb_tint", .len = 1, .typ = .f32 },
+        // .{ .name = "wb_temp", .len = 1, .typ = .f32 },
+        // .{ .name = "wb_tint", .len = 1, .typ = .f32 },
         .{ .name = "wb_coeff", .len = 3, .typ = .f32 },
-        .{ .name = "commited_wb_coeff", .len = 3, .typ = .f32 },
     },
     .params_ui = .{
         .{ .name = "wb_coeff", .control = .{ .sliders = .{ .n = 3, .min = 0.0, .max = 4.0, .labels = .{ "R", "G", "B" } } } },

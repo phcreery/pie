@@ -32,9 +32,7 @@ fn build(
 
     try pipe.setModuleParam(mod_i_raw, "filename", []const u8, input_filename);
     try pipe.setModuleParam(mod_i_raw, "wb_mode", i32, 0);
-    // try pipeline.setModuleParam(mod_color, "wb_temp", f32, 6500.0, .{});
-    // try pipe.setModuleParam(mod_color, "wb_tint", f32, 0.0);
-    try pipe.setModuleParam(mod_color, "wb_coeff", [3]f32, .{ 0.81918737, 1, 1.3340929 }); // from 1/(rec2020_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
+    // try pipe.setModuleParam(mod_color, "wb_coeff", [3]f32, .{ 0.81918737, 1, 1.3340929 }); // from 1/(rec2020_from_xyz*xyz_d65_from_cam*(1/wb_cam)) of DSC_6765.NEF
     try pipe.setModuleParam(mod_filmcurv, "colormode", i32, 1);
     try pipe.setModuleParam(mod_filmcurv, "brightness", f32, 3.8);
     try pipe.setModuleParam(mod_filmcurv, "contrast", f32, 1.3);

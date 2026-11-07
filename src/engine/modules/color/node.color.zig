@@ -17,10 +17,10 @@ const module_zon: shd.ModuleDesc = @import("module.zon");
 const node_zon: shd.NodeDesc = @import("node.color.zon");
 
 const Params = extern struct {
-    wb_temp: f32,
-    wb_tint: f32,
+    // wb_temp: f32,
+    // wb_tint: f32,
     wb_coeff: [3]f32 align(16), // user override (0 = auto); not read here
-    commited_wb_coeff: [3]f32 align(16), // resolved by the module's commitParams
+    // commited_wb_coeff: [3]f32 align(16), // resolved by the module's commitParams
 };
 
 const params = shd.getParams(module_zon, Params);
@@ -79,9 +79,9 @@ export fn main() callconv(shd.call_conv) void {
     // hmm, vkdt's call cat16(w0, vec3(1.0), params.mul.rgb) with mul=1/w0 DOES produce approximately white (within 1.5% — the small error is because 1/w0 is only approximately the right value due to the
     // g-normalization and the fact that cone-space scaling isn't exactly the same as RGB-space inversion).
     rgb_rec2020_linear = cat16(rgb_rec2020_linear, Vec3f32{ 1.0, 1.0, 1.0 }, Vec3f32{
-        params.commited_wb_coeff[0],
-        params.commited_wb_coeff[1],
-        params.commited_wb_coeff[2],
+        params.wb_coeff[0],
+        params.wb_coeff[1],
+        params.wb_coeff[2],
     });
 
     const out_px = Vec4f32{

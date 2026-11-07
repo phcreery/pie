@@ -133,4 +133,3 @@ zig 0.17.0-dev.1464+6aff551f1
 ### TODO
 
 [ ] colorbalance before demosaic and denoise but divide them back out so color owns the whitebalancing
-[ ] rec2020 pipeline
