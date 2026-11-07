@@ -2,6 +2,7 @@ const api = @import("../api.zig");
 const std = @import("std");
 const temp_tint = @import("./temp_tint.zig");
 const slog = std.log.scoped(.color);
+const math = @import("math");
 
 pub const def: api.ModuleDef = .{
     .desc = @import("module.zon"),
@@ -16,16 +17,17 @@ pub const def: api.ModuleDef = .{
 /// `wb_coeff` sentinel: all-zero means "derive from the camera"
 const auto_wb_coeff: [3]f32 = .{ 0.0, 0.0, 0.0 };
 /// What the shader gets when there is no camera data and no user override.
-const neutral_wb_coeff: [3]f32 = .{ 1.0, 1.0, 1.0 };
+/// This is the D65 white in linear Rec.2020. CAT16 gives an identity transform.
+const neutral_wb_white: [3]f32 = .{ 1.0, 1.0, 1.0 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     // try api.initParam(pipe, mod, "wb_temp", default_wb_temp);
     // try api.initParam(pipe, mod, "wb_tint", default_wb_tint);
 
-    // User override; all-zero = auto. `commitParams` resolves it against the
-    // source image's camera matrix and raw white balance
-    // (`api.math.color.preWbCoeff`, see color.ipynb), in the working
-    // space the node shader decodes to (linear Rec.2020).
+    // User override. All-zero means auto.
+    // `commitParams` resolves the value from the source image camera matrix and
+    // the raw white balance (`api.math.color.preWbWhite`, see color.ipynb).
+    // The value is the camera white in linear Rec.2020, not a gain.
     try api.initParam(pipe, mod, "wb_coeff", auto_wb_coeff);
 }
 
@@ -43,41 +45,23 @@ pub fn commitParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const is_auto = std.meta.eql(wb_coeff, auto_wb_coeff);
 
     if (is_auto) {
-        const effective_wb_coeff = if (m.img_param) |img_param|
-            api.math.color.preWbCoeff(img_param.xyz_d65_from_cam, img_param.white_balance)
+        // OLD CODE - kept for backup. Delete after the test.
+        // The shader used the gain vector as the CAT16 destination white.
+        // const effective_wb_coeff = if (m.img_param) |img_param|
+        //     api.math.color.preWbCoeff(img_param.xyz_d65_from_cam, img_param.white_balance)
+        // else
+        //     neutral_wb_coeff;
+        // try api.initParam(pipe, mod, "wb_coeff", effective_wb_coeff);
+
+        // New code.
+        // `wb_coeff` holds the camera white in linear Rec.2020.
+        // The shader adapts this white to D65.
+        const effective_wb_white = if (m.img_param) |img_param|
+            preWbWhite(img_param.xyz_d65_from_cam, img_param.white_balance)
         else
-            neutral_wb_coeff;
-        try api.initParam(pipe, mod, "wb_coeff", effective_wb_coeff);
+            neutral_wb_white;
+        try api.initParam(pipe, mod, "wb_coeff", effective_wb_white);
     }
-
-    // Temp/tint is now applied post-demosaic in color.wgsl as a relative
-    // camera-space correction before camera->sRGB conversion.
-    // const wb_temp = try api.getParam(pipe, mod, "wb_temp", f32);
-    // const wb_tint = try api.getParam(pipe, mod, "wb_tint", f32);
-    // const wb_coeff = try api.getParam(pipe, mod, "wb_coeff", [3]f32);
-    // std.debug.print("color module: wb_temp={d:.0} wb_tint={d:.1}\n", .{ wb_temp, wb_tint });
-    // std.debug.print("color module: wb_coeff=({d:.4}, {d:.4}, {d:.4})\n", .{ wb_coeff[0], wb_coeff[1], wb_coeff[2] });
-
-    // If we have xyz_d65_from_cam from the upstream module, just print the relative
-    // correction that the shader will apply. We do not modify img_param.white_balance
-    // here, because the raw-domain WB was already applied upstream.
-    // const m = try api.getModule(pipe, mod);
-    // if (m.img_param) |*img_param| {
-    //     const neutral_wb = temp_tint.computeWhiteBalanceFromTempTint(default_wb_temp, default_wb_tint, img_param.xyz_d65_from_cam);
-    //     const target_wb = temp_tint.computeWhiteBalanceFromTempTint(wb_temp, wb_tint, img_param.xyz_d65_from_cam);
-    //     const rel_r = std.math.clamp(target_wb[0] / @max(neutral_wb[0], 1e-6), 1e-4, 64.0);
-    //     const rel_g = std.math.clamp(target_wb[1] / @max(neutral_wb[1], 1e-6), 1e-4, 64.0);
-    //     const rel_b = std.math.clamp(target_wb[2] / @max(neutral_wb[2], 1e-6), 1e-4, 64.0);
-    //     std.debug.print("color module: wb_temp={d:.0} wb_tint={d:.1} rel_post_demosaic=({d:.4}, {d:.4}, {d:.4})\n", .{
-    //         wb_temp,
-    //         wb_tint,
-    //         rel_r,
-    //         rel_g,
-    //         rel_b,
-    //     });
-    // } else {
-    //     std.debug.print("color module: no img_param propagated yet (sink_after_color path?)\n", .{});
-    // }
 }
 
 pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
@@ -86,4 +70,65 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.setNodeRunSize(pipe, node_color, mod_output_sock.roi.?);
     try api.inheritSocket(pipe, mod, "input", node_color, "input");
     try api.inheritSocket(pipe, mod, "output", node_color, "output");
+}
+
+// ---------------------------------------------------------------------------
+// White balance
+// ---------------------------------------------------------------------------
+
+inline fn recipOrOne(v: f32) f32 {
+    return if (v > 1e-6) 1.0 / v else 1.0;
+}
+
+/// White point of the camera for the given raw white balance, in linear Rec.2020.
+///
+/// The result is the color of the scene white after the camera matrix.
+/// Green is 1.0. The `color` module uses the result as the CAT16 source white.
+/// The CAT16 target white is D65, which is (1, 1, 1) in this space.
+///
+///     xyz   = xyz_d65_from_cam * (1 / cam_mul)  // camera gains, camera -> XYZ
+///     rgb   = rec2020_from_xyz_d65 * xyz        // ... in the working space
+///     white = rgb / rgb.g
+///
+/// `cam_mul` is the as-shot (or daylight) camera white balance.
+/// `xyz_d65_from_cam` is the camera -> XYZ (D65) matrix.
+pub fn preWbWhite(xyz_d65_from_cam: [3][3]f32, cam_mul: [4]f32) [3]f32 {
+    const inv_gain = math.vec3.Vec3f32{
+        recipOrOne(cam_mul[0]),
+        recipOrOne(cam_mul[1]),
+        recipOrOne(cam_mul[2]),
+    };
+    const xyz = math.mat3.Mat3f32.fromArray(xyz_d65_from_cam).mulVec(inv_gain);
+    const rgb = math.color.matrices.rec2020_from_xyz_d65.mulVec(xyz);
+
+    // Green is the reference channel. A non-positive green means the camera
+    // matrix is not usable, so fall back to the D65 white.
+    const green = rgb[1];
+    if (!(green > 1e-6)) return .{ 1.0, 1.0, 1.0 };
+
+    const white = rgb / math.vec3.splat(green);
+    return .{ white[0], white[1], white[2] };
+}
+
+test "rec2020 preWbWhite matches the color.ipynb reference" {
+    const testing = @import("std").testing;
+    // DSC_6765.NEF: as-shot camera white balance and XYZ<-camera from LibRaw.
+    const cam_mul = [4]f32{ 1.90625, 1.0, 1.4921875, 1.0 };
+    const xyz_d65_from_cam = [3][3]f32{
+        .{ 1.5699793, 0.14481506, 0.10475578 },
+        .{ 0.6360732, 0.8477491, -0.221411 },
+        .{ 0.12701747, -0.2259345, 1.4544346 },
+    };
+
+    const white = preWbWhite(xyz_d65_from_cam, cam_mul);
+    try testing.expectApproxEqAbs(@as(f32, 1.2207221), white[0], 1e-5);
+    try testing.expectApproxEqAbs(@as(f32, 1.0), white[1], 1e-6);
+    try testing.expectApproxEqAbs(@as(f32, 0.74957323), white[2], 1e-5);
+
+    // A singular camera matrix must not produce NaN/inf white values.
+    const neutral = preWbWhite(
+        [3][3]f32{ .{ 0.0, 0.0, 0.0 }, .{ 0.0, 0.0, 0.0 }, .{ 0.0, 0.0, 0.0 } },
+        .{ 0.0, 0.0, 0.0, 0.0 },
+    );
+    try testing.expectEqual([3]f32{ 1.0, 1.0, 1.0 }, neutral);
 }

@@ -93,9 +93,9 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
 fn computeRec2020FromCam(raw_image: *RawImage) [3][3]f32 {
     const xyz_from_cam = math.Mat3(f32).fromArray(raw_image.cam_xyz).inv();
-    const rec2020_from_xyz = math.matrices.rec2020_from_xyz;
+    const rec2020_from_xyz_d65 = math.matrices.rec2020_from_xyz_d65;
 
-    const rec2020_from_cam = rec2020_from_xyz.mul(xyz_from_cam);
+    const rec2020_from_cam = rec2020_from_xyz_d65.mul(xyz_from_cam);
     return rec2020_from_cam.toArray();
 }
 
@@ -185,6 +185,7 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     // LibRaw exposes cam_xyz as CAM<-XYZ. Store the actual inverse here so the
     // ImgParam field name matches its contents: XYZ<-CAM.
     const xyz_d65_from_cam = api.math.mat3.inv(f32, raw_image.cam_xyz);
+    // TODO: CAT16 adapt this to D65 if needed
 
     m.img_param = .{
         .black = [4]f32{

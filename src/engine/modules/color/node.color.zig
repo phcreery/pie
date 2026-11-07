@@ -1,6 +1,6 @@
 //!   zig build-obj -target spirv32-vulkan -mcpu generic+v1_1 -ofmt=spirv -fno-llvm \
 //!     -femit-bin=color.comp.spv \
-//!     --dep shader --dep math -Mroot=src/engine/modules/color/node.color.zig \
+//!     --dep shader --dep math --dep types -Mroot=src/engine/modules/color/node.color.zig \
 //!     --dep math --dep types -Mshader=src/spirv/spirv.zig \
 //!     -Mmath=src/math/root.zig -Mtypes=src/types/root.zig
 //!   spirv-dis color.comp.spv | less
@@ -19,8 +19,8 @@ const node_zon: shd.NodeDesc = @import("node.color.zon");
 const Params = extern struct {
     // wb_temp: f32,
     // wb_tint: f32,
-    wb_coeff: [3]f32 align(16), // user override (0 = auto); not read here
-    // commited_wb_coeff: [3]f32 align(16), // resolved by the module's commitParams
+    // Camera white in linear Rec.2020.
+    wb_coeff: [3]f32 align(16),
 };
 
 const params = shd.getParams(module_zon, Params);
@@ -50,14 +50,10 @@ inline fn cat16(rec2020_d65: Vec3f32, rec2020_src: Vec3f32, rec2020_dst: Vec3f32
     const cl_dst = m16_xyz.mulVec(rec2020_dst);
     var cl = m16_xyz.mulVec(rec2020_d65);
     cl = cl * (cl_dst / cl_src);
-    return math.matrices.rec2020_from_xyz.mul(M16i).mulVec(cl);
+    return math.matrices.rec2020_from_xyz_d65.mul(M16i).mulVec(cl);
 }
 
 inline fn decodeColour(rgb_cam: Vec3f32) Vec3f32 {
-    // becasue wgsl mat3x3 layout is column-major, we need to transpose
-    // (the engine packs the CPU rows, one per 16-byte column). Scalar loads, not
-    // a copy of the whole array: an aggregate copy becomes OpCopyLogical, which
-    // naga rejects.
     const m = &img_params.rec2020_from_cam;
     return Mat3f32.fromRows(.{
         .{ m.c0.x, m.c0.y, m.c0.z },
@@ -75,14 +71,14 @@ export fn main() callconv(shd.call_conv) void {
     // cam -> rgb
     var rgb_rec2020_linear = decodeColour(rgb_cam);
 
-    // white balance
-    // hmm, vkdt's call cat16(w0, vec3(1.0), params.mul.rgb) with mul=1/w0 DOES produce approximately white (within 1.5% — the small error is because 1/w0 is only approximately the right value due to the
-    // g-normalization and the fact that cone-space scaling isn't exactly the same as RGB-space inversion).
-    rgb_rec2020_linear = cat16(rgb_rec2020_linear, Vec3f32{ 1.0, 1.0, 1.0 }, Vec3f32{
+    // White balance.
+    // `wb_coeff` is the camera white in linear Rec.2020. Green is 1.0.
+    // CAT16 adapts this white to D65. A neutral pixel becomes (1, 1, 1).
+    rgb_rec2020_linear = cat16(rgb_rec2020_linear, Vec3f32{
         params.wb_coeff[0],
         params.wb_coeff[1],
         params.wb_coeff[2],
-    });
+    }, Vec3f32{ 1.0, 1.0, 1.0 });
 
     const out_px = Vec4f32{
         rgb_rec2020_linear[0],
