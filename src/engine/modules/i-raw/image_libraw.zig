@@ -1,0 +1,146 @@
+const api = @import("../api.zig");
+const libraw = @import("libraw");
+const std = @import("std");
+const RawImage = @import("RawImage.zig");
+const LigthSourceWBCoeffs = RawImage.LigthSourceWBCoeffs;
+
+/// libraw keeps process-global state, and the editor and the thumbnail worker
+/// can both decode raw files. Serialize every libraw call.
+var libraw_mutex: std.Io.Mutex = .init;
+
+pub fn read(allocator: std.mem.Allocator, io: std.Io, file_path: []const u8) !RawImage {
+    try libraw_mutex.lock(io);
+    defer libraw_mutex.unlock(io);
+
+    const buf = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, allocator, .unlimited);
+    defer allocator.free(buf);
+
+    const libraw_rp = libraw.libraw_init(0);
+
+    libraw_rp.*.params.use_camera_wb = 0;
+    libraw_rp.*.params.use_auto_wb = 0;
+
+    const ret = libraw.libraw_open_buffer(libraw_rp, buf.ptr, buf.len);
+    if (ret != libraw.LIBRAW_SUCCESS) return error.OpenFailed;
+    const ret2 = libraw.libraw_unpack(libraw_rp);
+    if (ret2 != libraw.LIBRAW_SUCCESS) return error.UnpackFailed;
+
+    const img_width: u16 = libraw_rp.*.sizes.width;
+    const img_height: u16 = libraw_rp.*.sizes.height;
+    const raw_image: []u16 = std.mem.span(libraw_rp.*.rawdata.raw_image);
+    const black_base: u32 = libraw_rp.*.rawdata.color.black;
+    const black_corr: [4]u32 = libraw_rp.*.rawdata.color.cblack[0..4].*;
+    const cam_mul: [4]f32 = libraw_rp.*.rawdata.color.cam_mul;
+    // const pre_mul: [4]f32 = libraw_rp.*.rawdata.color.pre_mul;
+    const white_signed: [4]c_long = libraw_rp.*.rawdata.color.linear_max;
+    const maximum: u32 = libraw_rp.*.rawdata.color.maximum;
+    const data_maximum: u32 = libraw_rp.*.rawdata.color.data_maximum;
+    const flip = libraw_rp.*.rawdata.sizes.flip;
+    const user_flip = libraw_rp.*.params.user_flip;
+    const lightsource_wb_coeffs: LigthSourceWBCoeffs = .{
+        .a = libraw_rp.*.rawdata.color.WB_Coeffs[17],
+        .d55 = libraw_rp.*.rawdata.color.WB_Coeffs[20],
+        .d65 = libraw_rp.*.rawdata.color.WB_Coeffs[21],
+    };
+
+    // 1 = Daylight, 2 = Fluorescent, 4 = Tungsten, 21 = D65 i think
+    // const illuminant0 = libraw_rp.*.rawdata.color.dng_color[0].illuminant;
+    // const illuminant1 = libraw_rp.*.rawdata.color.dng_color[1].illuminant;
+
+    // print our illuminant info
+    // std.debug.print("libraw: illuminant0={d} illuminant1={d}\n", .{ illuminant0, illuminant1 });
+    // for (libraw_rp.*.rawdata.color.dng_color, 0..) |dng_color, i| {
+    //     std.debug.print("libraw: dng_color[{d}]: illuminant={d}\n", .{
+    //         i,
+    //         dng_color.illuminant,
+    //     });
+    // }
+
+    var black: [4]u32 = undefined;
+    for (black_corr, 0..) |corr, i| black[i] = black_base + corr;
+
+    var white: [4]u32 = undefined;
+    for (white_signed[0..4], 0..) |val_c, i| {
+        const val = @as(u32, @intCast(val_c));
+        if (val > 0) {
+            white[i] = val;
+        } else if (maximum > 0) {
+            white[i] = maximum;
+        } else if (data_maximum > 0) {
+            white[i] = data_maximum;
+        } else {
+            white[i] = @as(u32, @intCast(libraw.libraw_get_color_maximum(libraw_rp)));
+        }
+    }
+
+    // imgdata.color.cam_xyz[] is exactly the same as Adobe DNG ColorMatrix2. It converts from XYZ to camera space.
+    // -- Alex Tutubalin @LibRaw LLC
+    // DNG ColorMatrix2 (illuminant = D65), ColorMatrix1 (illuminant A, ~2856K) are in imgdata.color.dng_color[0]. The daylight WB multipliers themselves are in pre_mul[4].
+    // daylight/D65 matrix
+    const cam_xyz_all: [4][3]f32 = libraw_rp.*.rawdata.color.cam_xyz;
+    var cam_xyz: [3][3]f32 = undefined;
+    //   LibRaw exposes cam_xyz as CAM<-XYZ with 4 camera rows: R, G1, B, G2.
+    // We collapse the two green rows into a single RGB-camera row so that the
+    // result is a 3x3 matrix compatible with the rest of the pipeline.
+    for (0..3) |j| {
+        cam_xyz[0][j] = cam_xyz_all[0][j];
+        cam_xyz[1][j] = cam_xyz_all[1][j] + cam_xyz_all[3][j];
+        cam_xyz[2][j] = cam_xyz_all[2][j];
+    }
+
+    // LibRaw exposes cam_xyz as CAM<-XYZ. Store the actual inverse here so the
+    // ImgParam field name matches its contents: XYZ<-CAM.
+    const xyz_d65_from_cam = api.math.mat3.inv(f32, cam_xyz);
+    // TODO: CAT16 adapt this to D65 if needed
+
+    return .{
+        .io = io,
+        .width = img_width,
+        .height = img_height,
+        .raw_image = raw_image,
+        .orientation = flip,
+        .user_flip = user_flip,
+        .black = black,
+        .white = white,
+        .wb_coeffs = cam_mul,
+        // .pre_mul = pre_mul,
+        .lightsource_wb_coeffs = lightsource_wb_coeffs,
+        .xyz_d65_from_cam = xyz_d65_from_cam,
+        .filters = try api.CFA.fromLibraw(libraw_rp.*.rawdata.iparams.cdesc[0..], libraw_rp.*.rawdata.iparams.filters),
+        .data = libraw_rp,
+    };
+}
+
+pub fn deinit(self: *RawImage) void {
+    const libraw_rp: *libraw.libraw_data_t = @ptrCast(@alignCast(self.data));
+    libraw_mutex.lockUncancelable(self.io);
+    defer libraw_mutex.unlock(self.io);
+    libraw.libraw_recycle(libraw_rp);
+    libraw.libraw_close(libraw_rp);
+}
+
+test "libraw version" {
+    const version = std.mem.span(libraw.libraw_version());
+    std.log.info("LibRaw version: {s}", .{version});
+    try std.testing.expect(version.len > 0);
+}
+
+test "open raw image" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var raw_image = try read(allocator, io, "testing/images/DSC_6765.NEF");
+    defer deinit(&raw_image);
+
+    const libraw_rp: *libraw.libraw_data_t = @ptrCast(@alignCast(raw_image.data));
+
+    try std.testing.expect(raw_image.width == 6016);
+    try std.testing.expect(raw_image.height == 4016);
+    try std.testing.expect(libraw_rp.sizes.raw_width == 6016);
+    try std.testing.expect(libraw_rp.sizes.raw_height == 4016);
+    try std.testing.expect(libraw_rp.sizes.iwidth == 6016);
+    try std.testing.expect(libraw_rp.sizes.iheight == 4016);
+    try std.testing.expectEqual([2][2]api.CFA.FilterColor{
+        .{ .R, .G },
+        .{ .G2, .B },
+    }, raw_image.filters.pattern);
+}

@@ -35,9 +35,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .optimize = optimize,
         .dynamic_linkage = true,
     });
-    // Image decoding is the hot path. C dependencies (libraw, stb_image) honor
-    // their own optimize; a Zig *module* dependency does not (Zig compiles
-    // imported modules at the root artifact's optimize level).
+    // Image decoding is the hot path, will use aggressive optimization for these dependencies.
     const dep_opts_fast = .{ .target = target, .optimize = .ReleaseFast };
     const dep_libraw = b.dependency("libraw", dep_opts_fast);
     // native folder chooser; the package compiles the C library for the target
@@ -208,8 +206,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     );
 
     // NFD MODULE
-    // Native folder chooser; the module links the vendored C library so
-    // importers only need `@import("nfd")`.
+    // TODO: switch to use https://github.com/allyourcodebase/nativefiledialog-extended
     const mod_nfd = b.createModule(.{
         .root_source_file = b.path("src/nfd/root.zig"),
         .target = target,

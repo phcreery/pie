@@ -1,6 +1,7 @@
 const std = @import("std");
 const slog = std.log.scoped(.@"i-raw");
-const RawImage = @import("libraw_image.zig").RawImage;
+const image = @import("image_libraw.zig");
+const RawImage = @import("RawImage.zig");
 
 const api = @import("../api.zig");
 const math = @import("math");
@@ -16,11 +17,9 @@ pub const def: api.ModuleDef = .{
         .type = .source,
         .params = &.{
             .{ .name = "filename", .len = 256, .typ = .str },
-            .{ .name = "wb_mode", .len = 1, .typ = .i32 },
         },
         .params_ui = &.{
             .{ .name = "filename", .control = .{ .readonly = {} } },
-            .{ .name = "wb_mode", .control = .{ .combo = .{ .items = &.{ "cam_mul", "pre_mul" } } } },
         },
         .sockets = &.{
             .{
@@ -51,7 +50,7 @@ const Loaded = struct {
 fn load(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Loaded {
     const owned_path = try allocator.dupe(u8, path);
     errdefer allocator.free(owned_path);
-    const raw = try RawImage.read(allocator, io, path);
+    const raw = try image.read(allocator, io, path);
     return .{ .raw = raw, .path = owned_path };
 }
 
@@ -62,7 +61,7 @@ fn loadedOf(mod: *api.Module) ?*Loaded {
 
 fn unload(allocator: std.mem.Allocator, mod: *api.Module) void {
     const loaded = loadedOf(mod) orelse return;
-    loaded.raw.deinit();
+    image.deinit(&loaded.raw);
     allocator.free(loaded.path);
     allocator.destroy(loaded);
     mod.data = null;
@@ -88,11 +87,10 @@ pub fn deinit(allocator: std.mem.Allocator, pipe: api.PipelineHandle, mod: api.M
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParam(pipe, mod, "filename", @as([]const u8, "input.raw"));
-    try api.initParam(pipe, mod, "wb_mode", @backingInt(WbMode.pre_mul));
 }
 
 fn computeRec2020FromCam(raw_image: *RawImage) [3][3]f32 {
-    const xyz_from_cam = math.Mat3(f32).fromArray(raw_image.cam_xyz).inv();
+    const xyz_from_cam = math.Mat3(f32).fromArray(raw_image.xyz_d65_from_cam);
     const rec2020_from_xyz_d65 = math.matrices.rec2020_from_xyz_d65;
 
     const rec2020_from_cam = rec2020_from_xyz_d65.mul(xyz_from_cam);
@@ -140,7 +138,6 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
     const loaded = loadedOf(m) orelse return error.ModuleDataMissing;
     const raw_image = &loaded.raw;
-    const wb_mode: WbMode = @fromBackingInt(@intCast(try api.getParam(pipe, mod, "wb_mode", i32)));
 
     const roi: api.ROI = .{
         .w = @intCast(raw_image.width),
@@ -149,11 +146,9 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     // NOTE: single-channel rggb storage (one photosite per texel), so the
     // ROI is the true photosite dimensions of the sensor.
 
-    const selected_wb_raw = switch (wb_mode) {
-        .cam_mul => raw_image.cam_mul,
-        .pre_mul => raw_image.pre_mul,
-    };
-    const selected_wb = normalizeWhiteBalance(selected_wb_raw);
+    const selected_wb = normalizeWhiteBalance(raw_image.wb_coeffs);
+    // as a sanity check, libraw's pre_mul with the auto white balance applied should result in 1,1,1 coeffs
+    // const selected_wb = normalizeWhiteBalance(raw_image.pre_mul);
 
     var orientation: api.ImgParam.Orientation = .normal;
     if (raw_image.user_flip != -1) {
@@ -182,11 +177,6 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         };
     }
 
-    // LibRaw exposes cam_xyz as CAM<-XYZ. Store the actual inverse here so the
-    // ImgParam field name matches its contents: XYZ<-CAM.
-    const xyz_d65_from_cam = api.math.mat3.inv(f32, raw_image.cam_xyz);
-    // TODO: CAT16 adapt this to D65 if needed
-
     m.img_param = .{
         .black = [4]f32{
             @as(f32, @floatFromInt(raw_image.black[0])),
@@ -203,14 +193,14 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .white_balance = selected_wb,
         .orientation = orientation,
         .rec2020_from_cam = computeRec2020FromCam(raw_image),
-        .xyz_d65_from_cam = xyz_d65_from_cam,
+        .xyz_d65_from_cam = raw_image.xyz_d65_from_cam,
     };
 
     var stdout_buffer: [4096]u8 = undefined;
     var writer = std.Io.File.stdout().writer(pipe.io, &stdout_buffer);
     const stdout = &writer.interface;
     try raw_image.print(stdout);
-    // try m.img_param.?.print(stdout);
+    try m.img_param.?.print(stdout);
     try stdout.flush();
 
     var socket = try api.getModSocket(pipe, mod, "output");

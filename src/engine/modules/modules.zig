@@ -55,3 +55,8 @@ pub const Repository = struct {
         return self.map.get(name);
     }
 };
+
+test {
+    @import("std").testing.refAllDecls(@This());
+    // _ = @import("modules/shared/CFA.zig");
+}

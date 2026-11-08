@@ -16,6 +16,8 @@
 //!
 //! Note: SPIR-V words are little-endian on disk; this tool assumes a
 //! little-endian host (fine for x86_64/aarch64 macOS+Linux dev machines).
+//!
+//! TODO: switch to https://codeberg.org/allyourcodebase/spirv-cross
 const std = @import("std");
 
 const OP_CAPABILITY = 17;
