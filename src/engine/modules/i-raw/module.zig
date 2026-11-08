@@ -6,11 +6,6 @@ const RawImage = @import("RawImage.zig");
 const api = @import("../api.zig");
 const math = @import("math");
 
-const WbMode = enum(i32) {
-    cam_mul = 0, // White balance coefficients (as shot). Either read from file or calculated.
-    pre_mul = 1, // White balance coefficients for daylight (daylight balance). Either read from file, or calculated on the basis of file data, or taken from hardcoded constants.
-};
-
 pub const def: api.ModuleDef = .{
     .desc = .{
         .name = "i-raw",
@@ -26,8 +21,7 @@ pub const def: api.ModuleDef = .{
                 .name = "output",
                 .type = .source,
                 .format = .rggb16uint,
-                // the raw output is in the camera's color space, WB unknown/as-shot,
-                // and linear (sensor response)
+                // the raw output is in the camera's color space, WB unknown/as-shot, and linear (sensor response)
                 .color_profile = .{ .white_point = .any, .primaries = .camera, .trc = .linear },
             },
         },
@@ -89,28 +83,12 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParam(pipe, mod, "filename", @as([]const u8, "input.raw"));
 }
 
-fn computeRec2020FromCam(raw_image: *RawImage) [3][3]f32 {
-    const xyz_from_cam = math.Mat3(f32).fromArray(raw_image.xyz_d65_from_cam);
+fn computeRec2020FromCam(xyz_d65_from_cam: *[3][3]f32) [3][3]f32 {
+    const xyz_from_cam = math.Mat3(f32).fromArray(xyz_d65_from_cam);
     const rec2020_from_xyz_d65 = math.matrices.rec2020_from_xyz_d65;
 
     const rec2020_from_cam = rec2020_from_xyz_d65.mul(xyz_from_cam);
     return rec2020_from_cam.toArray();
-}
-
-fn normalizeWhiteBalance(wb: [4]f32) [4]f32 {
-    const green_ref = blk: {
-        if (wb[1] > 0.0) break :blk wb[1];
-        if (wb[3] > 0.0) break :blk wb[3];
-        break :blk 1.0;
-    };
-
-    var out = wb;
-    out[0] = if (wb[0] > 0.0) wb[0] / green_ref else 1.0;
-    out[1] = 1.0;
-    out[2] = if (wb[2] > 0.0) wb[2] / green_ref else 1.0;
-    // Treat the 4th slot as G2. If LibRaw leaves it unset/zero, use the same normalized gain as G1.
-    out[3] = 1.0;
-    return out;
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
@@ -145,10 +123,6 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     };
     // NOTE: single-channel rggb storage (one photosite per texel), so the
     // ROI is the true photosite dimensions of the sensor.
-
-    const selected_wb = normalizeWhiteBalance(raw_image.wb_coeffs);
-    // as a sanity check, libraw's pre_mul with the auto white balance applied should result in 1,1,1 coeffs
-    // const selected_wb = normalizeWhiteBalance(raw_image.pre_mul);
 
     var orientation: api.ImgParam.Orientation = .normal;
     if (raw_image.user_flip != -1) {
@@ -190,9 +164,9 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             @as(f32, @floatFromInt(raw_image.white[2])),
             @as(f32, @floatFromInt(raw_image.white[3])),
         },
-        .white_balance = selected_wb,
+        .white_balance = raw_image.wb_coeffs,
         .orientation = orientation,
-        .rec2020_from_cam = computeRec2020FromCam(raw_image),
+        .rec2020_from_cam = computeRec2020FromCam(raw_image.xyz_d65_from_cam),
         .xyz_d65_from_cam = raw_image.xyz_d65_from_cam,
     };
 

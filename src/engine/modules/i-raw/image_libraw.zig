@@ -31,6 +31,7 @@ pub fn read(allocator: std.mem.Allocator, io: std.Io, file_path: []const u8) !Ra
     const black_base: u32 = libraw_rp.*.rawdata.color.black;
     const black_corr: [4]u32 = libraw_rp.*.rawdata.color.cblack[0..4].*;
     const cam_mul: [4]f32 = libraw_rp.*.rawdata.color.cam_mul;
+    // as a sanity check, libraw's pre_mul with the auto white balance applied should result in 1,1,1 coeffs
     // const pre_mul: [4]f32 = libraw_rp.*.rawdata.color.pre_mul;
     const white_signed: [4]c_long = libraw_rp.*.rawdata.color.linear_max;
     const maximum: u32 = libraw_rp.*.rawdata.color.maximum;
