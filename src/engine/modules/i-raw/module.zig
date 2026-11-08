@@ -83,7 +83,7 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParam(pipe, mod, "filename", @as([]const u8, "input.raw"));
 }
 
-fn computeRec2020FromCam(xyz_d65_from_cam: *[3][3]f32) [3][3]f32 {
+fn computeRec2020FromCam(xyz_d65_from_cam: [3][3]f32) [3][3]f32 {
     const xyz_from_cam = math.Mat3(f32).fromArray(xyz_d65_from_cam);
     const rec2020_from_xyz_d65 = math.matrices.rec2020_from_xyz_d65;
 

@@ -3,6 +3,7 @@
 //!     --dep shader --dep math --dep types -Mroot=src/engine/modules/color/node.color.zig \
 //!     --dep math --dep types -Mshader=src/spirv/spirv.zig \
 //!     -Mmath=src/math/root.zig -Mtypes=src/types/root.zig
+//!   spirv-dis color.comp.spv | grep CopyLogical   # must print nothing: naga rejects it
 //!   spirv-dis color.comp.spv | less
 
 const shd = @import("shader");
@@ -19,7 +20,7 @@ const node_zon: shd.NodeDesc = @import("node.color.zon");
 const Params = extern struct {
     // wb_temp: f32,
     // wb_tint: f32,
-    // Camera white in linear Rec.2020.
+    // White-balance gain in linear Rec.2020, green-normalized.
     wb_coeff: [3]f32 align(16),
 };
 
@@ -62,6 +63,14 @@ inline fn decodeColour(rgb_cam: Vec3f32) Vec3f32 {
     }).mulVec(rgb_cam);
 }
 
+inline fn gainOrOne(v: math.vec3.Vec3f32) math.vec3.Vec3f32 {
+    return math.vec3.fromArray(.{
+        if (v[0] > 1e-6) v[0] else 1.0,
+        if (v[1] > 1e-6) v[1] else 1.0,
+        if (v[2] > 1e-6) v[2] else 1.0,
+    });
+}
+
 export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
     const px = shd.imageFetch(input_image, coord);
@@ -72,14 +81,19 @@ export fn main() callconv(shd.call_conv) void {
     var rgb_rec2020_linear = decodeColour(rgb_cam);
 
     // White balance.
-    // `wb_coeff` is the camera white in linear Rec.2020. Green is 1.0.
-    // CAT16 adapts this white to D65. A neutral pixel becomes (1, 1, 1).
-    rgb_rec2020_linear = cat16(rgb_rec2020_linear, Vec3f32{
+    const wb_gain = gainOrOne(Vec3f32{
         params.wb_coeff[0],
         params.wb_coeff[1],
         params.wb_coeff[2],
-    }, Vec3f32{ 1.0, 1.0, 1.0 });
+    });
+    const wb_white = math.vec3.recip(wb_gain);
+    rgb_rec2020_linear = cat16(
+        rgb_rec2020_linear,
+        wb_white,
+        Vec3f32{ 1.0, 1.0, 1.0 },
+    );
 
+    // Output
     const out_px = Vec4f32{
         rgb_rec2020_linear[0],
         rgb_rec2020_linear[1],

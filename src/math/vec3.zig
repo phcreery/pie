@@ -16,6 +16,13 @@ pub inline fn recip(v: Vec3f32) Vec3f32 {
     return splat(1.0) / v;
 }
 
+/// Build from three scalars. Lane-wise on purpose: coercing the array to a
+/// vector emits `OpCopyLogical`, which naga (the runtime SPIR-V validator)
+/// rejects, so this is also the shader-safe path.
+pub inline fn fromArray(arr: [3]f32) Vec3f32 {
+    return .{ arr[0], arr[1], arr[2] };
+}
+
 test "splat and recip work lane-wise" {
     const testing = @import("std").testing;
     try testing.expectEqual(Vec3f32{ 2.0, 2.0, 2.0 }, splat(2.0));

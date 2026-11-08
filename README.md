@@ -121,10 +121,6 @@ zig build integration --watch --error-style minimal_clear -freference-trace=100
 zig build app --error-style minimal_clear
 ```
 
-## Build Requirements
-
-zig 0.17.0-dev.1464+6aff551f1
-
 ### Linux
 
 `alsa-lib-devel libX11-devel mesa-libGL mesa-libGL-devel libXi-devel libXcursor-devel`
