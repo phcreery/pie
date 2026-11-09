@@ -141,9 +141,11 @@
 
 - math
   - https://codeberg.org/ziglang/zig/src/branch/master/lib/std/math.zig
-  - https://github.com/zig-gamedev/zmath
-  - https://codeberg.org/grius/zm/
-  - https://github.com/muhammad-fiaz/num.zig
+  - https://github.com/zig-gamedev/zmath (more for gamedev but good support. add functions have anytype, has swizzle, top-level function calls)
+  - https://codeberg.org/grius/zm/ (barebones)
+  - https://github.com/muhammad-fiaz/num.zig (ew)
+  - https://github.com/ziglibs/zlm (good abstraction, has swizzle)
+  - https://gitlab.com/mass4org/mega4/math-3d/ (3D/physical primitives and functions)
 
 - Examples
   - https://github.com/riverwm/river/
