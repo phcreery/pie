@@ -4,12 +4,9 @@
 //! Shared by shaders (`@import("shader").math.color`) and CPU-side module code.
 
 const math = @import("root.zig");
-const mat3 = @import("mat3.zig");
 pub const matrices = @import("matrices.zig"); // color matrices, exported as `math.matrices`
-const vec3 = @import("vec3.zig");
 
-pub const Vec3f32 = mat3.Vec3f32;
-pub const Mat3f32 = mat3.Mat3f32;
+const Vec3 = math.Vec3;
 
 // ---------------------------------------------------------------------------
 // sRGB transfer function (IEC 61966-2-1)
@@ -21,8 +18,8 @@ pub inline fn linearToSrgb(c: f32) f32 {
     return 1.055 * math.powf(c, 1.0 / 2.4) - 0.055;
 }
 
-pub inline fn linearToSrgbVec3(v: Vec3f32) Vec3f32 {
-    return .{ linearToSrgb(v[0]), linearToSrgb(v[1]), linearToSrgb(v[2]) };
+pub inline fn linearToSrgbVec3(v: Vec3) Vec3 {
+    return Vec3.new(linearToSrgb(v.x), linearToSrgb(v.y), linearToSrgb(v.z));
 }
 
 // ---------------------------------------------------------------------------
@@ -42,22 +39,22 @@ pub inline fn lerpChromaticityAngle(h1: f32, h2: f32, t: f32) f32 {
 }
 
 /// -> (hue in turns [0, 1), saturation, value).
-pub inline fn rgbToHsv(c: Vec3f32) Vec3f32 {
-    const maxc = @max(c[0], @max(c[1], c[2]));
-    const minc = @min(c[0], @min(c[1], c[2]));
+pub inline fn rgbToHsv(c: Vec3) Vec3 {
+    const maxc = @max(c.x, @max(c.y, c.z));
+    const minc = @min(c.x, @min(c.y, c.z));
     const delta = maxc - minc;
 
     var h: f32 = 0.0;
     if (delta > math.EPSILON) {
-        if (maxc == c[0]) {
-            h = (c[1] - c[2]) / delta;
-            if (c[1] < c[2]) {
+        if (maxc == c.x) {
+            h = (c.y - c.z) / delta;
+            if (c.y < c.z) {
                 h += 6.0;
             }
-        } else if (maxc == c[1]) {
-            h = ((c[2] - c[0]) / delta) + 2.0;
+        } else if (maxc == c.y) {
+            h = ((c.z - c.x) / delta) + 2.0;
         } else {
-            h = ((c[0] - c[1]) / delta) + 4.0;
+            h = ((c.x - c.y) / delta) + 4.0;
         }
         h /= 6.0;
     }
@@ -66,14 +63,14 @@ pub inline fn rgbToHsv(c: Vec3f32) Vec3f32 {
     if (maxc > math.EPSILON) {
         s = delta / maxc;
     }
-    return .{ h, s, maxc };
+    return Vec3.new(h, s, maxc);
 }
 
 /// (hue in turns, saturation, value) -> rgb.
-pub inline fn hsvToRgb(c: Vec3f32) Vec3f32 {
-    const h = math.fract(c[0]) * 6.0;
-    const s = c[1];
-    const v = c[2];
+pub inline fn hsvToRgb(c: Vec3) Vec3 {
+    const h = math.fract(c.x) * 6.0;
+    const s = c.y;
+    const v = c.z;
     const i: i32 = @intFromFloat(@floor(h));
     const f = h - @floor(h);
     const p = v * (1.0 - s);
@@ -81,26 +78,28 @@ pub inline fn hsvToRgb(c: Vec3f32) Vec3f32 {
     const t = v * (1.0 - s * (1.0 - f));
 
     return switch (i) {
-        0 => .{ v, t, p },
-        1 => .{ q, v, p },
-        2 => .{ p, v, t },
-        3 => .{ p, q, v },
-        4 => .{ t, p, v },
-        else => .{ v, p, q },
+        0 => Vec3.new(v, t, p),
+        1 => Vec3.new(q, v, p),
+        2 => Vec3.new(p, v, t),
+        3 => Vec3.new(p, q, v),
+        4 => Vec3.new(t, p, v),
+        else => Vec3.new(v, p, q),
     };
 }
 
 test "hsv round-trips" {
     const testing = @import("std").testing;
-    const inputs = [4]Vec3f32{
-        .{ 1.0, 0.0, 0.0 },
-        .{ 0.2, 0.6, 0.9 },
-        .{ 0.5, 0.5, 0.5 },
-        .{ 0.0, 0.0, 0.0 },
+    const inputs = [4]Vec3{
+        Vec3.new(1.0, 0.0, 0.0),
+        Vec3.new(0.2, 0.6, 0.9),
+        Vec3.new(0.5, 0.5, 0.5),
+        Vec3.new(0.0, 0.0, 0.0),
     };
     for (inputs) |rgb| {
         const round_tripped = hsvToRgb(rgbToHsv(rgb));
-        inline for (0..3) |i| try testing.expectApproxEqAbs(rgb[i], round_tripped[i], 1e-5);
+        try testing.expectApproxEqAbs(rgb.x, round_tripped.x, 1e-5);
+        try testing.expectApproxEqAbs(rgb.y, round_tripped.y, 1e-5);
+        try testing.expectApproxEqAbs(rgb.z, round_tripped.z, 1e-5);
     }
 }
 

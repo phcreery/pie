@@ -8,8 +8,6 @@ pub const spirv = std.spirv; // TODO: remove this line
 pub const NodeDesc = types.ModuleApi.NodeDesc;
 pub const ModuleDesc = types.ModuleApi.ModuleDesc;
 
-/// The `math` module, re-exported so shaders can reach `math.color`,
-/// `math.matrices` and `math.mat3` without declaring their own imports.
 pub const math = @import("math");
 
 pub const Vec4f32 = @Vector(4, f32);

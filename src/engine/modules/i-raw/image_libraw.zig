@@ -1,4 +1,5 @@
 const api = @import("../api.zig");
+const Mat3 = api.math.Mat3;
 const libraw = @import("libraw");
 const std = @import("std");
 const RawImage = @import("RawImage.zig");
@@ -91,7 +92,7 @@ pub fn read(allocator: std.mem.Allocator, io: std.Io, file_path: []const u8) !Ra
 
     // LibRaw exposes cam_xyz as CAM<-XYZ. Store the actual inverse here so the
     // ImgParam field name matches its contents: XYZ<-CAM.
-    const xyz_d65_from_cam = api.math.mat3.inv(f32, cam_xyz);
+    const xyz_d65_from_cam = Mat3.fromArray(cam_xyz).inv().toArray();
     // TODO: CAT16 adapt this to D65 if needed
 
     return .{

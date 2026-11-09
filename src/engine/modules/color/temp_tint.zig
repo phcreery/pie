@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const api = @import("../api.zig");
+const Mat3 = api.math.Mat3;
 
 const Chromaticity = struct { x: f32, y: f32 };
 const Uv = struct { u: f32, v: f32 };
@@ -115,7 +116,7 @@ pub fn computeWhiteBalanceFromTempTint(temp: f32, tint: f32, xyz_d65_from_cam: [
     const Z = (1.0 - xy.x - xy.y) / xy.y;
 
     // 5. XYZ to camera RGB.
-    const cam_from_xyz_d65: [3][3]f32 = api.math.mat3.inv(f32, xyz_d65_from_cam);
+    const cam_from_xyz_d65: [3][3]f32 = Mat3.fromArray(xyz_d65_from_cam).inv().toArray();
 
     var rgb: [3]f32 = undefined;
     for (0..3) |cam_ch| {

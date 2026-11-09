@@ -9,7 +9,7 @@ const shd = @import("shader");
 const math = @import("math");
 
 const color = math.color;
-const Vec3f32 = math.mat3.Vec3f32;
+const Vec3 = math.Vec3;
 const Vec4f32 = shd.Vec4f32;
 
 const module_zon: shd.ModuleDesc = @import("module.zon");
@@ -33,7 +33,7 @@ const COLORMODE_AGX: i32 = 0;
 const MIN_BRIGHTNESS: f32 = 5e-3;
 const MIN_CONTRAST: f32 = 1e-4;
 
-const ZERO: Vec3f32 = @splat(0.0);
+const ZERO: Vec3 = Vec3.zero;
 
 /// Weibull CDF, used as the per-channel film curve.
 ///
@@ -55,29 +55,29 @@ test "weibullCdf is a monotonically increasing CDF on [0, 1]" {
     }
 }
 
-pub inline fn weibullCdfVec3(x: Vec3f32, il: f32, k: f32) Vec3f32 {
-    return .{
-        weibullCdf(x[0], il, k),
-        weibullCdf(x[1], il, k),
-        weibullCdf(x[2], il, k),
-    };
+pub inline fn weibullCdfVec3(x: Vec3, il: f32, k: f32) Vec3 {
+    return Vec3.new(
+        weibullCdf(x.x, il, k),
+        weibullCdf(x.y, il, k),
+        weibullCdf(x.z, il, k),
+    );
 }
 
-pub inline fn agxWeibull(rgb: Vec3f32, il: f32, k: f32) Vec3f32 {
+pub inline fn agxWeibull(rgb: Vec3, il: f32, k: f32) Vec3 {
     const inset = math.matrices.agx_inset.mulVec(rgb);
     const mix_percent = 0.4;
     const hsv0 = color.rgbToHsv(inset);
     const curved = weibullCdfVec3(inset, il, k);
     var hsv1 = color.rgbToHsv(curved);
-    hsv1[0] = color.lerpChromaticityAngle(hsv0[0], hsv1[0], mix_percent);
+    hsv1.x = color.lerpChromaticityAngle(hsv0.x, hsv1.x, mix_percent);
     const recolored = color.hsvToRgb(hsv1);
-    return @max(math.matrices.agx_inset_inv.mulVec(recolored), @as(Vec3f32, @splat(0.0)));
+    return Vec3.componentMax(math.matrices.agx_inset_inv.mulVec(recolored), ZERO);
 }
 
-inline fn applyFilmCurve(rgb: Vec3f32) Vec3f32 {
+inline fn applyFilmCurve(rgb: Vec3) Vec3 {
     const il = @max(MIN_BRIGHTNESS, params.brightness);
     const k = @max(MIN_CONTRAST, params.contrast);
-    const biased = @max(rgb + @as(Vec3f32, @splat(params.bias)), ZERO);
+    const biased = Vec3.componentMax(Vec3.add(rgb, Vec3.all(params.bias)), ZERO);
 
     if (params.colormode == COLORMODE_AGX) {
         return agxWeibull(biased, il, k);
@@ -89,7 +89,7 @@ export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
     const px = shd.imageFetch(input_image, coord);
 
-    const rgb_rec2020_linear = @max(Vec3f32{ px[0], px[1], px[2] }, ZERO);
+    const rgb_rec2020_linear = Vec3.componentMax(Vec3.new(px[0], px[1], px[2]), ZERO);
     const rgb_rec2020_linear_display = applyFilmCurve(rgb_rec2020_linear);
 
     // temporary conversion from Rec.2020 linear to sRGB for display purposes
@@ -97,9 +97,9 @@ export fn main() callconv(shd.call_conv) void {
     const rgb_srgb_display = color.linearToSrgbVec3(rgb_srgb_linear_display);
 
     shd.imageWrite(output_image, coord, Vec4f32{
-        rgb_srgb_display[0],
-        rgb_srgb_display[1],
-        rgb_srgb_display[2],
+        rgb_srgb_display.x,
+        rgb_srgb_display.y,
+        rgb_srgb_display.z,
         px[3],
     });
 }

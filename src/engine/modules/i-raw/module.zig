@@ -5,6 +5,7 @@ const RawImage = @import("RawImage.zig");
 
 const api = @import("../api.zig");
 const math = @import("math");
+const Mat3 = math.Mat3;
 
 pub const def: api.ModuleDef = .{
     .desc = .{
@@ -84,7 +85,7 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 }
 
 fn computeRec2020FromCam(xyz_d65_from_cam: [3][3]f32) [3][3]f32 {
-    const xyz_from_cam = math.Mat3(f32).fromArray(xyz_d65_from_cam);
+    const xyz_from_cam = Mat3.fromArray(xyz_d65_from_cam);
     const rec2020_from_xyz_d65 = math.matrices.rec2020_from_xyz_d65;
 
     const rec2020_from_cam = rec2020_from_xyz_d65.mul(xyz_from_cam);

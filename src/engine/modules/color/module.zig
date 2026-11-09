@@ -4,6 +4,9 @@ const temp_tint = @import("./temp_tint.zig");
 const slog = std.log.scoped(.color);
 const math = @import("math");
 
+const Vec3 = math.Vec3;
+const Mat3 = math.Mat3;
+
 pub const def: api.ModuleDef = .{
     .desc = @import("module.zon"),
     .initParams = initParams,
@@ -87,23 +90,23 @@ inline fn recipOrOne(v: f32) f32 {
 /// warms it in the `color` node, which converts it back into the CAT16 source
 /// white.
 pub fn wbColorspaceConvert(xyz_d65_from_cam: [3][3]f32, cam_mul: [4]f32) [3]f32 {
-    const inv_gain = math.vec3.Vec3f32{
+    const inv_gain = Vec3.new(
         recipOrOne(cam_mul[0]),
         recipOrOne(cam_mul[1]),
         recipOrOne(cam_mul[2]),
-    };
-    const xyz = math.mat3.Mat3f32.fromArray(xyz_d65_from_cam).mulVec(inv_gain);
+    );
+    const xyz = Mat3.fromArray(xyz_d65_from_cam).mulVec(inv_gain);
     const rgb = math.color.matrices.rec2020_from_xyz_d65.mulVec(xyz);
 
     // Green is the reference channel. A non-positive green means the camera
     // matrix is not usable, so fall back to the D65 white.
-    const green = rgb[1];
+    const green = rgb.y;
     if (!(green > 1e-6)) return .{ 1.0, 1.0, 1.0 };
 
-    const white = rgb / math.vec3.splat(green);
+    const white = Vec3.div(rgb, Vec3.all(green));
 
-    const gain = math.vec3.recip(white);
-    return .{ gain[0], gain[1], gain[2] };
+    const gain = Vec3.div(Vec3.one, white);
+    return .{ gain.x, gain.y, gain.z };
 }
 
 test "rec2020 preWbWhite matches the color.ipynb reference" {
