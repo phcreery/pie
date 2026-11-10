@@ -62,14 +62,6 @@ inline fn decodeColour(rgb_cam: Vec3) Vec3 {
     }).mulVec(rgb_cam);
 }
 
-inline fn gainOrOne(v: Vec3) Vec3 {
-    return Vec3.new(
-        if (v.x > 1e-6) v.x else 1.0,
-        if (v.y > 1e-6) v.y else 1.0,
-        if (v.z > 1e-6) v.z else 1.0,
-    );
-}
-
 export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
     const px = shd.imageFetch(input_image, coord);
@@ -80,12 +72,11 @@ export fn main() callconv(shd.call_conv) void {
     var rgb_rec2020_linear = decodeColour(rgb_cam);
 
     // White balance.
-    const wb_gain = gainOrOne(Vec3.fromArray(&params.wb_coeff));
-    const wb_white = Vec3.div(Vec3.one, wb_gain);
+    const wb_gain = Vec3.fromArray(&params.wb_coeff);
     rgb_rec2020_linear = cat16(
         rgb_rec2020_linear,
-        wb_white,
         Vec3.one,
+        wb_gain,
     );
 
     // Output

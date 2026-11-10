@@ -289,6 +289,10 @@ pub fn as(comptime Real: type) type {
                 return .{ v.x, v.y };
             }
 
+            pub fn toArray(value: Self) [2]Real {
+                return .{ value.x, value.y };
+            }
+
             pub fn format(this: Self, writer: *std.Io.Writer) !void {
                 try writer.print("vec2({d:.2}, {d:.2})", .{ this.x, this.y });
             }
@@ -389,6 +393,10 @@ pub fn as(comptime Real: type) type {
             /// Converts the vector to the builtin `@Vector` type.
             pub fn toVector(v: Self) @Vector(3, Real) {
                 return .{ v.x, v.y, v.z };
+            }
+
+            pub fn toArray(value: Self) [3]Real {
+                return .{ value.x, value.y, value.z };
             }
 
             pub fn format(value: Self, writer: *std.Io.Writer) !void {
@@ -534,6 +542,10 @@ pub fn as(comptime Real: type) type {
             /// Converts the vector to the builtin `@Vector` type.
             pub fn toVector(v: Self) @Vector(4, Real) {
                 return .{ v.x, v.y, v.z, v.w };
+            }
+
+            pub fn toArray(value: Self) [4]Real {
+                return .{ value.x, value.y, value.z, value.w };
             }
 
             pub fn format(value: Self, writer: *std.Io.Writer) !void {

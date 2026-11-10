@@ -7,6 +7,7 @@ const math = @import("math");
 const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
 const Mat3 = math.Mat3;
+const rec2020_from_xyz_d65 = math.color.matrices.rec2020_from_xyz_d65;
 
 pub const def: api.ModuleDef = .{
     .desc = @import("module.zon"),
@@ -20,23 +21,14 @@ pub const def: api.ModuleDef = .{
 // const default_wb_tint: f32 = 0.0;
 /// `wb_coeff` sentinel: all-zero means "derive from the camera"
 const auto_wb_coeff: [3]f32 = .{ 0.0, 0.0, 0.0 };
-/// What the shader gets when there is no camera data and no user override.
-/// A neutral gain: the CAT16 source white is its reciprocal, i.e. D65.
-const neutral_wb_gain: [3]f32 = .{ 1.0, 1.0, 1.0 };
 
 pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     // try api.initParam(pipe, mod, "wb_temp", default_wb_temp);
     // try api.initParam(pipe, mod, "wb_tint", default_wb_tint);
-
-    // User override. All-zero means auto.
-    // `commitParams` resolves the value from the source image camera matrix and
-    // the raw white balance (`preWbGain`, see color.ipynb). It is a gain in
-    // linear Rec.2020, green-normalized: raising a channel warms it.
     try api.initParam(pipe, mod, "wb_coeff", auto_wb_coeff);
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
-    // Propagate ROI from input to output (normally done by pipeline when modifyOut is absent)
     const input_socket = try api.getModSocket(pipe, mod, "input");
     var output_socket = try api.getModSocket(pipe, mod, "output");
     output_socket.roi = input_socket.roi;
@@ -49,11 +41,11 @@ pub fn commitParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const is_auto = std.meta.eql(wb_coeff, auto_wb_coeff);
 
     if (is_auto) {
-        const effective_wb_gain = if (m.img_param) |img_param|
-            wbColorspaceConvert(img_param.xyz_d65_from_cam, img_param.white_balance)
-        else
-            neutral_wb_gain;
-        try api.initParam(pipe, mod, "wb_coeff", effective_wb_gain);
+        var effective_wb_gain = Vec3.one;
+        if (m.img_param) |img_param| {
+            effective_wb_gain = wbColorspaceConvert(img_param.xyz_d65_from_cam, img_param.white_balance.swizzle("xyz"));
+        }
+        try api.initParam(pipe, mod, "wb_coeff", effective_wb_gain.toArray());
     }
 }
 
@@ -69,39 +61,26 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 // White balance
 // ---------------------------------------------------------------------------
 
-inline fn recipOrOne(v: f32) f32 {
-    return if (v > 1e-6) 1.0 / v else 1.0;
-    // return v;
+pub fn wbColorspaceConvert(xyz_d65_from_cam: Mat3, wb_coeffs_cam: Vec3) Vec3 {
+    // white = 1/wb_coeffs
+    const white_cam = Vec3.one.div(wb_coeffs_cam);
+    const white_rec2020 = rec2020_from_xyz_d65.mulVec(xyz_d65_from_cam.mulVec(white_cam));
+
+    // fall back to the D65 white if the green channel is non-positive.
+    const green = white_rec2020.y;
+    if (!(green > 1e-6)) return Vec3.one;
+
+    // normalize by the green channel
+    const white = Vec3.div(white_rec2020, Vec3.all(green));
+
+    const wb_coeffs_rec2020 = Vec3.div(Vec3.one, white);
+    return wb_coeffs_rec2020;
 }
 
-/// White-balance gain for the given raw white balance, in linear Rec.2020.
-/// Green is 1.0. This is the reciprocal of `preWbWhite`: raising a channel
-/// warms it in the `color` node, which converts it back into the CAT16 source
-/// white.
-pub fn wbColorspaceConvert(xyz_d65_from_cam: Mat3, cam_mul: Vec4) [3]f32 {
-    const inv_gain = Vec3.new(
-        recipOrOne(cam_mul.x),
-        recipOrOne(cam_mul.y),
-        recipOrOne(cam_mul.z),
-    );
-    const xyz = xyz_d65_from_cam.mulVec(inv_gain);
-    const rgb = math.color.matrices.rec2020_from_xyz_d65.mulVec(xyz);
-
-    // Green is the reference channel. A non-positive green means the camera
-    // matrix is not usable, so fall back to the D65 white.
-    const green = rgb.y;
-    if (!(green > 1e-6)) return .{ 1.0, 1.0, 1.0 };
-
-    const white = Vec3.div(rgb, Vec3.all(green));
-
-    const gain = Vec3.div(Vec3.one, white);
-    return .{ gain.x, gain.y, gain.z };
-}
-
-test "rec2020 preWbWhite matches the color.ipynb reference" {
+test "rec2020 wbColorspaceConvert matches the color.ipynb reference" {
     const testing = @import("std").testing;
     // DSC_6765.NEF: as-shot camera white balance and XYZ<-camera from LibRaw.
-    const cam_mul = Vec4.new(1.90625, 1.0, 1.4921875, 1.0);
+    const cam_mul = Vec3.new(1.90625, 1.0, 1.4921875);
     const xyz_d65_from_cam = Mat3.fromArray(.{
         .{ 1.5699793, 0.14481506, 0.10475578 },
         .{ 0.6360732, 0.8477491, -0.221411 },
