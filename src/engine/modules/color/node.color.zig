@@ -12,7 +12,6 @@ const ImgParams = @import("types").ImgParamsGpu;
 
 const Vec3 = math.Vec3;
 const Mat3 = math.Mat3;
-const Vec4f32 = shd.Vec4f32;
 
 const module_zon: shd.ModuleDesc = @import("module.zon");
 const node_zon: shd.NodeDesc = @import("node.color.zon");
@@ -75,17 +74,13 @@ export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
     const px = shd.imageFetch(input_image, coord);
 
-    const rgb_cam = Vec3.new(px[0], px[1], px[2]);
+    const rgb_cam = Vec3.new(px.x, px.y, px.z);
 
     // cam -> rgb
     var rgb_rec2020_linear = decodeColour(rgb_cam);
 
     // White balance.
-    const wb_gain = gainOrOne(Vec3.new(
-        params.wb_coeff[0],
-        params.wb_coeff[1],
-        params.wb_coeff[2],
-    ));
+    const wb_gain = gainOrOne(Vec3.fromArray(&params.wb_coeff));
     const wb_white = Vec3.div(Vec3.one, wb_gain);
     rgb_rec2020_linear = cat16(
         rgb_rec2020_linear,
@@ -94,11 +89,6 @@ export fn main() callconv(shd.call_conv) void {
     );
 
     // Output
-    const out_px = Vec4f32{
-        rgb_rec2020_linear.x,
-        rgb_rec2020_linear.y,
-        rgb_rec2020_linear.z,
-        px[3],
-    };
+    const out_px = math.Vec4.new(rgb_rec2020_linear.x, rgb_rec2020_linear.y, rgb_rec2020_linear.z, px.w);
     shd.imageWrite(output_image, coord, out_px);
 }

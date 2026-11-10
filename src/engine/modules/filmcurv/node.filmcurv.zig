@@ -10,7 +10,6 @@ const math = @import("math");
 
 const color = math.color;
 const Vec3 = math.Vec3;
-const Vec4f32 = shd.Vec4f32;
 
 const module_zon: shd.ModuleDesc = @import("module.zon");
 const node_zon: shd.NodeDesc = @import("node.filmcurv.zon");
@@ -89,17 +88,17 @@ export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
     const px = shd.imageFetch(input_image, coord);
 
-    const rgb_rec2020_linear = Vec3.componentMax(Vec3.new(px[0], px[1], px[2]), ZERO);
+    const rgb_rec2020_linear = Vec3.componentMax(Vec3.new(px.x, px.y, px.z), ZERO);
     const rgb_rec2020_linear_display = applyFilmCurve(rgb_rec2020_linear);
 
     // temporary conversion from Rec.2020 linear to sRGB for display purposes
     const rgb_srgb_linear_display = math.matrices.srgb_from_rec2020.mulVec(rgb_rec2020_linear_display);
     const rgb_srgb_display = color.linearToSrgbVec3(rgb_srgb_linear_display);
 
-    shd.imageWrite(output_image, coord, Vec4f32{
+    shd.imageWrite(output_image, coord, math.Vec4.new(
         rgb_srgb_display.x,
         rgb_srgb_display.y,
         rgb_srgb_display.z,
-        px[3],
-    });
+        px.w,
+    ));
 }

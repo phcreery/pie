@@ -24,6 +24,7 @@ const OP_CAPABILITY = 17;
 const OP_COPY_MEMORY = 37;
 const OP_LOAD = 61;
 const OP_STORE = 62;
+const OP_COPY_LOGICAL = 400;
 
 const CAP_LINKAGE = 5;
 const MEM_OPERAND_ALIGNED = 0x2;
@@ -64,6 +65,17 @@ pub fn main(init: std.process.Init) !void {
         const op = words[r] & 0xFFFF;
         const count = words[r] >> 16;
         if (count == 0 or r + count > words.len) return error.MalformedInstruction;
+
+        // OpCopyLogical requires SPIR-V 1.4 and naga's SPIR-V front-end
+        // rejects it; we target 1.1. Fail the build with a pointer to the
+        // likely source instead of letting wgpu panic at pipeline creation.
+        // The usual trigger is binding a comptime field name from
+        // `@typeInfo(T).@"struct".field_names`: use an index loop and the
+        // inline `@typeInfo(...).field_names[i]` expression instead.
+        if (op == OP_COPY_LOGICAL) {
+            std.debug.print("spirv-naga-patch: {s}: OpCopyLogical is not supported by naga (needs SPIR-V 1.4; we target 1.1)\n", .{in_path});
+            return error.NagaUnsupportedOpCopyLogical;
+        }
 
         var shrink: usize = 0;
         switch (op) {

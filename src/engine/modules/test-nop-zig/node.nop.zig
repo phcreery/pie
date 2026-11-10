@@ -10,8 +10,8 @@ const output_image = shd.getImageFromZon(zon, "output");
 
 export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
-    var px = shd.imageFetch(input_image, coord);
+    var px = shd.imageFetchVector(input_image, coord);
     // px = px + @Vector(4, f32){ 1.0, 1.0, 1.0, 2.0 };
     px = px + @Vector(4, f32){ 0.0, 0.0, 0.0, 0.0 };
-    shd.imageWrite(output_image, coord, px);
+    shd.imageWriteVector(output_image, coord, px);
 }

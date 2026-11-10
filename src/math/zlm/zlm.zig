@@ -17,6 +17,24 @@ pub fn as(comptime Real: type) type {
             };
         }
 
+        /// Compile-time check for `fromArray`: an array, a tuple, or a
+        /// single-item pointer to either (any address space), with `len`
+        /// components.
+        fn assertArrayLike(comptime T: type, comptime len: usize) void {
+            switch (@typeInfo(T)) {
+                .array => |array| if (array.len != len)
+                    @compileError("fromArray expects " ++ @as([]const u8, @typeName(T)) ++ " to have " ++ std.fmt.comptimePrint("{d}", .{len}) ++ " components"),
+                .@"struct" => |structure| if (!structure.is_tuple or structure.field_names.len != len)
+                    @compileError("fromArray expects an array, a tuple, or a pointer to one, found '" ++ @typeName(T) ++ "'"),
+                .pointer => |pointer| {
+                    if (pointer.size != .one)
+                        @compileError("fromArray expects an array, a tuple, or a pointer to one, found '" ++ @typeName(T) ++ "'");
+                    assertArrayLike(pointer.child, len);
+                },
+                else => @compileError("fromArray expects an array, a tuple, or a pointer to one, found '" ++ @typeName(T) ++ "'"),
+            }
+        }
+
         /// Returns a type mixin for a vector type implementing all component-wise operations.
         /// Reduces the amount of duplicated code by a lot
         fn VectorMixin(comptime Self: type) type {
@@ -24,8 +42,8 @@ pub fn as(comptime Real: type) type {
                 /// Initializes all values of the vector with the given value.
                 pub fn all(value: Real) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = value;
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = value;
                     }
                     return result;
                 }
@@ -33,8 +51,8 @@ pub fn as(comptime Real: type) type {
                 /// adds all components from `a` with the components of `b`.
                 pub fn add(a: Self, b: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = @field(a, field_name) + @field(b, field_name);
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = @field(a, @typeInfo(Self).@"struct".field_names[i]) + @field(b, @typeInfo(Self).@"struct".field_names[i]);
                     }
                     return result;
                 }
@@ -42,8 +60,8 @@ pub fn as(comptime Real: type) type {
                 /// subtracts all components from `a` with the components of `b`.
                 pub fn sub(a: Self, b: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = @field(a, field_name) - @field(b, field_name);
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = @field(a, @typeInfo(Self).@"struct".field_names[i]) - @field(b, @typeInfo(Self).@"struct".field_names[i]);
                     }
                     return result;
                 }
@@ -51,8 +69,8 @@ pub fn as(comptime Real: type) type {
                 /// multiplies all components from `a` with the components of `b`.
                 pub fn mul(a: Self, b: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = @field(a, field_name) * @field(b, field_name);
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = @field(a, @typeInfo(Self).@"struct".field_names[i]) * @field(b, @typeInfo(Self).@"struct".field_names[i]);
                     }
                     return result;
                 }
@@ -60,8 +78,8 @@ pub fn as(comptime Real: type) type {
                 /// divides all components from `a` by the components of `b`.
                 pub fn div(a: Self, b: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = @field(a, field_name) / @field(b, field_name);
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = @field(a, @typeInfo(Self).@"struct".field_names[i]) / @field(b, @typeInfo(Self).@"struct".field_names[i]);
                     }
                     return result;
                 }
@@ -69,8 +87,8 @@ pub fn as(comptime Real: type) type {
                 /// multiplies all components by a scalar value.
                 pub fn scale(a: Self, b: Real) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = @field(a, field_name) * b;
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = @field(a, @typeInfo(Self).@"struct".field_names[i]) * b;
                     }
                     return result;
                 }
@@ -78,8 +96,8 @@ pub fn as(comptime Real: type) type {
                 /// returns the negative of self
                 pub fn neg(self: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = -@field(self, field_name);
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = -@field(self, @typeInfo(Self).@"struct".field_names[i]);
                     }
                     return result;
                 }
@@ -88,8 +106,8 @@ pub fn as(comptime Real: type) type {
                 /// This is the sum of products of all components.
                 pub fn dot(a: Self, b: Self) Real {
                     var result: Real = 0;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        result += @field(a, field_name) * @field(b, field_name);
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        result += @field(a, @typeInfo(Self).@"struct".field_names[i]) * @field(b, @typeInfo(Self).@"struct".field_names[i]);
                     }
                     return result;
                 }
@@ -127,8 +145,8 @@ pub fn as(comptime Real: type) type {
                 /// applies component-wise absolute values
                 pub fn abs(a: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = @abs(@field(a, field_name));
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = @abs(@field(a, @typeInfo(Self).@"struct".field_names[i]));
                     }
                     return result;
                 }
@@ -180,8 +198,8 @@ pub fn as(comptime Real: type) type {
                 /// returns a new vector where each component is the minimum of the components of the input vectors.
                 pub fn componentMin(a: Self, b: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = @min(@field(a, field_name), @field(b, field_name));
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = @min(@field(a, @typeInfo(Self).@"struct".field_names[i]), @field(b, @typeInfo(Self).@"struct".field_names[i]));
                     }
                     return result;
                 }
@@ -189,8 +207,8 @@ pub fn as(comptime Real: type) type {
                 /// returns a new vector where each component is the maximum of the components of the input vectors.
                 pub fn componentMax(a: Self, b: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = @max(@field(a, field_name), @field(b, field_name));
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = @max(@field(a, @typeInfo(Self).@"struct".field_names[i]), @field(b, @typeInfo(Self).@"struct".field_names[i]));
                     }
                     return result;
                 }
@@ -200,8 +218,8 @@ pub fn as(comptime Real: type) type {
                 /// `min` must be smaller or equal to the corresponding field of `max`.
                 pub fn componentClamp(a: Self, min: Self, max: Self) Self {
                     var result: Self = undefined;
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        @field(result, field_name) = std.math.clamp(@field(a, field_name), @field(min, field_name), @field(max, field_name));
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        @field(result, @typeInfo(Self).@"struct".field_names[i]) = std.math.clamp(@field(a, @typeInfo(Self).@"struct".field_names[i]), @field(min, @typeInfo(Self).@"struct".field_names[i]), @field(max, @typeInfo(Self).@"struct".field_names[i]));
                     }
                     return result;
                 }
@@ -213,24 +231,24 @@ pub fn as(comptime Real: type) type {
                 }
 
                 pub fn eql(a: Self, b: Self) bool {
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        if (@field(a, field_name) != @field(b, field_name))
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        if (@field(a, @typeInfo(Self).@"struct".field_names[i]) != @field(b, @typeInfo(Self).@"struct".field_names[i]))
                             return false;
                     }
                     return true;
                 }
 
                 pub fn approxEqAbs(a: Self, b: Self, tolerance: Real) bool {
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        if (!std.math.approxEqAbs(Real, @field(a, field_name), @field(b, field_name), tolerance))
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        if (!std.math.approxEqAbs(Real, @field(a, @typeInfo(Self).@"struct".field_names[i]), @field(b, @typeInfo(Self).@"struct".field_names[i]), tolerance))
                             return false;
                     }
                     return true;
                 }
 
                 pub fn approxEqRel(a: Self, b: Self, tolerance: Real) bool {
-                    inline for (@typeInfo(Self).@"struct".field_names) |field_name| {
-                        if (!std.math.approxEqRel(Real, @field(a, field_name), @field(b, field_name), tolerance))
+                    inline for (0..@typeInfo(Self).@"struct".field_names.len) |i| {
+                        if (!std.math.approxEqRel(Real, @field(a, @typeInfo(Self).@"struct".field_names[i]), @field(b, @typeInfo(Self).@"struct".field_names[i]), tolerance))
                             return false;
                     }
                     return true;
@@ -255,6 +273,20 @@ pub fn as(comptime Real: type) type {
                     .x = x,
                     .y = y,
                 };
+            }
+
+            /// Builds a vector from its components in field order. Accepts an
+            /// array or a pointer to one; pass `&array` for storage-buffer
+            /// arrays, since materializing the array by value makes the
+            /// SPIR-V backend emit OpCopyLogical.
+            pub inline fn fromArray(values: anytype) Self {
+                assertArrayLike(@TypeOf(values), 2);
+                return .{ .x = values[0], .y = values[1] };
+            }
+
+            /// Converts the vector to the builtin `@Vector` type.
+            pub fn toVector(v: Self) @Vector(2, Real) {
+                return .{ v.x, v.y };
             }
 
             pub fn format(this: Self, writer: *std.Io.Writer) !void {
@@ -343,6 +375,20 @@ pub fn as(comptime Real: type) type {
                     .y = y,
                     .z = z,
                 };
+            }
+
+            /// Builds a vector from its components in field order. Accepts an
+            /// array or a pointer to one; pass `&array` for storage-buffer
+            /// arrays, since materializing the array by value makes the
+            /// SPIR-V backend emit OpCopyLogical.
+            pub inline fn fromArray(values: anytype) Self {
+                assertArrayLike(@TypeOf(values), 3);
+                return .{ .x = values[0], .y = values[1], .z = values[2] };
+            }
+
+            /// Converts the vector to the builtin `@Vector` type.
+            pub fn toVector(v: Self) @Vector(3, Real) {
+                return .{ v.x, v.y, v.z };
             }
 
             pub fn format(value: Self, writer: *std.Io.Writer) !void {
@@ -474,6 +520,20 @@ pub fn as(comptime Real: type) type {
                     .z = z,
                     .w = w,
                 };
+            }
+
+            /// Builds a vector from its components in field order. Accepts an
+            /// array or a pointer to one; pass `&array` for storage-buffer
+            /// arrays, since materializing the array by value makes the
+            /// SPIR-V backend emit OpCopyLogical.
+            pub inline fn fromArray(values: anytype) Self {
+                assertArrayLike(@TypeOf(values), 4);
+                return .{ .x = values[0], .y = values[1], .z = values[2], .w = values[3] };
+            }
+
+            /// Converts the vector to the builtin `@Vector` type.
+            pub fn toVector(v: Self) @Vector(4, Real) {
+                return .{ v.x, v.y, v.z, v.w };
             }
 
             pub fn format(value: Self, writer: *std.Io.Writer) !void {

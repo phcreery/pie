@@ -48,18 +48,6 @@ pub fn commitParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     const is_auto = std.meta.eql(wb_coeff, auto_wb_coeff);
 
     if (is_auto) {
-        // OLD CODE - kept for backup. Delete after the test.
-        // The shader used the gain vector as the CAT16 destination white.
-        // const effective_wb_coeff = if (m.img_param) |img_param|
-        //     api.math.color.preWbCoeff(img_param.xyz_d65_from_cam, img_param.white_balance)
-        // else
-        //     neutral_wb_coeff;
-        // try api.initParam(pipe, mod, "wb_coeff", effective_wb_coeff);
-
-        // New code.
-        // `wb_coeff` holds a white-balance gain in linear Rec.2020: raising a
-        // channel warms it. The shader takes its reciprocal as the CAT16
-        // source white and adapts that to D65.
         const effective_wb_gain = if (m.img_param) |img_param|
             wbColorspaceConvert(img_param.xyz_d65_from_cam, img_param.white_balance)
         else

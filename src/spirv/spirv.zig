@@ -172,13 +172,14 @@ pub fn getImageFromZon(comptime zon: NodeDesc, comptime name: []const u8) Image(
     });
 }
 
-/// Fetch a single texel from a *sampled* image at integer coordinates.
+/// Fetch a single texel from a *sampled* image at integer coordinates,
+/// as a SPIR-V vector.
 /// std.spirv has no counterpart to imageWrite() for reads: reading without a
 /// sampler is OpImageFetch (OpImageRead is only valid for storage images, and
 /// wgpu hands us the input as a sampled texture), so we wrap it by hand in the
 /// same style as std.spirv.imageWrite.
 /// image must be of type `Image`
-pub inline fn imageFetch(image: anytype, coordinate: Vec2u32) Vec4f32 {
+pub inline fn imageFetchVector(image: anytype, coordinate: Vec2u32) Vec4f32 {
     const InputImage = @TypeOf(image);
     const lod: i32 = 0; // required image operand for non-multisampled fetches
     return asm volatile (
@@ -193,15 +194,35 @@ pub inline fn imageFetch(image: anytype, coordinate: Vec2u32) Vec4f32 {
     );
 }
 
-/// Write a texel to a *storage* image. Equivalent of std.spirv.imageWrite,
-/// but as a local `inline fn` for two reasons on the current Zig master:
+/// Fetch a single texel as the zlm `Vec4` type, with one self-contained asm
+/// block of its own (it does not delegate to `imageFetchVector`).
+/// image must be of type `Image`
+pub inline fn imageFetch(image: anytype, coordinate: Vec2u32) math.Vec4 {
+    const InputImage = @TypeOf(image);
+    const lod: i32 = 0; // required image operand for non-multisampled fetches
+    const texel = asm volatile (
+        \\%in  = OpLoad %InputImage %image
+        \\%ret = OpImageFetch %Vec4f32 %in %coordinate Lod %lod
+        : [ret] "" (-> Vec4f32),
+        : [InputImage] "t" (InputImage),
+          [image] "" (image),
+          [Vec4f32] "t" (Vec4f32),
+          [coordinate] "" (coordinate),
+          [lod] "" (lod),
+    );
+    return math.Vec4.new(texel[0], texel[1], texel[2], texel[3]);
+}
+
+/// Write a texel to a *storage* image, from a SPIR-V vector. Equivalent of
+/// std.spirv.imageWrite, but as a local `inline fn` for two reasons on the
+/// current Zig master:
 ///  - naga (wgpu's SPIR-V front-end) rejects OpImageWrite when the image is
 ///    anything other than a global variable, so the wrapper must be inlined;
 ///    the SPIR-V backend never inlines plain calls and miscompiles
 ///    @call(.always_inline) on 3-parameter functions.
 ///  - std.spirv.imageWrite is a regular (non-inline) function.
 /// image must be of type `Image`
-pub inline fn imageWrite(image: anytype, coordinate: Vec2u32, texel: Vec4f32) void {
+pub inline fn imageWriteVector(image: anytype, coordinate: Vec2u32, texel: Vec4f32) void {
     const OutputImage = @TypeOf(image);
     asm volatile (
         \\%out = OpLoad %OutputImage %image
@@ -211,5 +232,27 @@ pub inline fn imageWrite(image: anytype, coordinate: Vec2u32, texel: Vec4f32) vo
           [image] "" (image),
           [coordinate] "" (coordinate),
           [texel] "" (texel),
+    );
+}
+
+/// Write a texel to a *storage* image, from the zlm `Vec4` type, with one
+/// self-contained asm block that builds the SPIR-V vector from the four
+/// scalars (it does not delegate to `imageWriteVector`).
+/// image must be of type `Image`
+pub inline fn imageWrite(image: anytype, coordinate: Vec2u32, texel: math.Vec4) void {
+    const OutputImage = @TypeOf(image);
+    asm volatile (
+        \\%out = OpLoad %OutputImage %image
+        \\%tex = OpCompositeConstruct %Vec4f32 %x %y %z %w
+        \\       OpImageWrite %out %coordinate %tex
+        :
+        : [OutputImage] "t" (OutputImage),
+          [image] "" (image),
+          [x] "" (texel.x),
+          [y] "" (texel.y),
+          [z] "" (texel.z),
+          [w] "" (texel.w),
+          [Vec4f32] "t" (Vec4f32),
+          [coordinate] "" (coordinate),
     );
 }
