@@ -15,6 +15,7 @@
   - https://www.strollswithmydog.com/linear-color-transforms/
 - https://discuss.pixls.us/t/article-color-management-in-raw-processing/11521
 - https://jo.dreggn.org/2019_sigmoid.pdf
+- https://www.spiedigitallibrary.org/journals/optical-engineering/volume-59/issue-11/110801/Color-conversion-matrices-in-digital-cameras-a-tutorial/10.1117/1.OE.59.11.110801.full
 
 ### Camera Calibration
 
