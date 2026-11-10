@@ -6,6 +6,7 @@ const RawImage = @import("RawImage.zig");
 const api = @import("../api.zig");
 const math = @import("math");
 const Mat3 = math.Mat3;
+const Vec4 = math.Vec4;
 
 pub const def: api.ModuleDef = .{
     .desc = .{
@@ -84,12 +85,8 @@ pub fn initParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     try api.initParam(pipe, mod, "filename", @as([]const u8, "input.raw"));
 }
 
-fn computeRec2020FromCam(xyz_d65_from_cam: [3][3]f32) [3][3]f32 {
-    const xyz_from_cam = Mat3.fromArray(xyz_d65_from_cam);
-    const rec2020_from_xyz_d65 = math.matrices.rec2020_from_xyz_d65;
-
-    const rec2020_from_cam = rec2020_from_xyz_d65.mul(xyz_from_cam);
-    return rec2020_from_cam.toArray();
+fn computeRec2020FromCam(xyz_d65_from_cam: Mat3) Mat3 {
+    return math.matrices.rec2020_from_xyz_d65.mul(xyz_d65_from_cam);
 }
 
 pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
@@ -152,23 +149,24 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         };
     }
 
+    const xyz_d65_from_cam = Mat3.fromArray(raw_image.xyz_d65_from_cam);
     m.img_param = .{
-        .black = [4]f32{
+        .black = Vec4.new(
             @as(f32, @floatFromInt(raw_image.black[0])),
             @as(f32, @floatFromInt(raw_image.black[1])),
             @as(f32, @floatFromInt(raw_image.black[2])),
             @as(f32, @floatFromInt(raw_image.black[3])),
-        },
-        .white = [4]f32{
+        ),
+        .white = Vec4.new(
             @as(f32, @floatFromInt(raw_image.white[0])),
             @as(f32, @floatFromInt(raw_image.white[1])),
             @as(f32, @floatFromInt(raw_image.white[2])),
             @as(f32, @floatFromInt(raw_image.white[3])),
-        },
-        .white_balance = raw_image.wb_coeffs,
+        ),
+        .white_balance = Vec4.fromArray(raw_image.wb_coeffs),
         .orientation = orientation,
-        .rec2020_from_cam = computeRec2020FromCam(raw_image.xyz_d65_from_cam),
-        .xyz_d65_from_cam = raw_image.xyz_d65_from_cam,
+        .rec2020_from_cam = computeRec2020FromCam(xyz_d65_from_cam),
+        .xyz_d65_from_cam = xyz_d65_from_cam,
     };
 
     var stdout_buffer: [4096]u8 = undefined;

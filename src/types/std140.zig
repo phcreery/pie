@@ -1,11 +1,12 @@
 //! std140-style packing shared by the CPU packer (`layoutStruct`) and
 //! the Zig→SPIR-V shaders that bind the packed struct as a uniform buffer.
 //!
-//! `GpuStruct` turns a CPU struct of f32/i32/enums, `[4]f32` vec4s and
-//! `[3][3]f32` matrices into the extern struct a shader can `@extern`: exactly
-//! the offsets `layoutStruct` writes, but spelled with types SPIR-V and naga
-//! accept (vectors are illegal in extern structs, and a uniform block rejects
-//! `array<f32, N>` members because their stride would be 4, not 16).
+//! `GpuStruct` turns a CPU struct of f32/i32/enums, `math.Vec4`s and
+//! `math.Mat3`s (or the equivalent `[4]f32`/`[3][3]f32` arrays) into the
+//! extern struct a shader can `@extern`: exactly the offsets `layoutStruct`
+//! writes, but spelled with types SPIR-V and naga accept (vectors are illegal
+//! in extern structs, and a uniform block rejects `array<f32, N>` members
+//! because their stride would be 4, not 16).
 
 // https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
 // see: https://github.com/greggman/webgpu-utils/blob/3f1a4561622ea53e160b91de0d2a196443722dfd/src/wgsl-types.ts#L22
@@ -55,6 +56,7 @@
 // **where justPastLastMember = OffsetOfMember(S,N) + SizeOfMember(S,N)
 
 const std = @import("std");
+const math = @import("math");
 const slog = std.log.scoped(.std140);
 
 pub const Vec3 = vecType(3);
@@ -85,6 +87,11 @@ pub fn size(comptime T: type) usize {
             if (a.child == [3]f32 and a.len == 3) break :blk 48; // rows padded to 16
             @compileError("std140.size: unsupported array type '" ++ @typeName(T) ++ "'");
         },
+        .@"struct" => blk: {
+            if (T == math.Vec4) break :blk 16;
+            if (T == math.Mat3) break :blk 48; // rows padded to 16
+            @compileError("std140.size: unsupported struct type '" ++ @typeName(T) ++ "'");
+        },
         else => @compileError("std140.size: unsupported type '" ++ @typeName(T) ++ "'"),
     };
 }
@@ -101,6 +108,11 @@ pub fn alignment(comptime T: type) usize {
             }
             if (a.child == [3]f32 and a.len == 3) break :blk 16;
             @compileError("std140.alignment: unsupported array type '" ++ @typeName(T) ++ "'");
+        },
+        .@"struct" => blk: {
+            if (T == math.Vec4) break :blk 16;
+            if (T == math.Mat3) break :blk 16;
+            @compileError("std140.alignment: unsupported struct type '" ++ @typeName(T) ++ "'");
         },
         else => @compileError("std140.alignment: unsupported type '" ++ @typeName(T) ++ "'"),
     };
@@ -159,6 +171,11 @@ fn gpuFieldType(comptime T: type) type {
             if (a.child == [3]f32 and a.len == 3) break :blk Mat3x3;
             @compileError("std140.GpuStruct: unsupported array '" ++ @typeName(T) ++ "'");
         },
+        .@"struct" => blk: {
+            if (T == math.Vec4) break :blk Vec4;
+            if (T == math.Mat3) break :blk Mat3x3;
+            @compileError("std140.GpuStruct: unsupported struct '" ++ @typeName(T) ++ "'");
+        },
         else => @compileError("std140.GpuStruct: unsupported field type '" ++ @typeName(T) ++ "'"),
     };
 }
@@ -212,6 +229,19 @@ pub fn writeBytes(buf: []u8, item: anytype) void {
             // need to pad each vec3 row to 16 bytes
             var offset: usize = 0;
             inline for (item) |row| {
+                const row_bytes = std.mem.asBytes(@constCast(&row))[0..size(@TypeOf(row))];
+                @memcpy(buf[offset .. offset + row_bytes.len], row_bytes);
+                offset += alignment(@TypeOf(item)); // pad to 16 bytes
+            }
+        },
+        math.Vec4 => {
+            const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];
+            @memcpy(buf[0..bytes.len], bytes);
+        },
+        math.Mat3 => {
+            // need to pad each vec3 row to 16 bytes
+            var offset: usize = 0;
+            inline for (item.fields) |row| {
                 const row_bytes = std.mem.asBytes(@constCast(&row))[0..size(@TypeOf(row))];
                 @memcpy(buf[offset .. offset + row_bytes.len], row_bytes);
                 offset += alignment(@TypeOf(item)); // pad to 16 bytes
@@ -312,12 +342,12 @@ test "layoutStruct packs ImgParams as its std140 GPU view" {
     const Cpu = ImgParam.ImgParams;
     const Gpu = ImgParam.ImgParamsGpu;
 
-    const rec2020: [3][3]f32 = .{ .{ 1, 2, 3 }, .{ 4, 5, 6 }, .{ 7, 8, 9 } };
-    const xyz: [3][3]f32 = .{ .{ 9, 8, 7 }, .{ 6, 5, 4 }, .{ 3, 2, 1 } };
+    const rec2020 = math.Mat3.fromArray(.{ .{ 1, 2, 3 }, .{ 4, 5, 6 }, .{ 7, 8, 9 } });
+    const xyz = math.Mat3.fromArray(.{ .{ 9, 8, 7 }, .{ 6, 5, 4 }, .{ 3, 2, 1 } });
     const params: Cpu = .{
-        .black = .{ 0.1, 0.2, 0.3, 0.4 },
-        .white = .{ 1.1, 1.2, 1.3, 1.4 },
-        .white_balance = .{ 2.1, 2.2, 2.3, 2.4 },
+        .black = math.Vec4.new(0.1, 0.2, 0.3, 0.4),
+        .white = math.Vec4.new(1.1, 1.2, 1.3, 1.4),
+        .white_balance = math.Vec4.new(2.1, 2.2, 2.3, 2.4),
         .orientation = .rotate90CW,
         .rec2020_from_cam = rec2020,
         .xyz_d65_from_cam = xyz,
@@ -335,14 +365,14 @@ test "layoutStruct packs ImgParams as its std140 GPU view" {
     expected.white_balance = .{ .x = 2.1, .y = 2.2, .z = 2.3, .w = 2.4 };
     expected.orientation = .rotate90CW;
     expected.rec2020_from_cam = .{
-        .c0 = .{ .x = rec2020[0][0], .y = rec2020[0][1], .z = rec2020[0][2], .w = 0 },
-        .c1 = .{ .x = rec2020[1][0], .y = rec2020[1][1], .z = rec2020[1][2], .w = 0 },
-        .c2 = .{ .x = rec2020[2][0], .y = rec2020[2][1], .z = rec2020[2][2], .w = 0 },
+        .c0 = .{ .x = rec2020.fields[0][0], .y = rec2020.fields[0][1], .z = rec2020.fields[0][2], .w = 0 },
+        .c1 = .{ .x = rec2020.fields[1][0], .y = rec2020.fields[1][1], .z = rec2020.fields[1][2], .w = 0 },
+        .c2 = .{ .x = rec2020.fields[2][0], .y = rec2020.fields[2][1], .z = rec2020.fields[2][2], .w = 0 },
     };
     expected.xyz_d65_from_cam = .{
-        .c0 = .{ .x = xyz[0][0], .y = xyz[0][1], .z = xyz[0][2], .w = 0 },
-        .c1 = .{ .x = xyz[1][0], .y = xyz[1][1], .z = xyz[1][2], .w = 0 },
-        .c2 = .{ .x = xyz[2][0], .y = xyz[2][1], .z = xyz[2][2], .w = 0 },
+        .c0 = .{ .x = xyz.fields[0][0], .y = xyz.fields[0][1], .z = xyz.fields[0][2], .w = 0 },
+        .c1 = .{ .x = xyz.fields[1][0], .y = xyz.fields[1][1], .z = xyz.fields[1][2], .w = 0 },
+        .c2 = .{ .x = xyz.fields[2][0], .y = xyz.fields[2][1], .z = xyz.fields[2][2], .w = 0 },
     };
 
     try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expected), &buf);

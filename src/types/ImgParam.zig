@@ -2,6 +2,7 @@ const std = @import("std");
 // const CFA = @import("modules/shared/CFA.zig");
 const slog = std.log.scoped(.imgparam);
 const std140 = @import("std140.zig");
+const math = @import("math");
 
 // see: https://github.com/hanatos/vkdt/blob/master/src/pipe/module.h#L52
 
@@ -15,11 +16,11 @@ pub const Orientation = enum(i32) {
 pub const ImgParams = struct {
     // the color profile is the gamut and white point of the image for any given step in the pipeline
 
-    black: [4]f32, // black point
-    white: [4]f32, // clipping threshold
+    black: math.Vec4, // black point
+    white: math.Vec4, // clipping threshold
 
     // camera white balance coefficients
-    white_balance: [4]f32,
+    white_balance: math.Vec4,
 
     // orientation from image metadata (EXIF-style): 1 = normal, 3 = 180, 6 = 90 CW, 8 = 270 CW
     orientation: Orientation,
@@ -32,10 +33,10 @@ pub const ImgParams = struct {
     // sRGB <- camera color space conversion matrix (temporary for now)
     // srgb_from_cam: [3][3]f32,
 
-    rec2020_from_cam: [3][3]f32 align(16),
+    rec2020_from_cam: math.Mat3,
 
     // XYZ <- camera color space conversion matrix. XYZ is in D65 white point, linear. Similar to Adobe DNG ColorMatrix2, but with the two green channels collapsed into one.
-    xyz_d65_from_cam: [3][3]f32 align(16),
+    xyz_d65_from_cam: math.Mat3,
 
     pub fn print(
         self: *ImgParams,
@@ -44,22 +45,22 @@ pub const ImgParams = struct {
         try writer.print("ImgParams:\n", .{});
         try writer.print("orientation={d}\n", .{self.orientation});
         try writer.print("black: {d}, {d}, {d}, {d}\n", .{
-            self.black[0],
-            self.black[1],
-            self.black[2],
-            self.black[3],
+            self.black.x,
+            self.black.y,
+            self.black.z,
+            self.black.w,
         });
         try writer.print("white: {d}, {d}, {d}, {d}\n", .{
-            self.white[0],
-            self.white[1],
-            self.white[2],
-            self.white[3],
+            self.white.x,
+            self.white.y,
+            self.white.z,
+            self.white.w,
         });
         try writer.print("white_balance: {d}, {d}, {d}, {d}\n", .{
-            self.white_balance[0],
-            self.white_balance[1],
-            self.white_balance[2],
-            self.white_balance[3],
+            self.white_balance.x,
+            self.white_balance.y,
+            self.white_balance.z,
+            self.white_balance.w,
         });
         // try writer.print("srgb_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
         //     self.srgb_from_cam[0][0], self.srgb_from_cam[0][1], self.srgb_from_cam[0][2],
@@ -67,14 +68,14 @@ pub const ImgParams = struct {
         //     self.srgb_from_cam[2][0], self.srgb_from_cam[2][1], self.srgb_from_cam[2][2],
         // });
         try writer.print("rec2020_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
-            self.rec2020_from_cam[0][0], self.rec2020_from_cam[0][1], self.rec2020_from_cam[0][2],
-            self.rec2020_from_cam[1][0], self.rec2020_from_cam[1][1], self.rec2020_from_cam[1][2],
-            self.rec2020_from_cam[2][0], self.rec2020_from_cam[2][1], self.rec2020_from_cam[2][2],
+            self.rec2020_from_cam.fields[0][0], self.rec2020_from_cam.fields[0][1], self.rec2020_from_cam.fields[0][2],
+            self.rec2020_from_cam.fields[1][0], self.rec2020_from_cam.fields[1][1], self.rec2020_from_cam.fields[1][2],
+            self.rec2020_from_cam.fields[2][0], self.rec2020_from_cam.fields[2][1], self.rec2020_from_cam.fields[2][2],
         });
         try writer.print("xyz_d65_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
-            self.xyz_d65_from_cam[0][0], self.xyz_d65_from_cam[0][1], self.xyz_d65_from_cam[0][2],
-            self.xyz_d65_from_cam[1][0], self.xyz_d65_from_cam[1][1], self.xyz_d65_from_cam[1][2],
-            self.xyz_d65_from_cam[2][0], self.xyz_d65_from_cam[2][1], self.xyz_d65_from_cam[2][2],
+            self.xyz_d65_from_cam.fields[0][0], self.xyz_d65_from_cam.fields[0][1], self.xyz_d65_from_cam.fields[0][2],
+            self.xyz_d65_from_cam.fields[1][0], self.xyz_d65_from_cam.fields[1][1], self.xyz_d65_from_cam.fields[1][2],
+            self.xyz_d65_from_cam.fields[2][0], self.xyz_d65_from_cam.fields[2][1], self.xyz_d65_from_cam.fields[2][2],
         });
     }
 };

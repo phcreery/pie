@@ -5,6 +5,7 @@ const slog = std.log.scoped(.color);
 const math = @import("math");
 
 const Vec3 = math.Vec3;
+const Vec4 = math.Vec4;
 const Mat3 = math.Mat3;
 
 pub const def: api.ModuleDef = .{
@@ -77,13 +78,13 @@ inline fn recipOrOne(v: f32) f32 {
 /// Green is 1.0. This is the reciprocal of `preWbWhite`: raising a channel
 /// warms it in the `color` node, which converts it back into the CAT16 source
 /// white.
-pub fn wbColorspaceConvert(xyz_d65_from_cam: [3][3]f32, cam_mul: [4]f32) [3]f32 {
+pub fn wbColorspaceConvert(xyz_d65_from_cam: Mat3, cam_mul: Vec4) [3]f32 {
     const inv_gain = Vec3.new(
-        recipOrOne(cam_mul[0]),
-        recipOrOne(cam_mul[1]),
-        recipOrOne(cam_mul[2]),
+        recipOrOne(cam_mul.x),
+        recipOrOne(cam_mul.y),
+        recipOrOne(cam_mul.z),
     );
-    const xyz = Mat3.fromArray(xyz_d65_from_cam).mulVec(inv_gain);
+    const xyz = xyz_d65_from_cam.mulVec(inv_gain);
     const rgb = math.color.matrices.rec2020_from_xyz_d65.mulVec(xyz);
 
     // Green is the reference channel. A non-positive green means the camera
@@ -100,12 +101,12 @@ pub fn wbColorspaceConvert(xyz_d65_from_cam: [3][3]f32, cam_mul: [4]f32) [3]f32 
 test "rec2020 preWbWhite matches the color.ipynb reference" {
     const testing = @import("std").testing;
     // DSC_6765.NEF: as-shot camera white balance and XYZ<-camera from LibRaw.
-    const cam_mul = [4]f32{ 1.90625, 1.0, 1.4921875, 1.0 };
-    const xyz_d65_from_cam = [3][3]f32{
+    const cam_mul = Vec4.new(1.90625, 1.0, 1.4921875, 1.0);
+    const xyz_d65_from_cam = Mat3.fromArray(.{
         .{ 1.5699793, 0.14481506, 0.10475578 },
         .{ 0.6360732, 0.8477491, -0.221411 },
         .{ 0.12701747, -0.2259345, 1.4544346 },
-    };
+    });
 
     // The param is the gain (reciprocal of the white), green-normalized: the
     // notebook's Rec.2020 "pre-WB" values. Raising a channel warms the image.

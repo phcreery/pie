@@ -74,14 +74,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .slang = .{ .wgsl = true },
     });
 
-    // TYPES MODULE
-    const mod_types = b.createModule(.{
-        .root_source_file = b.path("src/types/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{},
-    });
-
     // CFA MODULE
     const mod_cfa = b.createModule(.{
         .root_source_file = b.path("src/cfa/CFA.zig"),
@@ -96,6 +88,16 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .target = target,
         .optimize = optimize,
         .imports = &.{},
+    });
+
+    // TYPES MODULE
+    const mod_types = b.createModule(.{
+        .root_source_file = b.path("src/types/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "math", .module = mod_math },
+        },
     });
 
     // CONSOLE MODULE

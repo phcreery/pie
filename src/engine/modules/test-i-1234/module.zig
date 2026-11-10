@@ -34,25 +34,12 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
     var m = try api.getModule(pipe, mod);
     m.img_param = .{
-        .white = .{ 1.0, 2.0, 3.0, 4.0 },
-        .black = .{ 1.0, 2.0, 3.0, 4.0 },
-        .white_balance = .{ 1.0, 1.0, 1.0, 1.0 },
-        // .rec2020_from_cam = .{
-        //     .{ 1.0, 0.0, 0.0 },
-        //     .{ 0.0, 1.0, 0.0 },
-        //     .{ 0.0, 0.0, 1.0 },
-        // },
-        .rec2020_from_cam = .{
-            .{ 1.0, 0.0, 0.0 },
-            .{ 0.0, 1.0, 0.0 },
-            .{ 0.0, 0.0, 1.0 },
-        },
+        .white = api.math.Vec4.new(1.0, 2.0, 3.0, 4.0),
+        .black = api.math.Vec4.new(1.0, 2.0, 3.0, 4.0),
+        .white_balance = api.math.Vec4.one,
         .orientation = .normal,
-        .xyz_d65_from_cam = .{
-            .{ 1.0, 0.0, 0.0 },
-            .{ 0.0, 1.0, 0.0 },
-            .{ 0.0, 0.0, 1.0 },
-        },
+        .rec2020_from_cam = api.math.Mat3.identity,
+        .xyz_d65_from_cam = api.math.Mat3.identity,
     };
 }
 

@@ -143,18 +143,13 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod_handle: api.ModuleHandle) !void {
     };
 
     // a PNG is already display-referred; identity through the pipeline
-    const identity_3x3: [3][3]f32 = .{
-        .{ 1.0, 0.0, 0.0 },
-        .{ 0.0, 1.0, 0.0 },
-        .{ 0.0, 0.0, 1.0 },
-    };
     m.img_param = .{
-        .black = .{ 1.0, 1.0, 1.0, 1.0 },
-        .white = .{ 1.0, 1.0, 1.0, 1.0 },
-        .white_balance = .{ 1.0, 1.0, 1.0, 1.0 },
+        .black = api.math.Vec4.one,
+        .white = api.math.Vec4.one,
+        .white_balance = api.math.Vec4.one,
         .orientation = .normal,
-        .rec2020_from_cam = identity_3x3,
-        .xyz_d65_from_cam = identity_3x3,
+        .rec2020_from_cam = api.math.Mat3.identity,
+        .xyz_d65_from_cam = api.math.Mat3.identity,
     };
 }
 
