@@ -68,16 +68,28 @@ export fn main() callconv(shd.call_conv) void {
 
     const rgb_cam = Vec3.new(px.x, px.y, px.z);
 
-    // cam -> rgb
-    var rgb_rec2020_linear = decodeColour(rgb_cam);
-
-    // White balance.
+    // White balance
     const wb_gain = Vec3.fromArray(&params.wb_coeff);
+    const wb_white = Vec3.one.div(wb_gain);
+    var rgb_rec2020_linear = rgb_cam.mul(wb_gain);
+
+    // cam -> rgb
+    rgb_rec2020_linear = decodeColour(rgb_cam);
+
+    // CAT
     rgb_rec2020_linear = cat16(
         rgb_rec2020_linear,
+        wb_white,
         Vec3.one,
-        wb_gain,
     );
+
+    // White balance (vkdt style without direct multipliers on cam rgb)
+    // const wb_gain = Vec3.fromArray(&params.wb_coeff);
+    // rgb_rec2020_linear = cat16(
+    //     rgb_rec2020_linear,
+    //     Vec3.one,
+    //     wb_gain,
+    // );
 
     // Output
     const out_px = math.Vec4.new(rgb_rec2020_linear.x, rgb_rec2020_linear.y, rgb_rec2020_linear.z, px.w);
