@@ -61,7 +61,7 @@ pub const Value = union(enum) {
     text: []const u8,
     i32: []align(1) const i32,
     f32: []align(1) const f32,
-    @"enum": []align(1) const u32,
+    enum_u32: []align(1) const u32,
 };
 
 /// Convert one parsed argument to a field type.
@@ -292,7 +292,7 @@ fn writeValue(w: *std.Io.Writer, value: Value) std.Io.Writer.Error!void {
         .text => |s| try w.writeAll(s),
         .i32 => |values| try writeNumberList(i32, w, values),
         .f32 => |values| try writeNumberList(f32, w, values),
-        .@"enum" => |values| try writeNumberList(u32, w, values),
+        .enum_u32 => |values| try writeNumberList(u32, w, values),
     }
 }
 

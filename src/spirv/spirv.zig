@@ -65,7 +65,7 @@ pub fn assertParamsShape(comptime module_desc: ModuleDesc, comptime T: type) voi
                     else => @compileError("unsupported i32 param length for '" ++ param.name ++ "'"),
                 },
                 .str => unreachable,
-                .@"enum" => u32, // enums are represented as u32 on the CPU side
+                .enum_u32 => u32, // enums are represented as u32 on the CPU side
             };
 
             var actual = field_types[field_i];

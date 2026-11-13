@@ -84,10 +84,12 @@
 - https://mbty.fr/blog/gpu/compute
 
 ## UI
-  - https://codeberg.org/shahwali/knots
-  - https://codeberg.org/Games-by-Mason/dear_imgui_zig
-  - as of 08-Sep-2025, sokol allows for webgpu on native
-  - https://github.com/yappologistic/CUI
+
+- https://codeberg.org/shahwali/knots
+- https://github.com/knots-ui/knots
+- https://codeberg.org/Games-by-Mason/dear_imgui_zig
+- as of 08-Sep-2025, sokol allows for webgpu on native
+- https://github.com/yappologistic/CUI
 
 ## Zig
 

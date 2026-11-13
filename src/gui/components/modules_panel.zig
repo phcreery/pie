@@ -106,7 +106,7 @@ pub const ModulesPanel = struct {
         const suffix = slider.suffix orelse "";
         switch (param.desc.typ) {
             .f32 => {
-                var value = readF32(param, 0);
+                var value = read(param, f32, 0);
                 var format_buf: [32]u8 = undefined;
                 const format = std.mem.printSentinel(&format_buf, "%.2f{s}", .{suffix}, 0) catch "%.2f";
                 if (ig.igSliderFloatEx(label.ptr, &value, slider.min, slider.max, format.ptr, 0)) {
@@ -114,7 +114,7 @@ pub const ModulesPanel = struct {
                 }
             },
             .i32 => {
-                var value = readI32(param, 0);
+                var value = read(param, i32, 0);
                 if (ig.igSliderInt(label.ptr, &value, @intFromFloat(@floor(slider.min)), @intFromFloat(@ceil(slider.max)))) {
                     s.setParam(handle, param.desc.name, i32, value);
                 }
@@ -144,7 +144,7 @@ pub const ModulesPanel = struct {
         ig.igText("%s", name.ptr);
 
         var values: [4]f32 = @splat(0);
-        for (0..n) |i| values[i] = readF32(param, i);
+        for (0..n) |i| values[i] = read(param, f32, i);
 
         var changed = false;
         for (0..n) |i| {
@@ -201,10 +201,10 @@ pub const ModulesPanel = struct {
         defer ig.igPopID();
 
         // var current: c_int = if (param.desc.typ == .i32) readI32(param, 0) else 0;
-        var current = switch (param.desc.typ) {
-            .i32 => readI32(param, 0),
+        var current: i32 = switch (param.desc.typ) {
+            .i32 => read(param, i32, 0),
             // .u32 => readU32(param, 0),
-            .@"enum" => readI32(param, 0),
+            .enum_u32 => @intCast(read(param, u32, 0)),
             else => 0,
         };
         if (ig.igCombo(label.ptr, &current, @ptrCast(items_z.ptr))) {
@@ -215,7 +215,7 @@ pub const ModulesPanel = struct {
     fn drawCheckbox(s: *session.Session, handle: pie.pipeline.ModuleHandle, param: *const pie.api.Param, param_index: u32) void {
         var label_buf: [160]u8 = undefined;
         const label = labelZ(&label_buf, param, param_index);
-        var value = readI32(param, 0) != 0;
+        var value = read(param, i32, 0) != 0;
         if (ig.igCheckbox(label.ptr, &value)) {
             s.setParam(handle, param.desc.name, i32, if (value) 1 else 0);
         }
@@ -243,10 +243,10 @@ pub const ModulesPanel = struct {
         var buf: [384]u8 = undefined;
         const name = param.desc.name;
         const text = switch (param.desc.typ) {
-            .f32 => std.mem.printSentinel(&buf, "{s}: {d:.2}", .{ name, readF32(param, 0) }, 0) catch return,
-            .i32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, readI32(param, 0) }, 0) catch return,
+            .f32 => std.mem.printSentinel(&buf, "{s}: {d:.2}", .{ name, read(param, f32, 0) }, 0) catch return,
+            .i32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, read(param, i32, 0) }, 0) catch return,
             .str => std.mem.printSentinel(&buf, "{s}: {s}", .{ name, readStr(param) }, 0) catch return,
-            .@"enum" => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, readI32(param, 0) }, 0) catch return,
+            .enum_u32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, read(param, u32, 0) }, 0) catch return,
         };
         ig.igText("%s", text.ptr);
     }
@@ -264,22 +264,11 @@ pub const ModulesPanel = struct {
     // ------------------------------------------------------------------
     // reading live values out of the parameter's bytes
     // ------------------------------------------------------------------
-    fn readF32(param: *const pie.api.Param, index: usize) f32 {
-        const offset = index * @sizeOf(f32);
-        if (offset + @sizeOf(f32) > param.bytes.len) return 0;
-        return std.mem.bytesToValue(f32, param.bytes[offset..][0..@sizeOf(f32)]);
-    }
 
-    fn readI32(param: *const pie.api.Param, index: usize) i32 {
-        const offset = index * @sizeOf(i32);
-        if (offset + @sizeOf(i32) > param.bytes.len) return 0;
-        return std.mem.bytesToValue(i32, param.bytes[offset..][0..@sizeOf(i32)]);
-    }
-
-    fn readU32(param: *const pie.api.Param, index: usize) u32 {
-        const offset = index * @sizeOf(u32);
-        if (offset + @sizeOf(u32) > param.bytes.len) return 0;
-        return std.mem.bytesToValue(u32, param.bytes[offset..][0..@sizeOf(u32)]);
+    fn read(param: *const pie.api.Param, T: type, index: usize) T {
+        const offset = index * @sizeOf(T);
+        if (offset + @sizeOf(T) > param.bytes.len) return undefined;
+        return std.mem.bytesToValue(T, param.bytes[offset..][0..@sizeOf(T)]);
     }
 
     fn readStr(param: *const pie.api.Param) []const u8 {

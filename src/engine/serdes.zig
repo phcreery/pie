@@ -132,7 +132,7 @@ pub const ParamCfgEntry = struct {
                     return;
                 };
             },
-            .@"enum" => {
+            .enum_u32 => {
                 const values = std.mem.bytesAsSlice(u32, param.bytes);
                 var value_tokens = std.mem.splitScalar(u8, value_text, ':');
                 for (values) |*value| {
@@ -177,7 +177,7 @@ pub fn schemaValue(value: Param.Value) colonconfig.Value {
         .i32 => |xs| .{ .i32 = xs },
         .f32 => |xs| .{ .f32 = xs },
         .str => |s| .{ .text = s },
-        .@"enum" => |xs| .{ .@"enum" = xs },
+        .enum_u32 => |xs| .{ .enum_u32 = xs },
     };
 }
 

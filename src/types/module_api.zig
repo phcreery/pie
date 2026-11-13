@@ -8,7 +8,7 @@ pub const ParamType = enum {
     i32,
     f32,
     str,
-    @"enum",
+    enum_u32,
 };
 
 /// A module parameter: its name, element count and element type. Part of the

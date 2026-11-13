@@ -83,3 +83,40 @@ pub const ImgParams = struct {
 /// The `img_params` uniform buffer as the shaders see it: `ImgParams` packed by
 /// `types.std140.layoutStruct` and respelled as an extern struct by `std140`.
 pub const ImgParamsGpu = std140.GpuStruct(ImgParams);
+
+test "layoutStruct packs ImgParams as its std140 GPU view" {
+    const rec2020 = math.Mat3.fromArray(.{ .{ 1, 2, 3 }, .{ 4, 5, 6 }, .{ 7, 8, 9 } });
+    const xyz = math.Mat3.fromArray(.{ .{ 9, 8, 7 }, .{ 6, 5, 4 }, .{ 3, 2, 1 } });
+    const params: ImgParams = .{
+        .black = math.Vec4.new(0.1, 0.2, 0.3, 0.4),
+        .white = math.Vec4.new(1.1, 1.2, 1.3, 1.4),
+        .white_balance = math.Vec4.new(2.1, 2.2, 2.3, 2.4),
+        .orientation = .rotate90CW,
+        .rec2020_from_cam = rec2020,
+        .xyz_d65_from_cam = xyz,
+    };
+
+    var buf: [@sizeOf(ImgParamsGpu)]u8 = @splat(0);
+    try std.testing.expectEqual(@sizeOf(ImgParamsGpu), try std140.layoutStruct(&buf, params));
+
+    // Zeroed so the struct's padding (vec4 `w`, 16-byte matrix padding) matches
+    // the untouched padding bytes the packer leaves behind.
+    var expected: ImgParamsGpu = undefined;
+    @memset(std.mem.asBytes(&expected), 0);
+    expected.black = .{ .x = 0.1, .y = 0.2, .z = 0.3, .w = 0.4 };
+    expected.white = .{ .x = 1.1, .y = 1.2, .z = 1.3, .w = 1.4 };
+    expected.white_balance = .{ .x = 2.1, .y = 2.2, .z = 2.3, .w = 2.4 };
+    expected.orientation = .rotate90CW;
+    expected.rec2020_from_cam = .{
+        .c0 = .{ .x = rec2020.fields[0][0], .y = rec2020.fields[0][1], .z = rec2020.fields[0][2], .w = 0 },
+        .c1 = .{ .x = rec2020.fields[1][0], .y = rec2020.fields[1][1], .z = rec2020.fields[1][2], .w = 0 },
+        .c2 = .{ .x = rec2020.fields[2][0], .y = rec2020.fields[2][1], .z = rec2020.fields[2][2], .w = 0 },
+    };
+    expected.xyz_d65_from_cam = .{
+        .c0 = .{ .x = xyz.fields[0][0], .y = xyz.fields[0][1], .z = xyz.fields[0][2], .w = 0 },
+        .c1 = .{ .x = xyz.fields[1][0], .y = xyz.fields[1][1], .z = xyz.fields[1][2], .w = 0 },
+        .c2 = .{ .x = xyz.fields[2][0], .y = xyz.fields[2][1], .z = xyz.fields[2][2], .w = 0 },
+    };
+
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expected), &buf);
+}

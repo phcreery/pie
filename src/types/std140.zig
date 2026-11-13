@@ -1,12 +1,19 @@
 //! std140-style packing shared by the CPU packer (`layoutStruct`) and
 //! the Zig→SPIR-V shaders that bind the packed struct as a uniform buffer.
 //!
-//! `GpuStruct` turns a CPU struct of f32/i32/enums, `math.Vec4`s and
-//! `math.Mat3`s (or the equivalent `[4]f32`/`[3][3]f32` arrays) into the
-//! extern struct a shader can `@extern`: exactly the offsets `layoutStruct`
-//! writes, but spelled with types SPIR-V and naga accept (vectors are illegal
-//! in extern structs, and a uniform block rejects `array<f32, N>` members
-//! because their stride would be 4, not 16).
+//! `GpuStruct` turns a CPU struct of f32/i32/enums, float vectors and 3x3
+//! matrices into the extern struct a shader can `@extern`. The offsets are
+//! exactly the offsets `layoutStruct` writes. The types are spelled the way
+//! SPIR-V and naga accept them: vectors are illegal in extern structs, and a
+//! uniform block rejects `array<f32, N>` members because their stride would
+//! be 4, not 16.
+//!
+//! Vectors and matrices are recognized by shape, not by type name. A vector is
+//! `[N]T` or a struct of `N` `T` fields named `x`/`y`/`z`/`w`. A matrix is
+//! `[cols][rows]T` or a struct that holds one.
+//!
+//! `scalarLayout`, `vecLayout` and `matLayout` cover every row of the table
+//! below. Add a scalar row to support a new scalar in all shapes.
 
 // https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
 // see: https://github.com/greggman/webgpu-utils/blob/3f1a4561622ea53e160b91de0d2a196443722dfd/src/wgsl-types.ts#L22
@@ -56,66 +63,136 @@
 // **where justPastLastMember = OffsetOfMember(S,N) + SizeOfMember(S,N)
 
 const std = @import("std");
-const math = @import("math");
-const slog = std.log.scoped(.std140);
 
-pub const Vec3 = vecType(3);
-pub const Vec4 = vecType(4);
+pub const Vec3 = vecType(f32, 3);
+pub const Vec4 = vecType(f32, 4);
 
 /// std140 `mat3x3<f32>`: three 16-byte columns. Column `cN` holds row `N` of the
 /// CPU matrix, because `layoutStruct` pads each CPU row to 16 bytes.
-pub const Mat3x3 = structType(
-    &[_][:0]const u8{ "c0", "c1", "c2" },
-    &[_]type{ Vec4, Vec4, Vec4 },
-    &[_]std.builtin.Type.Struct.FieldAttributes{
-        .{ .@"align" = 16 },
-        .{ .@"align" = 16 },
-        .{ .@"align" = 16 },
-    },
-);
+pub const Mat3x3 = matType(f32, 3, 3);
+
+/// std140 size and alignment of one value.
+const Layout = struct { size: usize, alignment: usize };
+
+/// Scalar rows from the header table. Add a row here to support a new scalar
+/// in every vector and matrix shape.
+fn scalarLayout(comptime T: type) ?Layout {
+    return switch (T) {
+        f16 => .{ .size = 2, .alignment = 2 },
+        f32, i32, u32 => .{ .size = 4, .alignment = 4 },
+        else => null,
+    };
+}
+
+/// `vecN<T>`: `N` components. The alignment rounds `N` up to a power of two.
+fn vecLayout(comptime T: type, comptime n: usize) Layout {
+    const scalar = scalarLayout(T).?;
+    const lanes = if (n == 2) 2 else 4;
+    return .{ .size = n * scalar.size, .alignment = lanes * scalar.alignment };
+}
+
+/// `matCxR<T>`: `C` columns of `vecR<T>`. Each column pads to its alignment.
+fn matLayout(comptime T: type, comptime cols: usize, comptime rows: usize) Layout {
+    const column = vecLayout(T, rows);
+    return .{
+        .size = cols * std.mem.alignForward(usize, column.size, column.alignment),
+        .alignment = column.alignment,
+    };
+}
+
+const Vec = struct { elem: type, len: usize };
+const Mat = struct { elem: type, cols: usize, rows: usize };
+
+/// std140 class of a CPU field type. The type library does not matter.
+const Kind = union(enum) {
+    scalar: type,
+    vec: Vec,
+    mat: Mat,
+
+    fn layout(comptime kind: Kind) Layout {
+        return switch (kind) {
+            .scalar => |T| scalarLayout(T).?,
+            .vec => |v| vecLayout(v.elem, v.len),
+            .mat => |m| matLayout(m.elem, m.cols, m.rows),
+        };
+    }
+};
+
+const vec_names = [_][:0]const u8{ "x", "y", "z", "w" };
+const mat_names = [_][:0]const u8{ "c0", "c1", "c2", "c3" };
+
+/// A vector is `[N]T` or a struct of `N` `T` fields named `x`/`y`/`z`/`w`.
+fn vecOf(comptime T: type) ?Vec {
+    return switch (@typeInfo(T)) {
+        .array => |a| if (a.len >= 2 and a.len <= 4 and scalarLayout(a.child) != null)
+            .{ .elem = a.child, .len = a.len }
+        else
+            null,
+        .@"struct" => |s| blk: {
+            if (s.field_types.len < 2 or s.field_types.len > 4) break :blk null;
+            const elem = s.field_types[0];
+            if (scalarLayout(elem) == null) break :blk null;
+            inline for (0..s.field_types.len) |i| {
+                if (s.field_types[i] != elem or !std.mem.eql(u8, s.field_names[i], vec_names[i])) break :blk null;
+            }
+            break :blk .{ .elem = elem, .len = s.field_types.len };
+        },
+        else => null,
+    };
+}
+
+/// A matrix is `[cols][rows]T` or a struct that holds one.
+fn matOf(comptime T: type) ?Mat {
+    return switch (@typeInfo(T)) {
+        .array => |a| blk: {
+            const row = switch (@typeInfo(a.child)) {
+                .array => |r| r,
+                else => break :blk null,
+            };
+            if (a.len < 2 or a.len > 4 or row.len < 2 or row.len > 4) break :blk null;
+            if (scalarLayout(row.child) == null) break :blk null;
+            break :blk .{ .elem = row.child, .cols = a.len, .rows = row.len };
+        },
+        .@"struct" => |s| if (s.field_types.len == 1) matOf(s.field_types[0]) else null,
+        else => null,
+    };
+}
+
+fn unsupported(comptime T: type, comptime context: []const u8) noreturn {
+    @compileError(context ++ ": unsupported type '" ++ @typeName(T) ++ "'");
+}
+
+/// Classify `T` by shape. The header table defines the supported shapes.
+fn kindOf(comptime T: type, comptime context: []const u8) Kind {
+    return switch (@typeInfo(T)) {
+        .int, .float => blk: {
+            if (scalarLayout(T) == null) unsupported(T, context);
+            break :blk .{ .scalar = T };
+        },
+        .@"enum" => |e| blk: {
+            if (scalarLayout(e.tag_type) == null) unsupported(T, context);
+            break :blk .{ .scalar = e.tag_type };
+        },
+        .array, .@"struct" => if (vecOf(T)) |v|
+            .{ .vec = v }
+        else if (matOf(T)) |m|
+            .{ .mat = m }
+        else
+            unsupported(T, context),
+        else => unsupported(T, context),
+    };
+}
 
 /// Byte size `layoutStruct` advances for a value of type `T`.
 pub fn size(comptime T: type) usize {
-    return switch (@typeInfo(T)) {
-        .@"enum" => |e| size(e.tag_type),
-        .int, .float => 4,
-        .array => |a| blk: {
-            if (a.child == f32) {
-                if (a.len == 3 or a.len == 4) break :blk a.len * @sizeOf(f32);
-                @compileError("std140.size: unsupported vector type '" ++ @typeName(T) ++ "'");
-            }
-            if (a.child == [3]f32 and a.len == 3) break :blk 48; // rows padded to 16
-            @compileError("std140.size: unsupported array type '" ++ @typeName(T) ++ "'");
-        },
-        .@"struct" => blk: {
-            if (T == math.Vec4) break :blk 16;
-            if (T == math.Mat3) break :blk 48; // rows padded to 16
-            @compileError("std140.size: unsupported struct type '" ++ @typeName(T) ++ "'");
-        },
-        else => @compileError("std140.size: unsupported type '" ++ @typeName(T) ++ "'"),
-    };
+    const kind = comptime kindOf(T, "std140.size");
+    return kind.layout().size;
 }
 
 /// Byte alignment `layoutStruct` gives a value of type `T`.
 pub fn alignment(comptime T: type) usize {
-    return switch (@typeInfo(T)) {
-        .@"enum" => |e| alignment(e.tag_type),
-        .int, .float => 4,
-        .array => |a| blk: {
-            if (a.child == f32) {
-                if (a.len == 3 or a.len == 4) break :blk 16;
-                @compileError("std140.alignment: unsupported vector type '" ++ @typeName(T) ++ "'");
-            }
-            if (a.child == [3]f32 and a.len == 3) break :blk 16;
-            @compileError("std140.alignment: unsupported array type '" ++ @typeName(T) ++ "'");
-        },
-        .@"struct" => blk: {
-            if (T == math.Vec4) break :blk 16;
-            if (T == math.Mat3) break :blk 16;
-            @compileError("std140.alignment: unsupported struct type '" ++ @typeName(T) ++ "'");
-        },
-        else => @compileError("std140.alignment: unsupported type '" ++ @typeName(T) ++ "'"),
-    };
+    const kind = comptime kindOf(T, "std140.alignment");
+    return kind.layout().alignment;
 }
 
 /// The extern-struct spelling of `Cpu` that a shader can bind. Every field sits
@@ -158,39 +235,35 @@ pub fn GpuStruct(comptime Cpu: type) type {
 }
 
 fn gpuFieldType(comptime T: type) type {
-    return switch (@typeInfo(T)) {
-        .float, .int, .@"enum" => T,
-        .array => |a| blk: {
-            if (a.child == f32) {
-                switch (a.len) {
-                    3 => break :blk Vec3,
-                    4 => break :blk Vec4,
-                    else => @compileError("std140.GpuStruct: unsupported vector '" ++ @typeName(T) ++ "'"),
-                }
-            }
-            if (a.child == [3]f32 and a.len == 3) break :blk Mat3x3;
-            @compileError("std140.GpuStruct: unsupported array '" ++ @typeName(T) ++ "'");
-        },
-        .@"struct" => blk: {
-            if (T == math.Vec4) break :blk Vec4;
-            if (T == math.Mat3) break :blk Mat3x3;
-            @compileError("std140.GpuStruct: unsupported struct '" ++ @typeName(T) ++ "'");
-        },
-        else => @compileError("std140.GpuStruct: unsupported field type '" ++ @typeName(T) ++ "'"),
+    const kind = comptime kindOf(T, "std140.GpuStruct");
+    return switch (kind) {
+        .scalar => T,
+        .vec => |v| vecType(v.elem, v.len),
+        .mat => |m| matType(m.elem, m.cols, m.rows),
     };
 }
 
-fn vecType(comptime n: usize) type {
-    const all_names = [_][:0]const u8{ "x", "y", "z", "w" };
-    var names: [n][:0]const u8 = undefined;
+fn vecType(comptime elem: type, comptime n: usize) type {
     var types: [n]type = undefined;
     var attrs: [n]std.builtin.Type.Struct.FieldAttributes = undefined;
     inline for (0..n) |i| {
-        names[i] = all_names[i];
-        types[i] = f32;
+        types[i] = elem;
         attrs[i] = .{};
     }
-    return structType(&names, &types, &attrs);
+    return structType(vec_names[0..n], &types, &attrs);
+}
+
+fn matType(comptime elem: type, comptime cols: usize, comptime rows: usize) type {
+    const lanes = if (rows == 2) 2 else 4;
+    const column = vecType(elem, lanes);
+    const column_align = vecLayout(elem, rows).alignment;
+    var types: [cols]type = undefined;
+    var attrs: [cols]std.builtin.Type.Struct.FieldAttributes = undefined;
+    inline for (0..cols) |c| {
+        types[c] = column;
+        attrs[c] = .{ .@"align" = column_align };
+    }
+    return structType(mat_names[0..cols], &types, &attrs);
 }
 
 fn structType(
@@ -202,53 +275,39 @@ fn structType(
 }
 
 pub fn writeBytes(buf: []u8, item: anytype) void {
-    // if t is enum, we need to get the alignment of the underlying value (e.g. i32)
-    if (@typeInfo(@TypeOf(item)) == .@"enum") {
-        const underlying = @backingInt(item);
-        writeBytes(buf, underlying);
+    const T = @TypeOf(item);
+    if (@typeInfo(T) == .@"enum") {
+        writeScalar(buf, @backingInt(item));
         return;
     }
-    switch (@TypeOf(item)) {
-        f32 => {
-            const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];
-            @memcpy(buf[0..bytes.len], bytes);
+    const kind = comptime kindOf(T, "std140.writeBytes");
+    switch (kind) {
+        .scalar => writeScalar(buf, item),
+        .vec => |v| switch (@typeInfo(T)) {
+            .array => inline for (0..v.len) |i| writeScalar(buf[i * @sizeOf(v.elem) ..], item[i]),
+            .@"struct" => |s| inline for (0..v.len) |i| writeScalar(buf[i * @sizeOf(v.elem) ..], @field(item, s.field_names[i])),
+            else => unreachable,
         },
-        i32 => {
-            const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];
-            @memcpy(buf[0..bytes.len], bytes);
-        },
-        [3]f32 => {
-            const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];
-            @memcpy(buf[0..bytes.len], bytes);
-        },
-        [4]f32 => {
-            const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];
-            @memcpy(buf[0..bytes.len], bytes);
-        },
-        [3][3]f32 => {
-            // need to pad each vec3 row to 16 bytes
-            var offset: usize = 0;
-            inline for (item) |row| {
-                const row_bytes = std.mem.asBytes(@constCast(&row))[0..size(@TypeOf(row))];
-                @memcpy(buf[offset .. offset + row_bytes.len], row_bytes);
-                offset += alignment(@TypeOf(item)); // pad to 16 bytes
+        .mat => |m| {
+            const matrix: [m.cols][m.rows]m.elem = switch (@typeInfo(T)) {
+                .array => item,
+                .@"struct" => |s| @field(item, s.field_names[0]),
+                else => unreachable,
+            };
+            const stride = matLayout(m.elem, m.cols, m.rows).alignment;
+            inline for (matrix, 0..) |column, c| {
+                inline for (column, 0..) |component, r| {
+                    writeScalar(buf[c * stride + r * @sizeOf(m.elem) ..], component);
+                }
             }
         },
-        math.Vec4 => {
-            const bytes = std.mem.asBytes(@constCast(&item))[0..size(@TypeOf(item))];
-            @memcpy(buf[0..bytes.len], bytes);
-        },
-        math.Mat3 => {
-            // need to pad each vec3 row to 16 bytes
-            var offset: usize = 0;
-            inline for (item.fields) |row| {
-                const row_bytes = std.mem.asBytes(@constCast(&row))[0..size(@TypeOf(row))];
-                @memcpy(buf[offset .. offset + row_bytes.len], row_bytes);
-                offset += alignment(@TypeOf(item)); // pad to 16 bytes
-            }
-        },
-        else => unreachable,
     }
+}
+
+/// Copy the bytes of one scalar value to `buf`.
+fn writeScalar(buf: []u8, value: anytype) void {
+    const bytes = std.mem.toBytes(value);
+    @memcpy(buf[0..bytes.len], &bytes);
 }
 
 // ImgParams
@@ -337,43 +396,46 @@ test "layoutStruct" {
     try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expect_mat3x3_r2)[0..12], bytes_buf[48..60]);
 }
 
-test "layoutStruct packs ImgParams as its std140 GPU view" {
-    const ImgParam = @import("ImgParam.zig");
-    const Cpu = ImgParam.ImgParams;
-    const Gpu = ImgParam.ImgParamsGpu;
-
-    const rec2020 = math.Mat3.fromArray(.{ .{ 1, 2, 3 }, .{ 4, 5, 6 }, .{ 7, 8, 9 } });
-    const xyz = math.Mat3.fromArray(.{ .{ 9, 8, 7 }, .{ 6, 5, 4 }, .{ 3, 2, 1 } });
-    const params: Cpu = .{
-        .black = math.Vec4.new(0.1, 0.2, 0.3, 0.4),
-        .white = math.Vec4.new(1.1, 1.2, 1.3, 1.4),
-        .white_balance = math.Vec4.new(2.1, 2.2, 2.3, 2.4),
-        .orientation = .rotate90CW,
-        .rec2020_from_cam = rec2020,
-        .xyz_d65_from_cam = xyz,
+test "layout matches the header table" {
+    const Row = struct { T: type, size: usize, alignment: usize };
+    const rows = [_]Row{
+        .{ .T = i32, .size = 4, .alignment = 4 },
+        .{ .T = u32, .size = 4, .alignment = 4 },
+        .{ .T = f32, .size = 4, .alignment = 4 },
+        .{ .T = f16, .size = 2, .alignment = 2 },
+        .{ .T = [2]i32, .size = 8, .alignment = 8 },
+        .{ .T = [2]u32, .size = 8, .alignment = 8 },
+        .{ .T = [2]f32, .size = 8, .alignment = 8 },
+        .{ .T = [2]f16, .size = 4, .alignment = 4 },
+        .{ .T = [3]i32, .size = 12, .alignment = 16 },
+        .{ .T = [3]u32, .size = 12, .alignment = 16 },
+        .{ .T = [3]f32, .size = 12, .alignment = 16 },
+        .{ .T = [3]f16, .size = 6, .alignment = 8 },
+        .{ .T = [4]i32, .size = 16, .alignment = 16 },
+        .{ .T = [4]u32, .size = 16, .alignment = 16 },
+        .{ .T = [4]f32, .size = 16, .alignment = 16 },
+        .{ .T = [4]f16, .size = 8, .alignment = 8 },
+        .{ .T = [2][2]f32, .size = 16, .alignment = 8 },
+        .{ .T = [2][2]f16, .size = 8, .alignment = 4 },
+        .{ .T = [3][2]f32, .size = 24, .alignment = 8 },
+        .{ .T = [3][2]f16, .size = 12, .alignment = 4 },
+        .{ .T = [4][2]f32, .size = 32, .alignment = 8 },
+        .{ .T = [4][2]f16, .size = 16, .alignment = 4 },
+        .{ .T = [2][3]f32, .size = 32, .alignment = 16 },
+        .{ .T = [2][3]f16, .size = 16, .alignment = 8 },
+        .{ .T = [3][3]f32, .size = 48, .alignment = 16 },
+        .{ .T = [3][3]f16, .size = 24, .alignment = 8 },
+        .{ .T = [4][3]f32, .size = 64, .alignment = 16 },
+        .{ .T = [4][3]f16, .size = 32, .alignment = 8 },
+        .{ .T = [2][4]f32, .size = 32, .alignment = 16 },
+        .{ .T = [2][4]f16, .size = 16, .alignment = 8 },
+        .{ .T = [3][4]f32, .size = 48, .alignment = 16 },
+        .{ .T = [3][4]f16, .size = 24, .alignment = 8 },
+        .{ .T = [4][4]f32, .size = 64, .alignment = 16 },
+        .{ .T = [4][4]f16, .size = 32, .alignment = 8 },
     };
-
-    var buf: [@sizeOf(Gpu)]u8 = @splat(0);
-    try std.testing.expectEqual(@sizeOf(Gpu), try layoutStruct(&buf, params));
-
-    // Zeroed so the struct's padding (vec4 `w`, 16-byte matrix padding) matches
-    // the untouched padding bytes the packer leaves behind.
-    var expected: Gpu = undefined;
-    @memset(std.mem.asBytes(&expected), 0);
-    expected.black = .{ .x = 0.1, .y = 0.2, .z = 0.3, .w = 0.4 };
-    expected.white = .{ .x = 1.1, .y = 1.2, .z = 1.3, .w = 1.4 };
-    expected.white_balance = .{ .x = 2.1, .y = 2.2, .z = 2.3, .w = 2.4 };
-    expected.orientation = .rotate90CW;
-    expected.rec2020_from_cam = .{
-        .c0 = .{ .x = rec2020.fields[0][0], .y = rec2020.fields[0][1], .z = rec2020.fields[0][2], .w = 0 },
-        .c1 = .{ .x = rec2020.fields[1][0], .y = rec2020.fields[1][1], .z = rec2020.fields[1][2], .w = 0 },
-        .c2 = .{ .x = rec2020.fields[2][0], .y = rec2020.fields[2][1], .z = rec2020.fields[2][2], .w = 0 },
-    };
-    expected.xyz_d65_from_cam = .{
-        .c0 = .{ .x = xyz.fields[0][0], .y = xyz.fields[0][1], .z = xyz.fields[0][2], .w = 0 },
-        .c1 = .{ .x = xyz.fields[1][0], .y = xyz.fields[1][1], .z = xyz.fields[1][2], .w = 0 },
-        .c2 = .{ .x = xyz.fields[2][0], .y = xyz.fields[2][1], .z = xyz.fields[2][2], .w = 0 },
-    };
-
-    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expected), &buf);
+    inline for (rows) |row| {
+        try std.testing.expectEqual(row.size, size(row.T));
+        try std.testing.expectEqual(row.alignment, alignment(row.T));
+    }
 }
