@@ -9,8 +9,7 @@ const slog = std.log.scoped(.param);
 // Structured as Tagged Union for dynamic data
 // =================
 
-/// Shared with the module API (`types/module_api.zig`).
-pub const Type = api.ParamType;
+// unfortunately, I think all of these need to be runtime
 
 const Self = @This();
 
@@ -74,12 +73,11 @@ pub fn get(self: Self, T: type) T {
     };
 }
 
-/// The current value viewed by its declared type: numeric vectors keep
-/// their element type (serialized `:`-joined), strings lose the NUL tail.
-pub const Value = union(Type) {
+pub const Value = union(api.ParamType) {
     i32: []align(1) const i32,
     f32: []align(1) const f32,
     str: []const u8,
+    @"enum": []align(1) const u32,
 };
 
 pub fn value(self: Self) Value {
@@ -87,14 +85,16 @@ pub fn value(self: Self) Value {
         .i32 => .{ .i32 = std.mem.bytesAsSlice(i32, self.bytes[0 .. self.desc.len * @sizeOf(i32)]) },
         .f32 => .{ .f32 = std.mem.bytesAsSlice(f32, self.bytes[0 .. self.desc.len * @sizeOf(f32)]) },
         .str => .{ .str = std.mem.sliceTo(self.bytes, 0) },
+        .@"enum" => .{ .@"enum" = std.mem.bytesAsSlice(u32, self.bytes[0 .. self.desc.len * @sizeOf(u32)]) },
     };
 }
 
-pub fn size_cpu(len: u32, typ: Type) usize {
+pub fn size_cpu(len: u32, typ: api.ParamType) usize {
     return switch (typ) {
         .i32 => @sizeOf(i32) * len,
         .f32 => @sizeOf(f32) * len,
         .str => @sizeOf(u8) * len,
+        .@"enum" => @sizeOf(u32),
         // else => unreachable,
     };
 }
@@ -116,6 +116,10 @@ pub fn size(self: Self) usize {
             4 => types.std140.size([4]f32),
             else => unreachable,
         },
+        .@"enum" => switch (self.desc.len) {
+            1 => types.std140.size(u32),
+            else => unreachable,
+        },
         else => unreachable,
     };
 }
@@ -132,6 +136,10 @@ pub fn alignment(self: Self) usize {
             4 => types.std140.alignment([4]f32),
             else => unreachable,
         },
+        .@"enum" => switch (self.desc.len) {
+            1 => types.std140.alignment(u32),
+            else => unreachable,
+        },
         else => unreachable,
     };
 }
@@ -142,6 +150,9 @@ pub fn writeBytes(self: Self, buf: []u8) void {
             @memcpy(buf[0..self.bytes.len], self.bytes);
         },
         .f32 => {
+            @memcpy(buf[0..self.bytes.len], self.bytes);
+        },
+        .@"enum" => {
             @memcpy(buf[0..self.bytes.len], self.bytes);
         },
         // writing strings to gpu are not supported

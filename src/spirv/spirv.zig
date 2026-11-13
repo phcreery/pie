@@ -36,7 +36,8 @@ pub fn assertParamsShape(comptime module_desc: ModuleDesc, comptime T: type) voi
         }
 
         const field_names = std.meta.fieldNames(T);
-        const field_types = std.meta.fieldTypes(T);
+        const info = @typeInfo(T);
+        const field_types = info.@"struct".field_types;
 
         var field_i: usize = 0;
         for (module_desc.params) |param| {
@@ -64,9 +65,13 @@ pub fn assertParamsShape(comptime module_desc: ModuleDesc, comptime T: type) voi
                     else => @compileError("unsupported i32 param length for '" ++ param.name ++ "'"),
                 },
                 .str => unreachable,
+                .@"enum" => u32, // enums are represented as u32 on the CPU side
             };
 
-            const actual = field_types[field_i];
+            var actual = field_types[field_i];
+            if (@typeInfo(actual) == .@"enum") {
+                actual = u32;
+            }
             if (actual != expected) {
                 @compileError("shader params field '" ++ name ++ "' is '" ++ @typeName(actual) ++ "' but module param '" ++ param.name ++ "' is '" ++ @typeName(expected) ++ "'");
             }

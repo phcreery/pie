@@ -132,6 +132,17 @@ pub const ParamCfgEntry = struct {
                     return;
                 };
             },
+            .@"enum" => {
+                const values = std.mem.bytesAsSlice(u32, param.bytes);
+                var value_tokens = std.mem.splitScalar(u8, value_text, ':');
+                for (values) |*value| {
+                    const tok = value_tokens.next() orelse "";
+                    value.* = if (tok.len == 0) 0 else std.fmt.parseInt(u32, tok, 10) catch {
+                        slog.warn("line {d}: unparseable enum '{s}', skipping", .{ line_no, tok });
+                        return;
+                    };
+                }
+            },
         }
     }
 };
@@ -166,6 +177,7 @@ pub fn schemaValue(value: Param.Value) colonconfig.Value {
         .i32 => |xs| .{ .i32 = xs },
         .f32 => |xs| .{ .f32 = xs },
         .str => |s| .{ .text = s },
+        .@"enum" => |xs| .{ .@"enum" = xs },
     };
 }
 

@@ -20,6 +20,7 @@ const Params = extern struct {
     // wb_temp: f32,
     // wb_tint: f32,
     // White-balance gain in linear Rec.2020, green-normalized.
+    wb_mode: enum(u32) { cam_mul, cat, vkdt },
     wb_coeff: [3]f32 align(16),
 };
 
@@ -68,28 +69,30 @@ export fn main() callconv(shd.call_conv) void {
 
     const rgb_cam = Vec3.new(px.x, px.y, px.z);
 
-    // White balance
+    // cam -> rgb
+    var rgb_rec2020_linear = decodeColour(rgb_cam);
+
+    // whitebalance
     const wb_gain = Vec3.fromArray(&params.wb_coeff);
     const wb_white = Vec3.one.div(wb_gain);
-    var rgb_rec2020_linear = rgb_cam.mul(wb_gain);
 
-    // cam -> rgb
-    rgb_rec2020_linear = decodeColour(rgb_cam);
-
-    // CAT
-    rgb_rec2020_linear = cat16(
-        rgb_rec2020_linear,
-        wb_white,
-        Vec3.one,
-    );
-
-    // White balance (vkdt style without direct multipliers on cam rgb)
-    // const wb_gain = Vec3.fromArray(&params.wb_coeff);
-    // rgb_rec2020_linear = cat16(
-    //     rgb_rec2020_linear,
-    //     Vec3.one,
-    //     wb_gain,
-    // );
+    if (params.wb_mode == .cam_mul) {
+        rgb_rec2020_linear = wb_gain.mul(rgb_rec2020_linear);
+    } else if (params.wb_mode == .cat) {
+        // CAT
+        rgb_rec2020_linear = cat16(
+            rgb_rec2020_linear,
+            wb_white,
+            Vec3.one,
+        );
+    } else if (params.wb_mode == .vkdt) {
+        // vkdt style
+        rgb_rec2020_linear = cat16(
+            rgb_rec2020_linear,
+            Vec3.one,
+            wb_gain,
+        );
+    }
 
     // Output
     const out_px = math.Vec4.new(rgb_rec2020_linear.x, rgb_rec2020_linear.y, rgb_rec2020_linear.z, px.w);

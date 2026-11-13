@@ -119,7 +119,7 @@ pub const ModulesPanel = struct {
                     s.setParam(handle, param.desc.name, i32, value);
                 }
             },
-            .str => {},
+            else => unreachable,
         }
     }
 
@@ -200,9 +200,15 @@ pub const ModulesPanel = struct {
         ig.igPushIDInt(@intCast(param_index));
         defer ig.igPopID();
 
-        var current: c_int = if (param.desc.typ == .i32) readI32(param, 0) else 0;
+        // var current: c_int = if (param.desc.typ == .i32) readI32(param, 0) else 0;
+        var current = switch (param.desc.typ) {
+            .i32 => readI32(param, 0),
+            // .u32 => readU32(param, 0),
+            .@"enum" => readI32(param, 0),
+            else => 0,
+        };
         if (ig.igCombo(label.ptr, &current, @ptrCast(items_z.ptr))) {
-            s.setParam(handle, param.desc.name, i32, @intCast(current));
+            s.setParam(handle, param.desc.name, u32, @intCast(current));
         }
     }
 
@@ -240,6 +246,7 @@ pub const ModulesPanel = struct {
             .f32 => std.mem.printSentinel(&buf, "{s}: {d:.2}", .{ name, readF32(param, 0) }, 0) catch return,
             .i32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, readI32(param, 0) }, 0) catch return,
             .str => std.mem.printSentinel(&buf, "{s}: {s}", .{ name, readStr(param) }, 0) catch return,
+            .@"enum" => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, readI32(param, 0) }, 0) catch return,
         };
         ig.igText("%s", text.ptr);
     }
@@ -267,6 +274,12 @@ pub const ModulesPanel = struct {
         const offset = index * @sizeOf(i32);
         if (offset + @sizeOf(i32) > param.bytes.len) return 0;
         return std.mem.bytesToValue(i32, param.bytes[offset..][0..@sizeOf(i32)]);
+    }
+
+    fn readU32(param: *const pie.api.Param, index: usize) u32 {
+        const offset = index * @sizeOf(u32);
+        if (offset + @sizeOf(u32) > param.bytes.len) return 0;
+        return std.mem.bytesToValue(u32, param.bytes[offset..][0..@sizeOf(u32)]);
     }
 
     fn readStr(param: *const pie.api.Param) []const u8 {
