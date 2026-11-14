@@ -1,16 +1,24 @@
-//! std140-style packing shared by the CPU packer (`layoutStruct`) and
-//! the Zig→SPIR-V shaders that bind the packed struct as a uniform buffer.
+//! This file packs CPU data for the GPU. It uses the std140 and std430 rules.
+//! It uses only `std`.
 //!
-//! `GpuStruct` turns a CPU struct of f32/i32/enums, float vectors and 3x3
-//! matrices into the extern struct a shader can `@extern`. The offsets are
-//! exactly the offsets `layoutStruct` writes. The types are spelled the way
-//! SPIR-V and naga accept them: vectors are illegal in extern structs, and a
-//! uniform block rejects `array<f32, N>` members because their stride would
-//! be 4, not 16.
+//! `layoutStruct` writes the bytes. `GpuStruct` makes the matching extern
+//! struct for a shader. The offsets are the same. A compile-time check
+//! compares them.
 //!
-//! Vectors and matrices are recognized by shape, not by type name. A vector is
-//! `[N]T` or a struct of `N` `T` fields named `x`/`y`/`z`/`w`. A matrix is
-//! `[cols][rows]T` or a struct that holds one.
+//! `GpuStruct` does not change a field type. A field keeps its type.
+//!
+//! A matrix is `[cols][rows]T` or a struct that holds one. Do not use a matrix
+//! field. Use the vector form `[cols]@Vector(rows, T)`.
+//!
+//! Why:
+//!
+//! * naga rejects a matrix in a uniform block. `[cols][rows]T` has an inner
+//!   array stride of 4. A uniform block needs a stride of 16.
+//! * The vector form has a stride of 16. naga accepts it.
+//! * The native Zig backend rejects a vector in an extern struct. So the GPU
+//!   type is for shaders only. Native code cannot make this type.
+//!
+//! A uniform block needs every array stride to be a multiple of 16.
 //!
 //! `scalarLayout`, `vecLayout` and `matLayout` cover every row of the table
 //! below. Add a scalar row to support a new scalar in all shapes.
@@ -64,13 +72,6 @@
 
 const std = @import("std");
 
-pub const Vec3 = vecType(f32, 3);
-pub const Vec4 = vecType(f32, 4);
-
-/// std140 `mat3x3<f32>`: three 16-byte columns. Column `cN` holds row `N` of the
-/// CPU matrix, because `layoutStruct` pads each CPU row to 16 bytes.
-pub const Mat3x3 = matType(f32, 3, 3);
-
 /// std140 size and alignment of one value.
 const Layout = struct { size: usize, alignment: usize };
 
@@ -103,7 +104,7 @@ fn matLayout(comptime T: type, comptime cols: usize, comptime rows: usize) Layou
 const Vec = struct { elem: type, len: usize };
 const Mat = struct { elem: type, cols: usize, rows: usize };
 
-/// std140 class of a CPU field type. The type library does not matter.
+/// std140 class of a CPU field type.
 const Kind = union(enum) {
     scalar: type,
     vec: Vec,
@@ -119,42 +120,51 @@ const Kind = union(enum) {
 };
 
 const vec_names = [_][:0]const u8{ "x", "y", "z", "w" };
-const mat_names = [_][:0]const u8{ "c0", "c1", "c2", "c3" };
 
-/// A vector is `[N]T` or a struct of `N` `T` fields named `x`/`y`/`z`/`w`.
 fn vecOf(comptime T: type) ?Vec {
-    return switch (@typeInfo(T)) {
-        .array => |a| if (a.len >= 2 and a.len <= 4 and scalarLayout(a.child) != null)
-            .{ .elem = a.child, .len = a.len }
-        else
-            null,
-        .@"struct" => |s| blk: {
-            if (s.field_types.len < 2 or s.field_types.len > 4) break :blk null;
-            const elem = s.field_types[0];
-            if (scalarLayout(elem) == null) break :blk null;
-            inline for (0..s.field_types.len) |i| {
-                if (s.field_types[i] != elem or !std.mem.eql(u8, s.field_names[i], vec_names[i])) break :blk null;
-            }
-            break :blk .{ .elem = elem, .len = s.field_types.len };
+    switch (@typeInfo(T)) {
+        .array => |a| {
+            if (a.len < 2 or a.len > 4 or scalarLayout(a.child) == null) return null;
+            return .{ .elem = a.child, .len = a.len };
         },
-        else => null,
-    };
+        .@"struct" => |s| {
+            if (s.layout != .@"extern" or s.field_types.len < 2 or s.field_types.len > 4) return null;
+            const elem = s.field_types[0];
+            if (scalarLayout(elem) == null) return null;
+            inline for (0..s.field_types.len) |i| {
+                if (s.field_types[i] != elem or !std.mem.eql(u8, s.field_names[i], vec_names[i])) return null;
+            }
+            return .{ .elem = elem, .len = s.field_types.len };
+        },
+        else => return null,
+    }
 }
 
-/// A matrix is `[cols][rows]T` or a struct that holds one.
 fn matOf(comptime T: type) ?Mat {
-    return switch (@typeInfo(T)) {
-        .array => |a| blk: {
-            const row = switch (@typeInfo(a.child)) {
-                .array => |r| r,
-                else => break :blk null,
-            };
-            if (a.len < 2 or a.len > 4 or row.len < 2 or row.len > 4) break :blk null;
-            if (scalarLayout(row.child) == null) break :blk null;
-            break :blk .{ .elem = row.child, .cols = a.len, .rows = row.len };
+    switch (@typeInfo(T)) {
+        .array => |a| {
+            if (a.len < 2 or a.len > 4) return null;
+            switch (@typeInfo(a.child)) {
+                .vector => |v| {
+                    if (v.len < 2 or v.len > 4 or scalarLayout(v.child) == null) return null;
+                    return .{ .elem = v.child, .cols = a.len, .rows = v.len };
+                },
+                .array => {
+                    const row = vecOf(a.child) orelse return null;
+                    return .{ .elem = row.elem, .cols = a.len, .rows = row.len };
+                },
+                else => return null,
+            }
         },
-        .@"struct" => |s| if (s.field_types.len == 1) matOf(s.field_types[0]) else null,
-        else => null,
+        .@"struct" => |s| return if (s.field_types.len == 1) matOf(s.field_types[0]) else null,
+        else => return null,
+    }
+}
+
+fn isVectorForm(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .array => |a| @typeInfo(a.child) == .vector,
+        else => false,
     };
 }
 
@@ -195,9 +205,9 @@ pub fn alignment(comptime T: type) usize {
     return kind.layout().alignment;
 }
 
-/// The extern-struct spelling of `Cpu` that a shader can bind. Every field sits
-/// at the offset `layoutStruct` writes it to; that equality is checked at
-/// comptime.
+/// The extern-struct spelling of `Cpu` that a shader can bind. Every field keeps
+/// its type and sits at the offset `layoutStruct` writes; that equality is
+/// checked at comptime. A matrix field must use the vector form.
 pub fn GpuStruct(comptime Cpu: type) type {
     const names = std.meta.fieldNames(Cpu);
     const field_types = std.meta.fieldTypes(Cpu);
@@ -207,8 +217,11 @@ pub fn GpuStruct(comptime Cpu: type) type {
     var gpu_attrs: [names.len]std.builtin.Type.Struct.FieldAttributes = undefined;
 
     inline for (field_types, 0..) |T, i| {
+        if (matOf(T) != null and !isVectorForm(T)) {
+            @compileError("std140.GpuStruct: field '" ++ names[i] ++ "' is a matrix. Use the vector form '[cols]@Vector(rows, T)'.");
+        }
         gpu_names[i] = names[i];
-        gpu_types[i] = gpuFieldType(T);
+        gpu_types[i] = T;
         gpu_attrs[i] = .{ .@"align" = alignment(T) };
     }
 
@@ -234,38 +247,6 @@ pub fn GpuStruct(comptime Cpu: type) type {
     return Gpu;
 }
 
-fn gpuFieldType(comptime T: type) type {
-    const kind = comptime kindOf(T, "std140.GpuStruct");
-    return switch (kind) {
-        .scalar => T,
-        .vec => |v| vecType(v.elem, v.len),
-        .mat => |m| matType(m.elem, m.cols, m.rows),
-    };
-}
-
-fn vecType(comptime elem: type, comptime n: usize) type {
-    var types: [n]type = undefined;
-    var attrs: [n]std.builtin.Type.Struct.FieldAttributes = undefined;
-    inline for (0..n) |i| {
-        types[i] = elem;
-        attrs[i] = .{};
-    }
-    return structType(vec_names[0..n], &types, &attrs);
-}
-
-fn matType(comptime elem: type, comptime cols: usize, comptime rows: usize) type {
-    const lanes = if (rows == 2) 2 else 4;
-    const column = vecType(elem, lanes);
-    const column_align = vecLayout(elem, rows).alignment;
-    var types: [cols]type = undefined;
-    var attrs: [cols]std.builtin.Type.Struct.FieldAttributes = undefined;
-    inline for (0..cols) |c| {
-        types[c] = column;
-        attrs[c] = .{ .@"align" = column_align };
-    }
-    return structType(mat_names[0..cols], &types, &attrs);
-}
-
 fn structType(
     comptime names: []const [:0]const u8,
     comptime types: []const type,
@@ -283,20 +264,26 @@ pub fn writeBytes(buf: []u8, item: anytype) void {
     const kind = comptime kindOf(T, "std140.writeBytes");
     switch (kind) {
         .scalar => writeScalar(buf, item),
-        .vec => |v| switch (@typeInfo(T)) {
-            .array => inline for (0..v.len) |i| writeScalar(buf[i * @sizeOf(v.elem) ..], item[i]),
-            .@"struct" => |s| inline for (0..v.len) |i| writeScalar(buf[i * @sizeOf(v.elem) ..], @field(item, s.field_names[i])),
-            else => unreachable,
+        .vec => |v| {
+            inline for (0..v.len) |i| {
+                const component = switch (@typeInfo(T)) {
+                    .array => item[i],
+                    .@"struct" => |s| @field(item, s.field_names[i]),
+                    else => unreachable,
+                };
+                writeScalar(buf[i * @sizeOf(v.elem) ..], component);
+            }
         },
         .mat => |m| {
-            const matrix: [m.cols][m.rows]m.elem = switch (@typeInfo(T)) {
+            const columns = switch (@typeInfo(T)) {
                 .array => item,
                 .@"struct" => |s| @field(item, s.field_names[0]),
                 else => unreachable,
             };
             const stride = matLayout(m.elem, m.cols, m.rows).alignment;
-            inline for (matrix, 0..) |column, c| {
-                inline for (column, 0..) |component, r| {
+            inline for (columns, 0..) |column, c| {
+                const comps: [m.rows]m.elem = column;
+                inline for (comps, 0..) |component, r| {
                     writeScalar(buf[c * stride + r * @sizeOf(m.elem) ..], component);
                 }
             }
@@ -310,7 +297,6 @@ fn writeScalar(buf: []u8, value: anytype) void {
     @memcpy(buf[0..bytes.len], &bytes);
 }
 
-// ImgParams
 pub fn layoutStruct(maybe_buf: ?[]u8, s: anytype) !usize {
     var i: usize = 0;
     var struct_alignment: usize = 0;

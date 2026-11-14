@@ -148,8 +148,8 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod_handle: api.ModuleHandle) !void {
         .white = api.math.Vec4.one,
         .white_balance = api.math.Vec4.one,
         .orientation = .normal,
-        .rec2020_from_cam = api.math.Mat3.identity,
-        .xyz_d65_from_cam = api.math.Mat3.identity,
+        .rec2020_from_cam = api.math.Mat3.identity.toVectors(),
+        .xyz_d65_from_cam = api.math.Mat3.identity.toVectors(),
     };
 }
 

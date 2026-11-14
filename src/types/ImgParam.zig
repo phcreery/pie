@@ -28,15 +28,10 @@ pub const ImgParams = struct {
     // color filter array multipliers
     // cfa: CFA,
 
-    // rec2020_from_cam: [3][3]f32,
-
-    // sRGB <- camera color space conversion matrix (temporary for now)
-    // srgb_from_cam: [3][3]f32,
-
-    rec2020_from_cam: math.Mat3,
+    rec2020_from_cam: math.Mat3.asVectors,
 
     // XYZ <- camera color space conversion matrix. XYZ is in D65 white point, linear. Similar to Adobe DNG ColorMatrix2, but with the two green channels collapsed into one.
-    xyz_d65_from_cam: math.Mat3,
+    xyz_d65_from_cam: math.Mat3.asVectors,
 
     pub fn print(
         self: *ImgParams,
@@ -68,14 +63,14 @@ pub const ImgParams = struct {
         //     self.srgb_from_cam[2][0], self.srgb_from_cam[2][1], self.srgb_from_cam[2][2],
         // });
         try writer.print("rec2020_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
-            self.rec2020_from_cam.fields[0][0], self.rec2020_from_cam.fields[0][1], self.rec2020_from_cam.fields[0][2],
-            self.rec2020_from_cam.fields[1][0], self.rec2020_from_cam.fields[1][1], self.rec2020_from_cam.fields[1][2],
-            self.rec2020_from_cam.fields[2][0], self.rec2020_from_cam.fields[2][1], self.rec2020_from_cam.fields[2][2],
+            self.rec2020_from_cam[0][0], self.rec2020_from_cam[0][1], self.rec2020_from_cam[0][2],
+            self.rec2020_from_cam[1][0], self.rec2020_from_cam[1][1], self.rec2020_from_cam[1][2],
+            self.rec2020_from_cam[2][0], self.rec2020_from_cam[2][1], self.rec2020_from_cam[2][2],
         });
         try writer.print("xyz_d65_from_cam:\n{d} {d} {d}\n{d} {d} {d}\n{d} {d} {d}\n", .{
-            self.xyz_d65_from_cam.fields[0][0], self.xyz_d65_from_cam.fields[0][1], self.xyz_d65_from_cam.fields[0][2],
-            self.xyz_d65_from_cam.fields[1][0], self.xyz_d65_from_cam.fields[1][1], self.xyz_d65_from_cam.fields[1][2],
-            self.xyz_d65_from_cam.fields[2][0], self.xyz_d65_from_cam.fields[2][1], self.xyz_d65_from_cam.fields[2][2],
+            self.xyz_d65_from_cam[0][0], self.xyz_d65_from_cam[0][1], self.xyz_d65_from_cam[0][2],
+            self.xyz_d65_from_cam[1][0], self.xyz_d65_from_cam[1][1], self.xyz_d65_from_cam[1][2],
+            self.xyz_d65_from_cam[2][0], self.xyz_d65_from_cam[2][1], self.xyz_d65_from_cam[2][2],
         });
     }
 };
@@ -92,31 +87,34 @@ test "layoutStruct packs ImgParams as its std140 GPU view" {
         .white = math.Vec4.new(1.1, 1.2, 1.3, 1.4),
         .white_balance = math.Vec4.new(2.1, 2.2, 2.3, 2.4),
         .orientation = .rotate90CW,
-        .rec2020_from_cam = rec2020,
-        .xyz_d65_from_cam = xyz,
+        .rec2020_from_cam = rec2020.toVectors(),
+        .xyz_d65_from_cam = xyz.toVectors(),
     };
 
-    var buf: [@sizeOf(ImgParamsGpu)]u8 = @splat(0);
-    try std.testing.expectEqual(@sizeOf(ImgParamsGpu), try std140.layoutStruct(&buf, params));
+    // The GPU matrix type is `[3]@Vector(3, f32)`, which native code cannot
+    // place in an extern struct. `Columns` has the same bytes.
+    const Expected = extern struct {
+        black: math.Vec4 align(16),
+        white: math.Vec4 align(16),
+        white_balance: math.Vec4 align(16),
+        orientation: Orientation,
+        rec2020_from_cam: math.Mat3.Columns align(16),
+        xyz_d65_from_cam: math.Mat3.Columns align(16),
+    };
+
+    var buf: [@sizeOf(Expected)]u8 = @splat(0);
+    try std.testing.expectEqual(@sizeOf(Expected), try std140.layoutStruct(&buf, params));
 
     // Zeroed so the struct's padding (vec4 `w`, 16-byte matrix padding) matches
     // the untouched padding bytes the packer leaves behind.
-    var expected: ImgParamsGpu = undefined;
+    var expected: Expected = undefined;
     @memset(std.mem.asBytes(&expected), 0);
-    expected.black = .{ .x = 0.1, .y = 0.2, .z = 0.3, .w = 0.4 };
-    expected.white = .{ .x = 1.1, .y = 1.2, .z = 1.3, .w = 1.4 };
-    expected.white_balance = .{ .x = 2.1, .y = 2.2, .z = 2.3, .w = 2.4 };
-    expected.orientation = .rotate90CW;
-    expected.rec2020_from_cam = .{
-        .c0 = .{ .x = rec2020.fields[0][0], .y = rec2020.fields[0][1], .z = rec2020.fields[0][2], .w = 0 },
-        .c1 = .{ .x = rec2020.fields[1][0], .y = rec2020.fields[1][1], .z = rec2020.fields[1][2], .w = 0 },
-        .c2 = .{ .x = rec2020.fields[2][0], .y = rec2020.fields[2][1], .z = rec2020.fields[2][2], .w = 0 },
-    };
-    expected.xyz_d65_from_cam = .{
-        .c0 = .{ .x = xyz.fields[0][0], .y = xyz.fields[0][1], .z = xyz.fields[0][2], .w = 0 },
-        .c1 = .{ .x = xyz.fields[1][0], .y = xyz.fields[1][1], .z = xyz.fields[1][2], .w = 0 },
-        .c2 = .{ .x = xyz.fields[2][0], .y = xyz.fields[2][1], .z = xyz.fields[2][2], .w = 0 },
-    };
+    expected.black = params.black;
+    expected.white = params.white;
+    expected.white_balance = params.white_balance;
+    expected.orientation = params.orientation;
+    expected.rec2020_from_cam = rec2020.toStruct();
+    expected.xyz_d65_from_cam = xyz.toStruct();
 
     try std.testing.expectEqualSlices(u8, std.mem.asBytes(&expected), &buf);
 }

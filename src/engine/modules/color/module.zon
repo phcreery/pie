@@ -4,7 +4,7 @@
     .params = .{
         // .{ .name = "wb_temp", .len = 1, .typ = .f32 },
         // .{ .name = "wb_tint", .len = 1, .typ = .f32 },
-        .{ .name = "wb_mode", .len = 1, .typ = .enum_u32 },
+        .{ .name = "wb_mode", .len = 1, .typ = .enum_u32, .enum_names = .{ "cam_mul", "cat", "vkdt" } },
         .{ .name = "wb_coeff", .len = 3, .typ = .f32 },
     },
     .params_ui = .{

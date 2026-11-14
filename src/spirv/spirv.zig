@@ -20,84 +20,70 @@ pub fn coord() Vec2u32 {
     return @as(Vec2u32, .{ global_invocation_id[0], global_invocation_id[1] });
 }
 
-/// Comptime check that a shader params struct `T` has the same shape as the
-/// GPU-visible params declared by `module_desc`: one field per param, in
-/// declaration order, with matching names and element types.
-///
-/// `str` params are CPU-only and never enter the params buffer, so they are
-/// skipped. This is what makes `getParams` safe: the engine packs params in
-/// declaration order, so any field count/order/type drift silently reads the
-/// wrong bytes.
-pub fn assertParamsShape(comptime module_desc: ModuleDesc, comptime T: type) void {
-    comptime {
-        switch (@typeInfo(T)) {
-            .@"struct" => {},
-            else => @compileError("shader params type must be a struct, got '" ++ @typeName(T) ++ "'"),
-        }
-
-        const field_names = std.meta.fieldNames(T);
-        const info = @typeInfo(T);
-        const field_types = info.@"struct".field_types;
-
-        var field_i: usize = 0;
-        for (module_desc.params) |param| {
-            if (param.typ == .str) continue;
-
-            if (field_i >= field_types.len) {
-                @compileError(@typeName(T) ++ " is missing a field for module param '" ++ param.name ++ "'");
-            }
-            const name = field_names[field_i];
-
-            if (!std.mem.eql(u8, name, param.name)) {
-                @compileError("shader params field '" ++ name ++ "' does not match module param '" ++ param.name ++ "'");
-            }
-
-            const expected: type = switch (param.typ) {
-                .f32 => switch (param.len) {
-                    1 => f32,
-                    2 => [2]f32,
-                    3 => [3]f32,
-                    4 => [4]f32,
-                    else => @compileError("unsupported f32 param length for '" ++ param.name ++ "'"),
-                },
-                .i32 => switch (param.len) {
-                    1 => i32,
-                    else => @compileError("unsupported i32 param length for '" ++ param.name ++ "'"),
-                },
-                .str => unreachable,
-                .enum_u32 => u32, // enums are represented as u32 on the CPU side
-            };
-
-            var actual = field_types[field_i];
-            if (@typeInfo(actual) == .@"enum") {
-                actual = u32;
-            }
-            if (actual != expected) {
-                @compileError("shader params field '" ++ name ++ "' is '" ++ @typeName(actual) ++ "' but module param '" ++ param.name ++ "' is '" ++ @typeName(expected) ++ "'");
-            }
-
-            field_i += 1;
-        }
-
-        if (field_i != field_types.len) {
-            @compileError(@typeName(T) ++ " has more fields than the GPU-visible module params");
-        }
+/// Convert ModuleDesc to the GPU params struct type.
+pub fn GpuParams(comptime module_desc: ModuleDesc) type {
+    const n = module_desc.params.len;
+    var names: [n][:0]const u8 = undefined;
+    var field_types: [n]type = undefined;
+    var attrs: [n]std.builtin.Type.Struct.FieldAttributes = @splat(.{});
+    var len: usize = 0;
+    for (module_desc.params) |param| {
+        if (param.typ == .str) continue;
+        names[len] = nameZ(param.name);
+        field_types[len] = paramType(param);
+        len += 1;
     }
+    const Cpu = @Struct(.auto, null, names[0..len], field_types[0..len], attrs[0..len]);
+    return types.std140.GpuStruct(Cpu);
 }
 
-pub fn getParams(comptime module_desc: ModuleDesc, T: type) *addrspace(.storage_buffer) T {
-    assertParamsShape(module_desc, T);
-    return @extern(*addrspace(.storage_buffer) T, .{
+/// The shader type of `param`. Its std140 layout is the layout the engine packs.
+fn paramType(comptime param: types.ModuleApi.ParamDesc) type {
+    const Elem = switch (param.typ) {
+        .f32 => f32,
+        .i32 => i32,
+        .enum_u32 => enumType(param),
+        .str => unreachable,
+    };
+    return if (param.len == 1) Elem else [param.len]Elem;
+}
+
+fn enumType(comptime param: types.ModuleApi.ParamDesc) type {
+    if (param.enum_names.len == 0) {
+        @compileError("enum_u32 param '" ++ param.name ++ "' has no enum_names");
+    }
+    var values: [param.enum_names.len]u32 = undefined;
+    for (&values, 0..) |*value, i| value.* = @intCast(i);
+    return @Enum(u32, .exhaustive, param.enum_names, &values);
+}
+
+fn nameZ(comptime name: []const u8) [:0]const u8 {
+    const z = name ++ "\x00";
+    return z[0..name.len :0];
+}
+
+pub fn getParams(comptime module_desc: ModuleDesc) *addrspace(.storage_buffer) GpuParams(module_desc) {
+    return @extern(*addrspace(.storage_buffer) GpuParams(module_desc), .{
         .name = "params",
         .decoration = .{ .descriptor = .{ .set = 0, .binding = 0 } },
     });
 }
 
 /// `T` must be the std140 view of the CPU struct: `types.ImgParamsGpu`.
+/// A uniform block requires every array stride to be a multiple of 16.
 pub fn getImgParams(comptime module_desc: ModuleDesc, comptime T: type) *addrspace(.uniform) const T {
     comptime {
         if (T != @import("types").ImgParamsGpu) {
             @compileError("getImgParams expects types.ImgParamsGpu, got '" ++ @typeName(T) ++ "'");
+        }
+        const info = @typeInfo(T).@"struct";
+        for (info.field_types, info.field_names) |F, name| {
+            if (@typeInfo(F) != .array) continue;
+            const child = @typeInfo(F).array.child;
+            const stride = std.mem.alignForward(usize, @sizeOf(child), @alignOf(child));
+            if (stride % 16 != 0) {
+                @compileError("uniform field '" ++ name ++ "' has an array stride that is not a multiple of 16. Use a vector struct.");
+            }
         }
     }
     return @extern(*addrspace(.uniform) const T, .{

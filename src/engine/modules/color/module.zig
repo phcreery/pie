@@ -43,7 +43,7 @@ pub fn commitParams(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
     if (is_auto) {
         var effective_wb_gain = Vec3.one;
         if (m.img_param) |img_param| {
-            effective_wb_gain = wbColorspaceConvert(img_param.xyz_d65_from_cam, img_param.white_balance.swizzle("xyz"));
+            effective_wb_gain = wbColorspaceConvert(Mat3.fromVectors(img_param.xyz_d65_from_cam), img_param.white_balance.swizzle("xyz"));
         }
         try api.initParam(pipe, mod, "wb_coeff", effective_wb_gain.toArray());
     }

@@ -615,6 +615,7 @@ pub fn as(comptime Real: type) type {
 
         /// 3 by 3 matrix type.
         pub const Mat3 = extern struct {
+            pub const asVectors: type = [3]@Vector(3, Real);
             const Self = @This();
 
             fields: [3][3]Real, // [row][col]
@@ -636,6 +637,41 @@ pub fn as(comptime Real: type) type {
             /// Row-major `[row][col]` view of the matrix.
             pub fn toArray(m: Self) [3][3]Real {
                 return m.fields;
+            }
+
+            /// `c0`..`c2` columns. Column `cN` holds row `N`.
+            pub const Columns = extern struct { c0: Vec4, c1: Vec4, c2: Vec4 };
+
+            /// Columns view of the matrix.
+            pub fn toStruct(m: Self) Columns {
+                return .{
+                    .c0 = .{ .x = m.fields[0][0], .y = m.fields[0][1], .z = m.fields[0][2], .w = 0 },
+                    .c1 = .{ .x = m.fields[1][0], .y = m.fields[1][1], .z = m.fields[1][2], .w = 0 },
+                    .c2 = .{ .x = m.fields[2][0], .y = m.fields[2][1], .z = m.fields[2][2], .w = 0 },
+                };
+            }
+
+            /// Builds a matrix from columns. Column `cN` holds row `N`.
+            pub fn fromStruct(columns: anytype) Self {
+                return .{ .fields = .{
+                    .{ columns.c0.x, columns.c0.y, columns.c0.z },
+                    .{ columns.c1.x, columns.c1.y, columns.c1.z },
+                    .{ columns.c2.x, columns.c2.y, columns.c2.z },
+                } };
+            }
+
+            /// Rows as vectors. Row `i` is element `i`.
+            pub fn toVectors(m: Self) [3]@Vector(3, Real) {
+                return .{ m.fields[0], m.fields[1], m.fields[2] };
+            }
+
+            /// Builds a matrix from row vectors. Row `i` is element `i`.
+            pub inline fn fromVectors(rows: anytype) Self {
+                return .{ .fields = .{
+                    .{ rows[0][0], rows[0][1], rows[0][2] },
+                    .{ rows[1][0], rows[1][1], rows[1][2] },
+                    .{ rows[2][0], rows[2][1], rows[2][2] },
+                } };
             }
 
             /// transposes the matrix.

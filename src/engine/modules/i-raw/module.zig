@@ -165,8 +165,8 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         ),
         .white_balance = Vec4.fromArray(raw_image.wb_coeffs),
         .orientation = orientation,
-        .rec2020_from_cam = computeRec2020FromCam(xyz_d65_from_cam),
-        .xyz_d65_from_cam = xyz_d65_from_cam,
+        .rec2020_from_cam = computeRec2020FromCam(xyz_d65_from_cam).toVectors(),
+        .xyz_d65_from_cam = xyz_d65_from_cam.toVectors(),
     };
 
     var stdout_buffer: [4096]u8 = undefined;

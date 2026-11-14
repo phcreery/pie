@@ -16,15 +16,7 @@ const Mat3 = math.Mat3;
 const module_zon: shd.ModuleDesc = @import("module.zon");
 const node_zon: shd.NodeDesc = @import("node.color.zon");
 
-const Params = extern struct {
-    // wb_temp: f32,
-    // wb_tint: f32,
-    // White-balance gain in linear Rec.2020, green-normalized.
-    wb_mode: enum(u32) { cam_mul, cat, vkdt },
-    wb_coeff: [3]f32 align(16),
-};
-
-const params = shd.getParams(module_zon, Params);
+const params = shd.getParams(module_zon);
 const img_params = shd.getImgParams(module_zon, ImgParams);
 const input_image = shd.getImageFromZon(node_zon, "input");
 const output_image = shd.getImageFromZon(node_zon, "output");
@@ -54,15 +46,6 @@ inline fn cat16(rec2020_d65: Vec3, rec2020_src: Vec3, rec2020_dst: Vec3) Vec3 {
     return math.matrices.rec2020_from_xyz_d65.mul(M16i).mulVec(cl);
 }
 
-inline fn decodeColour(rgb_cam: Vec3) Vec3 {
-    const m = &img_params.rec2020_from_cam;
-    return Mat3.fromArray(.{
-        .{ m.c0.x, m.c0.y, m.c0.z },
-        .{ m.c1.x, m.c1.y, m.c1.z },
-        .{ m.c2.x, m.c2.y, m.c2.z },
-    }).mulVec(rgb_cam);
-}
-
 export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
     const px = shd.imageFetch(input_image, coord);
@@ -70,7 +53,8 @@ export fn main() callconv(shd.call_conv) void {
     const rgb_cam = Vec3.new(px.x, px.y, px.z);
 
     // cam -> rgb
-    var rgb_rec2020_linear = decodeColour(rgb_cam);
+    const rec2020_from_cam = Mat3.fromVectors(&img_params.rec2020_from_cam);
+    var rgb_rec2020_linear = rec2020_from_cam.mulVec(rgb_cam);
 
     // whitebalance
     const wb_gain = Vec3.fromArray(&params.wb_coeff);

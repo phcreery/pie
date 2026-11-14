@@ -38,8 +38,8 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .black = api.math.Vec4.new(1.0, 2.0, 3.0, 4.0),
         .white_balance = api.math.Vec4.one,
         .orientation = .normal,
-        .rec2020_from_cam = api.math.Mat3.identity,
-        .xyz_d65_from_cam = api.math.Mat3.identity,
+        .rec2020_from_cam = api.math.Mat3.identity.toVectors(),
+        .xyz_d65_from_cam = api.math.Mat3.identity.toVectors(),
     };
 }
 

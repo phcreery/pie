@@ -14,14 +14,7 @@ const Vec3 = math.Vec3;
 const module_zon: shd.ModuleDesc = @import("module.zon");
 const node_zon: shd.NodeDesc = @import("node.filmcurv.zon");
 
-const Params = extern struct {
-    brightness: f32,
-    contrast: f32,
-    bias: f32,
-    colormode: i32,
-};
-
-const params = shd.getParams(module_zon, Params);
+const params = shd.getParams(module_zon);
 const input_image = shd.getImageFromZon(node_zon, "input");
 const output_image = shd.getImageFromZon(node_zon, "output");
 

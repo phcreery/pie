@@ -17,6 +17,8 @@ pub const ParamDesc = struct {
     name: []const u8,
     len: u32,
     typ: ParamType,
+    /// Names of the `enum_u32` values, in value order.
+    enum_names: []const []const u8 = &.{},
 };
 
 pub const ShaderTypeEnum = enum {

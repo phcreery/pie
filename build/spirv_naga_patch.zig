@@ -72,6 +72,7 @@ pub fn main(init: std.process.Init) !void {
         // The usual trigger is binding a comptime field name from
         // `@typeInfo(T).@"struct".field_names`: use an index loop and the
         // inline `@typeInfo(...).field_names[i]` expression instead.
+        // see https://github.com/gfx-rs/wgpu/issues/8742
         if (op == OP_COPY_LOGICAL) {
             std.debug.print("spirv-naga-patch: {s}: OpCopyLogical is not supported by naga (needs SPIR-V 1.4; we target 1.1)\n", .{in_path});
             return error.NagaUnsupportedOpCopyLogical;

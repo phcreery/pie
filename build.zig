@@ -403,6 +403,21 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     //     });
     // } else {
     try buildNative(b, mod_app);
+
+    // This is where the interesting part begins.
+    // As you can see we are re-defining the same executable but
+    // we're binding it to a dedicated build step.
+    const exe_check = b.addExecutable(.{
+        .name = "foo",
+        .root_module = mod_app,
+    });
+    // There is no `b.installArtifact(exe_check);` here.
+
+    // Finally we add the "check" step which will be detected
+    // by ZLS and automatically enable Build-On-Save.
+    // If you copy this into your `build.zig`, make sure to rename 'foo'
+    const check = b.step("check", "Check if foo compiles");
+    check.dependOn(&exe_check.step);
 }
 
 fn buildNative(b: *Build, mod: *Build.Module) !void {
