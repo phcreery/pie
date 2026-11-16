@@ -90,7 +90,7 @@ test "rec2020 wbColorspaceConvert matches the color.ipynb reference" {
     // The param is the gain (reciprocal of the white), green-normalized: the
     // notebook's Rec.2020 "pre-WB" values. Raising a channel warms the image.
     const gain = wbColorspaceConvert(xyz_d65_from_cam, cam_mul);
-    try testing.expectApproxEqAbs(@as(f32, 0.8191874), gain[0], 1e-5);
-    try testing.expectApproxEqAbs(@as(f32, 1.0), gain[1], 1e-6);
-    try testing.expectApproxEqAbs(@as(f32, 1.3340929), gain[2], 1e-5);
+    try testing.expectApproxEqAbs(@as(f32, 0.8191874), gain.x, 1e-5);
+    try testing.expectApproxEqAbs(@as(f32, 1.0), gain.y, 1e-6);
+    try testing.expectApproxEqAbs(@as(f32, 1.3340929), gain.z, 1e-5);
 }

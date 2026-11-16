@@ -46,6 +46,9 @@ test "param change only re-runs the dirty module node and its downstream success
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "multiply"));
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "test-nop-glsl"));
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "sink"));
+    // one pipeline + bind group per compute node, built once
+    try std.testing.expectEqual(@as(usize, 2), pipeline.perf.n_pipelines_created orelse 0);
+    try std.testing.expectEqual(@as(usize, 2), pipeline.perf.n_bindings_created orelse 0);
 
     // ---- change 'adder' on multiply (does not affect sink output which expects 2x) ----
     // only multiply + downstream (nop-glsl, sink) should re-run; source must NOT.
@@ -56,6 +59,10 @@ test "param change only re-runs the dirty module node and its downstream success
     try std.testing.expectEqual(@as(u32, 2), runCount(&pipeline, "multiply")); // multiply must re-run
     try std.testing.expectEqual(@as(u32, 2), runCount(&pipeline, "test-nop-glsl")); // downstream must re-run
     try std.testing.expectEqual(@as(u32, 2), runCount(&pipeline, "sink")); // downstream must re-run
+    // a parameter edit rewrites the already-bound param buffer; it must not
+    // rebuild any pipeline or bind group
+    try std.testing.expectEqual(@as(usize, 0), pipeline.perf.n_pipelines_created orelse 0);
+    try std.testing.expectEqual(@as(usize, 0), pipeline.perf.n_bindings_created orelse 0);
 
     // ---- a param change that doesn't touch anything: same dirty count ----
     try pipeline.setModuleParam(mod_mult, "adder", f32, 6.0);
@@ -64,6 +71,9 @@ test "param change only re-runs the dirty module node and its downstream success
     try std.testing.expectEqual(@as(u32, 3), runCount(&pipeline, "multiply"));
     try std.testing.expectEqual(@as(u32, 3), runCount(&pipeline, "test-nop-glsl"));
     try std.testing.expectEqual(@as(u32, 3), runCount(&pipeline, "sink"));
+    // repeated drags keep hitting the cache
+    try std.testing.expectEqual(@as(usize, 0), pipeline.perf.n_pipelines_created orelse 0);
+    try std.testing.expectEqual(@as(usize, 0), pipeline.perf.n_bindings_created orelse 0);
 }
 
 test "changing a mid-chain param does not re-run upstream nodes" {
@@ -93,6 +103,8 @@ test "changing a mid-chain param does not re-run upstream nodes" {
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source"));
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "multiply"));
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "sink"));
+    try std.testing.expectEqual(@as(usize, 1), pipeline.perf.n_pipelines_created orelse 0);
+    try std.testing.expectEqual(@as(usize, 1), pipeline.perf.n_bindings_created orelse 0);
 
     // change adder on multiply; source (i-1234) must stay at 1 run
     try pipeline.setModuleParam(mod_mult, "adder", f32, 4.0);
@@ -101,6 +113,8 @@ test "changing a mid-chain param does not re-run upstream nodes" {
     try std.testing.expectEqual(@as(u32, 1), runCount(&pipeline, "source")); // source upstream not re-run
     try std.testing.expectEqual(@as(u32, 2), runCount(&pipeline, "multiply"));
     try std.testing.expectEqual(@as(u32, 2), runCount(&pipeline, "sink"));
+    try std.testing.expectEqual(@as(usize, 0), pipeline.perf.n_pipelines_created orelse 0);
+    try std.testing.expectEqual(@as(usize, 0), pipeline.perf.n_bindings_created orelse 0);
 }
 
 test "swap-roi output change refreshes connector texture and re-runs downstream" {
@@ -165,6 +179,11 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
     };
     try std.testing.expectEqual(@as(u32, 4016), second_roi.w); // swapped
     try std.testing.expectEqual(@as(u32, 6016), second_roi.h);
+
+    // the ROI change replaced a connector texture, which must invalidate the
+    // cached pipelines/bind groups that referenced it
+    try std.testing.expect((pipeline.perf.n_pipelines_created orelse 0) > 0);
+    try std.testing.expect((pipeline.perf.n_bindings_created orelse 0) > 0);
 
     // sink (o-display) must have re-run into the new texture
     try std.testing.expect(runCount(&pipeline, "o-display") >= 2);

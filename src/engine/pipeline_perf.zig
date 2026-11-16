@@ -26,6 +26,8 @@ pub const PerfMetrics = struct {
 
     n_nodes_ran: ?usize,
     n_connector_textures_created: ?usize,
+    n_pipelines_created: ?usize,
+    n_bindings_created: ?usize,
 
     number_of_modules: ?usize,
     number_of_nodes: ?usize,
@@ -48,6 +50,8 @@ pub const PerfMetrics = struct {
             .download_buffer_usage_size_bytes = null,
             .n_nodes_ran = null,
             .n_connector_textures_created = null,
+            .n_pipelines_created = null,
+            .n_bindings_created = null,
             .number_of_modules = null,
             .number_of_nodes = null,
             .number_of_connectors = null,
@@ -119,6 +123,8 @@ pub const PerfMetrics = struct {
     pub fn resetCounters(self: *PerfMetrics) void {
         self.n_nodes_ran = null;
         self.n_connector_textures_created = null;
+        self.n_pipelines_created = null;
+        self.n_bindings_created = null;
     }
 
     /// Count one dispatch of `node_handle`: bumps the per-run total and this
@@ -148,6 +154,24 @@ pub const PerfMetrics = struct {
             n.* += 1;
         } else {
             self.n_connector_textures_created = 1;
+        }
+    }
+
+    /// Count one `gpu.ComputePipeline.init` for a node this run.
+    pub fn recordPipelineCreated(self: *PerfMetrics) void {
+        if (self.n_pipelines_created) |*n| {
+            n.* += 1;
+        } else {
+            self.n_pipelines_created = 1;
+        }
+    }
+
+    /// Count one `gpu.Bindings.init` for a node this run.
+    pub fn recordBindingsCreated(self: *PerfMetrics) void {
+        if (self.n_bindings_created) |*n| {
+            n.* += 1;
+        } else {
+            self.n_bindings_created = 1;
         }
     }
 
@@ -206,6 +230,12 @@ pub const PerfMetrics = struct {
             @as(f64, @floatFromInt(n_connector_textures_created)) / @as(f64, @floatFromInt(self.number_of_connectors orelse 1)) * 100.0,
             n_connector_textures_created,
             self.number_of_connectors orelse 0,
+        });
+        printFn(" {d}/{d} pipelines, {d}/{d} bind groups created", .{
+            self.n_pipelines_created orelse 0,
+            self.number_of_nodes orelse 0,
+            self.n_bindings_created orelse 0,
+            self.number_of_nodes orelse 0,
         });
         printFn(" {d} modules", .{self.number_of_modules orelse 0});
         printFn(" {d} nodes", .{self.number_of_nodes orelse 0});

@@ -92,7 +92,8 @@ pub const Pipeline = struct {
     download_fba: ?gpu.Buffer.Allocator,
 
     module_pool: ModulePool,
-    module_name_map: std.StringHashMap(ModuleHandle), // stores mapping of name:id to handle, ex. "i-raw:01"
+    /// stores mapping of name:id to handle, ex. "i-raw:01"
+    module_name_map: std.StringHashMap(ModuleHandle),
     module_execution_order: std.ArrayList(ModuleHandle),
 
     repo: Modules.Repository,
@@ -106,6 +107,9 @@ pub const Pipeline = struct {
 
     rerouted: bool = true,
     dirty: bool = true,
+
+    /// Bumped whenever a resource bound by a node is replaced or the node set is rebuilt
+    alloc_epoch: u32 = 0,
 
     history: PipelineHistory,
 
@@ -673,6 +677,8 @@ pub const Pipeline = struct {
         try self.perf.startRun();
 
         if (self.rerouted) {
+            self.bumpAllocEpoch();
+
             // A reroute tears down and reallocates every module's upload staging
             // and every sink's download staging. Reset the fixed-buffer
             // allocators first, otherwise each rebuild leaks its predecessor's
@@ -688,7 +694,6 @@ pub const Pipeline = struct {
                 const module = self.module_pool.getPtr(module_handle) catch return error.InvariantViolated;
                 try self.runModulePreCheck(module);
                 try self.runModuleInit(module_handle, module);
-                try self.runModuleCreateParamBufferHandles(module);
                 try self.runModuleModifyOut(module_handle, module);
                 try self.runModuleInitParamBuffers(module);
                 try self.runModuleAllocateUploadBufferForParams(module);
@@ -705,7 +710,7 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runNodesCompileShaders");
             try self.runNodesInitConnectorTextures(.{});
             try self.perf.timerLap("runNodesInitConnectorTextures");
-            try self.runNodesCreateBindings(.{ .only_dirty = true });
+            try self.runNodesCreateBindings();
             try self.perf.timerLap("runNodesCreateBindings");
             try self.runNodesAllocateStagingBuffersForTextures();
             try self.perf.timerLap("runNodesAllocateStagingBuffersForTextures");
@@ -721,7 +726,7 @@ pub const Pipeline = struct {
 
         if (self.dirty) {
             try self.runModulesModifyOut();
-            try self.perf.timerLap("runModulesModifyOut2");
+            try self.perf.timerLap("runModulesModifyOut");
             try self.runNodeSyncSockets();
             try self.perf.timerLap("runNodeSyncSockets");
             try self.runNodesInitConnectorTextures(.{ .refresh = true });
@@ -733,7 +738,7 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runModulesUploadParams");
             try self.runNodesUploadSource();
             try self.perf.timerLap("runNodesUploadSource");
-            try self.runNodesCreateBindings(.{ .only_dirty = true });
+            try self.runNodesCreateBindings();
             try self.perf.timerLap("runNodesCreateBindings2");
             try self.runNodes(.{ .only_dirty = true });
             try self.perf.timerLap("runNodes");
@@ -900,6 +905,16 @@ pub const Pipeline = struct {
         }
     }
 
+    /// Invalidate every node's cached compute pipeline + bind group.
+    ///
+    /// Call this next to every replacement of a resource a node binds
+    /// (connector texture, param buffer) and when nodes are rebuilt. It is
+    /// deliberately *not* called for parameter edits: those only rewrite the
+    /// contents of the already-bound buffer.
+    fn bumpAllocEpoch(self: *Pipeline) void {
+        self.alloc_epoch +%= 1;
+    }
+
     // build execution order of modules based on DAG
     fn runModulesBuildExecutionOrder(self: *Pipeline, arena: std.mem.Allocator) RunError!void {
         // clear previous execution order
@@ -934,14 +949,6 @@ pub const Pipeline = struct {
                 slog.err("module '{s}' init failed: {s}", .{ module.name, @errorName(err) });
                 return error.InvalidGraph;
             };
-        }
-    }
-
-    /// configure connectors only for module output connectors
-    fn runModuleCreateParamBufferHandles(self: *Pipeline, module: *Module) RunError!void {
-        module.img_param_handle = try self.param_buffer_pool.add(null);
-        if (module.params_len() != 0) {
-            module.param_handle = try self.param_buffer_pool.add(null);
         }
     }
 
@@ -1073,6 +1080,10 @@ pub const Pipeline = struct {
 
     fn runModuleInitParamBuffers(self: *Pipeline, module: *Module) RunError!void {
         const gpu_inst = self.gpu orelse return error.NoGpuInstance;
+        module.img_param_handle = try self.param_buffer_pool.add(null);
+        if (module.params_len() != 0) {
+            module.param_handle = try self.param_buffer_pool.add(null);
+        }
         if (module.type == .compute) {
             if (module.enabled == false) return;
             params: { // PARAM BUFFER INIT
@@ -1113,6 +1124,10 @@ pub const Pipeline = struct {
                     module.img_param_size = size_bytes;
                 }
             }
+
+            // this module's GPU buffers were replaced: any bind group that
+            // pointed at the previous ones is stale
+            self.bumpAllocEpoch();
         }
     }
 
@@ -1317,6 +1332,8 @@ pub const Pipeline = struct {
                         return error.GpuFailure;
                     };
                     conn.*.texture = texture;
+                    // the texture a node bound is gone: invalidate the cache
+                    self.bumpAllocEpoch();
                     if (options.refresh) {
                         // keep the node socket in sync so run_size/bindings use the new roi
                         var sock_ptr = node.getSocketPtr(output_sock.name) catch continue;
@@ -1357,114 +1374,127 @@ pub const Pipeline = struct {
         only_dirty: bool = false,
     };
 
-    fn runNodesCreateBindings(self: *Pipeline, options: RunNodesOptions) RunError!void {
+    /// Build the compute pipeline and bind groups for every node whose cached
+    /// generation predates the current allocation epoch.
+    fn runNodesCreateBindings(self: *Pipeline) RunError!void {
         const gpu_inst = self.gpu orelse return error.NoGpuInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = self.node_pool.getPtr(node_handle) catch return error.InvariantViolated;
 
-            // only rebuild bindings for dirty nodes (texture/param changed); path
-            // used by runNodes(.only_dirty=true) after connector refresh/param writes
-            if (options.only_dirty and !self.nodeIsDirty(node)) continue;
+            if (node.type != .compute) continue;
+            // cached pipeline + bind group still describe the bound resources
+            if (node.bindings_epoch == self.alloc_epoch) continue;
 
-            if (node.type == .compute) {
-                // CREATE DESCRIPTIONS FOR BIND GROUP LAYOUTS AND BIND GROUPS
-                var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
-                var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
-                const mod = self.module_pool.getPtr(node.*.mod) catch return error.InvariantViolated;
+            // drop the previous generation: the textures/buffers it references
+            // may be gone. Node.deinit does the same when the node is removed.
+            if (node.bindings) |*bindings| {
+                bindings.deinit();
+                node.bindings = null;
+            }
+            if (node.compute_pipeline) |*compute_pipeline| {
+                compute_pipeline.deinit();
+                node.compute_pipeline = null;
+            }
 
-                // if we have params, they will be on group 0 binding 0
-                // and the img_params will be on group 0 binding 1
-                // else, if we dont have params, img_params will be on group 0 binding 0
-                var group_0_bind_number: usize = 0;
+            // CREATE DESCRIPTIONS FOR BIND GROUP LAYOUTS AND BIND GROUPS
+            var layout_group_0_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+            var bind_group_0_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
+            const mod = self.module_pool.getPtr(node.*.mod) catch return error.InvariantViolated;
 
-                // params are on group 0
-                if (mod.*.param_handle) |param_handle| {
-                    const param_buffer = self.param_buffer_pool.getPtr(param_handle) catch return error.InvariantViolated;
-                    const param_buf = param_buffer.* orelse {
-                        slog.err("module '{s}' param buffer not allocated", .{mod.name});
-                        return error.InvalidGraph;
-                    };
-                    layout_group_0_binding[group_0_bind_number] = .{ .buffer = .{ .binding_type = .storage } };
-                    bind_group_0_binds[group_0_bind_number] = .{ .buffer = param_buf };
-                    group_0_bind_number += 1;
-                }
+            // if we have params, they will be on group 0 binding 0
+            // and the img_params will be on group 0 binding 1
+            // else, if we dont have params, img_params will be on group 0 binding 0
+            var group_0_bind_number: usize = 0;
 
-                // img params are also on group 0
-                if (mod.*.img_param_handle) |img_param_handle| {
-                    const img_param_buffer = self.param_buffer_pool.getPtr(img_param_handle) catch return error.InvariantViolated;
-                    const img_param_buf = img_param_buffer.* orelse {
-                        slog.err("module '{s}' img param buffer not allocated", .{mod.name});
-                        return error.InvalidGraph;
-                    };
-                    layout_group_0_binding[group_0_bind_number] = .{ .buffer = .{ .binding_type = .uniform } };
-                    bind_group_0_binds[group_0_bind_number] = .{ .buffer = img_param_buf };
-                    group_0_bind_number += 1;
-                }
-
-                // all sockets are on group 1
-                var layout_group_1_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
-                var bind_group_1_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
-                for (node.sockets, 0..) |socket, binding_number| {
-                    if (socket) |sock| {
-                        // prepare shader pipe connections
-                        layout_group_1_binding[binding_number] = gpu.BindGroupLayoutEntry{
-                            .texture = .{
-                                .access = sock.type.toComputePipelineBindGroupLayoutEntryAccess(),
-                                .format = sock.format,
-                            },
-                        };
-                        // slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
-
-                        const conn = self.getNodeSocketConnector(sock) orelse {
-                            slog.err("node '{s}' socket '{s}' has no connector", .{ node.name, sock.name });
-                            return error.InvalidGraph;
-                        };
-                        const texture = conn.*.texture orelse {
-                            slog.err("node '{s}' socket '{s}' connector has no texture", .{ node.name, sock.name });
-                            return error.InvalidGraph;
-                        };
-                        bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
-                            .texture = texture,
-                        };
-                        // slog.debug("Added bind group entry for binding {d} {any}", .{ binding_number, bind_group_1_binds[binding_number] });
-                    }
-                }
-
-                // CREATE SHADER PIPE AND BINDINGS
-                // ideally this would be done once on startup, but vkdt runs dt_graph_create_shader_module()
-                // with the spirv code for each node every frame in dt_graph_run_nodes_allocate()
-                slog.debug("Creating shader for node '{s}'", .{node.name});
-                var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
-                layout_group[0] = layout_group_0_binding;
-                layout_group[1] = layout_group_1_binding;
-
-                const shader = node.shader orelse {
-                    slog.err("node '{s}' has no compiled shader code", .{node.name});
+            // params are on group 0
+            if (mod.*.param_handle) |param_handle| {
+                const param_buffer = self.param_buffer_pool.getPtr(param_handle) catch return error.InvariantViolated;
+                const param_buf = param_buffer.* orelse {
+                    slog.err("module '{s}' param buffer not allocated", .{mod.name});
                     return error.InvalidGraph;
                 };
-                const pipeline = gpu.ComputePipeline.init(
-                    gpu_inst,
-                    shader,
-                    "main",
-                    layout_group,
-                ) catch |err| {
-                    slog.err("node '{s}' compute pipeline creation failed: {s}", .{ node.name, @errorName(err) });
-                    return error.GpuFailure;
-                };
-                node.compute_pipeline = pipeline;
-
-                slog.debug("Creating bindings for node '{s}'", .{node.name});
-                var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
-                bind_group[0] = bind_group_0_binds;
-                bind_group[1] = bind_group_1_binds;
-
-                const bindings = gpu.Bindings.init(gpu_inst, &pipeline, bind_group) catch |err| {
-                    slog.err("node '{s}' bindings creation failed: {s}", .{ node.name, @errorName(err) });
-                    return error.GpuFailure;
-                };
-                // defer bindings.deinit();
-                node.bindings = bindings;
+                layout_group_0_binding[group_0_bind_number] = .{ .buffer = .{ .binding_type = .storage } };
+                bind_group_0_binds[group_0_bind_number] = .{ .buffer = param_buf };
+                group_0_bind_number += 1;
             }
+
+            // img params are also on group 0
+            if (mod.*.img_param_handle) |img_param_handle| {
+                const img_param_buffer = self.param_buffer_pool.getPtr(img_param_handle) catch return error.InvariantViolated;
+                const img_param_buf = img_param_buffer.* orelse {
+                    slog.err("module '{s}' img param buffer not allocated", .{mod.name});
+                    return error.InvalidGraph;
+                };
+                layout_group_0_binding[group_0_bind_number] = .{ .buffer = .{ .binding_type = .uniform } };
+                bind_group_0_binds[group_0_bind_number] = .{ .buffer = img_param_buf };
+                group_0_bind_number += 1;
+            }
+
+            // all sockets are on group 1
+            var layout_group_1_binding: [gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+            var bind_group_1_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
+            for (node.sockets, 0..) |socket, binding_number| {
+                if (socket) |sock| {
+                    // prepare shader pipe connections
+                    layout_group_1_binding[binding_number] = gpu.BindGroupLayoutEntry{
+                        .texture = .{
+                            .access = sock.type.toComputePipelineBindGroupLayoutEntryAccess(),
+                            .format = sock.format,
+                        },
+                    };
+                    // slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
+
+                    const conn = self.getNodeSocketConnector(sock) orelse {
+                        slog.err("node '{s}' socket '{s}' has no connector", .{ node.name, sock.name });
+                        return error.InvalidGraph;
+                    };
+                    const texture = conn.*.texture orelse {
+                        slog.err("node '{s}' socket '{s}' connector has no texture", .{ node.name, sock.name });
+                        return error.InvalidGraph;
+                    };
+                    bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
+                        .texture = texture,
+                    };
+                    // slog.debug("Added bind group entry for binding {d} {any}", .{ binding_number, bind_group_1_binds[binding_number] });
+                }
+            }
+
+            // CREATE SHADER PIPE AND BINDINGS
+            // once per allocation epoch (vkdt's node allocate pass), not per
+            // frame; GPU.compileShader already caches the shader module.
+            slog.debug("Creating shader for node '{s}'", .{node.name});
+            var layout_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupLayoutEntry = @splat(null);
+            layout_group[0] = layout_group_0_binding;
+            layout_group[1] = layout_group_1_binding;
+
+            const shader = node.shader orelse {
+                slog.err("node '{s}' has no compiled shader code", .{node.name});
+                return error.InvalidGraph;
+            };
+            const compute_pipeline = gpu.ComputePipeline.init(
+                gpu_inst,
+                shader,
+                "main",
+                layout_group,
+            ) catch |err| {
+                slog.err("node '{s}' compute pipeline creation failed: {s}", .{ node.name, @errorName(err) });
+                return error.GpuFailure;
+            };
+            node.compute_pipeline = compute_pipeline;
+            self.perf.recordPipelineCreated();
+
+            slog.debug("Creating bindings for node '{s}'", .{node.name});
+            var bind_group: [gpu.MAX_BIND_GROUPS]?[gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
+            bind_group[0] = bind_group_0_binds;
+            bind_group[1] = bind_group_1_binds;
+
+            const bindings = gpu.Bindings.init(gpu_inst, &compute_pipeline, bind_group) catch |err| {
+                slog.err("node '{s}' bindings creation failed: {s}", .{ node.name, @errorName(err) });
+                return error.GpuFailure;
+            };
+            node.bindings = bindings;
+            self.perf.recordBindingsCreated();
+            node.bindings_epoch = self.alloc_epoch;
         }
     }
 
@@ -1783,6 +1813,10 @@ pub const Pipeline = struct {
                 };
             },
             .sink => {
+                // if last node is o-display, just return
+                if (std.mem.eql(u8, node.name, "o-display")) {
+                    return;
+                }
                 slog.debug("Enqueueing sink node '{s}' texture to buffer copy", .{node.name});
                 const connector = self.getNodeSocketConnector(node.sockets[0].?) orelse return error.InvalidGraph;
                 var tex = connector.*.texture orelse return error.InvalidGraph;

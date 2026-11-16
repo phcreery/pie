@@ -14,6 +14,12 @@ const slog = std.log.scoped(.gpu);
 
 bind_groups: [root.MAX_BIND_GROUPS]?wgpu.BindGroup,
 
+/// Texture views created for this bind group set, indexed by
+/// (bind group, binding). The bind group holds its own reference, but the
+/// handle returned by `createView` must still be released or the view (and the
+/// texture reference it carries) leaks.
+views: [root.MAX_BIND_GROUPS][root.MAX_BINDINGS]?wgpu.TextureView = @splat(@splat(null)),
+
 const Self = @This();
 
 pub const BindGroupEntry = struct {
@@ -30,7 +36,13 @@ pub fn init(
 
     // Even when the buffers are individually dropped, wgpu will keep the bind group and buffers
     // alive until the bind group itself is dropped.
-    var bind_groups: [root.MAX_BIND_GROUPS]?wgpu.BindGroup = @splat(null);
+    var self: Self = .{
+        .bind_groups = @splat(null),
+    };
+    // release any view created before a failure, otherwise they (and the
+    // textures they reference) outlive the dropped bind groups
+    errdefer self.deinit();
+
     for (bind_group_entries, 0..) |bind_group, bind_group_number| {
         var wgpu_bind_group_entries: [root.MAX_BINDINGS]wgpu.BindGroup.Entry = undefined;
         const bg = bind_group orelse continue;
@@ -38,9 +50,11 @@ pub fn init(
         for (bg, 0..) |bind_group_entry, bind_group_entry_number| {
             const bge = bind_group_entry orelse continue;
             if (bge.texture) |texture| {
+                const view = try texture.texture.createView(.{});
+                self.views[bind_group_number][bind_group_entry_number] = view;
                 wgpu_bind_group_entries[bind_group_entry_number] = .{
                     .binding = @intCast(bind_group_entry_number),
-                    .texture_view = try texture.texture.createView(.{}),
+                    .texture_view = view,
                 };
             } else if (bge.buffer) |buffer| {
                 if (buffer.buffer_size == 0) {
@@ -61,17 +75,25 @@ pub fn init(
             .layout = compute_pipeline.wgpu_bind_group_layouts[bind_group_number].?,
             .entries = wgpu_bind_group_entries[0..bind_count],
         });
-        errdefer wgpu_bind_group.deinit();
-        bind_groups[bind_group_number] = wgpu_bind_group;
+        self.bind_groups[bind_group_number] = wgpu_bind_group;
     }
-    return Self{
-        .bind_groups = bind_groups,
-    };
+    return self;
 }
 
 pub fn deinit(self: *Self) void {
+    // bind groups first: releasing them drops the references they hold on the
+    // views, so our own view handles are the only ones left
     for (self.bind_groups) |bind_group| {
         const bg = bind_group orelse continue;
         bg.deinit();
+    }
+    self.bind_groups = @splat(null);
+
+    for (&self.views) |*group| {
+        for (group) |*view| {
+            const v = view.* orelse continue;
+            v.deinit();
+            view.* = null;
+        }
     }
 }

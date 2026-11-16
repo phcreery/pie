@@ -22,6 +22,8 @@ shader: ?gpu.Shader = null,
 compute_pipeline: ?gpu.ComputePipeline = null,
 bindings: ?gpu.Bindings = null,
 
+bindings_epoch: ?u32 = null,
+
 const Self = @This();
 
 pub fn init(
@@ -63,9 +65,11 @@ pub fn init(
 pub fn deinit(self: *Self) void {
     if (self.bindings) |*bindings| {
         bindings.deinit();
+        self.bindings = null;
     }
     if (self.compute_pipeline) |*comp_pipe| {
         comp_pipe.deinit();
+        self.compute_pipeline = null;
     }
 }
 
