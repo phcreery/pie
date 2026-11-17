@@ -27,6 +27,8 @@ pub const AppState = struct {
     io: std.Io,
     /// thumbnail cache directory (owned)
     cache_dir: []u8,
+    /// print the pipeline performance report after every run (`--perf`)
+    perf_report: bool = false,
 
     // sokol
     pass_action: sg.PassAction,
@@ -41,11 +43,12 @@ pub const AppState = struct {
 
     const Self = @This();
 
-    fn init(allocator: std.mem.Allocator, io: std.Io, cache_dir: []u8) Self {
+    fn init(allocator: std.mem.Allocator, io: std.Io, cache_dir: []u8, perf_report: bool) Self {
         return .{
             .allocator = allocator,
             .io = io,
             .cache_dir = cache_dir,
+            .perf_report = perf_report,
             .pass_action = .{},
             // initted in the sokol callbacks below
             .gpu = undefined,
@@ -83,7 +86,7 @@ export fn init_fn(ptr: ?*anyopaque) void {
     state.gpu = pie.GPU.initExternal(state.allocator, state.io, ext_device, ext_queue) catch unreachable;
 
     // editing session (pipeline + blit resources + catalog) and the GUI
-    state.session = Session.init(state.allocator, state.io, &state.gpu, state.cache_dir) catch unreachable;
+    state.session = Session.init(state.allocator, state.io, &state.gpu, state.cache_dir, state.perf_report) catch unreachable;
     state.gui = GUI.init(state.allocator, state.io) catch |err| {
         std.log.err("failed to init the GUI: {s}", .{@errorName(err)});
         unreachable;
@@ -152,13 +155,33 @@ pub fn run(init: std.process.Init) !void {
     const allocator = util.allocator;
     // default Io implementation:
     const io = init.io;
+
+    var perf_report = false;
+    var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, init.gpa);
+    defer args.deinit();
+    _ = args.next(); // program name
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--perf")) {
+            perf_report = true;
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            std.debug.print(
+                \\usage: pie [--perf]
+                \\  --perf  print the pipeline performance report after every run
+                \\
+            , .{});
+            return;
+        } else {
+            std.log.warn("ignoring unknown argument '{s}' (try --help)", .{arg});
+        }
+    }
+
     // thumbnail cache lives under the user cache dir; keep it for the process
     const cache_dir = session.resolveCacheDir(allocator, init.environ_map) catch
         allocator.dupe(u8, ".pie-thumbs") catch unreachable;
     defer allocator.free(cache_dir);
 
     // Must outlive `sapp.run`: it is passed as user data to every callback.
-    var state: AppState = AppState.init(allocator, io, cache_dir);
+    var state: AppState = AppState.init(allocator, io, cache_dir, perf_report);
 
     const cout = console.console.UTF8ConsoleOutput.init();
     defer cout.deinit();

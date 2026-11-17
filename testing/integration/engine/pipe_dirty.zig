@@ -188,3 +188,48 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
     // sink (o-display) must have re-run into the new texture
     try std.testing.expect(runCount(&pipeline, "o-display") >= 2);
 }
+
+test "param staging and copies only cover modules whose params changed" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    var gpu_instance = try pie.gpu.GPU.init(allocator, io);
+    defer gpu_instance.deinit();
+
+    const config: P.PipelineConfig = .{
+        .upload_buffer_size_bytes = 1024,
+        .download_buffer_size_bytes = 1024,
+    };
+    var pipeline = try Pipeline.init(allocator, io, &gpu_instance, config);
+    defer pipeline.deinit();
+
+    const mod_i = try pipeline.addModule("test-i-1234", "01");
+    const mod_a = try pipeline.addModule("test-multiply", "01");
+    const mod_b = try pipeline.addModule("test-multiply", "02");
+    const mod_o = try pipeline.addModule("test-o-2468", "01");
+
+    try pipeline.connectModules(mod_i, "output", mod_a, "input");
+    try pipeline.connectModules(mod_a, "output", mod_b, "input");
+    try pipeline.connectModules(mod_b, "output", mod_o, "input");
+
+    // the sink asserts 2x; keep the product at 2 across both modules
+    try pipeline.setModuleParam(mod_a, "multiplier", f32, 2.0);
+    try pipeline.setModuleParam(mod_b, "multiplier", f32, 1.0);
+
+    // first run stages and copies both modules' params
+    try pipeline.run();
+    try std.testing.expectEqual(@as(usize, 2), pipeline.perf.n_param_uploads orelse 0);
+    try std.testing.expectEqual(@as(usize, 2), pipeline.perf.n_param_copies orelse 0);
+
+    // editing one module re-packs and re-copies only that module
+    try pipeline.setModuleParam(mod_a, "adder", f32, 1.0);
+    try pipeline.run();
+    try std.testing.expectEqual(@as(usize, 1), pipeline.perf.n_param_uploads orelse 0);
+    try std.testing.expectEqual(@as(usize, 1), pipeline.perf.n_param_copies orelse 0);
+
+    // and the other module likewise (the unused 'adder' keeps the sink at 2x)
+    try pipeline.setModuleParam(mod_b, "adder", f32, 1.0);
+    try pipeline.run();
+    try std.testing.expectEqual(@as(usize, 1), pipeline.perf.n_param_uploads orelse 0);
+    try std.testing.expectEqual(@as(usize, 1), pipeline.perf.n_param_copies orelse 0);
+}

@@ -59,7 +59,7 @@ pub const ModuleDef = struct {
     init: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
     deinit: ?*const fn (allocator: std.mem.Allocator, pipe: PipelineHandle, mod: ModuleHandle) void = null,
     modifyOut: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
-    commitParams: ?*const fn (pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) anyerror!void = null,
+    commitParams: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
     createNodes: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle) anyerror!void = null,
     readSource: ?*const fn (pipe: PipelineHandle, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
     writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: PipelineHandle, mod: ModuleHandle, mapped: *anyopaque) anyerror!void = null,
@@ -78,10 +78,12 @@ pub fn copyToStaging(mapped: *anyopaque, src: []const u8, width: u32, height: u3
     gpu.copyDenseToStaging(mapped, src, width, height, bpp);
 }
 
+// TODO: is this needed? it is mostly redundant to setParam
 pub fn initParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, value: anytype) !void {
     const mod = try pipe.module_pool.getPtr(mod_handle);
     const param = try mod.getParamPtr(param_name);
     try param.set(value);
+    mod.flags.params_dirty = true;
 }
 
 pub fn getParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type) !T {
@@ -92,7 +94,7 @@ pub fn getParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []co
 }
 
 pub fn setParam(pipe: PipelineHandle, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) !void {
-    try pipe.setModuleParam(mod_handle, param_name, T, value);
+    try pipe.setModuleParamNoRecord(mod_handle, param_name, T, value);
 }
 
 pub fn inheritSocket(pipe: PipelineHandle, mod: ModuleHandle, mod_socket_name: []const u8, node: NodeHandle, node_socket_name: []const u8) !void {

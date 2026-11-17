@@ -13,11 +13,17 @@ pub const PerfMetrics = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
 
+    /// Print the per-run report and collect the (more expensive) per-node
+    /// timings. Set from `PipelineConfig.perf_report`.
+    enabled: bool = false,
+
     start_time: std.Io.Timestamp,
     time_keys: std.ArrayList([]const u8),
     times: std.StringHashMap(u64),
 
     node_run_counts: std.AutoHashMap(pipeline.NodeHandle, u32),
+    /// CPU time spent enqueueing each node this run; cleared by `startRun`.
+    node_cpu_ns: std.AutoHashMap(pipeline.NodeHandle, NodeTiming),
 
     upload_buffer_size_bytes: ?usize,
     upload_buffer_usage_size_bytes: ?usize,
@@ -28,22 +34,32 @@ pub const PerfMetrics = struct {
     n_connector_textures_created: ?usize,
     n_pipelines_created: ?usize,
     n_bindings_created: ?usize,
+    n_param_uploads: ?usize,
+    n_img_param_uploads: ?usize,
+    n_param_copies: ?usize,
 
     number_of_modules: ?usize,
     number_of_nodes: ?usize,
     number_of_connectors: ?usize,
 
+    pub const NodeTiming = struct {
+        name: []const u8 = "",
+        ns: u64 = 0,
+    };
+
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io) !PerfMetrics {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, enabled: bool) !PerfMetrics {
         return PerfMetrics{
             .allocator = allocator,
             .io = io,
+            .enabled = enabled,
             // .timer = undefined,
             .start_time = .zero,
             .time_keys = try std.ArrayList([]const u8).initCapacity(allocator, 16),
             .times = std.StringHashMap(u64).init(allocator),
             .node_run_counts = std.AutoHashMap(pipeline.NodeHandle, u32).init(allocator),
+            .node_cpu_ns = std.AutoHashMap(pipeline.NodeHandle, NodeTiming).init(allocator),
             .upload_buffer_size_bytes = null,
             .upload_buffer_usage_size_bytes = null,
             .download_buffer_size_bytes = null,
@@ -52,6 +68,9 @@ pub const PerfMetrics = struct {
             .n_connector_textures_created = null,
             .n_pipelines_created = null,
             .n_bindings_created = null,
+            .n_param_uploads = null,
+            .n_img_param_uploads = null,
+            .n_param_copies = null,
             .number_of_modules = null,
             .number_of_nodes = null,
             .number_of_connectors = null,
@@ -61,6 +80,7 @@ pub const PerfMetrics = struct {
     pub fn deinit(self: *PerfMetrics) void {
         self.times.deinit();
         self.node_run_counts.deinit();
+        self.node_cpu_ns.deinit();
         self.time_keys.deinit(self.allocator);
     }
 
@@ -68,6 +88,7 @@ pub const PerfMetrics = struct {
     pub fn startRun(self: *PerfMetrics) !void {
         try self.timerStart();
         self.resetCounters();
+        self.node_cpu_ns.clearRetainingCapacity();
     }
 
     /// TIMER
@@ -125,11 +146,20 @@ pub const PerfMetrics = struct {
         self.n_connector_textures_created = null;
         self.n_pipelines_created = null;
         self.n_bindings_created = null;
+        self.n_param_uploads = null;
+        self.n_img_param_uploads = null;
+        self.n_param_copies = null;
     }
 
     /// Count one dispatch of `node_handle`: bumps the per-run total and this
-    /// node's lifetime counter.
-    pub fn recordNodeRun(self: *PerfMetrics, node_handle: pipeline.NodeHandle) !void {
+    /// node's lifetime counter, and accumulates the CPU time spent enqueueing
+    /// it (`cpu_ns`, from the stopwatch in `runNodes`).
+    pub fn recordNodeRun(
+        self: *PerfMetrics,
+        node_handle: pipeline.NodeHandle,
+        node_name: []const u8,
+        cpu_ns: u64,
+    ) !void {
         if (self.n_nodes_ran) |*n| {
             n.* += 1;
         } else {
@@ -137,6 +167,12 @@ pub const PerfMetrics = struct {
         }
         const entry = try self.node_run_counts.getOrPut(node_handle);
         entry.value_ptr.* = if (entry.found_existing) entry.value_ptr.* + 1 else 1;
+
+        if (self.enabled) {
+            const timing = try self.node_cpu_ns.getOrPut(node_handle);
+            if (!timing.found_existing) timing.value_ptr.* = .{ .name = node_name };
+            timing.value_ptr.ns += cpu_ns;
+        }
     }
 
     /// Number of times `node_handle` has been dispatched.
@@ -147,6 +183,7 @@ pub const PerfMetrics = struct {
     /// Drop the counter for a node that no longer exists.
     pub fn forgetNode(self: *PerfMetrics, node_handle: pipeline.NodeHandle) void {
         _ = self.node_run_counts.remove(node_handle);
+        _ = self.node_cpu_ns.remove(node_handle);
     }
 
     pub fn recordConnectorTextureAllocation(self: *PerfMetrics) void {
@@ -175,12 +212,42 @@ pub const PerfMetrics = struct {
         }
     }
 
+    /// Count one module whose parameter storage buffer was staged this run.
+    pub fn recordParamUpload(self: *PerfMetrics) void {
+        if (self.n_param_uploads) |*n| {
+            n.* += 1;
+        } else {
+            self.n_param_uploads = 1;
+        }
+    }
+
+    /// Count one module whose `ImgParams` uniform was staged this run.
+    pub fn recordImgParamUpload(self: *PerfMetrics) void {
+        if (self.n_img_param_uploads) |*n| {
+            n.* += 1;
+        } else {
+            self.n_img_param_uploads = 1;
+        }
+    }
+
+    /// Count one staging→GPU copy of a module's parameter buffer this run.
+    pub fn recordParamCopy(self: *PerfMetrics) void {
+        if (self.n_param_copies) |*n| {
+            n.* += 1;
+        } else {
+            self.n_param_copies = 1;
+        }
+    }
+
     /// Print the performance report.
     pub fn printReportPrintFn(comptime fmt: []const u8, args: anytype) void {
         std.debug.print(fmt ++ "\n", args);
     }
 
     pub fn printReport(self: *PerfMetrics) void {
+        // disabled unless `--perf` (PipelineConfig.perf_report) was requested
+        if (!self.enabled) return;
+
         // const printFn = std.debug.print;
         // const printFn = slog.info;
         const printFn = printReportPrintFn;
@@ -237,8 +304,36 @@ pub const PerfMetrics = struct {
             self.n_bindings_created orelse 0,
             self.number_of_nodes orelse 0,
         });
+        printFn(" {d} param uploads, {d} img_param uploads, {d} param copies", .{
+            self.n_param_uploads orelse 0,
+            self.n_img_param_uploads orelse 0,
+            self.n_param_copies orelse 0,
+        });
         printFn(" {d} modules", .{self.number_of_modules orelse 0});
         printFn(" {d} nodes", .{self.number_of_nodes orelse 0});
         printFn(" {d} connectors", .{self.number_of_connectors orelse 0});
+
+        // per-node stopwatch, sorted slowest first
+        if (self.node_cpu_ns.count() > 0) {
+            const Entry = struct { name: []const u8, ns: u64 };
+            var entries = std.ArrayList(Entry).initCapacity(self.allocator, self.node_cpu_ns.count()) catch return;
+            defer entries.deinit(self.allocator);
+            var node_it = self.node_cpu_ns.valueIterator();
+            while (node_it.next()) |timing| {
+                entries.appendAssumeCapacity(.{ .name = timing.name, .ns = timing.ns });
+            }
+            std.mem.sort(Entry, entries.items, {}, struct {
+                fn lessThan(_: void, a: Entry, b: Entry) bool {
+                    return a.ns > b.ns;
+                }
+            }.lessThan);
+            printFn(" Per-node CPU time:", .{});
+            for (entries.items) |entry| {
+                printFn("  {d: >8.3} ms  {s}", .{
+                    @as(f64, @floatFromInt(entry.ns)) / std.time.ns_per_ms,
+                    entry.name,
+                });
+            }
+        }
     }
 };

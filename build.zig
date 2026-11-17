@@ -432,6 +432,7 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
     b.installArtifact(exe);
     const exe_step = b.step("app", "Run pie app");
     const run_cmd = b.addRunArtifact(exe);
+    run_cmd.addPassthruArgs();
     run_cmd.step.dependOn(b.getInstallStep());
     exe_step.dependOn(&run_cmd.step);
 }

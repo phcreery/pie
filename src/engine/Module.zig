@@ -9,11 +9,6 @@ const slog = std.log.scoped(.mod);
 id: []const u8,
 name: []const u8,
 type: api.ModuleType,
-enabled: bool,
-
-dirty: bool = false,
-
-allocator: std.mem.Allocator,
 
 sockets: [api.MAX_SOCKETS]?Socket = @splat(null),
 params: [api.MAX_PARAMS_PER_MODULE]?Param = @splat(null),
@@ -39,6 +34,8 @@ img_param_mapped_slice_ptr: ?*anyopaque = null,
 img_param_offset: ?usize = null,
 img_param_size: ?usize = null,
 
+flags: Flags = .{},
+
 // module hooks, copied from the desc
 // https://github.com/hanatos/vkdt/blob/1921eabfa2c87b90042dee676d5d3e34d8cbd5e1/src/pipe/global.c#L106
 initParams: ?*const fn (pipe: *pipeline.Pipeline, mod: pipeline.ModuleHandle) anyerror!void = null,
@@ -52,14 +49,22 @@ writeSink: ?*const fn (allocator: std.mem.Allocator, io: std.Io, pipe: *pipeline
 
 const Self = @This();
 
+const Flags = packed struct {
+    enabled: bool = true,
+    dirty: bool = false,
+    params_dirty: bool = true,
+    params_staged: bool = false,
+    img_param_dirty: bool = true,
+    img_param_staged: bool = false,
+};
+
 pub fn initFromDef(allocator: std.mem.Allocator, id: []const u8, def: api.ModuleDef) !Self {
     const desc = def.desc;
     var self = Self{
-        .allocator = allocator,
         .id = try allocator.dupe(u8, id),
         .name = desc.name,
         .type = desc.type,
-        .enabled = true,
+        .flags = .{},
 
         // copy the declared metadata and interface into fixed-length runtime arrays
         .data = null,
@@ -89,11 +94,11 @@ pub fn initFromDef(allocator: std.mem.Allocator, id: []const u8, def: api.Module
     return self;
 }
 
-pub fn deinit(mod: *Self) void {
+pub fn deinit(mod: *Self, allocator: std.mem.Allocator) void {
     for (&mod.params) |*maybe_param| {
-        if (maybe_param.*) |*param| param.deinit(mod.allocator);
+        if (maybe_param.*) |*param| param.deinit(allocator);
     }
-    mod.allocator.free(mod.id);
+    allocator.free(mod.id);
 }
 
 // HELPER FUNCTIONS

@@ -60,8 +60,10 @@ pub const Session = struct {
         io: std.Io,
         gpu: *pie.GPU,
         cache_dir: []const u8,
+        perf_report: bool,
     ) !Self {
-        var pipeline = try pie.Pipeline.init(allocator, io, gpu, null);
+        const pipeline_config: pie.pipeline.PipelineConfig = .{ .perf_report = perf_report };
+        var pipeline = try pie.Pipeline.init(allocator, io, gpu, pipeline_config);
         errdefer pipeline.deinit();
 
         const dir = std.fs.path.dirname(input_filename) orelse ".";

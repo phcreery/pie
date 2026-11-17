@@ -62,6 +62,7 @@ pub const RunError = error{
 pub const PipelineConfig = struct {
     upload_buffer_size_bytes: ?usize = 75e6,
     download_buffer_size_bytes: ?usize = 75e6,
+    perf_report: bool = false,
 };
 
 pub const MAX_MODULES = 100;
@@ -144,8 +145,8 @@ pub const Pipeline = struct {
             }
         }
 
-        var module_pool: ModulePool = .init(allocator);
-        errdefer module_pool.deinit();
+        var module_pool: ModulePool = .empty;
+        errdefer module_pool.deinit(allocator);
 
         var module_name_map: std.StringHashMap(ModuleHandle) = .init(allocator);
         errdefer module_name_map.deinit();
@@ -156,17 +157,17 @@ pub const Pipeline = struct {
         var repo: Modules.Repository = try .init(allocator);
         errdefer repo.deinit();
 
-        var node_pool: NodePool = .init(allocator);
-        errdefer node_pool.deinit();
+        var node_pool: NodePool = .empty;
+        errdefer node_pool.deinit(allocator);
 
         var node_execution_order = try std.ArrayList(NodeHandle).initCapacity(allocator, 2);
         errdefer node_execution_order.deinit(allocator);
 
-        var connector_pool: ConnectorPool = .init(allocator);
-        errdefer connector_pool.deinit();
+        var connector_pool: ConnectorPool = .empty;
+        errdefer connector_pool.deinit(allocator);
 
-        var param_buffer_pool: ParamBufferPool = .init(allocator);
-        errdefer param_buffer_pool.deinit();
+        var param_buffer_pool: ParamBufferPool = .empty;
+        errdefer param_buffer_pool.deinit(allocator);
 
         const history: PipelineHistory = .init(allocator, io);
 
@@ -196,7 +197,7 @@ pub const Pipeline = struct {
 
             .param_buffer_pool = param_buffer_pool,
 
-            .perf = try .init(allocator, io),
+            .perf = try .init(allocator, io, config.perf_report),
         };
     }
 
@@ -214,11 +215,11 @@ pub const Pipeline = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.module_name_map.deinit();
-        self.module_pool.deinit();
+        self.module_pool.deinit(self.allocator);
         self.node_execution_order.deinit(self.allocator);
-        self.node_pool.deinit();
-        self.connector_pool.deinit();
-        self.param_buffer_pool.deinit();
+        self.node_pool.deinit(self.allocator);
+        self.connector_pool.deinit(self.allocator);
+        self.param_buffer_pool.deinit(self.allocator);
         self.history.deinit();
         self.perf.deinit();
         self.run_arena.deinit();
@@ -271,7 +272,7 @@ pub const Pipeline = struct {
         var module = try Module.initFromDef(self.allocator, id, module_def);
         try self.initOutputConnectorHandles(&module);
         self.rerouted = true;
-        const module_handle = try self.module_pool.add(module);
+        const module_handle = try self.module_pool.add(self.allocator, module);
 
         const fullname = try std.mem.concat(self.allocator, u8, &.{ module.name, ":", module.id });
 
@@ -285,7 +286,7 @@ pub const Pipeline = struct {
         var node = try Node.init(self, mod_handle, node_desc);
         try self.initOutputConnectorHandles(&node);
         self.rerouted = true;
-        return try self.node_pool.add(node);
+        return try self.node_pool.add(self.allocator, node);
     }
 
     pub fn setNodeSocketRoi(self: *Pipeline, node: NodeHandle, node_socket_name: []const u8, roi: ?ROI) OperationError!void {
@@ -497,7 +498,7 @@ pub const Pipeline = struct {
                         if (sock.type.direction() == .output) {
                             var this_sock = module.getSocketPtr(sock.name) catch return OperationError.InvalidSocket;
                             if (this_sock.connector_handle == null) {
-                                this_sock.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
+                                this_sock.connector_handle = try self.connector_pool.add(self.allocator, .initNull(sock.color_profile orelse .any));
                                 // slog.debug("Created output connector handle {any} for module '{s} > {s}'", .{ this_sock.connector_handle.?, module.name, sock.name });
                             }
                         }
@@ -511,7 +512,7 @@ pub const Pipeline = struct {
                         if (sock.type.direction() == .output) {
                             var this_sock = node.getSocketPtr(sock.name) catch return OperationError.InvalidSocket;
                             if (this_sock.connector_handle == null) {
-                                this_sock.connector_handle = try self.connector_pool.add(Connector.initNull(sock.color_profile orelse .any));
+                                this_sock.connector_handle = try self.connector_pool.add(self.allocator, .initNull(sock.color_profile orelse .any));
                                 // slog.debug("Created output connector handle {any} for node '{s} > {s}'", .{ this_sock.connector_handle.?, node.name, sock.name });
                             }
                             // NOTE: this most likely gets discarded when we copy the connector from the module to the node, but we need to create it here in case we do a node-to-node connection without a module in between
@@ -529,6 +530,11 @@ pub const Pipeline = struct {
     }
 
     pub fn setModuleParam(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) OperationError!void {
+        try self.setModuleParamNoRecord(mod_handle, param_name, T, value);
+        self.history.recordParamDelta(mod_handle, param_name) catch return OperationError.RecorderFailed;
+    }
+
+    pub fn setModuleParamNoRecord(self: *Pipeline, mod_handle: ModuleHandle, param_name: []const u8, T: type, value: T) OperationError!void {
         const mod = self.module_pool.getPtr(mod_handle) catch {
             slog.err("setModuleParam: dead module handle {any}", .{mod_handle});
             return OperationError.InvalidModule;
@@ -542,8 +548,8 @@ pub const Pipeline = struct {
             return OperationError.InvalidParam;
         };
         self.dirty = true;
-        mod.dirty = true;
-        self.history.recordParamDelta(mod_handle, param_name) catch return OperationError.RecorderFailed;
+        mod.flags.dirty = true;
+        mod.flags.params_dirty = true;
     }
 
     pub fn disconnectModule(self: *Pipeline, dst_mod: ModuleHandle, dst_mod_socket_name: []const u8) OperationError!void {
@@ -643,7 +649,7 @@ pub const Pipeline = struct {
             return OperationError.InvalidModule;
         };
         self.runModuleDeinitHook(mod_handle);
-        self.module_pool.remove(mod_handle);
+        self.module_pool.remove(self.allocator, mod_handle);
     }
 
     pub fn undo(self: *Pipeline) OperationError!void {
@@ -810,7 +816,7 @@ pub const Pipeline = struct {
         while (it.next()) |h| node_handles.append(self.allocator, h) catch unreachable;
         for (node_handles.items) |h| {
             self.perf.forgetNode(h);
-            self.node_pool.remove(h);
+            self.node_pool.remove(self.allocator, h);
         }
 
         self.rerouted = true;
@@ -829,7 +835,7 @@ pub const Pipeline = struct {
         var mod_it = self.module_pool.liveHandles();
         while (mod_it.next()) |h| {
             self.runModuleDeinitHook(h);
-            self.module_pool.remove(h);
+            self.module_pool.remove(self.allocator, h);
             handles.append(self.allocator, h) catch unreachable;
         }
         return handles;
@@ -1001,6 +1007,9 @@ pub const Pipeline = struct {
                         socket_ptr.color_profile = connected_to_socket.color_profile;
 
                         // propagate img_param from connected module to this module
+                        if (!std.meta.eql(connected_to_module.img_param, module.img_param)) {
+                            module.flags.img_param_dirty = true;
+                        }
                         module.img_param = connected_to_module.img_param;
                     }
                 }
@@ -1080,12 +1089,12 @@ pub const Pipeline = struct {
 
     fn runModuleInitParamBuffers(self: *Pipeline, module: *Module) RunError!void {
         const gpu_inst = self.gpu orelse return error.NoGpuInstance;
-        module.img_param_handle = try self.param_buffer_pool.add(null);
+        module.img_param_handle = try self.param_buffer_pool.add(self.allocator, null);
         if (module.params_len() != 0) {
-            module.param_handle = try self.param_buffer_pool.add(null);
+            module.param_handle = try self.param_buffer_pool.add(self.allocator, null);
         }
         if (module.type == .compute) {
-            if (module.enabled == false) return;
+            if (module.flags.enabled == false) return;
             params: { // PARAM BUFFER INIT
                 var size_bytes: usize = 0;
                 var tu: [api.MAX_PARAMS_PER_MODULE]Param = undefined;
@@ -1136,7 +1145,7 @@ pub const Pipeline = struct {
             var upload_allocator = upload_fba.allocator();
 
             if (module.type == .compute) {
-                if (module.enabled == false) return;
+                if (module.flags.enabled == false) return;
                 blk: {
                     const size_bytes = module.param_size orelse break :blk;
                     slog.debug("Allocating upload buffer for params for size {d} bytes", .{size_bytes});
@@ -1151,6 +1160,13 @@ pub const Pipeline = struct {
                     module.img_param_offset = @intFromPtr(mapped_img_param_slice.ptr) - @intFromPtr(upload_fba.ptr);
                     module.img_param_mapped_slice_ptr = @ptrCast(@alignCast(mapped_img_param_slice.ptr));
                 }
+
+                // the staging slices are fresh (the fixed-buffer allocator was
+                // reset): both buffers must be uploaded and copied again
+                module.flags.params_dirty = true;
+                module.flags.params_staged = false;
+                module.flags.img_param_dirty = true;
+                module.flags.img_param_staged = false;
             }
         }
     }
@@ -1171,12 +1187,12 @@ pub const Pipeline = struct {
             // we leave connectors alone for now since they are shared with modules and may be reused
             slog.debug("Removing node '{any}' from pipeline", .{node_handle});
             self.perf.forgetNode(node_handle);
-            self.node_pool.remove(node_handle);
+            self.node_pool.remove(self.allocator, node_handle);
         }
 
         for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch return error.InvariantViolated;
-            if (module.enabled == false) continue;
+            if (module.flags.enabled == false) continue;
             if (module.createNodes) |createNodesFn| {
                 createNodesFn(self, module_handle) catch |err| {
                     slog.err("module '{s}' createNodes failed: {s}", .{ module.name, @errorName(err) });
@@ -1593,60 +1609,71 @@ pub const Pipeline = struct {
     pub fn runModulesUploadParams(self: *Pipeline, arena: std.mem.Allocator) RunError!void {
         var upload_buffer = self.upload_buffer orelse return error.InvalidGraph;
 
+        // early exit before mapping the upload buffer if no modules need uploading
+        // maybe this isn't better perf-wise, but it avoids unnecessary mapping/unmapping
+        var need_upload = false;
+        for (self.module_execution_order.items) |module_handle| {
+            const module = self.module_pool.getPtr(module_handle) catch return error.InvariantViolated;
+            if (module.type != .compute) continue;
+            if (module.flags.enabled == false) continue;
+            if (module.flags.params_dirty or module.flags.img_param_dirty) {
+                need_upload = true;
+                break;
+            }
+        }
+        if (!need_upload) return;
+
         upload_buffer.map();
+        defer upload_buffer.unmap();
 
         for (self.module_execution_order.items) |module_handle| {
             const module = self.module_pool.getPtr(module_handle) catch return error.InvariantViolated;
-            if (module.type == .compute) {
-                if (module.enabled == false) continue;
+            if (module.type != .compute) continue;
+            if (module.flags.enabled == false) continue;
 
-                // upload params
-                params: {
-                    if (module.param_size == 0 or module.param_size == null) break :params;
-                    // extract just ParamValue from params
-                    var tu: [api.MAX_PARAMS_PER_MODULE]Param = undefined;
-                    var tu_len: usize = 0;
-                    for (module.params, 0..) |param, idx| {
-                        if (param) |p| {
-                            tu[idx] = p;
-                            tu_len += 1;
-                        }
+            // upload params (only if they changed since the last staging)
+            params: {
+                if (module.param_size == 0 or module.param_size == null) break :params;
+                if (!module.flags.params_dirty) break :params;
+                // extract just ParamValue from params
+                var tu: [api.MAX_PARAMS_PER_MODULE]Param = undefined;
+                var tu_len: usize = 0;
+                for (module.params, 0..) |param, idx| {
+                    if (param) |p| {
+                        tu[idx] = p;
+                        tu_len += 1;
                     }
-                    // if (tu_len == 0) break :params;
-                    var buf = try arena.alloc(u8, 1024);
-                    defer arena.free(buf);
-                    const used_len = try Param.layoutTaggedUnion(buf, tu[0..tu_len]);
-
-                    // slog.debug("Uploading params for module {s}, total size {d} bytes", .{ module.name, list.items.len });
-                    // slog.debug("Param bytes for module {s}:", .{module.name});
-                    // var buf: [100]u8 = undefined;
-                    // var w: std.io.Writer = .fixed(&buf);
-                    // for (list.items) |byte| {
-                    //     try w.print("{x:0>2} ", .{byte});
-                    // }
-                    // const printed = w.buffered();
-                    // slog.debug("{s}", .{printed});
-
-                    const param_mapped_slice_ptr = module.param_mapped_slice_ptr orelse return error.InvalidGraph;
-                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(param_mapped_slice_ptr));
-                    @memcpy(mapped_ptr, buf[0..used_len]);
                 }
+                var buf = try arena.alloc(u8, 1024);
+                defer arena.free(buf);
+                const used_len = try Param.layoutTaggedUnion(buf, tu[0..tu_len]);
 
-                // upload img params
-                if (module.img_param) |img_param| {
-                    slog.debug("Uploading img params for module '{s}':", .{module.name});
-                    var buf = try arena.alloc(u8, try types.std140.layoutStruct(null, img_param));
-                    defer arena.free(buf);
-                    const used_len = try types.std140.layoutStruct(buf, img_param);
+                const param_mapped_slice_ptr = module.param_mapped_slice_ptr orelse return error.InvalidGraph;
+                const mapped_ptr: [*]u8 = @ptrCast(@alignCast(param_mapped_slice_ptr));
+                @memcpy(mapped_ptr, buf[0..used_len]);
 
-                    const img_param_mapped_slice_ptr = module.img_param_mapped_slice_ptr orelse return error.InvalidGraph;
-                    const mapped_ptr: [*]u8 = @ptrCast(@alignCast(img_param_mapped_slice_ptr));
-                    @memcpy(mapped_ptr, buf[0..used_len]);
-                }
+                module.flags.params_dirty = false;
+                module.flags.params_staged = true;
+                self.perf.recordParamUpload();
+            }
+
+            // upload img params (only if the propagated value changed)
+            if (module.img_param) |img_param| {
+                if (!module.flags.img_param_dirty) continue;
+                slog.debug("Uploading img params for module '{s}':", .{module.name});
+                var buf = try arena.alloc(u8, try types.std140.layoutStruct(null, img_param));
+                defer arena.free(buf);
+                const used_len = try types.std140.layoutStruct(buf, img_param);
+
+                const img_param_mapped_slice_ptr = module.img_param_mapped_slice_ptr orelse return error.InvalidGraph;
+                const mapped_ptr: [*]u8 = @ptrCast(@alignCast(img_param_mapped_slice_ptr));
+                @memcpy(mapped_ptr, buf[0..used_len]);
+
+                module.flags.img_param_dirty = false;
+                module.flags.img_param_staged = true;
+                self.perf.recordImgParamUpload();
             }
         }
-
-        upload_buffer.unmap();
     }
 
     /// Calls module readSource() functions to upload source data to GPU
@@ -1673,6 +1700,7 @@ pub const Pipeline = struct {
         const readSourceFn = source_mod.readSource orelse return error.InvalidGraph;
 
         upload_buffer.map();
+        defer upload_buffer.unmap();
         slog.debug("Uploading source data for first node", .{});
         const mapped_ptr = sock.staging_ptr orelse return error.InvalidGraph;
         slog.debug("Calling readSource function for first node", .{});
@@ -1680,7 +1708,6 @@ pub const Pipeline = struct {
             slog.err("module '{s}' readSource failed: {s}", .{ source_mod.name, @errorName(err) });
             return error.InvalidGraph;
         };
-        upload_buffer.unmap();
     }
 
     /// Note: this only works when called while traversing node_execution_order
@@ -1690,7 +1717,7 @@ pub const Pipeline = struct {
     /// Amortized O(edges-per-dirty-path) thanks to the memoize-on-discover.
     fn nodeIsDirty(self: *Pipeline, node: *Node) bool {
         const mod = self.module_pool.getPtr(node.mod) catch return false;
-        if (mod.dirty) return true;
+        if (mod.flags.dirty) return true;
 
         // walk upstream: any input socket connected to a node whose module is
         // dirty (transitively) makes this module dirty too
@@ -1699,7 +1726,7 @@ pub const Pipeline = struct {
                 const conn = sock.connected_to_node orelse continue;
                 const producer = self.node_pool.getPtr(conn.item) catch continue;
                 if (self.nodeIsDirty(producer)) {
-                    mod.dirty = true; // memoize so later checks short-circuit
+                    mod.flags.dirty = true; // memoize so later checks short-circuit
                     return true;
                 }
             }
@@ -1709,7 +1736,7 @@ pub const Pipeline = struct {
 
     fn markNodeDirty(self: *Pipeline, node: *Node) void {
         const mod = self.module_pool.getPtr(node.mod) catch return;
-        mod.dirty = true;
+        mod.flags.dirty = true;
     }
 
     fn runModulesMarkDirty(self: *Pipeline) void {
@@ -1717,7 +1744,7 @@ pub const Pipeline = struct {
         var it = self.module_pool.liveHandles();
         while (it.next()) |mod_handle| {
             const mod = self.module_pool.getPtr(mod_handle) catch continue;
-            mod.dirty = true;
+            mod.flags.dirty = true;
         }
     }
 
@@ -1725,7 +1752,7 @@ pub const Pipeline = struct {
         var it = self.module_pool.liveHandles();
         while (it.next()) |mod_handle| {
             const mod = self.module_pool.getPtr(mod_handle) catch continue;
-            mod.dirty = false;
+            mod.flags.dirty = false;
         }
     }
 
@@ -1747,8 +1774,10 @@ pub const Pipeline = struct {
             if (options.only_dirty and !self.nodeIsDirty(node)) continue;
             slog.debug("Enqueueing node '{s}'", .{node.name});
             nodes_ran += 1;
+            const node_started = std.Io.Clock.awake.now(self.io);
             try self.enqueueNode(&encoder, node, &upload_buffer, &download_buffer);
-            try self.perf.recordNodeRun(node_handle);
+            const node_cpu_ns: u64 = @intCast(node_started.untilNow(self.io, .awake).toNanoseconds());
+            try self.perf.recordNodeRun(node_handle, node.name, node_cpu_ns);
         }
 
         slog.debug("Enqueued {d} nodes", .{nodes_ran});
@@ -1769,27 +1798,36 @@ pub const Pipeline = struct {
         switch (node.type) {
             .compute => {
                 const mod = self.module_pool.getPtr(node.*.mod) catch return error.InvariantViolated;
+                // copy staged params only when the staging bytes changed; the
+                // GPU buffer already holds the same values otherwise
                 if (mod.*.param_handle) |param_handle| {
-                    const param_buffer = self.param_buffer_pool.getPtr(param_handle) catch return error.InvariantViolated;
-                    var param_buf = param_buffer.* orelse return error.InvalidGraph;
-                    const param_offset = mod.*.param_offset orelse return error.InvalidGraph;
-                    const param_size_bytes = mod.*.param_size orelse return error.InvalidGraph;
-                    slog.debug("Enqueueing param buffer at offset {d}", .{param_offset});
-                    encoder.enqueueBufToBuf(upload_buffer, param_offset, &param_buf, 0, param_size_bytes) catch |err| {
-                        slog.err("module '{s}' param buffer enqueue failed: {s}", .{ mod.name, @errorName(err) });
-                        return error.GpuFailure;
-                    };
+                    if (mod.*.flags.params_staged) {
+                        const param_buffer = self.param_buffer_pool.getPtr(param_handle) catch return error.InvariantViolated;
+                        var param_buf = param_buffer.* orelse return error.InvalidGraph;
+                        const param_offset = mod.*.param_offset orelse return error.InvalidGraph;
+                        const param_size_bytes = mod.*.param_size orelse return error.InvalidGraph;
+                        slog.debug("Enqueueing param buffer at offset {d}", .{param_offset});
+                        encoder.enqueueBufToBuf(upload_buffer, param_offset, &param_buf, 0, param_size_bytes) catch |err| {
+                            slog.err("module '{s}' param buffer enqueue failed: {s}", .{ mod.name, @errorName(err) });
+                            return error.GpuFailure;
+                        };
+                        mod.*.flags.params_staged = false;
+                        self.perf.recordParamCopy();
+                    }
                 }
                 if (mod.*.img_param_handle) |img_param_handle| {
-                    const img_param_buffer = self.param_buffer_pool.getPtr(img_param_handle) catch return error.InvariantViolated;
-                    var img_param_buf = img_param_buffer.* orelse return error.InvalidGraph;
-                    const img_param_offset = mod.*.img_param_offset orelse return error.InvalidGraph;
-                    const img_param_size_bytes = mod.*.img_param_size orelse return error.InvalidGraph;
-                    slog.debug("Enqueueing img param buffer at offset {d}", .{img_param_offset});
-                    encoder.enqueueBufToBuf(upload_buffer, img_param_offset, &img_param_buf, 0, img_param_size_bytes) catch |err| {
-                        slog.err("module '{s}' img param buffer enqueue failed: {s}", .{ mod.name, @errorName(err) });
-                        return error.GpuFailure;
-                    };
+                    if (mod.*.flags.img_param_staged) {
+                        const img_param_buffer = self.param_buffer_pool.getPtr(img_param_handle) catch return error.InvariantViolated;
+                        var img_param_buf = img_param_buffer.* orelse return error.InvalidGraph;
+                        const img_param_offset = mod.*.img_param_offset orelse return error.InvalidGraph;
+                        const img_param_size_bytes = mod.*.img_param_size orelse return error.InvalidGraph;
+                        slog.debug("Enqueueing img param buffer at offset {d}", .{img_param_offset});
+                        encoder.enqueueBufToBuf(upload_buffer, img_param_offset, &img_param_buf, 0, img_param_size_bytes) catch |err| {
+                            slog.err("module '{s}' img param buffer enqueue failed: {s}", .{ mod.name, @errorName(err) });
+                            return error.GpuFailure;
+                        };
+                        mod.*.flags.img_param_staged = false;
+                    }
                 }
                 var compute_pipeline = node.compute_pipeline orelse return error.InvalidGraph;
                 var bindings = node.bindings orelse return error.InvalidGraph;
@@ -1851,6 +1889,7 @@ pub const Pipeline = struct {
             return;
         }
         download_buffer.map();
+        defer download_buffer.unmap();
         if (last_node.sockets[0]) |*sock| {
             if (sock.type == .sink) {
                 const last_node_mod = self.module_pool.getPtr(last_node.*.mod) catch return error.InvariantViolated;
@@ -1897,8 +1936,6 @@ pub const Pipeline = struct {
                 return error.InvalidGraph;
             }
         }
-
-        download_buffer.unmap();
     }
 };
 
