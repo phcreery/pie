@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Build = std.Build;
 const sokol = @import("sokol");
-const cimgui = @import("cimgui");
 const spv = @import("build/spirv.zig");
 
 pub fn build(b: *Build) !void { // $ls root_id 0
@@ -15,11 +14,38 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     const optimize = b.standardOptimizeOption(.{});
     const opts = .{ .target = target, .optimize = optimize };
 
-    const opt_docking = b.option(bool, "docking", "Build with docking support") orelse false;
-
-    // Get the matching Zig module name, C header search path and C library for
-    // vanilla imgui vs the imgui docking branch.
-    const cimgui_conf = cimgui.getConfig(opt_docking);
+    // CUI (vendored amalgamation; no window layer, this app owns sokol_app)
+    const mod_cui_c = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    mod_cui_c.addIncludePath(b.path("src/cui"));
+    mod_cui_c.addCSourceFile(.{
+        .file = b.path("src/cui/cui.c"),
+        .flags = &.{ "-std=c99", "-DCUI_NO_APP", "-DCUI_NO_OTHER_RENDERERS", "-fno-sanitize=undefined" },
+    });
+    if (target.result.os.tag != .windows) {
+        mod_cui_c.linkSystemLibrary("m", .{});
+    }
+    const lib_cui = b.addLibrary(.{
+        .name = "cui",
+        .root_module = mod_cui_c,
+        .linkage = .static,
+    });
+    const cui_tc = b.addTranslateC(.{
+        .root_source_file = b.path("src/cui/cui.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    cui_tc.addIncludePath(b.path("src/cui"));
+    const mod_cui = b.createModule(.{
+        .root_source_file = cui_tc.getOutput(),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    mod_cui.linkLibrary(lib_cui);
 
     // DEPENDENCIES
     const dep_sokol = b.dependency("sokol", .{
@@ -27,12 +53,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .optimize = optimize,
         .wgpu = true,
         .wgpu_native = true,
-        .with_sokol_imgui = true,
-        .dynamic_linkage = true,
-    });
-    const dep_cimgui = b.dependency("cimgui", .{
-        .target = target,
-        .optimize = optimize,
         .dynamic_linkage = true,
     });
     // Image decoding is the hot path, will use aggressive optimization for these dependencies.
@@ -46,32 +66,37 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     const dep_zuballoc = b.dependency("zuballoc", opts);
     // const dep_zmath = b.dependency("zmath", opts);
 
-    // inject the cimgui header search path into the sokol C library compile step
+    // the sokol C library links the wgpu-native object files and resolves its
+    // siblings relative to its own location (installed in zig-out/lib)
     const mod_sokol_clib = dep_sokol.artifact("sokol_clib").root_module;
-    mod_sokol_clib.addIncludePath(dep_cimgui.path(cimgui_conf.include_dir));
     @import("wgpu-zig").addWgpuNativeObjectFiles(b, mod_sokol_clib, target, optimize);
-    // sokol's ImGui glue calls into Dear ImGui, so as a shared library it has
-    // to record that dependency itself, and resolve its siblings relative to
-    // its own location (it is installed next to them in zig-out/lib).
-    mod_sokol_clib.linkLibrary(dep_cimgui.artifact(cimgui_conf.clib_name));
     mod_sokol_clib.addRPathSpecial("$ORIGIN");
 
     // OPTIONS
     const mod_options = b.addOptions();
     const build_date = std.Io.Timestamp.now(b.graph.io, std.Io.Clock.real).toSeconds();
     mod_options.addOption(i64, "timestamp", build_date);
-    mod_options.addOption(bool, "docking", opt_docking);
 
     // Shaders (for UI)
     // https://github.com/floooh/pacman.zig/blob/main/build.zig
     // extract the sokol module and shdc dependency from sokol dependency
     const mod_sokol = dep_sokol.module("sokol");
     const dep_shdc = dep_sokol.builder.dependency("shdc", .{});
-    const mod_texview_shd = try sokol.shdc.createModule(b, "texview_shader", mod_sokol, .{
+    const mod_cui_shd = try sokol.shdc.createModule(b, "cui_shader", mod_sokol, .{
         .shdc_dep = dep_shdc,
-        .input = "src/gui/texview.glsl",
-        .output = "texview.zig",
+        .input = "src/gui/cui.glsl",
+        .output = "cui.zig",
         .slang = .{ .wgsl = true },
+    });
+    const mod_cui_sokol = b.createModule(.{
+        .root_source_file = b.path("src/gui/cui_sokol.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "sokol", .module = mod_sokol },
+            .{ .name = "cui", .module = mod_cui },
+            .{ .name = "cui_shader", .module = mod_cui_shd },
+        },
     });
 
     // CFA MODULE
@@ -114,16 +139,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .target = target,
         .optimize = optimize,
         .imports = &.{},
-    });
-
-    // NODE GRAPH MODULE (Zig port of imnodes)
-    const mod_nodes = b.createModule(.{
-        .root_source_file = b.path("src/nodes/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
-        },
     });
 
     // COLONCONFIG MODULE
@@ -236,7 +251,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "types", .module = mod_types },
-            .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
             .{ .name = "nfd", .module = mod_nfd },
@@ -252,8 +266,8 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "session", .module = mod_session },
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "types", .module = mod_types },
-            .{ .name = "nodes", .module = mod_nodes },
-            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
+            .{ .name = "cui", .module = mod_cui },
+            .{ .name = "cui_sokol", .module = mod_cui_sokol },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
         },
     });
@@ -291,6 +305,8 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "session", .module = mod_session },
             .{ .name = "gui", .module = mod_gui },
+            .{ .name = "cui", .module = mod_cui },
+            .{ .name = "cui_sokol", .module = mod_cui_sokol },
             .{ .name = "console", .module = mod_console },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = "gpu", .module = mod_gpu },
@@ -341,16 +357,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     });
     const run_pool_unit_tests = b.addRunArtifact(pool_unit_tests);
     test_step.dependOn(&run_pool_unit_tests.step);
-
-    // NODES
-    const nodes_unit_tests = b.addTest(.{
-        .name = "nodes unit tests",
-        .use_llvm = true,
-        .root_module = mod_nodes,
-        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
-    });
-    const run_nodes_unit_tests = b.addRunArtifact(nodes_unit_tests);
-    test_step.dependOn(&run_nodes_unit_tests.step);
 
     // CFA
     const cfa_unit_tests = b.addTest(.{
@@ -414,15 +420,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     // Force the test runner to wait until everything is installed in zig-out/
     // integration_test_step.dependOn(b.getInstallStep());
 
-    // from here on different handling for native vs wasm builds
-    // if (target.result.cpu.arch.isWasm()) {
-    //     try buildWasm(b, .{
-    //         .mod_main = mod_app,
-    //         .dep_sokol = dep_sokol,
-    //         .dep_cimgui = dep_cimgui,
-    //         .cimgui_clib_name = cimgui_conf.clib_name,
-    //     });
-    // } else {
     try buildNative(b, mod_app);
 
     // This is where the interesting part begins.
@@ -436,7 +433,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
 
     // Finally we add the "check" step which will be detected
     // by ZLS and automatically enable Build-On-Save.
-    // If you copy this into your `build.zig`, make sure to rename 'foo'
+    // If you copy this into your `build.zig`, make sure to rename `foo`.
     const check = b.step("check", "Check if foo compiles");
     check.dependOn(&exe_check.step);
 }
@@ -456,54 +453,4 @@ fn buildNative(b: *Build, mod: *Build.Module) !void {
     run_cmd.addPassthruArgs();
     run_cmd.step.dependOn(b.getInstallStep());
     exe_step.dependOn(&run_cmd.step);
-}
-
-const BuildWasmOptions = struct {
-    mod_main: *Build.Module,
-    dep_sokol: *Build.Dependency,
-    dep_cimgui: *Build.Dependency,
-    cimgui_clib_name: []const u8,
-};
-
-// https://github.com/floooh/sokol-zig-imgui-sample/blob/main/build.zig
-fn buildWasm(b: *Build, opts: BuildWasmOptions) !void {
-    // build the main file into a library, this is because the WASM 'exe'
-    // needs to be linked in a separate build step with the Emscripten linker
-    const demo = b.addLibrary(.{
-        .name = "demo",
-        .root_module = opts.mod_main,
-    });
-
-    // get the Emscripten SDK dependency from the sokol dependency
-    const dep_emsdk = opts.dep_sokol.builder.dependency("emsdk", .{});
-
-    // need to inject the Emscripten system header include path into
-    // the cimgui C library otherwise the C/C++ code won't find
-    // C stdlib headers
-    const emsdk_incl_path = dep_emsdk.path("upstream/emscripten/cache/sysroot/include");
-    opts.dep_cimgui.artifact(opts.cimgui_clib_name).root_module.addSystemIncludePath(emsdk_incl_path);
-
-    // all C libraries need to depend on the sokol library, when building for
-    // WASM this makes sure that the Emscripten SDK has been setup before
-    // C compilation is attempted (since the sokol C library depends on the
-    // Emscripten SDK setup step)
-    opts.dep_cimgui.artifact(opts.cimgui_clib_name).step.dependOn(&opts.dep_sokol.artifact("sokol_clib").step);
-
-    // create a build step which invokes the Emscripten linker
-    const link_step = try sokol.emLinkStep(b, .{
-        .lib_main = demo,
-        .target = opts.mod_main.resolved_target.?,
-        .optimize = opts.mod_main.optimize.?,
-        .emsdk = dep_emsdk,
-        .use_webgl2 = true,
-        .use_emmalloc = true,
-        .use_filesystem = false,
-        .shell_file_path = b.path("src/web/shell.html"),
-    });
-    // attach to default target
-    b.getInstallStep().dependOn(&link_step.step);
-    // ...and a special run step to start the web build output via 'emrun'
-    const run = sokol.emRunStep(b, .{ .name = "pie", .emsdk = dep_emsdk });
-    run.step.dependOn(&link_step.step);
-    b.step("run", "Run pie").dependOn(&run.step);
 }

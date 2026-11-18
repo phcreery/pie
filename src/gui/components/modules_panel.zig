@@ -1,147 +1,190 @@
-//! Renders one collapsible section per module in the live pipeline.
-//!
-//! The module list comes from the session's pipeline pool; each parameter's
-//! descriptor and UI hint are the engine's own `types/ui.zig` types, read
-//! through live `Param.bytes`. Edits go straight to the session.
+//! The pipeline modules as CUI cards: one accordion per module, with the
+//! engine's own parameter descriptors driving the controls.
 
 const std = @import("std");
-const ig = @import("cimgui");
+const cui = @import("cui");
 const session = @import("session");
 const pie = @import("pie");
 const ui = @import("types").ui;
+const util = @import("../cui_util.zig");
 
-/// Inline capacity of a string parameter, matching the engine's `max_str_bytes`.
 const max_str_bytes = 256;
 
 pub const ModulesPanel = struct {
-    /// Draw the pipeline modules pinned to `rect` (imgui logical units). The
-    /// darkroom owns the panel's placement in the split layout, so the window
-    /// is fixed in place and has no title bar of its own.
-    pub fn draw(s: *session.Session, rect: session.Rect) void {
-        // no `MenuBar` flag: it reserves a menu-bar strip we never draw into,
-        // which shows up as a blank band under the title bar.
-        const flags = ig.ImGuiWindowFlags_NoTitleBar |
-            ig.ImGuiWindowFlags_NoResize |
-            ig.ImGuiWindowFlags_NoMove |
-            ig.ImGuiWindowFlags_NoBringToFrontOnFocus |
-            ig.ImGuiWindowFlags_NoSavedSettings;
-        ig.igSetNextWindowPos(.{ .x = rect.x, .y = rect.y }, ig.ImGuiCond_Always);
-        ig.igSetNextWindowSize(.{ .x = rect.w, .y = rect.h }, ig.ImGuiCond_Always);
-        if (!ig.igBegin("Modules", null, flags)) {
-            ig.igEnd();
-            return;
-        }
-        defer ig.igEnd();
+    allocator: std.mem.Allocator,
+    open: std.AutoHashMapUnmanaged(u64, bool) = .empty,
+    strings: util.FrameStrings,
 
-        ig.igText("pipeline modules");
-        ig.igSeparator();
+    /// CUI's text field keeps a pointer to the edit buffer in its state, so a
+    /// string parameter needs a stable buffer that outlives the call.
+    text_buffers: std.AutoHashMapUnmanaged(TextKey, *TextState) = .empty,
+
+    const TextKey = struct {
+        module: u64,
+        index: u16,
+    };
+
+    const TextState = struct {
+        buf: [max_str_bytes]u8 = @splat(0),
+        focused: bool = false,
+    };
+
+    pub fn init(allocator: std.mem.Allocator) !ModulesPanel {
+        return .{
+            .allocator = allocator,
+            .strings = util.FrameStrings.init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *ModulesPanel) void {
+        var it = self.text_buffers.valueIterator();
+        while (it.next()) |state| self.allocator.destroy(state.*);
+        self.text_buffers.deinit(self.allocator);
+        self.open.deinit(self.allocator);
+        self.strings.deinit();
+    }
+
+    pub fn draw(self: *ModulesPanel, s: *session.Session, cui_ui: *cui.cui_ctx) void {
+        self.strings.reset();
+
+        var panel = util.zero(cui.cui_box);
+        panel.dir = @intCast(cui.CUI_COLUMN);
+        panel.width = util.fill();
+        panel.height = util.fill();
+        panel.bg = util.token(cui_ui, cui.CUI_TOKEN_BACKGROUND);
+        panel.pad = 6;
+        panel.gap = 6;
+        _ = cui.cui_column_begin(cui_ui, &panel);
+        defer cui.cui_box_end(cui_ui);
+
+        cui.cui_label(cui_ui, "Pipeline modules");
+
+        var scroll = util.zero(cui.cui_scroll_opts);
+        scroll.id = "module-scroll";
+        scroll.width = util.fill();
+        scroll.height = util.fill();
+        scroll.gap = 6;
+        cui.cui_scroll_begin(cui_ui, &scroll);
+        defer cui.cui_scroll_end(cui_ui);
 
         var index: usize = 0;
         var it = s.pipeline.module_pool.liveHandles();
         while (it.next()) |handle| {
             const mod = s.pipeline.module_pool.getPtr(handle) catch continue;
-            drawModule(s, handle, mod, index);
+            self.drawModule(s, cui_ui, handle, mod, index);
             index += 1;
         }
     }
 
     fn drawModule(
+        self: *ModulesPanel,
         s: *session.Session,
+        cui_ui: *cui.cui_ctx,
         handle: pie.pipeline.ModuleHandle,
         mod: *pie.api.Module,
         module_index: usize,
     ) void {
-        ig.igPushIDInt(@intCast(module_index));
-        defer ig.igPopID();
+        const gop = self.open.getOrPut(self.allocator, handle.id) catch return;
+        if (!gop.found_existing) gop.value_ptr.* = true;
 
-        var header_buf: [160]u8 = undefined;
-        const header = std.mem.printSentinel(&header_buf, "{s}##{d}", .{ mod.name, module_index }, 0) catch return;
+        const title = self.strings.fmt("{s}:{s}", .{ mod.name, mod.id }) catch return;
 
-        const open = ig.igCollapsingHeader(
-            header.ptr,
-            ig.ImGuiTreeNodeFlags_OpenOnArrow | ig.ImGuiTreeNodeFlags_OpenOnDoubleClick | ig.ImGuiTreeNodeFlags_DefaultOpen,
-        );
-        if (!open) return;
+        if (cui.cui_accordion_begin(cui_ui, title.ptr, gop.value_ptr)) {
+            defer cui.cui_accordion_end(cui_ui);
 
-        ig.igIndentEx(8.0);
-        defer ig.igUnindentEx(8.0);
+            var id_buf: [48]u8 = undefined;
+            cui.cui_push_id(cui_ui, util.z(&id_buf, "{d}", .{module_index}));
+            defer cui.cui_pop_id(cui_ui);
 
-        for (mod.params_ui) |maybe_ui| {
-            const param_ui = maybe_ui orelse continue;
-            const idx = mod.getParamIndex(param_ui.name) catch continue;
-            const param = mod.params[idx] orelse continue;
-            drawParam(s, handle, &param, param_ui.control, @intCast(idx));
+            var body = util.zero(cui.cui_box);
+            body.dir = @intCast(cui.CUI_COLUMN);
+            body.width = util.fill();
+            body.gap = 6;
+            body.pad_y = 3;
+            _ = cui.cui_column_begin(cui_ui, &body);
+            defer cui.cui_box_end(cui_ui);
+
+            for (mod.params_ui, 0..) |maybe_ui, param_index| {
+                const control = maybe_ui orelse continue;
+                const idx = mod.getParamIndex(control.name) catch continue;
+                const param = mod.params[idx] orelse continue;
+                self.drawParam(s, cui_ui, handle, &param, control.control, @intCast(param_index));
+            }
         }
     }
 
     fn drawParam(
+        self: *ModulesPanel,
         s: *session.Session,
+        cui_ui: *cui.cui_ctx,
         handle: pie.pipeline.ModuleHandle,
         param: *const pie.api.Param,
         control: ui.Control,
         param_index: u32,
     ) void {
+        cui.cui_push_id_int(cui_ui, @intCast(param_index));
+        defer cui.cui_pop_id(cui_ui);
+
         switch (control) {
-            .slider => |slider| drawSlider(s, handle, param, slider, param_index),
-            .sliders => |sliders| drawSliders(s, handle, param, sliders, param_index),
-            .combo => |combo| drawCombo(s, handle, param, combo, param_index),
-            .checkbox => drawCheckbox(s, handle, param, param_index),
-            .text => drawText(s, handle, param, param_index),
-            .readonly => drawReadonly(param),
+            .slider => |slider| self.drawSlider(s, cui_ui, handle, param, slider),
+            .sliders => |sliders| self.drawSliders(s, cui_ui, handle, param, sliders),
+            .combo => |combo| self.drawCombo(s, cui_ui, handle, param, combo),
+            .checkbox => self.drawCheckbox(s, cui_ui, handle, param),
+            .text => self.drawText(s, cui_ui, handle, param, @intCast(param_index)),
+            .readonly => self.drawReadonly(cui_ui, param),
         }
     }
 
     fn drawSlider(
+        self: *ModulesPanel,
         s: *session.Session,
+        cui_ui: *cui.cui_ctx,
         handle: pie.pipeline.ModuleHandle,
         param: *const pie.api.Param,
         slider: ui.Slider,
-        param_index: u32,
     ) void {
-        var label_buf: [160]u8 = undefined;
-        const label = labelZ(&label_buf, param, param_index);
-        ig.igPushIDInt(@intCast(param_index));
-        defer ig.igPopID();
-
+        const label = self.strings.fmt("{s}", .{param.desc.name}) catch return;
         const suffix = slider.suffix orelse "";
+
+        var opts = util.zero(cui.cui_scrub_opts);
+        opts.format = "%.2f";
+        if (suffix.len > 0) opts.suffix = (self.strings.alloc(suffix) catch return).ptr;
+
         switch (param.desc.typ) {
             .f32 => {
                 var value = read(param, f32, 0);
-                var format_buf: [32]u8 = undefined;
-                const format = std.mem.printSentinel(&format_buf, "%.2f{s}", .{suffix}, 0) catch "%.2f";
-                if (ig.igSliderFloatEx(label.ptr, &value, slider.min, slider.max, format.ptr, 0)) {
+                if (cui.cui_scrub_ex(cui_ui, label.ptr, &value, slider.min, slider.max, &opts)) {
                     s.setParam(handle, param.desc.name, f32, value);
                 }
             },
             .i32 => {
-                var value = read(param, i32, 0);
-                if (ig.igSliderInt(label.ptr, &value, @intFromFloat(@floor(slider.min)), @intFromFloat(@ceil(slider.max)))) {
-                    s.setParam(handle, param.desc.name, i32, value);
+                var value: f32 = @floatFromInt(read(param, i32, 0));
+                var iopts = util.zero(cui.cui_scrub_opts);
+                iopts.step = 1;
+                iopts.format = "%.0f";
+                if (suffix.len > 0) iopts.suffix = (self.strings.alloc(suffix) catch return).ptr;
+                if (cui.cui_scrub_ex(cui_ui, label.ptr, &value, @floor(slider.min), @ceil(slider.max), &iopts)) {
+                    s.setParam(handle, param.desc.name, i32, @intFromFloat(@round(value)));
                 }
             },
-            else => unreachable,
+            else => {},
         }
     }
 
     fn drawSliders(
+        self: *ModulesPanel,
         s: *session.Session,
+        cui_ui: *cui.cui_ctx,
         handle: pie.pipeline.ModuleHandle,
         param: *const pie.api.Param,
         sliders: ui.Sliders,
-        param_index: u32,
     ) void {
-        if (param.desc.typ != .f32) return; // only float arrays are supported for now
-
-        // declared element count, bounded by the storage the param actually has
+        if (param.desc.typ != .f32) return;
         const n = @min(sliders.n, @as(usize, param.desc.len));
-        if (n == 0 or n > 4) return; // only 2/3/4-element vectors can be committed
+        if (n == 0 or n > 4) return;
 
-        ig.igPushIDInt(@intCast(param_index));
-        defer ig.igPopID();
-
-        var name_buf: [160]u8 = undefined;
-        const name = std.mem.printSentinel(&name_buf, "{s}", .{param.desc.name}, 0) catch return;
-        ig.igText("%s", name.ptr);
+        const param_name = self.strings.fmt("{s}", .{param.desc.name}) catch return;
+        cui.cui_secondary(cui_ui, param_name.ptr);
 
         var values: [4]f32 = @splat(0);
         for (0..n) |i| values[i] = read(param, f32, i);
@@ -149,18 +192,16 @@ pub const ModulesPanel = struct {
         var changed = false;
         for (0..n) |i| {
             const suffix = if (sliders.suffixes) |suffixes| if (i < suffixes.len) suffixes[i] else "" else "";
-            var format_buf: [32]u8 = undefined;
-            const format = std.mem.printSentinel(&format_buf, "%.3f{s}", .{suffix}, 0) catch "%.3f";
-
-            // per-element label if provided (e.g. "R", "G", "B"), else "[i]"
-            const elem_label = if (sliders.labels) |labels| if (i < labels.len) labels[i] else "" else "";
-            var id_buf: [64]u8 = undefined;
-            const id = if (elem_label.len > 0)
-                std.mem.printSentinel(&id_buf, "{s}##{d}", .{ elem_label, i }, 0) catch return
+            const elem = if (sliders.labels) |labels| if (i < labels.len) labels[i] else "" else "";
+            const label = if (elem.len > 0)
+                self.strings.fmt("{s}", .{elem}) catch continue
             else
-                std.mem.printSentinel(&id_buf, "[{d}]##{d}", .{ i, i }, 0) catch return;
+                self.strings.fmt("[{d}]", .{i}) catch continue;
 
-            if (ig.igSliderFloatEx(id.ptr, &values[i], sliders.min, sliders.max, format.ptr, 0)) changed = true;
+            var opts = util.zero(cui.cui_scrub_opts);
+            opts.format = "%.3f";
+            if (suffix.len > 0) opts.suffix = (self.strings.alloc(suffix) catch continue).ptr;
+            if (cui.cui_scrub_ex(cui_ui, label.ptr, &values[i], sliders.min, sliders.max, &opts)) changed = true;
         }
 
         if (changed) {
@@ -174,96 +215,98 @@ pub const ModulesPanel = struct {
     }
 
     fn drawCombo(
+        self: *ModulesPanel,
         s: *session.Session,
+        cui_ui: *cui.cui_ctx,
         handle: pie.pipeline.ModuleHandle,
         param: *const pie.api.Param,
         combo: ui.Combo,
-        param_index: u32,
     ) void {
-        var label_buf: [160]u8 = undefined;
-        const label = labelZ(&label_buf, param, param_index);
+        if (combo.items.len == 0) return;
 
-        // zero-separated items string, the form imgui wants ("a\x00b\x00\x00")
-        var items_buf: [512]u8 = undefined;
-        var pos: usize = 0;
-        for (combo.items) |item| {
-            if (pos + item.len + 1 > items_buf.len) break;
-            @memcpy(items_buf[pos..][0..item.len], item);
-            pos += item.len;
-            items_buf[pos] = 0;
-            pos += 1;
-        }
-        if (pos == 0) return;
-        items_buf[pos] = 0;
-        const items_z = items_buf[0 .. pos + 1];
+        const label = self.strings.fmt("{s}", .{param.desc.name}) catch return;
 
-        ig.igPushIDInt(@intCast(param_index));
-        defer ig.igPopID();
+        const count = @min(combo.items.len, 32);
+        const items = self.strings.arena.allocator().alloc([*c]const u8, count) catch return;
+        for (combo.items[0..count], 0..) |item, i| items[i] = @ptrCast(item.ptr);
 
-        // var current: c_int = if (param.desc.typ == .i32) readI32(param, 0) else 0;
-        var current: i32 = switch (param.desc.typ) {
+        var current: c_int = switch (param.desc.typ) {
             .i32 => read(param, i32, 0),
-            // .u32 => readU32(param, 0),
             .enum_u32 => @intCast(read(param, u32, 0)),
             else => 0,
         };
-        if (ig.igCombo(label.ptr, &current, @ptrCast(items_z.ptr))) {
+        var opts = util.zero(cui.cui_select_opts);
+        opts.label = label.ptr;
+        if (cui.cui_select_ex(cui_ui, label.ptr, @ptrCast(items.ptr), @intCast(count), &current, &opts)) {
             s.setParam(handle, param.desc.name, u32, @intCast(current));
         }
     }
 
-    fn drawCheckbox(s: *session.Session, handle: pie.pipeline.ModuleHandle, param: *const pie.api.Param, param_index: u32) void {
-        var label_buf: [160]u8 = undefined;
-        const label = labelZ(&label_buf, param, param_index);
+    fn drawCheckbox(
+        self: *ModulesPanel,
+        s: *session.Session,
+        cui_ui: *cui.cui_ctx,
+        handle: pie.pipeline.ModuleHandle,
+        param: *const pie.api.Param,
+    ) void {
+        const label = self.strings.fmt("{s}", .{param.desc.name}) catch return;
         var value = read(param, i32, 0) != 0;
-        if (ig.igCheckbox(label.ptr, &value)) {
+        var opts = util.zero(cui.cui_check_opts);
+        if (cui.cui_checkbox_ex(cui_ui, label.ptr, &value, &opts)) {
             s.setParam(handle, param.desc.name, i32, if (value) 1 else 0);
         }
     }
 
-    fn drawText(s: *session.Session, handle: pie.pipeline.ModuleHandle, param: *const pie.api.Param, param_index: u32) void {
-        var label_buf: [160]u8 = undefined;
-        const label = labelZ(&label_buf, param, param_index);
+    fn drawText(
+        self: *ModulesPanel,
+        s: *session.Session,
+        cui_ui: *cui.cui_ctx,
+        handle: pie.pipeline.ModuleHandle,
+        param: *const pie.api.Param,
+        param_index: u16,
+    ) void {
+        const label = self.strings.fmt("{s}", .{param.desc.name}) catch return;
 
-        var buf: [max_str_bytes]u8 = @splat(0);
-        const current = readStr(param);
-        const n = @min(current.len, buf.len - 1);
-        @memcpy(buf[0..n], current[0..n]);
+        const gop = self.text_buffers.getOrPut(self.allocator, .{
+            .module = handle.id,
+            .index = param_index,
+        }) catch return;
+        if (!gop.found_existing) {
+            const state = self.allocator.create(TextState) catch return;
+            state.* = .{};
+            gop.value_ptr.* = state;
+        }
+        const state = gop.value_ptr.*;
 
-        ig.igPushIDInt(@intCast(param_index));
-        defer ig.igPopID();
+        // While not editing, follow the engine value (it can change from the
+        // graph, presets, or opening another image).
+        if (!state.focused) {
+            const current = readStr(param);
+            const n = @min(current.len, state.buf.len - 1);
+            @memset(&state.buf, 0);
+            @memcpy(state.buf[0..n], current[0..n]);
+        }
 
-        if (ig.igInputText(label.ptr, &buf, buf.len, ig.ImGuiInputTextFlags_None)) {
-            const text = std.mem.sliceTo(&buf, 0);
-            s.setParam(handle, param.desc.name, []const u8, text);
+        var opts = util.zero(cui.cui_input_opts);
+        opts.label = label.ptr;
+        const flags = cui.cui_input_ex(cui_ui, label.ptr, @ptrCast(&state.buf), state.buf.len, &opts);
+        if ((flags & cui.CUI_FOCUSED) != 0) state.focused = true;
+        if ((flags & cui.CUI_BLURRED) != 0) state.focused = false;
+        if ((flags & cui.CUI_CHANGED) != 0) {
+            s.setParam(handle, param.desc.name, []const u8, std.mem.sliceTo(&state.buf, 0));
         }
     }
 
-    fn drawReadonly(param: *const pie.api.Param) void {
-        var buf: [384]u8 = undefined;
+    fn drawReadonly(self: *ModulesPanel, cui_ui: *cui.cui_ctx, param: *const pie.api.Param) void {
         const name = param.desc.name;
         const text = switch (param.desc.typ) {
-            .f32 => std.mem.printSentinel(&buf, "{s}: {d:.2}", .{ name, read(param, f32, 0) }, 0) catch return,
-            .i32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, read(param, i32, 0) }, 0) catch return,
-            .str => std.mem.printSentinel(&buf, "{s}: {s}", .{ name, readStr(param) }, 0) catch return,
-            .enum_u32 => std.mem.printSentinel(&buf, "{s}: {d}", .{ name, read(param, u32, 0) }, 0) catch return,
+            .f32 => self.strings.fmt("{s}: {d:.2}", .{ name, read(param, f32, 0) }) catch return,
+            .i32 => self.strings.fmt("{s}: {d}", .{ name, read(param, i32, 0) }) catch return,
+            .str => self.strings.fmt("{s}: {s}", .{ name, readStr(param) }) catch return,
+            .enum_u32 => self.strings.fmt("{s}: {d}", .{ name, read(param, u32, 0) }) catch return,
         };
-        ig.igText("%s", text.ptr);
+        cui.cui_muted(cui_ui, text.ptr);
     }
-
-    // ------------------------------------------------------------------
-    // helpers
-    // ------------------------------------------------------------------
-
-    /// `"{name}##{param_index}"` — the index keys the widget to the parameter.
-    /// `buf` belongs to the caller: the returned slice points into it.
-    fn labelZ(buf: []u8, param: *const pie.api.Param, param_index: u32) [:0]const u8 {
-        return std.mem.printSentinel(buf, "{s}##{d}", .{ param.desc.name, param_index }, 0) catch "";
-    }
-
-    // ------------------------------------------------------------------
-    // reading live values out of the parameter's bytes
-    // ------------------------------------------------------------------
 
     fn read(param: *const pie.api.Param, T: type, index: usize) T {
         const offset = index * @sizeOf(T);

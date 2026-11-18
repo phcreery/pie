@@ -11,7 +11,6 @@
 const std = @import("std");
 const sokol = @import("sokol");
 const sg = sokol.gfx;
-const simgui = sokol.imgui;
 const zigimg = @import("zigimg");
 const pie = @import("pie");
 
@@ -47,8 +46,6 @@ pub const Entry = struct {
     /// uploaded thumbnail, owned by the main thread
     image: sg.Image = .{},
     view: sg.View = .{},
-    /// ImTextureID for `igImage`; 0 until ready
-    texture: u64 = 0,
     width: u32 = 0,
     height: u32 = 0,
 };
@@ -182,10 +179,10 @@ pub const Catalog = struct {
         }
     }
 
-    /// Is the thumbnail for `index` ready to be drawn?
-    pub fn textureOf(self: *const Self, index: usize) u64 {
-        if (index >= self.entries.len) return 0;
-        return self.entries[index].texture;
+    /// The thumbnail's sokol view (invalid until ready).
+    pub fn viewOf(self: *const Self, index: usize) sg.View {
+        if (index >= self.entries.len) return .{};
+        return self.entries[index].view;
     }
 
     pub fn thumbSize(self: *const Self, index: usize) [2]u32 {
@@ -255,7 +252,6 @@ pub const Catalog = struct {
             if (entry.image.id != sg.invalid_id) sg.destroyImage(entry.image);
             entry.view = .{};
             entry.image = .{};
-            entry.texture = 0;
             entry.width = 0;
             entry.height = 0;
             entry.status.store(Status.pending, .release);
@@ -428,7 +424,6 @@ pub const Catalog = struct {
             .texture = .{ .image = entry.image },
             .label = "catalog-thumbnail-view",
         });
-        entry.texture = simgui.imtextureid(entry.view);
     }
 };
 

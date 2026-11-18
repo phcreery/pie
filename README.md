@@ -10,7 +10,9 @@ At the core of pie is a image processing graph called a pipeline. The pieline is
 
 The input sockets of modules/nodes can only be connected to one upstream module/node. We allocate a texture on the GPU for each input socket. Each node reads from this input socket texture and wrties to an output texture. For n nodes, there will be >n-1 textures allocated, one for each node with input socket.
 
-The current status of pie allows us to build a basic pipeline. Adding an `i-*` module sets the source, the pipeline does basic raw -> srgb, then hands the last texture to an `o-*` sink module. The gui uses sokol which expects an sRGB texture to pass to the display.
+The current status of pie allows us to build a basic pipeline. Adding an `i-*` module sets the source, the pipeline does basic raw -> srgb, then hands the last texture to an `o-*` sink module.
+
+The GUI is built with [CUI](https://github.com/yappologistic/CUI) (vendored under `src/cui`) and drawn through a small sokol-gfx backend (`src/gui/cui_sokol.zig`). The darkroom is a resizable split of the module panel and the display; its top bar switches between the image and a node editor of the live pipeline. Modules are nodes, sockets are pins, and links are edited in the graph through the pipeline's undo history. The display image and catalog thumbnails are registered as CUI textures; the image viewer owns zoom and pan.
 
 ```zig
 const allocator = std.testing.allocator;

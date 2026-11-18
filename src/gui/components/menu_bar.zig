@@ -1,42 +1,35 @@
-//! The editor's main menu bar.
+//! The editor's menu bar, built from CUI's app-chrome components.
 
 const std = @import("std");
-const ig = @import("cimgui");
+const cui = @import("cui");
 const sapp = @import("sokol").app;
 const session = @import("session");
 const root = @import("../root.zig");
 const GUI = root.GUI;
+const util = @import("../cui_util.zig");
 
 pub const MenuBar = struct {
-    pub fn draw(gui: *GUI, s: *session.Session) void {
-        if (!ig.igBeginMainMenuBar()) return;
-        defer ig.igEndMainMenuBar();
+    pub fn draw(gui: *GUI, s: *session.Session, ui: *cui.cui_ctx) void {
+        var bar_opts = util.zero(cui.cui_menu_bar_opts);
+        cui.cui_menu_bar_begin(ui, "main-menu", &bar_opts);
+        defer cui.cui_menu_bar_end(ui);
 
-        // Switch between darkroom and lighttable views
-        var label_buf: [32]u8 = undefined;
-        const label = std.mem.printSentinel(&label_buf, "{s}##view", .{viewName(gui.view)}, 0) catch "##view";
-        if (ig.igButton(label.ptr)) gui.view = switchView(gui.view);
-
-        if (ig.igBeginMenu("File")) {
-            if (ig.igMenuItemEx("Reload catalog", "", false, true)) {
-                s.reloadCatalog();
-            }
-            ig.igSeparator();
-            if (ig.igMenuItemEx("Quit", "", false, true)) {
-                sapp.requestQuit();
-            }
-            ig.igEndMenu();
+        var menu_opts = util.zero(cui.cui_menu_bar_menu_opts);
+        if (cui.cui_menu_bar_menu_begin(ui, "File", &menu_opts)) {
+            defer cui.cui_menu_bar_menu_end(ui);
+            var item = util.zero(cui.cui_menu_item_opts);
+            if (cui.cui_menu_item_ex(ui, "Reload catalog", &item)) s.reloadCatalog();
+            cui.cui_menu_separator(ui);
+            if (cui.cui_menu_item_ex(ui, "Quit", &item)) sapp.requestQuit();
         }
-    }
 
-    fn switchView(view: root.ViewKind) root.ViewKind {
-        return if (view == .darkroom) .lighttable else .darkroom;
-    }
-
-    fn viewName(view: root.ViewKind) []const u8 {
-        return switch (view) {
-            .darkroom => "Darkroom",
-            .lighttable => "Lighttable",
-        };
+        if (cui.cui_menu_bar_menu_begin(ui, "View", &menu_opts)) {
+            defer cui.cui_menu_bar_menu_end(ui);
+            var item = util.zero(cui.cui_menu_item_opts);
+            item.checked = gui.view == .darkroom;
+            if (cui.cui_menu_item_ex(ui, "Darkroom", &item)) gui.view = .darkroom;
+            item.checked = gui.view == .lighttable;
+            if (cui.cui_menu_item_ex(ui, "Lighttable", &item)) gui.view = .lighttable;
+        }
     }
 };

@@ -1,4 +1,4 @@
-//! Editing session: owns the editor pipeline, the blit resources and the image
+//! Editing session: owns the editor pipeline, the display texture and the image
 //! catalog behind the lighttable.
 //! GPU work (running the pipeline, decoding a thumbnail) must not happen inside the ImGui
 //! frame or the render pass, so the GUI queues requests here and `tick` applies
@@ -9,9 +9,7 @@ const sokol = @import("sokol");
 const sapp = sokol.app;
 const pie = @import("pie");
 
-const Blit = @import("blit.zig").Blit;
-/// A framebuffer-pixel region: where the image is allowed to draw.
-pub const Rect = @import("blit.zig").Rect;
+const DisplayTexture = @import("display.zig").DisplayTexture;
 const Catalog = @import("catalog.zig").Catalog;
 const nfd = @import("nfd");
 
@@ -38,7 +36,7 @@ pub const Session = struct {
 
     /// the pipeline the darkroom edits
     pipeline: pie.Pipeline,
-    blit: Blit,
+    display: DisplayTexture,
     /// images the lighttable lists
     catalog: *Catalog,
 
@@ -78,7 +76,7 @@ pub const Session = struct {
             .io = io,
             .gpu = gpu,
             .pipeline = pipeline,
-            .blit = Blit.init(),
+            .display = DisplayTexture.init(),
             .catalog = catalog,
             .source_path = source_path,
         };
@@ -86,14 +84,14 @@ pub const Session = struct {
 
     pub fn deinit(self: *Self) void {
         nfd.deinit();
-        self.blit.deinit();
+        self.display.deinit();
         self.catalog.deinit();
         self.pipeline.deinit();
         self.allocator.free(self.source_path);
     }
 
     /// Per-frame host work: apply deferred GUI requests, then move catalog
-    /// thumbnails along. MUST run before `simgui.newFrame` (it submits GPU work).
+    /// thumbnails along. MUST run before the CUI frame (it submits GPU work).
     pub fn tick(self: *Self) void {
         if (self.pending_browse) {
             self.pending_browse = false;
@@ -137,7 +135,7 @@ pub const Session = struct {
     pub fn run(self: *Self) !void {
         try self.pipeline.run();
         const texture = try self.pipeline.getDisplaySinkTexture();
-        self.blit.setTexture(texture);
+        self.display.setTexture(texture);
     }
 
     /// True if something asked the editor pipeline to be re-run this frame.

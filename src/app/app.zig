@@ -5,7 +5,9 @@ const slog = sokol.log;
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
-const simgui = sokol.imgui;
+const cui = @import("cui");
+const CuiRenderer = @import("cui_sokol").Renderer;
+const cui_input = @import("cui_input.zig");
 
 const pie = @import("pie");
 const console = @import("console");
@@ -13,7 +15,8 @@ const wgpu = @import("wgpu_zig");
 
 const session = @import("session");
 const Session = session.Session;
-const GUI = @import("gui").GUI;
+const gui = @import("gui");
+const GUI = gui.GUI;
 
 const util = @import("../mem.zig");
 
@@ -36,10 +39,15 @@ pub const AppState = struct {
     // pie
     gpu: pie.gpu.GPU,
 
-    // editing session (pipeline + blit resources + catalog)
+    // editing session (pipeline + display texture + catalog)
     session: Session,
     // editor widgets
     gui: GUI,
+
+    // CUI
+    ui: ?*cui.cui_ctx = null,
+    ui_renderer: CuiRenderer = undefined,
+    last_cursor: cui.cui_cursor = std.math.maxInt(cui.cui_cursor),
 
     const Self = @This();
 
@@ -67,11 +75,16 @@ export fn init_fn(ptr: ?*anyopaque) void {
         .logger = .{ .func = slog.func },
     });
 
-    // initialize sokol-imgui
-    simgui.setup(.{
-        .ini_filename = null,
-        .logger = .{ .func = slog.func },
-    });
+    // CUI owns the UI; this app owns the window and the sokol render pass.
+    var ctx_desc = std.mem.zeroes(cui.cui_ctx_desc);
+    ctx_desc.theme = @intCast(cui.CUI_THEME_DARK);
+    ctx_desc.accent = @intCast(cui.CUI_ACCENT_NEUTRAL);
+    state.ui_renderer = CuiRenderer.init(state.allocator) catch unreachable;
+    ctx_desc.renderer = state.ui_renderer.iface();
+    state.ui = cui.cui_create(&ctx_desc) orelse unreachable;
+    gui.theme.apply(state.ui.?);
+    cui.cui_set_platform(state.ui.?, &platform_iface);
+    cui.cui_input_focus(state.ui.?, true);
 
     // initial clear color
     state.pass_action.colors[0] = .{
@@ -85,7 +98,7 @@ export fn init_fn(ptr: ?*anyopaque) void {
     const ext_queue = wgpu.Queue{ .queue = @ptrCast(@constCast(sg.wgpuQueue().?)) };
     state.gpu = pie.GPU.initExternal(state.allocator, state.io, ext_device, ext_queue) catch unreachable;
 
-    // editing session (pipeline + blit resources + catalog) and the GUI
+    // editing session (pipeline + display texture + catalog) and the GUI
     state.session = Session.init(state.allocator, state.io, &state.gpu, state.cache_dir, state.perf_report) catch unreachable;
     state.gui = GUI.init(state.allocator, state.io) catch |err| {
         std.log.err("failed to init the GUI: {s}", .{@errorName(err)});
@@ -109,22 +122,35 @@ export fn frame(ptr: ?*anyopaque) void {
         }
     }
 
-    // start the imgui frame (needs the framebuffer size + frame delta)
-    simgui.newFrame(.{
-        .width = sapp.width(),
-        .height = sapp.height(),
-        .delta_time = sapp.frameDuration(),
-        .dpi_scale = sapp.dpiScale(),
-    });
+    const dpi = sapp.dpiScale();
+    cui.cui_set_viewport(state.ui.?, sapp.widthf() / dpi, sapp.heightf() / dpi, dpi);
+    cui.cui_begin_frame(state.ui.?, @floatCast(sapp.frameDuration()));
+    state.gui.draw(&state.session, state.ui.?, &state.ui_renderer);
+    cui.cui_end_frame(state.ui.?);
+
+    const draw_data = cui.cui_get_draw_data(state.ui.?);
+
+    state.ui_renderer.flushTextures();
+    state.ui_renderer.prepare(draw_data);
+
+    const cursor = cui.cui_get_cursor(state.ui.?);
+    if (cursor != state.last_cursor) {
+        state.last_cursor = cursor;
+        cui_input.setCursor(cursor);
+    }
+
+    if (draw_data != null) {
+        const clear = draw_data.*.clear_color;
+        state.pass_action.colors[0].clear_value = .{
+            .r = @as(f32, @floatFromInt(clear.r)) / 255.0,
+            .g = @as(f32, @floatFromInt(clear.g)) / 255.0,
+            .b = @as(f32, @floatFromInt(clear.b)) / 255.0,
+            .a = @as(f32, @floatFromInt(clear.a)) / 255.0,
+        };
+    }
 
     sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
-
-    // the darkroom's image is drawn behind the widgets
-    state.gui.drawImage(&state.session);
-    state.gui.draw(&state.session);
-
-    simgui.render();
-
+    state.ui_renderer.render(draw_data);
     sg.endPass();
     sg.commit();
 }
@@ -132,22 +158,39 @@ export fn frame(ptr: ?*anyopaque) void {
 export fn cleanup(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
     state.gui.deinit();
+    if (state.ui) |ui| cui.cui_destroy(ui);
+    state.ui_renderer.deinit();
     state.session.deinit();
     state.gpu.deinit();
-    simgui.shutdown();
     sg.shutdown();
 }
 
 export fn event(ev: [*c]const sapp.Event, ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
-    // sokol-imgui returns true when it wants mouse/keyboard input (e.g. the
-    // cursor is over an imgui window or a widget is being dragged). When that
-    // happens don't forward the event to the GUI so the image pan/zoom and
-    // other app-level input handlers don't fight the imgui widgets.
-    const imgui_consumed = simgui.handleEvent(ev.*);
-    if (!imgui_consumed) {
-        state.gui.event(&state.session, ev);
-    }
+    if (ev == null) return;
+    if (state.ui) |ui| cui_input.handle(ui, ev.*);
+}
+
+const platform_iface = cui.cui_platform_iface{
+    .user = null,
+    .set_clipboard = setClipboard,
+    .get_clipboard = getClipboard,
+    .set_cursor = setCursor,
+    .set_text_input_rect = null,
+    .draw_emoji = null,
+};
+
+fn setClipboard(_: ?*anyopaque, utf8: [*c]const u8) callconv(.c) void {
+    if (utf8 == null) return;
+    sapp.setClipboardString(std.mem.span(utf8));
+}
+
+fn getClipboard(_: ?*anyopaque) callconv(.c) [*c]const u8 {
+    return sapp.getClipboardString().ptr;
+}
+
+fn setCursor(_: ?*anyopaque, cursor: cui.cui_cursor) callconv(.c) void {
+    cui_input.setCursor(cursor);
 }
 
 pub fn run(init: std.process.Init) !void {

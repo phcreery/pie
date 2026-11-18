@@ -1,296 +1,225 @@
-//! The darkroom's node graph: the live pipeline drawn as a node editor.
-//!
-//! Modules are nodes, their sockets are pins, and the pipeline's
-//! `connected_to_module` back-references are the links. Edits go through the
-//! pipeline's recording API, so connecting/disconnecting/removing participates
-//! in the existing undo history.
-//!
-//! Node positions live on `Module` (`x`, `y`); the canvas returns the dragged
-//! position every frame and this view writes it back. Which modules already
-//! received an initial position is view state (`placed`), not engine state.
+//! The pipeline as a CUI node editor. Modules are nodes, sockets are pins,
+//! and `connected_to_module` back-references are the links. Edits go through
+//! the pipeline's recording API, so they participate in undo history.
 
 const std = @import("std");
-
-const ig = @import("cimgui");
+const cui = @import("cui");
 const session = @import("session");
 const pie = @import("pie");
-const nodes = @import("nodes");
+const util = @import("../cui_util.zig");
 
 const slog = std.log.scoped(.graph);
 
 pub const GraphView = struct {
     allocator: std.mem.Allocator,
-    editor: nodes.Editor,
+    view: cui.cui_node_view = .{},
+    strings: util.FrameStrings,
 
-    entries: std.ArrayList(Entry) = .empty,
-    needs_fit: bool = false,
+    /// Module ids whose initial position this view has already assigned.
+    placed: std.AutoHashMapUnmanaged(u64, void) = .empty,
     depth: std.AutoHashMapUnmanaged(pie.pipeline.ModuleHandle, u32) = .empty,
     visiting: std.AutoHashMapUnmanaged(pie.pipeline.ModuleHandle, void) = .empty,
     slots: std.AutoHashMapUnmanaged(u32, u32) = .empty,
-    /// Module ids whose initial position this view has already assigned.
-    placed: std.AutoHashMapUnmanaged(u64, void) = .empty,
 
-    const Entry = struct {
-        handle: pie.pipeline.ModuleHandle,
-        z: u64,
+    node_ids: std.AutoHashMapUnmanaged(u64, c_int) = .empty,
+    node_owner: std.AutoHashMapUnmanaged(c_int, u64) = .empty,
+    pin_ids: std.AutoHashMapUnmanaged(PinKey, c_int) = .empty,
+    pin_owner: std.AutoHashMapUnmanaged(c_int, PinKey) = .empty,
+    next_node_id: c_int = 1,
+    next_pin_id: c_int = 1,
+
+    const PinKey = struct {
+        node: u64,
+        index: u16,
+        /// 0 = input, 1 = output
+        kind: u8,
     };
 
-    pub fn init(allocator: std.mem.Allocator) GraphView {
-        return .{ .allocator = allocator, .editor = nodes.Editor.init(allocator) };
+    pub fn init(allocator: std.mem.Allocator) !GraphView {
+        return .{ .allocator = allocator, .strings = util.FrameStrings.init(allocator) };
     }
 
     pub fn deinit(self: *GraphView) void {
-        self.editor.deinit();
-        self.entries.deinit(self.allocator);
-        self.depth.deinit(self.allocator);
-        self.visiting.deinit(self.allocator);
-        self.slots.deinit(self.allocator);
-        self.placed.deinit(self.allocator);
-        self.* = undefined;
+        const a = self.allocator;
+        self.strings.deinit();
+        self.placed.deinit(a);
+        self.depth.deinit(a);
+        self.visiting.deinit(a);
+        self.slots.deinit(a);
+        self.node_ids.deinit(a);
+        self.node_owner.deinit(a);
+        self.pin_ids.deinit(a);
+        self.pin_owner.deinit(a);
     }
 
-    /// Ask the next frame to center the graph in the canvas.
-    pub fn requestFit(self: *GraphView) void {
-        self.needs_fit = true;
-    }
-
-    pub fn draw(self: *GraphView, s: *session.Session, rect: session.Rect) void {
-        if (rect.w <= 0 or rect.h <= 0) return;
-
+    pub fn draw(self: *GraphView, s: *session.Session, ui: *cui.cui_ctx) void {
+        self.strings.reset();
         self.ensurePositions(s) catch |err| {
             slog.warn("node graph layout failed: {s}", .{@errorName(err)});
         };
 
-        const flags = ig.ImGuiWindowFlags_NoTitleBar |
-            ig.ImGuiWindowFlags_NoResize |
-            ig.ImGuiWindowFlags_NoMove |
-            ig.ImGuiWindowFlags_NoScrollbar |
-            ig.ImGuiWindowFlags_NoScrollWithMouse |
-            ig.ImGuiWindowFlags_NoBackground |
-            ig.ImGuiWindowFlags_NoSavedSettings |
-            ig.ImGuiWindowFlags_NoBringToFrontOnFocus;
+        var opts = util.zero(cui.cui_node_editor_opts);
+        opts.width = util.fill();
+        opts.height = util.fill();
+        opts.minimap = true;
+        if (!cui.cui_node_editor_begin_ex(ui, "pipeline-graph", &self.view, &opts)) return;
+        defer cui.cui_node_editor_end(ui);
 
-        ig.igPushStyleVarImVec2(ig.ImGuiStyleVar_WindowPadding, .{ .x = 0, .y = 0 });
-        defer ig.igPopStyleVar();
-        ig.igSetNextWindowPos(.{ .x = rect.x, .y = rect.y }, ig.ImGuiCond_Always);
-        ig.igSetNextWindowSize(.{ .x = rect.w, .y = rect.h }, ig.ImGuiCond_Always);
-        if (!ig.igBegin("##nodegraph", null, flags)) {
-            ig.igEnd();
-            return;
-        }
-        defer ig.igEnd();
-
-        const canvas_pos = ig.igGetCursorScreenPos();
-        const canvas_size = ig.igGetContentRegionAvail();
-        self.editor.begin(.{
-            .min = .{ .x = canvas_pos.x, .y = canvas_pos.y },
-            .max = .{ .x = canvas_pos.x + canvas_size.x, .y = canvas_pos.y + canvas_size.y },
-        });
-
-        self.collectEntries(s);
-        self.drawNodes(s);
-        self.drawLinks(s);
-
-        self.editor.end();
-
-        if (self.needs_fit) {
-            self.needs_fit = false;
-            self.editor.fit();
-        }
-
-        if (self.editor.takeLinkEdit()) |edit| switch (edit) {
-            .connect => |request| self.connect(s, request),
-            .disconnect => |pin| self.disconnectInput(s, pin),
-        };
-        if (self.editor.isCanvasHovered() and ig.igIsKeyPressed(ig.ImGuiKey_Delete)) self.deleteSelection(s);
-    }
-
-    // ------------------------------------------------------------------
-    // submission
-    // ------------------------------------------------------------------
-
-    fn collectEntries(self: *GraphView, s: *session.Session) void {
-        self.entries.clearRetainingCapacity();
         var it = s.pipeline.module_pool.liveHandles();
         while (it.next()) |handle| {
-            self.entries.append(self.allocator, .{
-                .handle = handle,
-                .z = self.editor.z(handle.id),
-            }) catch return;
+            const mod = s.pipeline.module_pool.getPtr(handle) catch continue;
+            self.drawNode(ui, handle, mod);
         }
-        // submit back-to-front so overlapping nodes and their widgets stack in z order
-        std.sort.insertion(Entry, self.entries.items, {}, lessThanByZ);
+
+        it = s.pipeline.module_pool.liveHandles();
+        while (it.next()) |handle| {
+            const dst = s.pipeline.module_pool.getPtr(handle) catch continue;
+            self.drawLinks(s, ui, handle, dst);
+        }
+
+        self.processEvents(s, ui);
     }
 
-    fn drawNodes(self: *GraphView, s: *session.Session) void {
-        var inputs: [pie.api.MAX_SOCKETS]nodes.Pin = undefined;
-        var outputs: [pie.api.MAX_SOCKETS]nodes.Pin = undefined;
+    fn drawNode(self: *GraphView, ui: *cui.cui_ctx, handle: pie.pipeline.ModuleHandle, mod: *pie.api.Module) void {
+        const title = self.strings.fmt("{s}:{s}", .{ mod.name, mod.id }) catch return;
 
-        for (self.entries.items) |entry| {
-            const mod = s.pipeline.module_pool.getPtr(entry.handle) catch continue;
+        var opts = util.zero(cui.cui_node_opts);
+        opts.width = 180;
+        _ = cui.cui_node_begin_ex(ui, self.nodeId(handle), &mod.x, &mod.y, title.ptr, &opts);
+        defer cui.cui_node_end(ui);
 
-            var title_buf: [128]u8 = undefined;
-            const title: []const u8 = std.mem.printSentinel(&title_buf, "{s}:{s}", .{ mod.name, mod.id }, 0) catch mod.name;
-
-            var input_count: usize = 0;
-            var output_count: usize = 0;
-            for (mod.sockets, 0..) |maybe_socket, socket_index| {
-                const socket = maybe_socket orelse continue;
-                const pin = nodes.Pin{
-                    .key = @intCast(socket_index),
-                    .label = socket.name,
-                };
-                switch (socket.type.direction()) {
-                    .input => {
-                        if (input_count < inputs.len) {
-                            inputs[input_count] = pin;
-                            input_count += 1;
-                        }
-                    },
-                    .output => {
-                        if (output_count < outputs.len) {
-                            outputs[output_count] = pin;
-                            output_count += 1;
-                        }
-                    },
-                }
-            }
-
-            const pos = self.editor.node(.{
-                .id = entry.handle.id,
-                .pos = .{ .x = mod.x, .y = mod.y },
-                .title = title,
-                .inputs = inputs[0..input_count],
-                .outputs = outputs[0..output_count],
-                .disabled = !mod.flags.enabled,
-            });
-
-            if (pos.x != mod.x or pos.y != mod.y) {
-                mod.x = pos.x;
-                mod.y = pos.y;
+        var pin_opts = util.zero(cui.cui_pin_opts);
+        for (mod.sockets, 0..) |maybe_socket, socket_index| {
+            const socket = maybe_socket orelse continue;
+            const label = self.strings.fmt("{s}", .{socket.name}) catch continue;
+            switch (socket.type.direction()) {
+                .input => _ = cui.cui_node_input_ex(ui, self.pinId(handle, @intCast(socket_index), 0), label.ptr, &pin_opts),
+                .output => _ = cui.cui_node_output_ex(ui, self.pinId(handle, @intCast(socket_index), 1), label.ptr, &pin_opts),
             }
         }
     }
 
-    fn drawLinks(self: *GraphView, s: *session.Session) void {
-        for (self.entries.items) |entry| {
-            const dst = s.pipeline.module_pool.getPtr(entry.handle) catch continue;
-            for (dst.sockets, 0..) |maybe_socket, dst_index| {
-                const socket = maybe_socket orelse continue;
-                const connection = socket.connected_to_module orelse continue;
-                _ = s.pipeline.module_pool.getPtr(connection.item) catch continue;
-                self.editor.link(.{
-                    .from = .{
-                        .node = connection.item.id,
-                        .index = @intCast(connection.socket_idx),
-                        .kind = .output,
-                    },
-                    .to = .{
-                        .node = entry.handle.id,
-                        .index = @intCast(dst_index),
-                        .kind = .input,
-                    },
-                });
-            }
+    fn drawLinks(self: *GraphView, s: *session.Session, ui: *cui.cui_ctx, handle: pie.pipeline.ModuleHandle, mod: *pie.api.Module) void {
+        for (mod.sockets, 0..) |maybe_socket, dst_index| {
+            const socket = maybe_socket orelse continue;
+            const connection = socket.connected_to_module orelse continue;
+            _ = s.pipeline.module_pool.getPtr(connection.item) catch continue;
+            const out_id = self.pinId(connection.item, @intCast(connection.socket_idx), 1);
+            const in_id = self.pinId(handle, @intCast(dst_index), 0);
+            _ = cui.cui_node_link(ui, in_id, out_id, in_id);
         }
+    }
+
+    fn processEvents(self: *GraphView, s: *session.Session, ui: *cui.cui_ctx) void {
+        var removed: c_int = 0;
+        while (cui.cui_node_link_removed(ui, &removed)) self.removeLink(s, removed);
+
+        var from: c_int = 0;
+        var to: c_int = 0;
+        while (cui.cui_node_link_created(ui, &from, &to)) self.createLink(s, from, to);
+
+        var node_id: c_int = 0;
+        while (cui.cui_node_deleted(ui, &node_id)) self.deleteNode(s, node_id);
+    }
+
+    // ------------------------------------------------------------------
+    // ids
+    // ------------------------------------------------------------------
+
+    fn nodeId(self: *GraphView, handle: pie.pipeline.ModuleHandle) c_int {
+        const gop = self.node_ids.getOrPut(self.allocator, handle.id) catch return 0;
+        if (!gop.found_existing) {
+            gop.value_ptr.* = self.next_node_id;
+            self.node_owner.put(self.allocator, self.next_node_id, handle.id) catch {};
+            self.next_node_id += 1;
+        }
+        return gop.value_ptr.*;
+    }
+
+    fn pinId(self: *GraphView, handle: pie.pipeline.ModuleHandle, index: u16, kind: u8) c_int {
+        const key = PinKey{ .node = handle.id, .index = index, .kind = kind };
+        const gop = self.pin_ids.getOrPut(self.allocator, key) catch return 0;
+        if (!gop.found_existing) {
+            gop.value_ptr.* = self.next_pin_id;
+            self.pin_owner.put(self.allocator, self.next_pin_id, key) catch {};
+            self.next_pin_id += 1;
+        }
+        return gop.value_ptr.*;
+    }
+
+    fn pinKey(self: *GraphView, id: c_int) ?PinKey {
+        return self.pin_owner.get(id);
     }
 
     // ------------------------------------------------------------------
     // edits
     // ------------------------------------------------------------------
 
-    fn connect(self: *GraphView, s: *session.Session, request: nodes.ConnectRequest) void {
-        _ = self;
-        const src = s.pipeline.module_pool.getPtr(.{ .id = request.from.node }) catch return;
-        const dst = s.pipeline.module_pool.getPtr(.{ .id = request.to.node }) catch return;
+    fn removeLink(self: *GraphView, s: *session.Session, link_id: c_int) void {
+        const key = self.pinKey(link_id) orelse return;
+        if (key.kind != 0) return; // links are keyed by their input pin
+        disconnectInput(s, key);
+    }
 
-        const src_socket = if (src.sockets[request.from.index]) |*socket| socket else return;
-        const dst_socket = if (dst.sockets[request.to.index]) |*socket| socket else return;
+    fn createLink(self: *GraphView, s: *session.Session, a: c_int, b: c_int) void {
+        const ka = self.pinKey(a) orelse return;
+        const kb = self.pinKey(b) orelse return;
+        const from = if (ka.kind == 1) ka else kb;
+        const to = if (ka.kind == 1) kb else ka;
+        if (from.kind != 1 or to.kind != 0 or from.node == to.node) return;
+        connect(s, from, to);
+    }
+
+    fn connect(s: *session.Session, from: PinKey, to: PinKey) void {
+        const src = s.pipeline.module_pool.getPtr(.{ .id = from.node }) catch return;
+        const dst = s.pipeline.module_pool.getPtr(.{ .id = to.node }) catch return;
+        const src_socket = if (src.sockets[from.index]) |*socket| socket else return;
+        const dst_socket = if (dst.sockets[to.index]) |*socket| socket else return;
 
         if (!pie.api.Socket.areCompatible(src_socket, dst_socket)) {
             slog.warn("rejected link: incompatible sockets", .{});
             return;
         }
 
-        // a link dragged off an input leaves that input connected in the model
-        if (request.replace) |old| {
-            if (!std.meta.eql(old, request.to)) {
-                const old_mod = s.pipeline.module_pool.getPtr(.{ .id = old.node }) catch null;
-                if (old_mod) |mod| {
-                    if (mod.sockets[old.index]) |*old_socket| {
-                        if (old_socket.connected_to_module != null) {
-                            s.pipeline.disconnectModule(.{ .id = old.node }, old_socket.name) catch |err| {
-                                slog.warn("could not disconnect detached link: {s}", .{@errorName(err)});
-                            };
-                        }
-                    }
-                }
-            }
-        }
-
-        // an input takes one upstream: replace the existing connection first
         if (dst_socket.connected_to_module != null) {
-            s.pipeline.disconnectModule(.{ .id = request.to.node }, dst_socket.name) catch |err| {
+            s.pipeline.disconnectModule(.{ .id = to.node }, dst_socket.name) catch |err| {
                 slog.warn("could not disconnect old link: {s}", .{@errorName(err)});
                 return;
             };
         }
 
         s.pipeline.connectModules(
-            .{ .id = request.from.node },
+            .{ .id = from.node },
             src_socket.name,
-            .{ .id = request.to.node },
+            .{ .id = to.node },
             dst_socket.name,
         ) catch |err| {
             slog.warn("could not connect modules: {s}", .{@errorName(err)});
             return;
         };
-
         s.requestRun();
     }
 
-    fn disconnectInput(self: *GraphView, s: *session.Session, pin: nodes.PinRef) void {
-        _ = self;
-        const mod = s.pipeline.module_pool.getPtr(.{ .id = pin.node }) catch return;
-        const socket = if (mod.sockets[pin.index]) |*sock| sock else return;
+    fn disconnectInput(s: *session.Session, key: PinKey) void {
+        const mod = s.pipeline.module_pool.getPtr(.{ .id = key.node }) catch return;
+        const socket = if (mod.sockets[key.index]) |*sock| sock else return;
         if (socket.connected_to_module == null) return;
-
-        s.pipeline.disconnectModule(.{ .id = pin.node }, socket.name) catch |err| {
+        s.pipeline.disconnectModule(.{ .id = key.node }, socket.name) catch |err| {
             slog.warn("could not disconnect link: {s}", .{@errorName(err)});
             return;
         };
         s.requestRun();
     }
 
-    fn deleteSelection(self: *GraphView, s: *session.Session) void {
-        // links first, so the history records explicit disconnects
-        for (self.editor.selectedLinks()) |ends| {
-            const dst = s.pipeline.module_pool.getPtr(.{ .id = ends.to.node }) catch continue;
-            const socket = dst.sockets[ends.to.index] orelse continue;
-            s.pipeline.disconnectModule(.{ .id = ends.to.node }, socket.name) catch |err| {
-                slog.warn("could not disconnect selected link: {s}", .{@errorName(err)});
-            };
-        }
-
-        // copy the ids: removeModule mutates the pool the editor's selection
-        // was derived from
-        var ids: [pie.pipeline.MAX_MODULES]u64 = undefined;
-        const selected = self.editor.selectedNodes();
-        const count = @min(selected.len, ids.len);
-        @memcpy(ids[0..count], selected[0..count]);
-
-        for (ids[0..count]) |id| {
-            self.removeModuleAndLinks(s, id);
-            _ = self.placed.remove(id);
-        }
-        self.editor.clearSelection();
-        s.requestRun();
+    fn deleteNode(self: *GraphView, s: *session.Session, node_id: c_int) void {
+        const handle_id = self.node_owner.get(node_id) orelse return;
+        self.removeModuleAndLinks(s, handle_id);
+        _ = self.node_owner.remove(node_id);
+        _ = self.node_ids.remove(handle_id);
     }
 
     fn removeModuleAndLinks(self: *GraphView, s: *session.Session, id: u64) void {
         _ = self;
-        // clear every input that still points at the doomed module, otherwise
-        // the socket keeps a dangling handle
         var it = s.pipeline.module_pool.liveHandles();
         while (it.next()) |handle| {
             const mod = s.pipeline.module_pool.getPtr(handle) catch continue;
@@ -305,14 +234,13 @@ pub const GraphView = struct {
         s.pipeline.removeModule(.{ .id = id }) catch |err| {
             slog.warn("could not remove module: {s}", .{@errorName(err)});
         };
+        s.requestRun();
     }
 
     // ------------------------------------------------------------------
     // initial layout
     // ------------------------------------------------------------------
 
-    /// Lay out modules that have never been placed: rank = longest path from a
-    /// source, so the default linear pipelines read left to right.
     fn ensurePositions(self: *GraphView, s: *session.Session) !void {
         var needs_layout = false;
         var probe = s.pipeline.module_pool.liveHandles();
@@ -331,7 +259,6 @@ pub const GraphView = struct {
         var it = s.pipeline.module_pool.liveHandles();
         while (it.next()) |handle| _ = try self.moduleDepth(s, handle);
 
-        // reserve the vertical slots already taken by placed nodes
         it = s.pipeline.module_pool.liveHandles();
         while (it.next()) |handle| {
             if (!self.placed.contains(handle.id)) continue;
@@ -352,10 +279,9 @@ pub const GraphView = struct {
             const slot = slot_gop.value_ptr.*;
             slot_gop.value_ptr.* += 1;
 
-            mod.x = 40.0 + @as(f32, @floatFromInt(depth)) * (self.editor.style.node_width + 70.0);
-            mod.y = 40.0 + @as(f32, @floatFromInt(slot)) * 150.0;
+            mod.x = 40.0 + @as(f32, @floatFromInt(depth)) * 260.0;
+            mod.y = 40.0 + @as(f32, @floatFromInt(slot)) * 160.0;
             try self.placed.put(self.allocator, handle.id, {});
-            self.needs_fit = true;
         }
     }
 
@@ -380,7 +306,3 @@ pub const GraphView = struct {
         return depth;
     }
 };
-
-fn lessThanByZ(_: void, a: GraphView.Entry, b: GraphView.Entry) bool {
-    return a.z < b.z;
-}

@@ -1,17 +1,18 @@
-//! GUI root — the editor's widget tree, compiled into the app.
+//! GUI root — the editor's CUI widget tree.
 //!
-//! The GUI owns no engine state: it reads the live editing session (`pipeline`,
-//! `catalog`, `blit`) directly and mutates only its own view state. Views are
-//! stateless functions over a borrowed `*session.Session`.
+//! The GUI owns no engine state: it reads the live session (`pipeline`,
+//! `catalog`, `display`) and mutates only its own view state.
 
 const std = @import("std");
-const sokol = @import("sokol");
-const sapp = sokol.app;
+const cui = @import("cui");
+const Renderer = @import("cui_sokol").Renderer;
 const session = @import("session");
 const Darkroom = @import("./views/darkroom.zig").Darkroom;
 const Lighttable = @import("./views/lighttable.zig").Lighttable;
 const MenuBar = @import("./components/menu_bar.zig").MenuBar;
-const theme = @import("./theme.zig");
+const util = @import("./cui_util.zig");
+
+pub const theme = @import("./theme.zig");
 
 pub const ViewKind = enum { darkroom, lighttable };
 
@@ -20,49 +21,37 @@ pub const GUI = struct {
     io: std.Io,
     view: ViewKind = .lighttable,
     darkroom: Darkroom,
-    lighttable: Lighttable = .{},
+    lighttable: Lighttable,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io) !GUI {
-        theme.apply();
         return .{
             .allocator = allocator,
             .io = io,
-            .darkroom = Darkroom.init(allocator),
+            .darkroom = try Darkroom.init(allocator),
+            .lighttable = try Lighttable.init(allocator),
         };
     }
 
     pub fn deinit(self: *GUI) void {
         self.darkroom.deinit();
+        self.lighttable.deinit();
     }
 
-    /// The image quad is drawn behind the widgets, before the rest of the GUI.
-    /// The darkroom lays its split out first so the blit and the widgets agree
-    /// on where the image region is.
-    pub fn drawImage(self: *GUI, s: *session.Session) void {
-        if (self.view != .darkroom) return;
-        self.darkroom.layout();
-        // the graph replaces the image in the content area
-        if (self.darkroom.mode != .image) return;
-        s.blit.draw(self.darkroom.zoom, self.darkroom.pan, self.darkroom.image_rect);
-    }
+    /// Draw the menu bar and the active view.
+    pub fn draw(self: *GUI, s: *session.Session, ui: *cui.cui_ctx, renderer: *Renderer) void {
+        var root = util.zero(cui.cui_box);
+        root.dir = @intCast(cui.CUI_COLUMN);
+        root.width = util.fill();
+        root.height = util.fill();
+        root.pad = 0;
+        root.gap = 0;
+        _ = cui.cui_column_begin(ui, &root);
+        defer cui.cui_box_end(ui);
 
-    /// Draw the menu bar and the active view's widgets. The menu bar is drawn
-    /// first so imgui offsets the viewport's work area for it.
-    pub fn draw(self: *GUI, s: *session.Session) void {
-        MenuBar.draw(self, s);
+        MenuBar.draw(self, s, ui);
         switch (self.view) {
-            .darkroom => self.darkroom.draw(s),
-            .lighttable => self.lighttable.draw(self, s),
-        }
-    }
-
-    /// Mouse/keyboard input that ImGui did not consume. Both views are imgui
-    /// widgets, so only the image view needs raw input (pan/zoom).
-    pub fn event(self: *GUI, s: *session.Session, ev: [*c]const sapp.Event) void {
-        _ = s;
-        switch (self.view) {
-            .darkroom => self.darkroom.event(ev),
-            .lighttable => {},
+            .darkroom => self.darkroom.draw(s, ui, renderer),
+            .lighttable => self.lighttable.draw(self, s, ui, renderer),
         }
     }
 };
