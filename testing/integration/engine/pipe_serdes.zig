@@ -23,7 +23,7 @@ fn buildChain(p: *Pipeline) !void {
     try p.setModuleParam(color, "wb_tint", f32, 0.0);
     try p.setModuleParam(color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 });
 
-    try p.setModuleParam(filmcurv, "colormode", i32, 1);
+    try p.setModuleParam(filmcurv, "colormode", u32, 1);
     try p.setModuleParam(filmcurv, "brightness", f32, 3.8);
     try p.setModuleParam(filmcurv, "contrast", f32, 1.3);
     try p.setModuleParam(filmcurv, "bias", f32, 0.0);

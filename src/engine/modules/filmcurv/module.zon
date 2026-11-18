@@ -5,13 +5,13 @@
         .{ .name = "brightness", .len = 1, .typ = .f32 },
         .{ .name = "contrast", .len = 1, .typ = .f32 },
         .{ .name = "bias", .len = 1, .typ = .f32 },
-        .{ .name = "colormode", .len = 1, .typ = .i32 },
+        .{ .name = "colormode", .len = 1, .typ = .enum_u32, .enum_names = .{ "agx", "per_channel" } },
     },
     .params_ui = .{
         .{ .name = "brightness", .control = .{ .slider = .{ .min = 0, .max = 7, .step = 0.01 } } },
         .{ .name = "contrast", .control = .{ .slider = .{ .min = 0, .max = 4, .step = 0.01 } } },
         .{ .name = "bias", .control = .{ .slider = .{ .min = -0.05, .max = 0.2, .step = 0.01 } } },
-        .{ .name = "colormode", .control = .{ .combo = .{ .items = .{"AgX"} } } },
+        .{ .name = "colormode", .control = .{ .combo = .{ .items = .{ "AgX", "Per Channel" } } } },
     },
     .sockets = .{
         .{ .name = "input", .type = .read, .format = .rgba16float, .color_profile = .{

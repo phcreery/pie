@@ -18,14 +18,10 @@ const params = shd.getParams(module_zon);
 const input_image = shd.getImageFromZon(node_zon, "input");
 const output_image = shd.getImageFromZon(node_zon, "output");
 
-const COLORMODE_AGX: i32 = 0;
-
 /// Clamps for the curve parameters; `il` must stay positive for `log2` in
 /// `color.powf`, `k` must stay positive for the Weibull shape.
 const MIN_BRIGHTNESS: f32 = 5e-3;
 const MIN_CONTRAST: f32 = 1e-4;
-
-const ZERO: Vec3 = Vec3.zero;
 
 /// Weibull CDF, used as the per-channel film curve.
 ///
@@ -55,23 +51,25 @@ pub inline fn weibullCdfVec3(x: Vec3, il: f32, k: f32) Vec3 {
     );
 }
 
+/// Port of vkdt's `agx()`: inset, per-channel Weibull curve, hue mix in
+/// OkLab, outset.
 pub inline fn agxWeibull(rgb: Vec3, il: f32, k: f32) Vec3 {
     const inset = math.matrices.agx_inset.mulVec(rgb);
     const mix_percent = 0.4;
-    const hsv0 = color.rgbToHsv(inset);
+    const oklch0 = color.rec2020ToOklch(inset);
     const curved = weibullCdfVec3(inset, il, k);
-    var hsv1 = color.rgbToHsv(curved);
-    hsv1.x = color.lerpChromaticityAngle(hsv0.x, hsv1.x, mix_percent);
-    const recolored = color.hsvToRgb(hsv1);
-    return Vec3.componentMax(math.matrices.agx_inset_inv.mulVec(recolored), ZERO);
+    var oklch1 = color.rec2020ToOklch(curved);
+    oklch1.x = color.lerpChromaticityAngle(oklch0.x, oklch1.x, mix_percent);
+    const recolored = color.oklchToRec2020(oklch1);
+    return math.matrices.agx_inset_inv.mulVec(recolored);
 }
 
 inline fn applyFilmCurve(rgb: Vec3) Vec3 {
     const il = @max(MIN_BRIGHTNESS, params.brightness);
     const k = @max(MIN_CONTRAST, params.contrast);
-    const biased = Vec3.componentMax(Vec3.add(rgb, Vec3.all(params.bias)), ZERO);
+    const biased = Vec3.add(rgb, Vec3.all(params.bias));
 
-    if (params.colormode == COLORMODE_AGX) {
+    if (params.colormode == .agx) {
         return agxWeibull(biased, il, k);
     }
     return weibullCdfVec3(biased, il, k);
@@ -81,7 +79,7 @@ export fn main() callconv(shd.call_conv) void {
     const coord = shd.coord();
     const px = shd.imageFetch(input_image, coord);
 
-    const rgb_rec2020_linear = Vec3.componentMax(Vec3.new(px.x, px.y, px.z), ZERO);
+    const rgb_rec2020_linear = Vec3.new(px.x, px.y, px.z);
     const rgb_rec2020_linear_display = applyFilmCurve(rgb_rec2020_linear);
 
     // temporary conversion from Rec.2020 linear to sRGB for display purposes

@@ -1,8 +1,9 @@
-//! Reusable f32 color math: sRGB transfer function, HSV round-trip, and the
+//! Reusable f32 color math: sRGB transfer function, OkLab/OkLCh, and the
 //! Weibull "film curve" (plain and AGX-flavoured).
 //!
 //! Shared by shaders (`@import("shader").math.color`) and CPU-side module code.
 
+const std = @import("std");
 const math = @import("root.zig");
 pub const matrices = @import("matrices.zig"); // color matrices, exported as `math.matrices`
 
@@ -23,7 +24,7 @@ pub inline fn linearToSrgbVec3(v: Vec3) Vec3 {
 }
 
 // ---------------------------------------------------------------------------
-// HSV
+// OkLab / OkLCh (linear Rec.2020)
 // ---------------------------------------------------------------------------
 
 /// Hue interpolation the short way around the wheel. Hue is in turns [0, 1).
@@ -38,69 +39,66 @@ pub inline fn lerpChromaticityAngle(h1: f32, h2: f32, t: f32) f32 {
     return math.fract(h1 + t * (h2m - h1));
 }
 
-/// -> (hue in turns [0, 1), saturation, value).
-pub inline fn rgbToHsv(c: Vec3) Vec3 {
-    const maxc = @max(c.x, @max(c.y, c.z));
-    const minc = @min(c.x, @min(c.y, c.z));
-    const delta = maxc - minc;
-
-    var h: f32 = 0.0;
-    if (delta > math.EPSILON) {
-        if (maxc == c.x) {
-            h = (c.y - c.z) / delta;
-            if (c.y < c.z) {
-                h += 6.0;
-            }
-        } else if (maxc == c.y) {
-            h = ((c.z - c.x) / delta) + 2.0;
-        } else {
-            h = ((c.x - c.y) / delta) + 4.0;
-        }
-        h /= 6.0;
-    }
-
-    var s: f32 = 0.0;
-    if (maxc > math.EPSILON) {
-        s = delta / maxc;
-    }
-    return Vec3.new(h, s, maxc);
+/// Linear Rec.2020 -> OkLab. Matches vkdt's `rec2020_to_oklab`.
+pub inline fn rec2020ToOklab(rgb: Vec3) Vec3 {
+    var lms = matrices.oklab_lms_from_rec2020.mulVec(rgb);
+    lms = Vec3.new(
+        math.powf(@max(lms.x, 0.0), 1.0 / 3.0),
+        math.powf(@max(lms.y, 0.0), 1.0 / 3.0),
+        math.powf(@max(lms.z, 0.0), 1.0 / 3.0),
+    );
+    return matrices.oklab_from_lms.mulVec(lms);
 }
 
-/// (hue in turns, saturation, value) -> rgb.
-pub inline fn hsvToRgb(c: Vec3) Vec3 {
-    const h = math.fract(c.x) * 6.0;
-    const s = c.y;
-    const v = c.z;
-    const i: i32 = @intFromFloat(@floor(h));
-    const f = h - @floor(h);
-    const p = v * (1.0 - s);
-    const q = v * (1.0 - s * f);
-    const t = v * (1.0 - s * (1.0 - f));
-
-    return switch (i) {
-        0 => Vec3.new(v, t, p),
-        1 => Vec3.new(q, v, p),
-        2 => Vec3.new(p, v, t),
-        3 => Vec3.new(p, q, v),
-        4 => Vec3.new(t, p, v),
-        else => Vec3.new(v, p, q),
-    };
+/// OkLab -> linear Rec.2020.
+pub inline fn oklabToRec2020(lab: Vec3) Vec3 {
+    var lms = matrices.lms_from_oklab.mulVec(lab);
+    lms = Vec3.new(lms.x * lms.x * lms.x, lms.y * lms.y * lms.y, lms.z * lms.z * lms.z);
+    return matrices.rec2020_from_lms.mulVec(lms);
 }
 
-test "hsv round-trips" {
+/// Linear Rec.2020 -> OkLCh, packed as (hue in turns, chroma, lightness).
+///
+/// This is the space vkdt's `rgb2hsv` actually uses in the AgX path: hue is
+/// mixed in OkLab, not in classic HSV.
+pub inline fn rec2020ToOklch(rgb: Vec3) Vec3 {
+    const lab = rec2020ToOklab(rgb);
+    if (lab.x <= 0.0) return Vec3.zero;
+    const hue = math.fract(1.0 + math.atan2(lab.z, lab.y) / (2.0 * std.math.pi));
+    return Vec3.new(hue, @sqrt(lab.y * lab.y + lab.z * lab.z), lab.x);
+}
+
+/// (hue in turns, chroma, lightness) -> linear Rec.2020.
+pub inline fn oklchToRec2020(hcl: Vec3) Vec3 {
+    const lab = Vec3.new(
+        hcl.z,
+        hcl.y * @cos(2.0 * std.math.pi * hcl.x),
+        hcl.y * @sin(2.0 * std.math.pi * hcl.x),
+    );
+    if (lab.x <= 0.0) return Vec3.zero;
+    return oklabToRec2020(lab);
+}
+
+test "oklab round-trips and neutral gray has zero chroma" {
     const testing = @import("std").testing;
-    const inputs = [4]Vec3{
+    const inputs = [5]Vec3{
         Vec3.new(1.0, 0.0, 0.0),
         Vec3.new(0.2, 0.6, 0.9),
-        Vec3.new(0.5, 0.5, 0.5),
+        Vec3.new(0.18, 0.18, 0.18),
+        Vec3.new(0.4, 0.2, 0.1),
         Vec3.new(0.0, 0.0, 0.0),
     };
     for (inputs) |rgb| {
-        const round_tripped = hsvToRgb(rgbToHsv(rgb));
-        try testing.expectApproxEqAbs(rgb.x, round_tripped.x, 1e-5);
-        try testing.expectApproxEqAbs(rgb.y, round_tripped.y, 1e-5);
-        try testing.expectApproxEqAbs(rgb.z, round_tripped.z, 1e-5);
+        const round_tripped = oklabToRec2020(rec2020ToOklab(rgb));
+        try testing.expectApproxEqAbs(rgb.x, round_tripped.x, 1e-4);
+        try testing.expectApproxEqAbs(rgb.y, round_tripped.y, 1e-4);
+        try testing.expectApproxEqAbs(rgb.z, round_tripped.z, 1e-4);
     }
+
+    const gray = rec2020ToOklch(Vec3.new(0.18, 0.18, 0.18));
+    try testing.expectApproxEqAbs(@as(f32, 0.0), gray.y, 1e-3);
+    // OkLab L of a neutral is cbrt(linear value)
+    try testing.expectApproxEqAbs(@as(f32, 0.56462), gray.z, 1e-3);
 }
 
 test "linearToSrgb follows the piecewise sRGB curve" {
