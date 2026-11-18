@@ -94,7 +94,7 @@ pub fn size_cpu(len: u32, typ: api.ParamType) usize {
         .i32 => @sizeOf(i32) * len,
         .f32 => @sizeOf(f32) * len,
         .str => @sizeOf(u8) * len,
-        .enum_u32 => @sizeOf(u32),
+        .enum_u32 => @sizeOf(u32) * len,
         // else => unreachable,
     };
 }
@@ -118,6 +118,9 @@ pub fn size(self: Self) usize {
         },
         .enum_u32 => switch (self.desc.len) {
             1 => types.std140.size(u32),
+            2 => types.std140.size([2]u32),
+            3 => types.std140.size([3]u32),
+            4 => types.std140.size([4]u32),
             else => unreachable,
         },
         else => unreachable,
@@ -138,6 +141,9 @@ pub fn alignment(self: Self) usize {
         },
         .enum_u32 => switch (self.desc.len) {
             1 => types.std140.alignment(u32),
+            2 => types.std140.alignment([2]u32),
+            3 => types.std140.alignment([3]u32),
+            4 => types.std140.alignment([4]u32),
             else => unreachable,
         },
         else => unreachable,
@@ -310,6 +316,35 @@ test "Param [2]f32 get/set" {
     try param.set(@as([2]f32, .{ 1.0, 2.0 }));
     const val3 = param.get([2]f32);
     try std.testing.expectEqual(val3, @as([2]f32, .{ 1.0, 2.0 }));
+}
+
+test "Param [2]enum_u32 get/set and std140 layout" {
+    const allocator = std.testing.allocator;
+    const Param = @This();
+    var param = try Param.init(
+        allocator,
+        .{
+            .name = "mask",
+            .len = 2,
+            .typ = .enum_u32,
+            .enum_names = &.{ "none", "a", "b" },
+        },
+        @as([2]u32, .{ 2, 5 }),
+    );
+    defer param.deinit(allocator);
+
+    try std.testing.expectEqual(@as([2]u32, .{ 2, 5 }), param.get([2]u32));
+    const values = param.value().enum_u32;
+    try std.testing.expectEqual(@as(usize, 2), values.len);
+    try std.testing.expectEqual(@as(u32, 2), values[0]);
+    try std.testing.expectEqual(@as(u32, 5), values[1]);
+
+    // both values must be addressable and laid out as vec2<u32>
+    try std.testing.expectEqual(@as(usize, 8), param.size());
+    try std.testing.expectEqual(@as(usize, 8), param.alignment());
+    var gpu_bytes: [8]u8 = undefined;
+    param.writeBytes(&gpu_bytes);
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&[_]u32{ 2, 5 }), &gpu_bytes);
 }
 
 test "Param module init string" {

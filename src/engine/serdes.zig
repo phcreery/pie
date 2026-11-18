@@ -65,7 +65,8 @@ pub const ParamCfgEntry = struct {
     name: []const u8,
     id: []const u8,
     param: []const u8,
-    value: colonconfig.Value,
+    /// Colon-separated numbers or the raw string, matching `deserialize`.
+    value: []const u8,
     pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
 
     const Self = @This();
@@ -74,13 +75,7 @@ pub const ParamCfgEntry = struct {
             slog.warn("line {d}: incomplete param line, skipping", .{line_no});
             return;
         }
-        const value_text = switch (self.value) {
-            .text => |s| s,
-            else => {
-                slog.warn("line {d}: param value must be text, skipping", .{line_no});
-                return;
-            },
-        };
+        const value_text = self.value;
 
         const fullname = try std.mem.concat(pipe.allocator, u8, &.{ self.name, ":", self.id });
         defer pipe.allocator.free(fullname);
@@ -171,14 +166,29 @@ pub const Schema = union(enum) {
     removemodule: RemoveModuleCfgEntry,
 };
 
-/// Adapt a live param value to the schema's write representation.
-pub fn schemaValue(value: Param.Value) colonconfig.Value {
+/// Largest text for one param value: 4 numbers at 48 bytes each (a negative
+/// subnormal float prints as sign, `0.`, and 46 digits) joined by 3 colons.
+/// `Param.size` admits at most 4 numerics per param.
+pub const param_value_text_max = 4 * 48 + 3;
+
+/// Adapt a live param value to the schema's text representation. Numeric
+/// values are formatted into `buf`; strings are returned as-is.
+pub fn schemaValue(value: Param.Value, buf: []u8) error{NoSpaceLeft}![]const u8 {
     return switch (value) {
-        .i32 => |xs| .{ .i32 = xs },
-        .f32 => |xs| .{ .f32 = xs },
-        .str => |s| .{ .text = s },
-        .enum_u32 => |xs| .{ .enum_u32 = xs },
+        .i32 => |xs| formatList(i32, buf, xs),
+        .f32 => |xs| formatList(f32, buf, xs),
+        .str => |s| s,
+        .enum_u32 => |xs| formatList(u32, buf, xs),
     };
+}
+
+fn formatList(comptime T: type, buf: []u8, values: []align(1) const T) error{NoSpaceLeft}![]const u8 {
+    var out = buf;
+    for (values, 0..) |v, i| {
+        const s = try std.fmt.bufPrint(out, "{s}{d}", .{ if (i == 0) "" else ":", v });
+        out = out[s.len..];
+    }
+    return buf[0 .. buf.len - out.len];
 }
 
 /// This function serializes the current state of the pipeline into a colonconfig format.
@@ -216,13 +226,14 @@ pub fn serialize(pipe: *pipeline.Pipeline, writer: *std.Io.Writer) !void {
     it = pipe.module_pool.liveHandles();
     while (it.next()) |handle| {
         const mod = try pipe.module_pool.getPtr(handle);
+        var value_buf: [param_value_text_max]u8 = undefined;
         for (mod.params) |maybe_param| {
             const param = maybe_param orelse continue;
             try PresetConfig.writeEntry(writer, .{ .param = .{
                 .name = mod.name,
                 .id = mod.id,
                 .param = param.desc.name,
-                .value = schemaValue(param.value()),
+                .value = try schemaValue(param.value(), &value_buf),
             } });
         }
     }
@@ -240,4 +251,49 @@ pub fn deserialize(pipe: *pipeline.Pipeline, reader: std.Io.Reader) !void {
             .removemodule => |cfg| try cfg.deserialize(it.line_no, pipe),
         }
     }
+}
+
+test "schemaValue formats numeric params as colon-separated text" {
+    var buf: [param_value_text_max]u8 = undefined;
+
+    const gains: []align(1) const f32 = &.{ 1.5, -2.0 };
+    try std.testing.expectEqualStrings("1.5:-2", try schemaValue(.{ .f32 = gains }, &buf));
+
+    const mask: []align(1) const i32 = &.{ 1, -2 };
+    try std.testing.expectEqualStrings("1:-2", try schemaValue(.{ .i32 = mask }, &buf));
+
+    const wb: []align(1) const u32 = &.{ 2, 5 };
+    try std.testing.expectEqualStrings("2:5", try schemaValue(.{ .enum_u32 = wb }, &buf));
+
+    try std.testing.expectEqualStrings("a/b:c.NEF", try schemaValue(.{ .str = "a/b:c.NEF" }, &buf));
+
+    // Four worst-case floats (negative subnormals) must fit `param_value_text_max`.
+    const tiny = -std.math.floatTrueMin(f32);
+    const extreme: []align(1) const f32 = &.{ tiny, tiny, tiny, tiny };
+    _ = try schemaValue(.{ .f32 = extreme }, &buf);
+}
+
+test "enum params round-trip through colonconfig" {
+    const testing = std.testing;
+
+    var pipe = try pipeline.Pipeline.init(testing.allocator, testing.io, null, .{});
+    defer pipe.deinit();
+
+    const color = try pipe.addModule("color", "01");
+    try pipe.setModuleParam(color, "wb_mode", u32, 2);
+
+    var written: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer written.deinit();
+    try pipe.save(&written.writer);
+    try testing.expect(std.mem.indexOf(u8, written.written(), "param:color:01:wb_mode:2\n") != null);
+
+    var loaded = try pipeline.Pipeline.init(testing.allocator, testing.io, null, .{});
+    defer loaded.deinit();
+    try loaded.load(written.written());
+
+    const color_handle = loaded.module_name_map.get("color:01") orelse
+        return error.TestUnexpectedResult;
+    const mod = try loaded.module_pool.getPtr(color_handle);
+    const wb_mode = (try mod.getParamPtr("wb_mode")).get(u32);
+    try testing.expectEqual(@as(u32, 2), wb_mode);
 }

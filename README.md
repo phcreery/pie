@@ -10,7 +10,7 @@ At the core of pie is a image processing graph called a pipeline. The pieline is
 
 The input sockets of modules/nodes can only be connected to one upstream module/node. We allocate a texture on the GPU for each input socket. Each node reads from this input socket texture and wrties to an output texture. For n nodes, there will be >n-1 textures allocated, one for each node with input socket.
 
-The surrent status of pie allows us to build a basic pipeline. Adding an `i-*` module sets the source, the pipeline does basic raw -> srgb, then hands the last texture to an `o-*` sink module. The gui uses sokol which expects an sRGB texture to pass to the display.
+The current status of pie allows us to build a basic pipeline. Adding an `i-*` module sets the source, the pipeline does basic raw -> srgb, then hands the last texture to an `o-*` sink module. The gui uses sokol which expects an sRGB texture to pass to the display.
 
 ```zig
 const allocator = std.testing.allocator;

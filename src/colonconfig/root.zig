@@ -18,6 +18,10 @@
 //! struct. The struct holds the record fields in order. The key is in the tag
 //! name only.
 //!
+//! Every field is `[]const u8`. The reader returns slices into its line
+//! buffer; the writer writes them verbatim. Any richer encoding of a value is
+//! the schema's business.
+//!
 //! Example:
 //!
 //! ```zig
@@ -27,7 +31,7 @@
 //!         name: []const u8,
 //!         id: []const u8,
 //!         param: []const u8,
-//!         value: colonconfig.Value,
+//!         value: []const u8,
 //!         pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
 //!     },
 //! };
@@ -54,22 +58,6 @@ const colonconfig = @This();
 /// colon. Any comptime string equal to "rest" works.
 pub const rest: []const u8 = "rest";
 
-/// A field value that a writer can write in more than one form. The parser
-/// always returns `.text`.
-/// TODO: this is dupliceted with `Value` in `engine/Param.zig`
-pub const Value = union(enum) {
-    text: []const u8,
-    i32: []align(1) const i32,
-    f32: []align(1) const f32,
-    enum_u32: []align(1) const u32,
-};
-
-/// Convert one parsed argument to a field type.
-fn argValue(comptime typ: type, s: []const u8) typ {
-    if (comptime typ == Value) return .{ .text = s };
-    return s;
-}
-
 /// Split a line into a key and an argument string. A line without a colon has
 /// an empty argument string.
 fn splitKey(line: []const u8) struct { key: []const u8, args: []const u8 } {
@@ -86,9 +74,9 @@ fn parseArgs(comptime CfgEntry: type, args: []const u8) CfgEntry {
     var value: CfgEntry = undefined;
     var pos: usize = 0;
     const info = @typeInfo(CfgEntry).@"struct";
-    inline for (info.field_names, info.field_types, 0..) |name, typ, i| {
+    inline for (info.field_names, 0..) |name, i| {
         switch (argFor(CfgEntry, i)) {
-            -1 => @field(value, name) = argValue(typ, t.rest() orelse ""),
+            -1 => @field(value, name) = t.rest() orelse "",
             else => |idx| {
                 const target: usize = @intCast(idx);
                 // Advance to the field index. Stop if the line is short.
@@ -98,7 +86,7 @@ fn parseArgs(comptime CfgEntry: type, args: []const u8) CfgEntry {
                         break;
                     }
                 }
-                @field(value, name) = argValue(typ, t.next() orelse "");
+                @field(value, name) = t.next() orelse "";
                 pos = target + 1;
             },
         }
@@ -113,13 +101,13 @@ fn isRestMarker(comptime a: anytype) bool {
     return comptime std.mem.eql(u8, a, rest);
 }
 
-/// Check a record struct at comptime. Each field must be []const u8 or Value.
-/// Check idx_map if the struct declares it.
+/// Check a record struct at comptime. Each field must be []const u8. Check
+/// idx_map if the struct declares it.
 fn validateCfgEntry(comptime CfgEntry: type) void {
     const info = @typeInfo(CfgEntry).@"struct";
     inline for (info.field_names, info.field_types) |name, typ| {
-        if (typ != []const u8 and typ != Value)
-            @compileError("colonconfig: field '" ++ name ++ "' of '" ++ @typeName(CfgEntry) ++ "' must be []const u8 or colonconfig.Value");
+        if (typ != []const u8)
+            @compileError("colonconfig: field '" ++ name ++ "' of '" ++ @typeName(CfgEntry) ++ "' must be []const u8");
     }
     if (!@hasDecl(CfgEntry, "idx_map")) return;
     const args = CfgEntry.idx_map;
@@ -197,14 +185,9 @@ pub fn ColonConfig(comptime Schema: type) type {
                     const tag = std.meta.activeTag(entry);
                     const payload_info = @typeInfo(@TypeOf(payload)).@"struct";
                     try w.writeAll(@tagName(tag));
-                    inline for (payload_info.field_names, payload_info.field_types) |name, typ| {
+                    inline for (payload_info.field_names) |name| {
                         try w.writeByte(':');
-                        const field = @field(payload, name);
-                        if (comptime typ == Value) {
-                            try writeValue(w, field);
-                        } else {
-                            try w.writeAll(field);
-                        }
+                        try w.writeAll(@field(payload, name));
                     }
                 },
             }
@@ -287,22 +270,6 @@ const Tokenizer = struct {
     }
 };
 
-fn writeValue(w: *std.Io.Writer, value: Value) std.Io.Writer.Error!void {
-    switch (value) {
-        .text => |s| try w.writeAll(s),
-        .i32 => |values| try writeNumberList(i32, w, values),
-        .f32 => |values| try writeNumberList(f32, w, values),
-        .enum_u32 => |values| try writeNumberList(u32, w, values),
-    }
-}
-
-fn writeNumberList(comptime T: type, w: *std.Io.Writer, values: []align(1) const T) std.Io.Writer.Error!void {
-    for (values, 0..) |v, i| {
-        if (i != 0) try w.writeByte(':');
-        try w.print("{d}", .{v});
-    }
-}
-
 test "entry iterator yields typed records and skips unknown lines" {
     const Schema = union(enum) {
         module: struct {
@@ -313,7 +280,7 @@ test "entry iterator yields typed records and skips unknown lines" {
             name: []const u8,
             id: []const u8,
             param: []const u8,
-            value: colonconfig.Value,
+            value: []const u8,
             pub const idx_map = .{ 0, 1, 2, colonconfig.rest };
         },
     };
@@ -336,7 +303,7 @@ test "entry iterator yields typed records and skips unknown lines" {
     const second = (try it.next()).?;
     try std.testing.expect(second == .param);
     try std.testing.expectEqualStrings("filename", second.param.param);
-    try std.testing.expectEqualStrings("a/b:c.NEF", second.param.value.text);
+    try std.testing.expectEqualStrings("a/b:c.NEF", second.param.value);
     try std.testing.expectEqual(@as(usize, 5), it.line_no);
 
     try std.testing.expect((try it.next()) == null);
@@ -352,7 +319,7 @@ test "writeRecord and writeEntry write schema records" {
             name: []const u8,
             id: []const u8,
             param: []const u8,
-            value: colonconfig.Value,
+            value: []const u8,
         },
     };
     const Config = ColonConfig(Schema);
@@ -366,28 +333,33 @@ test "writeRecord and writeEntry write schema records" {
         .name = "i-raw",
         .id = "01",
         .param = "filename",
-        .value = .{ .text = "a/b:c.NEF" },
+        .value = "a/b:c.NEF",
     } });
-    const gains: []align(1) const f32 = &.{ 1.5, -2.0 };
     try Config.writeEntry(&w.writer, .{ .param = .{
         .name = "i-raw",
         .id = "01",
         .param = "gain",
-        .value = .{ .f32 = gains },
+        .value = "1.5:-2",
     } });
-    const mask: []align(1) const i32 = &.{ 1, -2 };
     try Config.writeEntry(&w.writer, .{ .param = .{
         .name = "i-raw",
         .id = "01",
         .param = "mask",
-        .value = .{ .i32 = mask },
+        .value = "1:-2",
+    } });
+    try Config.writeEntry(&w.writer, .{ .param = .{
+        .name = "color",
+        .id = "01",
+        .param = "wb_mode",
+        .value = "2",
     } });
 
     try std.testing.expectEqualStrings(
         "module:i-raw:01" ++
             "param:i-raw:01:filename:a/b:c.NEF\n" ++
             "param:i-raw:01:gain:1.5:-2\n" ++
-            "param:i-raw:01:mask:1:-2\n",
+            "param:i-raw:01:mask:1:-2\n" ++
+            "param:color:01:wb_mode:2\n",
         w.written(),
     );
 }

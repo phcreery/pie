@@ -89,11 +89,13 @@ pub const PipelineHistory = struct {
         const param = mod.params[idx] orelse return error.RecorderFailed;
 
         const line = self.histlist.beginLine();
+        var value_buf: [serdes.param_value_text_max]u8 = undefined;
+        const value = serdes.schemaValue(param.value(), &value_buf) catch return error.RecorderFailed;
         serdes.PresetConfig.writeRecord(line, .{ .param = .{
             .name = mod.name,
             .id = mod.id,
             .param = param.desc.name,
-            .value = serdes.schemaValue(param.value()),
+            .value = value,
         } }) catch return error.RecorderFailed;
         // the key prefixes the value so repeated edits of the same param coalesce
         self.histlist.keyWriter().print("{s}:{s}:{s}:{s}", .{ @tagName(.param), mod.name, mod.id, param.desc.name }) catch return error.RecorderFailed;
