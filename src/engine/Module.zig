@@ -10,6 +10,11 @@ id: []const u8,
 name: []const u8,
 type: api.ModuleType,
 
+/// Position in the editor's node graph, in grid coordinates. The graph view
+/// owns the layout and writes these back after a drag.
+x: f32 = 0,
+y: f32 = 0,
+
 sockets: [api.MAX_SOCKETS]?Socket = @splat(null),
 params: [api.MAX_PARAMS_PER_MODULE]?Param = @splat(null),
 params_ui: [api.MAX_PARAMS_PER_MODULE]?api.ParamUI = @splat(null),

@@ -116,6 +116,16 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{},
     });
 
+    // NODE GRAPH MODULE (Zig port of imnodes)
+    const mod_nodes = b.createModule(.{
+        .root_source_file = b.path("src/nodes/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
+        },
+    });
+
     // COLONCONFIG MODULE
     const mod_colonconfig = b.createModule(.{
         .root_source_file = b.path("src/colonconfig/root.zig"),
@@ -242,6 +252,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "session", .module = mod_session },
             .{ .name = "pie", .module = mod_pie },
             .{ .name = "types", .module = mod_types },
+            .{ .name = "nodes", .module = mod_nodes },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
         },
@@ -330,6 +341,16 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     });
     const run_pool_unit_tests = b.addRunArtifact(pool_unit_tests);
     test_step.dependOn(&run_pool_unit_tests.step);
+
+    // NODES
+    const nodes_unit_tests = b.addTest(.{
+        .name = "nodes unit tests",
+        .use_llvm = true,
+        .root_module = mod_nodes,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_nodes_unit_tests = b.addRunArtifact(nodes_unit_tests);
+    test_step.dependOn(&run_nodes_unit_tests.step);
 
     // CFA
     const cfa_unit_tests = b.addTest(.{

@@ -14,12 +14,21 @@ const ig = @import("cimgui");
 
 const session = @import("session");
 const ModulesPanel = @import("../components/modules_panel.zig").ModulesPanel;
+const GraphView = @import("./graph.zig").GraphView;
+
+pub const Mode = enum { image, graph };
 
 pub const Darkroom = struct {
     /// width of the draggable gap between the panel and the image
     const splitter_w: f32 = 6;
     const min_panel_w: f32 = 180;
     const min_image_w: f32 = 160;
+    /// height of the mode switch strip above the content
+    const toolbar_h: f32 = 28;
+
+    /// Image or node graph in the content area.
+    mode: Mode = .image,
+    graph: GraphView,
 
     zoom: f32 = 1,
     pan: [2]f32 = .{ 0, 0 },
@@ -37,6 +46,16 @@ pub const Darkroom = struct {
     work_size: [2]f32 = .{ 0, 0 },
     /// region the image may draw into, framebuffer pixels
     image_rect: session.Rect = .{},
+    /// region the node graph draws into, imgui logical units
+    graph_rect: session.Rect = .{},
+
+    pub fn init(allocator: std.mem.Allocator) Darkroom {
+        return .{ .graph = GraphView.init(allocator) };
+    }
+
+    pub fn deinit(self: *Darkroom) void {
+        self.graph.deinit();
+    }
 
     /// Lay out the split for the current viewport. Runs before the image is
     /// blitted so both the blit and the widgets use the same regions.
@@ -44,6 +63,9 @@ pub const Darkroom = struct {
         const viewport = ig.igGetMainViewport();
         self.work_pos = .{ viewport.*.WorkPos.x, viewport.*.WorkPos.y };
         self.work_size = .{ viewport.*.WorkSize.x, viewport.*.WorkSize.y };
+
+        const content_y = self.work_pos[1] + toolbar_h;
+        const content_h = @max(0, self.work_size[1] - toolbar_h);
 
         var panel: f32 = 0;
         if (self.panel_open and self.work_size[0] > min_panel_w + splitter_w + min_image_w) {
@@ -55,29 +77,78 @@ pub const Darkroom = struct {
         const dpi = sapp.dpiScale();
         self.image_rect = .{
             .x = (self.work_pos[0] + panel) * dpi,
-            .y = self.work_pos[1] * dpi,
+            .y = content_y * dpi,
             .w = (self.work_size[0] - panel) * dpi,
-            .h = self.work_size[1] * dpi,
+            .h = content_h * dpi,
+        };
+        self.graph_rect = .{
+            .x = self.work_pos[0] + panel,
+            .y = content_y,
+            .w = self.work_size[0] - panel,
+            .h = content_h,
         };
     }
 
     pub fn draw(self: *Darkroom, s: *session.Session) void {
-        if (!self.panel_open) return;
-        ModulesPanel.draw(s, .{
-            .x = self.work_pos[0],
-            .y = self.work_pos[1],
-            .w = self.panel_w,
-            .h = self.work_size[1],
-        });
-        self.drawSplitter();
+        self.drawToolbar();
+        if (self.panel_open) {
+            ModulesPanel.draw(s, .{
+                .x = self.work_pos[0],
+                .y = self.work_pos[1] + toolbar_h,
+                .w = self.panel_w,
+                .h = self.work_size[1] - toolbar_h,
+            });
+            self.drawSplitter();
+        }
+        if (self.mode == .graph) self.graph.draw(s, self.graph_rect);
+    }
+
+    /// The darkroom's own mode switch: image vs. node graph.
+    fn drawToolbar(self: *Darkroom) void {
+        const flags = ig.ImGuiWindowFlags_NoTitleBar |
+            ig.ImGuiWindowFlags_NoResize |
+            ig.ImGuiWindowFlags_NoMove |
+            ig.ImGuiWindowFlags_NoScrollbar |
+            ig.ImGuiWindowFlags_NoScrollWithMouse |
+            ig.ImGuiWindowFlags_NoSavedSettings |
+            ig.ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+        ig.igSetNextWindowPos(.{ .x = self.work_pos[0], .y = self.work_pos[1] }, ig.ImGuiCond_Always);
+        ig.igSetNextWindowSize(.{ .x = self.work_size[0], .y = toolbar_h }, ig.ImGuiCond_Always);
+        if (!ig.igBegin("##darkroom_toolbar", null, flags)) {
+            ig.igEnd();
+            return;
+        }
+        defer ig.igEnd();
+
+        if (self.modeButton("Image", self.mode == .image)) self.mode = .image;
+        ig.igSameLineEx(0, 8);
+        if (self.modeButton("Graph", self.mode == .graph)) self.mode = .graph;
+
+        if (self.mode == .graph) {
+            ig.igSameLineEx(0, 16);
+            if (ig.igButton("Fit")) self.graph.requestFit();
+            ig.igSameLineEx(0, 12);
+            ig.igTextDisabled("%s", "drag a pin to connect, Delete removes, scroll or middle-drag pans");
+        }
+    }
+
+    fn modeButton(self: *Darkroom, label: [*c]const u8, active: bool) bool {
+        _ = self;
+        if (active) {
+            ig.igPushStyleColor(ig.ImGuiCol_Button, ig.igGetColorU32(ig.ImGuiCol_ButtonActive));
+            defer ig.igPopStyleColor();
+            return ig.igButton(label);
+        }
+        return ig.igButton(label);
     }
 
     /// A narrow, transparent strip holding the drag handle between the panel
     /// and the image.
     fn drawSplitter(self: *Darkroom) void {
         const x = self.work_pos[0] + self.panel_w;
-        const y = self.work_pos[1];
-        const h = self.work_size[1];
+        const y = self.work_pos[1] + toolbar_h;
+        const h = self.work_size[1] - toolbar_h;
 
         const flags = ig.ImGuiWindowFlags_NoTitleBar |
             ig.ImGuiWindowFlags_NoResize |
@@ -118,6 +189,8 @@ pub const Darkroom = struct {
     /// framebuffer pixels, matching `image_rect`.
     pub fn event(self: *Darkroom, ev: [*c]const sapp.Event) void {
         if (ev == null) return;
+        // the graph consumes its input through ImGui; raw pan/zoom is for the image
+        if (self.mode != .image) return;
         const e = ev[0];
         switch (e.type) {
             .MOUSE_DOWN => {

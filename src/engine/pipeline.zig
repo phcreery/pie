@@ -650,6 +650,21 @@ pub const Pipeline = struct {
         };
         self.runModuleDeinitHook(mod_handle);
         self.module_pool.remove(self.allocator, mod_handle);
+
+        // drop the name map entry too, otherwise a dead handle stays reachable
+        // by name (and blocks re-adding the same name:id)
+        const mod = self.module_pool.getPtr(mod_handle) catch {
+            slog.err("removeModule: dead module handle {any}", .{mod_handle});
+            return OperationError.InvalidModule;
+        };
+        const fullname = try std.mem.concat(self.allocator, u8, &.{ mod.name, ":", mod.id });
+        defer self.allocator.free(fullname);
+        if (self.module_name_map.fetchRemove(fullname)) |kv| self.allocator.free(kv.key);
+
+        // the execution order and every derived resource list still reference
+        // the removed handle; force a rebuild on the next run
+        self.rerouted = true;
+        self.dirty = true;
     }
 
     pub fn undo(self: *Pipeline) OperationError!void {

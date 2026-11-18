@@ -19,16 +19,20 @@ pub const GUI = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
     view: ViewKind = .lighttable,
-    darkroom: Darkroom = .{},
+    darkroom: Darkroom,
     lighttable: Lighttable = .{},
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io) !GUI {
         theme.apply();
-        return .{ .allocator = allocator, .io = io };
+        return .{
+            .allocator = allocator,
+            .io = io,
+            .darkroom = Darkroom.init(allocator),
+        };
     }
 
     pub fn deinit(self: *GUI) void {
-        _ = self;
+        self.darkroom.deinit();
     }
 
     /// The image quad is drawn behind the widgets, before the rest of the GUI.
@@ -37,6 +41,8 @@ pub const GUI = struct {
     pub fn drawImage(self: *GUI, s: *session.Session) void {
         if (self.view != .darkroom) return;
         self.darkroom.layout();
+        // the graph replaces the image in the content area
+        if (self.darkroom.mode != .image) return;
         s.blit.draw(self.darkroom.zoom, self.darkroom.pan, self.darkroom.image_rect);
     }
 
