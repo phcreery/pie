@@ -129,7 +129,7 @@ pub const Darkroom = struct {
             ig.igSameLineEx(0, 16);
             if (ig.igButton("Fit")) self.graph.requestFit();
             ig.igSameLineEx(0, 12);
-            ig.igTextDisabled("%s", "drag a pin to connect, Delete removes, scroll or middle-drag pans");
+            ig.igTextDisabled("%s", "drag a pin to connect, Delete removes, scroll pans, cmd/ctrl+scroll zooms");
         }
     }
 

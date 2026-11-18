@@ -9,10 +9,11 @@
 //! - node and socket ids are `u64`/`u16`, so the engine's generational
 //!   handles can be used directly.
 //!
-//! Features: panning, grid, node drag, box selection, link dragging with
-//! creation events, picking up a connected input's link by its end (rewire or
-//! drop on the canvas to remove it), link selection, hover queries,
-//! per-editor zoom-free canvas. Node bodies are drawn from a fixed layout
+//! Features: panning, cursor-anchored zoom, grid, node drag (moving the whole
+//! selection), box selection,
+//! link dragging with creation events, picking up a connected input's link by
+//! its end (rewire or drop on the canvas to remove it), link selection, hover
+//! queries, per-editor pan/zoom. Node bodies are drawn from a fixed layout
 //! (title + socket rows); embedding arbitrary ImGui widgets inside nodes is
 //! not supported yet.
 //!
@@ -115,6 +116,14 @@ pub const Style = struct {
     link_hover_distance: f32 = 7,
     grid_step: f32 = 32,
     grid_major_every: u32 = 4,
+    /// Hides minor grid lines once they get closer together than this, in
+    /// screen pixels.
+    grid_min_spacing: f32 = 6,
+
+    zoom_min: f32 = 0.2,
+    zoom_max: f32 = 4.0,
+    /// Exponential zoom per wheel unit (a notch is ~1.0).
+    zoom_speed: f32 = 0.15,
 };
 
 const NodeState = struct {
@@ -161,6 +170,9 @@ pub const Editor = struct {
     allocator: std.mem.Allocator,
     style: Style = .{},
     pan: Vec2 = .{},
+    /// Screen pixels per graph unit. Node positions, sizes and pins are graph
+    /// units; everything drawn and hit-tested is converted through `zoom`.
+    zoom: f32 = 1,
     /// Screen pixels per ImGui wheel unit. Trackpads report both axes.
     pan_speed: f32 = 16,
 
@@ -232,12 +244,15 @@ pub const Editor = struct {
 
         self.window_hovered = ig.igIsWindowHovered(ig.ImGuiHoveredFlags_None);
 
-        // the graph has no zoom: two-finger scroll pans both axes, shift+wheel
-        // turns a mouse's vertical wheel into horizontal panning
+        // two-finger scroll pans both axes, shift+wheel turns a mouse's
+        // vertical wheel into horizontal panning, and ctrl/cmd+wheel zooms
+        // around the cursor
         if (self.window_hovered) {
             const wheel_x = io.*.MouseWheelH;
             const wheel_y = io.*.MouseWheel;
-            if (wheel_x != 0) {
+            if ((io.*.KeyCtrl or io.*.KeySuper) and (wheel_x != 0 or wheel_y != 0)) {
+                self.zoomAt(self.mouse, wheel_y + wheel_x);
+            } else if (wheel_x != 0) {
                 self.pan.x += wheel_x * self.pan_speed;
                 self.pan.y += wheel_y * self.pan_speed;
             } else if (wheel_y != 0) {
@@ -383,10 +398,13 @@ pub const Editor = struct {
         var pos = desc.pos;
 
         switch (self.interaction) {
-            .drag_node => |id| {
-                if (id == desc.id) {
+            .drag_node => |dragged| {
+                // dragging moves the whole selection; the grabbed node follows
+                // the mouse even when an additive click just deselected it
+                const selected = if (self.nodes.get(desc.id)) |state| state.selected else false;
+                if (desc.id == dragged or selected) {
                     const io = ig.igGetIO();
-                    pos = pos.add(fromIm(io.*.MouseDelta));
+                    pos = pos.add(fromIm(io.*.MouseDelta).scale(1.0 / self.zoom));
                 }
             },
             else => {},
@@ -406,12 +424,13 @@ pub const Editor = struct {
         state.rect = Rect.fromPosSize(pos, size);
         self.registerPins(desc, pos, size, font);
 
-        const screen = state.rect.translate(self.origin());
+        const screen = Rect.fromPosSize(self.toScreen(pos), size.scale(self.zoom));
         if (!screen.overlaps(self.canvas)) return pos;
 
         const dl = ig.igGetWindowDrawList();
-        const pad = self.style.node_padding;
-        const title_h = font + pad;
+        const pad = self.style.node_padding * self.zoom;
+        const title_h = (font + self.style.node_padding) * self.zoom;
+        const rounding = self.style.corner_rounding * self.zoom;
 
         const bg = if (state.selected)
             self.style.node_bg_selected
@@ -427,19 +446,26 @@ pub const Editor = struct {
             self.style.title_bg;
         const outline = if (state.selected) self.style.node_outline_selected else self.style.node_outline;
 
-        ig.ImDrawList_AddRectFilledEx(dl, toIm(screen.min), toIm(screen.max), col(bg), self.style.corner_rounding, ig.ImDrawFlags_RoundCornersAll);
+        ig.ImDrawList_AddRectFilledEx(dl, toIm(screen.min), toIm(screen.max), col(bg), rounding, ig.ImDrawFlags_RoundCornersAll);
         ig.ImDrawList_AddRectFilledEx(
             dl,
             toIm(screen.min),
             toIm(.{ .x = screen.max.x, .y = screen.min.y + title_h }),
             col(title_bg),
-            self.style.corner_rounding,
+            rounding,
             ig.ImDrawFlags_RoundCornersTop,
         );
-        ig.ImDrawList_AddRectEx(dl, toIm(screen.min), toIm(screen.max), col(outline), self.style.corner_rounding, 1.0, ig.ImDrawFlags_RoundCornersAll);
+        ig.ImDrawList_AddRectEx(dl, toIm(screen.min), toIm(screen.max), col(outline), rounding, 1.0, ig.ImDrawFlags_RoundCornersAll);
 
         // labels are clipped to the node so long names cannot spill over
         ig.ImDrawList_PushClipRect(dl, toIm(screen.min), toIm(screen.max), true);
+
+        // draw the body text at the zoomed size; positions and text metrics
+        // must come from the same scaled font
+        const font_base = ig.igGetStyle().*.FontSizeBase;
+        const scale_font = self.zoom != 1.0;
+        if (scale_font) ig.igPushFontFloat(null, font_base * self.zoom);
+        defer if (scale_font) ig.igPopFont();
 
         var buf: [128]u8 = undefined;
         const title = zstr(&buf, desc.title);
@@ -451,9 +477,9 @@ pub const Editor = struct {
             title.ptr,
         );
 
-        const row_h = font + self.style.row_gap;
+        const row_h = (font + self.style.row_gap) * self.zoom;
         const body_top = screen.min.y + title_h + pad;
-        const label_inset = pad + self.style.pin_radius * 2.0;
+        const label_inset = (self.style.node_padding + self.style.pin_radius * 2.0) * self.zoom;
 
         for (desc.inputs, 0..) |pin, i| {
             const center_y = body_top + row_h * (@as(f32, @floatFromInt(i)) + 0.5);
@@ -558,9 +584,32 @@ pub const Editor = struct {
         self.pan = pan;
     }
 
-    /// Center the laid-out nodes in the canvas. Content wider/taller than the
-    /// canvas is aligned to the top-left with a margin instead of being cropped
-    /// on both sides.
+    pub fn zoomValue(self: *const Editor) f32 {
+        return self.zoom;
+    }
+
+    /// Change zoom by `delta` wheel units, keeping the graph point under
+    /// `anchor` (screen coordinates) fixed.
+    pub fn zoomAt(self: *Editor, anchor: Vec2, delta: f32) void {
+        self.setZoomAnchored(self.zoom * @exp(delta * self.style.zoom_speed), anchor);
+    }
+
+    /// Set the zoom, keeping the canvas center fixed.
+    pub fn setZoom(self: *Editor, zoom: f32) void {
+        const center = self.canvas.min.add(self.canvas.size().scale(0.5));
+        self.setZoomAnchored(zoom, center);
+    }
+
+    fn setZoomAnchored(self: *Editor, zoom: f32, anchor: Vec2) void {
+        const next = std.math.clamp(zoom, self.style.zoom_min, self.style.zoom_max);
+        if (next == self.zoom) return;
+        const world = self.toWorld(anchor);
+        self.zoom = next;
+        self.pan = anchor.sub(self.canvas.min).sub(world.scale(next));
+    }
+
+    /// Center the laid-out nodes in the canvas, zooming out when they do not
+    /// fit. Never zooms past 1:1.
     pub fn fit(self: *Editor) void {
         var bounds: ?Rect = null;
         var it = self.nodes.iterator();
@@ -577,18 +626,18 @@ pub const Editor = struct {
 
         const b = bounds orelse return;
         const content = b.size();
+        if (content.x <= 0 or content.y <= 0) return;
         const canvas = self.canvas.size();
         const margin: f32 = 24;
 
-        self.pan = if (content.x + margin * 2 <= canvas.x)
-            .{ .x = (canvas.x - content.x) * 0.5 - b.min.x, .y = 0 }
-        else
-            .{ .x = margin - b.min.x, .y = 0 };
+        const zx = (canvas.x - margin * 2) / content.x;
+        const zy = (canvas.y - margin * 2) / content.y;
+        self.zoom = std.math.clamp(@min(zx, zy), self.style.zoom_min, 1.0);
 
-        self.pan.y = if (content.y + margin * 2 <= canvas.y)
-            (canvas.y - content.y) * 0.5 - b.min.y
-        else
-            margin - b.min.y;
+        self.pan = .{
+            .x = (canvas.x - content.x * self.zoom) * 0.5 - b.min.x * self.zoom,
+            .y = (canvas.y - content.y * self.zoom) * 0.5 - b.min.y * self.zoom,
+        };
     }
 
     pub fn clearSelection(self: *Editor) void {
@@ -604,8 +653,17 @@ pub const Editor = struct {
     // internals
     // ------------------------------------------------------------------
 
+    /// Screen position of the graph origin.
     fn origin(self: *const Editor) Vec2 {
         return self.canvas.min.add(self.pan);
+    }
+
+    fn toScreen(self: *const Editor, p: Vec2) Vec2 {
+        return self.origin().add(p.scale(self.zoom));
+    }
+
+    fn toWorld(self: *const Editor, p: Vec2) Vec2 {
+        return p.sub(self.origin()).scale(1.0 / self.zoom);
     }
 
     fn prune(self: *Editor) void {
@@ -651,49 +709,65 @@ pub const Editor = struct {
 
     fn drawPin(self: *Editor, dl: anytype, ref: PinRef) void {
         const grid_pos = self.pins.get(ref) orelse return;
-        const screen = self.origin().add(grid_pos);
+        const screen = self.toScreen(grid_pos);
         const hovered = self.last_pin != null and std.meta.eql(self.last_pin.?, ref);
         const c = if (hovered) self.style.pin_hovered else self.style.pin;
-        ig.ImDrawList_AddCircleFilled(dl, toIm(screen), self.style.pin_radius, col(c), 0);
+        ig.ImDrawList_AddCircleFilled(dl, toIm(screen), self.style.pin_radius * self.zoom, col(c), 0);
     }
 
     fn drawGrid(self: *Editor, dl: anytype) void {
-        const step = self.style.grid_step;
-        if (step <= 1) return;
-        const grid_origin = self.origin();
-
-        var x = self.canvas.min.x + @mod(grid_origin.x - self.canvas.min.x, step);
-        var ix: u32 = 0;
-        while (x <= self.canvas.max.x) : ({
-            x += step;
-            ix += 1;
-        }) {
-            const major = @mod(ix, self.style.grid_major_every) == 0;
-            const c = if (major) self.style.grid_line_major else self.style.grid_line;
-            ig.ImDrawList_AddLine(dl, toIm(.{ .x = x, .y = self.canvas.min.y }), toIm(.{ .x = x, .y = self.canvas.max.y }), col(c));
+        if (self.style.grid_step <= 1) return;
+        const step = self.style.grid_step * self.zoom;
+        if (step < self.style.grid_min_spacing) {
+            // too dense to read: keep only the major lines
+            self.drawGridAxis(dl, true);
+            self.drawGridAxis(dl, false);
+            return;
         }
+        self.drawGridAxis(dl, true);
+        self.drawGridAxis(dl, false);
+    }
 
-        var y = self.canvas.min.y + @mod(grid_origin.y - self.canvas.min.y, step);
-        var iy: u32 = 0;
-        while (y <= self.canvas.max.y) : ({
-            y += step;
-            iy += 1;
+    fn drawGridAxis(self: *Editor, dl: anytype, vertical: bool) void {
+        const every: i64 = @max(self.style.grid_major_every, 1);
+        const step = self.style.grid_step * self.zoom;
+        const major_only = step < self.style.grid_min_spacing;
+        const axis_step = if (major_only) step * @as(f32, @floatFromInt(every)) else step;
+        if (axis_step <= 0.5) return;
+
+        const graph_origin = self.origin();
+        const lo = if (vertical) self.canvas.min.x else self.canvas.min.y;
+        const hi = if (vertical) self.canvas.max.x else self.canvas.max.y;
+        const base = if (vertical) graph_origin.x else graph_origin.y;
+
+        // line indices are anchored to the graph origin so majors stay put
+        // while panning
+        const start: i64 = @intFromFloat(@floor((lo - base) / axis_step));
+        var index = start;
+        var p = base + @as(f32, @floatFromInt(index)) * axis_step;
+        while (p <= hi) : ({
+            index += 1;
+            p += axis_step;
         }) {
-            const major = @mod(iy, self.style.grid_major_every) == 0;
+            const major = major_only or @mod(index, every) == 0;
             const c = if (major) self.style.grid_line_major else self.style.grid_line;
-            ig.ImDrawList_AddLine(dl, toIm(.{ .x = self.canvas.min.x, .y = y }), toIm(.{ .x = self.canvas.max.x, .y = y }), col(c));
+            if (vertical) {
+                ig.ImDrawList_AddLine(dl, toIm(.{ .x = p, .y = self.canvas.min.y }), toIm(.{ .x = p, .y = self.canvas.max.y }), col(c));
+            } else {
+                ig.ImDrawList_AddLine(dl, toIm(.{ .x = self.canvas.min.x, .y = p }), toIm(.{ .x = self.canvas.max.x, .y = p }), col(c));
+            }
         }
     }
 
     fn drawLinks(self: *Editor, dl: anytype) void {
-        const link_origin = self.origin();
         const hidden = self.hiddenLink();
+        const thickness = @max(self.style.link_thickness * self.zoom, 1.0);
         for (self.prev_links.items) |frame_link| {
             if (hidden) |h| {
                 if (std.meta.eql(h, frame_link.key)) continue;
             }
-            const from = link_origin.add(frame_link.from);
-            const to = link_origin.add(frame_link.to);
+            const from = self.toScreen(frame_link.from);
+            const to = self.toScreen(frame_link.to);
             const ctrl = geom.linkControls(from, to);
             const selected = if (self.links.get(frame_link.key)) |state| state.selected else false;
             const hovered = self.last_link != null and std.meta.eql(self.last_link.?, frame_link.key);
@@ -710,7 +784,7 @@ pub const Editor = struct {
                 toIm(ctrl[1]),
                 toIm(to),
                 col(c),
-                self.style.link_thickness,
+                thickness,
                 0,
             );
         }
@@ -731,7 +805,7 @@ pub const Editor = struct {
 
     fn drawLinkPreview(self: *Editor, dl: anytype, from: PinRef) void {
         const grid_pos = self.pins.get(from) orelse return;
-        const start = self.origin().add(grid_pos);
+        const start = self.toScreen(grid_pos);
         const ctrl = geom.linkControls(start, self.mouse);
         ig.ImDrawList_AddBezierCubic(
             dl,
@@ -740,7 +814,7 @@ pub const Editor = struct {
             toIm(ctrl[1]),
             toIm(self.mouse),
             col(self.style.link_hovered),
-            self.style.link_thickness,
+            @max(self.style.link_thickness * self.zoom, 1.0),
             0,
         );
         if (self.hovered_pin) |pin| {
@@ -748,8 +822,8 @@ pub const Editor = struct {
                 if (self.pins.get(pin)) |target| {
                     ig.ImDrawList_AddCircleFilled(
                         dl,
-                        toIm(self.origin().add(target)),
-                        self.style.pin_hover_radius,
+                        toIm(self.toScreen(target)),
+                        self.style.pin_hover_radius * self.zoom,
                         col(self.style.pin_hovered),
                         0,
                     );
@@ -773,8 +847,10 @@ pub const Editor = struct {
     }
 
     fn resolvePin(self: *Editor, mouse: Vec2) ?PinRef {
-        const mouse_grid = mouse.sub(self.origin());
-        const max_d2 = self.style.pin_hover_radius * self.style.pin_hover_radius;
+        const mouse_grid = self.toWorld(mouse);
+        // hover radii are screen-space, so convert to graph units
+        const radius = self.style.pin_hover_radius / self.zoom;
+        const max_d2 = radius * radius;
         var best: ?PinRef = null;
         var best_d2 = std.math.floatMax(f32);
         var it = self.pins.iterator();
@@ -789,7 +865,7 @@ pub const Editor = struct {
     }
 
     fn resolveNode(self: *Editor, mouse: Vec2) ?u64 {
-        const mouse_grid = mouse.sub(self.origin());
+        const mouse_grid = self.toWorld(mouse);
         var best: ?u64 = null;
         var best_z: u64 = 0;
         var it = self.nodes.iterator();
@@ -806,12 +882,15 @@ pub const Editor = struct {
     }
 
     fn resolveLink(self: *Editor, mouse: Vec2) ?LinkKey {
-        const mouse_grid = mouse.sub(self.origin());
         var best: ?LinkKey = null;
         var best_d = std.math.floatMax(f32);
         for (self.frame_links.items) |frame_link| {
-            const ctrl = geom.linkControls(frame_link.from, frame_link.to);
-            const d = geom.bezierDistance(frame_link.from, ctrl[0], ctrl[1], frame_link.to, mouse_grid);
+            // hit-test the curve as drawn: screen space, so the threshold is
+            // a constant number of pixels at any zoom
+            const from = self.toScreen(frame_link.from);
+            const to = self.toScreen(frame_link.to);
+            const ctrl = geom.linkControls(from, to);
+            const d = geom.bezierDistance(from, ctrl[0], ctrl[1], to, mouse);
             if (d <= self.style.link_hover_distance and d < best_d) {
                 best_d = d;
                 best = frame_link.key;
@@ -821,8 +900,7 @@ pub const Editor = struct {
     }
 
     fn applyBoxSelection(self: *Editor, start: Vec2, additive: bool) void {
-        const canvas_origin = self.origin();
-        const box = Rect.normalized(start.sub(canvas_origin), self.mouse.sub(canvas_origin));
+        const box = Rect.normalized(self.toWorld(start), self.toWorld(self.mouse));
         if (!additive) self.clearSelection();
         var it = self.nodes.iterator();
         while (it.next()) |entry| {
@@ -1107,4 +1185,206 @@ test "headless: dragging an input link moves its end" {
     try std.testing.expect(request.replace != null);
     try std.testing.expectEqual(@as(u64, 2), request.replace.?.node);
     try std.testing.expectEqual(PinKind.input, request.replace.?.kind);
+}
+
+test "headless: ctrl+wheel zooms around the cursor" {
+    const ctx = ig.igCreateContext(null);
+    defer ig.igDestroyContext(ctx);
+    ig.igSetCurrentContext(ctx);
+
+    const io = ig.igGetIO();
+    io.*.DisplaySize = .{ .x = 800, .y = 600 };
+    io.*.DeltaTime = 1.0 / 60.0;
+    _ = ig.ImFontAtlas_Build(io.*.Fonts);
+
+    var editor = Editor.init(std.testing.allocator);
+    defer editor.deinit();
+
+    // deliver a frame's modifier and wheel events in the same frame
+    io.*.ConfigInputTrickleEventQueue = false;
+
+    const canvas = Rect{ .min = .{ .x = 0, .y = 0 }, .max = .{ .x = 800, .y = 600 } };
+    const cursor = Vec2{ .x = 500, .y = 200 };
+
+    const step = struct {
+        fn run(ed: *Editor, canvas_rect: Rect, mouse: Vec2, wheel: f32, ctrl: bool) void {
+            const gui_io = ig.igGetIO();
+            ig.ImGuiIO_AddKeyEvent(gui_io, ig.ImGuiMod_Ctrl, ctrl);
+            ig.ImGuiIO_AddMousePosEvent(gui_io, mouse.x, mouse.y);
+            ig.ImGuiIO_AddMouseWheelEvent(gui_io, 0, wheel);
+
+            ig.igNewFrame();
+            ig.igSetNextWindowPos(.{ .x = 0, .y = 0 }, ig.ImGuiCond_Always);
+            ig.igSetNextWindowSize(.{ .x = canvas_rect.max.x, .y = canvas_rect.max.y }, ig.ImGuiCond_Always);
+            _ = ig.igBegin("test", null, ig.ImGuiWindowFlags_NoTitleBar | ig.ImGuiWindowFlags_NoResize | ig.ImGuiWindowFlags_NoMove | ig.ImGuiWindowFlags_NoSavedSettings);
+            ed.begin(canvas_rect);
+            ed.end();
+            ig.igEnd();
+            ig.igRender();
+        }
+    }.run;
+
+    // establish window hover and ctrl state
+    step(&editor, canvas, cursor, 0, true);
+    const zoom_before = editor.zoomValue();
+    try std.testing.expectApproxEqAbs(@as(f32, 1), zoom_before, 0.001);
+
+    const pan_before = editor.panValue();
+    const world_before = cursor.sub(canvas.min).sub(pan_before).scale(1.0 / zoom_before);
+
+    step(&editor, canvas, cursor, 2, true);
+    const zoom_after = editor.zoomValue();
+    try std.testing.expect(zoom_after > zoom_before);
+
+    // the graph point under the cursor must not move
+    const pan_after = editor.panValue();
+    const world_after = cursor.sub(canvas.min).sub(pan_after).scale(1.0 / zoom_after);
+    try std.testing.expectApproxEqAbs(world_before.x, world_after.x, 0.01);
+    try std.testing.expectApproxEqAbs(world_before.y, world_after.y, 0.01);
+
+    // zoom is clamped
+    editor.setZoom(1e6);
+    try std.testing.expectEqual(editor.style.zoom_max, editor.zoomValue());
+    editor.setZoom(1e-6);
+    try std.testing.expectEqual(editor.style.zoom_min, editor.zoomValue());
+}
+
+test "headless: node drag and fit respect zoom" {
+    const ctx = ig.igCreateContext(null);
+    defer ig.igDestroyContext(ctx);
+    ig.igSetCurrentContext(ctx);
+
+    const io = ig.igGetIO();
+    io.*.DisplaySize = .{ .x = 800, .y = 600 };
+    io.*.DeltaTime = 1.0 / 60.0;
+    _ = ig.ImFontAtlas_Build(io.*.Fonts);
+
+    var editor = Editor.init(std.testing.allocator);
+    defer editor.deinit();
+
+    const canvas = Rect{ .min = .{ .x = 0, .y = 0 }, .max = .{ .x = 800, .y = 600 } };
+    const node = NodeDesc{
+        .id = 1,
+        .pos = .{ .x = 40, .y = 40 },
+        .title = "a",
+        .inputs = &.{.{ .key = 0, .label = "in" }},
+    };
+
+    var last_pos = Vec2{};
+    const frames = struct {
+        fn run(ed: *Editor, canvas_rect: Rect, desc: NodeDesc, mouse: Vec2, button: ?bool, out_pos: *Vec2) void {
+            const gui_io = ig.igGetIO();
+            ig.ImGuiIO_AddMousePosEvent(gui_io, mouse.x, mouse.y);
+            if (button) |down| ig.ImGuiIO_AddMouseButtonEvent(gui_io, 0, down);
+
+            ig.igNewFrame();
+            ig.igSetNextWindowPos(.{ .x = 0, .y = 0 }, ig.ImGuiCond_Always);
+            ig.igSetNextWindowSize(.{ .x = canvas_rect.max.x, .y = canvas_rect.max.y }, ig.ImGuiCond_Always);
+            _ = ig.igBegin("test", null, ig.ImGuiWindowFlags_NoTitleBar | ig.ImGuiWindowFlags_NoResize | ig.ImGuiWindowFlags_NoMove | ig.ImGuiWindowFlags_NoSavedSettings);
+            ed.begin(canvas_rect);
+            out_pos.* = ed.node(desc);
+            ed.end();
+            ig.igEnd();
+            ig.igRender();
+        }
+    }.run;
+
+    // at 2x, the node at (40, 40) occupies screen (80, 80) onwards
+    frames(&editor, canvas, node, .{ .x = 0, .y = 0 }, null, &last_pos);
+    editor.zoom = 2;
+    editor.setPan(.{});
+
+    frames(&editor, canvas, node, .{ .x = 100, .y = 100 }, null, &last_pos);
+    try std.testing.expect(editor.hoveredNodeId() != null);
+
+    // a 20px screen drag is a 10 unit graph drag at 2x
+    frames(&editor, canvas, node, .{ .x = 100, .y = 100 }, true, &last_pos);
+    frames(&editor, canvas, node, .{ .x = 120, .y = 120 }, false, &last_pos);
+    try std.testing.expectApproxEqAbs(@as(f32, 50), last_pos.x, 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 50), last_pos.y, 0.01);
+
+    // fit zooms out to bring content back into the canvas
+    var far = node;
+    far.id = 2;
+    far.pos = .{ .x = 2000, .y = 40 };
+    last_pos = .{};
+    const two_frames = struct {
+        fn run(ed: *Editor, canvas_rect: Rect, a: NodeDesc, b: NodeDesc) void {
+            const gui_io = ig.igGetIO();
+            ig.ImGuiIO_AddMousePosEvent(gui_io, 0, 0);
+
+            ig.igNewFrame();
+            ig.igSetNextWindowPos(.{ .x = 0, .y = 0 }, ig.ImGuiCond_Always);
+            ig.igSetNextWindowSize(.{ .x = canvas_rect.max.x, .y = canvas_rect.max.y }, ig.ImGuiCond_Always);
+            _ = ig.igBegin("test", null, ig.ImGuiWindowFlags_NoTitleBar | ig.ImGuiWindowFlags_NoResize | ig.ImGuiWindowFlags_NoMove | ig.ImGuiWindowFlags_NoSavedSettings);
+            ed.begin(canvas_rect);
+            _ = ed.node(a);
+            _ = ed.node(b);
+            ed.end();
+            ig.igEnd();
+            ig.igRender();
+        }
+    }.run;
+
+    two_frames(&editor, canvas, node, far);
+    editor.fit();
+    try std.testing.expect(editor.zoomValue() < 0.5);
+
+    // both nodes land inside the canvas at the fitted zoom
+    const z = editor.zoomValue();
+    const pan = editor.panValue();
+    try std.testing.expect(pan.x + 0 * z >= 0);
+    try std.testing.expect(pan.x + (2000 + editor.style.node_width) * z <= canvas.max.x);
+}
+
+test "headless: dragging a selected node moves the whole selection" {
+    const ctx = ig.igCreateContext(null);
+    defer ig.igDestroyContext(ctx);
+    ig.igSetCurrentContext(ctx);
+
+    const io = ig.igGetIO();
+    io.*.DisplaySize = .{ .x = 800, .y = 600 };
+    io.*.DeltaTime = 1.0 / 60.0;
+    _ = ig.ImFontAtlas_Build(io.*.Fonts);
+
+    var editor = Editor.init(std.testing.allocator);
+    defer editor.deinit();
+
+    const canvas = Rect{ .min = .{ .x = 0, .y = 0 }, .max = .{ .x = 800, .y = 600 } };
+    var a = NodeDesc{ .id = 1, .pos = .{ .x = 40, .y = 40 }, .title = "a" };
+    var b = NodeDesc{ .id = 2, .pos = .{ .x = 300, .y = 40 }, .title = "b" };
+
+    const frames = struct {
+        fn run(ed: *Editor, canvas_rect: Rect, na: *NodeDesc, nb: *NodeDesc, mouse: Vec2, button: ?bool) void {
+            const gui_io = ig.igGetIO();
+            ig.ImGuiIO_AddMousePosEvent(gui_io, mouse.x, mouse.y);
+            if (button) |down| ig.ImGuiIO_AddMouseButtonEvent(gui_io, 0, down);
+
+            ig.igNewFrame();
+            ig.igSetNextWindowPos(.{ .x = 0, .y = 0 }, ig.ImGuiCond_Always);
+            ig.igSetNextWindowSize(.{ .x = canvas_rect.max.x, .y = canvas_rect.max.y }, ig.ImGuiCond_Always);
+            _ = ig.igBegin("test", null, ig.ImGuiWindowFlags_NoTitleBar | ig.ImGuiWindowFlags_NoResize | ig.ImGuiWindowFlags_NoMove | ig.ImGuiWindowFlags_NoSavedSettings);
+            ed.begin(canvas_rect);
+            na.pos = ed.node(na.*);
+            nb.pos = ed.node(nb.*);
+            ed.end();
+            ig.igEnd();
+            ig.igRender();
+        }
+    }.run;
+
+    frames(&editor, canvas, &a, &b, .{ .x = 600, .y = 300 }, null); // establish hover
+
+    // box-select both nodes
+    frames(&editor, canvas, &a, &b, .{ .x = 0, .y = 0 }, true);
+    frames(&editor, canvas, &a, &b, .{ .x = 600, .y = 200 }, false);
+    try std.testing.expectEqual(@as(usize, 2), editor.selectedNodes().len);
+
+    // dragging one of them carries the other along
+    frames(&editor, canvas, &a, &b, .{ .x = 60, .y = 50 }, true);
+    frames(&editor, canvas, &a, &b, .{ .x = 70, .y = 53 }, false);
+    try std.testing.expectApproxEqAbs(@as(f32, 50), a.pos.x, 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 43), a.pos.y, 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 310), b.pos.x, 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 43), b.pos.y, 0.01);
 }
