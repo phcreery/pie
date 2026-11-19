@@ -22,7 +22,8 @@ pub const def: api.ModuleDef = .{
             .{
                 .name = "output",
                 .access = .source,
-                .resource = .rggb, .datatype = .u16,
+                .resource = .rggb,
+                .datatype = .u16,
                 // the raw output is in the camera's color space, WB unknown/as-shot, and linear (sensor response)
                 .color_profile = .{ .white_point = .any, .primaries = .camera, .trc = .linear },
             },
@@ -169,12 +170,12 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .xyz_d65_from_cam = xyz_d65_from_cam.toVectors(),
     };
 
-    var stdout_buffer: [4096]u8 = undefined;
-    var writer = std.Io.File.stdout().writer(pipe.io, &stdout_buffer);
-    const stdout = &writer.interface;
-    try raw_image.print(stdout);
-    try m.img_param.?.print(stdout);
-    try stdout.flush();
+    // var stdout_buffer: [4096]u8 = undefined;
+    // var writer = std.Io.File.stdout().writer(pipe.io, &stdout_buffer);
+    // const stdout = &writer.interface;
+    // try raw_image.print(stdout);
+    // try m.img_param.?.print(stdout);
+    // try stdout.flush();
 
     var socket = try api.getModSocket(pipe, mod, "output");
     socket.roi = roi;
