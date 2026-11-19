@@ -4,6 +4,9 @@
 - https://medium.com/hipster-color-science/a-beginners-guide-to-colorimetry-401f1830b65a
 - https://ekunazanu.foo/lab/quantifying-colour/
 - https://hg2dc.com/
+- https://github.com/jedypod/mucolor
+- https://github.com/colour-science/colour
+- https://github.com/dkryaklin/colordx
 
 ## Raw Processing
 
@@ -78,8 +81,16 @@
 - Node
   - // vkdt dt_node_t https://github.com/hanatos/vkdt/blob/632165bb3cf7d653fa322e3ffc023bdb023f5e87/src/pipe/node.h#L19
 
-### Misc
+## Pano
 
+- https://hugin.sourceforge.io/download/
+- https://github.com/krupkat/xpano
+- https://github.com/stanleyedward/panorama-image-stitching
+
+## Misc
+
+- https://github.com/phcreery/hdr-imaging
+- https://github.com/phcreery/ssftools_zig
 - https://www.photonstophotos.net/
 
 ## Gpu
@@ -160,6 +171,7 @@
 
 - python bindings
   - https://codeberg.org/frmdstryr/py.zig
+  - https://github.com/pyozig/PyOZ
 
 - Examples
   - https://github.com/riverwm/river/
