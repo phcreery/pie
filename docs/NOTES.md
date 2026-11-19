@@ -46,6 +46,11 @@
 - https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/color-calibration/
 - https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/white-balance/
 
+### Camera and Lens
+
+- https://exiv2.org/
+- https://lensfun.github.io/
+
 ### vkdt
 
 - https://github.com/techandy32/vkdt/tree/master/wiki
