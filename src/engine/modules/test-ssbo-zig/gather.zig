@@ -12,7 +12,7 @@ export fn main() callconv(shd.call_conv) void {
     const width: u32 = @intFromFloat(shd.bufferFetch(tmp, 0));
     const base = 2 + (coord[1] *% width +% coord[0]) *% 4;
 
-    const px = shd.math.Vec4.new(
+    const px = shd.math.as(f32).Vec4.new(
         shd.bufferFetch(tmp, base + 0),
         shd.bufferFetch(tmp, base + 1),
         shd.bufferFetch(tmp, base + 2),

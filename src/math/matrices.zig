@@ -1,6 +1,6 @@
 //! Named 3x3 color matrices, row-major (`Mat3.fields[row][col]`).
 
-const Mat3 = @import("root.zig").Mat3;
+const Mat3 = @import("root.zig").as(f32).Mat3;
 
 /// CIE XYZ (D65) -> linear sRGB (Rec.709 primaries, D65).
 /// Bruce Lindbloom's published sRGB D65 matrix

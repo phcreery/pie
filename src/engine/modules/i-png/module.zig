@@ -19,7 +19,8 @@ pub const def: api.ModuleDef = .{
                 // raw 16-bit samples; the `format` module converts to f16 on
                 // the GPU, so the CPU never touches the samples
                 .access = .source,
-                .resource = .rgba, .datatype = .u16,
+                .resource = .rgba,
+                .datatype = .u16,
                 .color_profile = .any,
             },
         },
@@ -144,12 +145,12 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod_handle: api.ModuleHandle) !void {
 
     // a PNG is already display-referred; identity through the pipeline
     m.img_param = .{
-        .black = api.math.Vec4.one,
-        .white = api.math.Vec4.one,
-        .white_balance = api.math.Vec4.one,
+        .black = api.math.as(f32).Vec4.one,
+        .white = api.math.as(f32).Vec4.one,
+        .white_balance = api.math.as(f32).Vec4.one,
         .orientation = .normal,
-        .rec2020_from_cam = api.math.Mat3.identity.toVectors(),
-        .xyz_d65_from_cam = api.math.Mat3.identity.toVectors(),
+        .rec2020_from_cam = api.math.as(f32).Mat3.identity.toVectors(),
+        .xyz_d65_from_cam = api.math.as(f32).Mat3.identity.toVectors(),
     };
 }
 

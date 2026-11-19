@@ -7,7 +7,7 @@ const std = @import("std");
 const math = @import("root.zig");
 pub const matrices = @import("matrices.zig"); // color matrices, exported as `math.matrices`
 
-const Vec3 = math.Vec3;
+const Vec3 = math.as(f32).Vec3;
 
 // ---------------------------------------------------------------------------
 // sRGB transfer function (IEC 61966-2-1)

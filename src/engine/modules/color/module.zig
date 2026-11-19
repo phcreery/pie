@@ -4,9 +4,9 @@ const temp_tint = @import("./temp_tint.zig");
 const slog = std.log.scoped(.color);
 const math = @import("math");
 
-const Vec3 = math.Vec3;
-const Vec4 = math.Vec4;
-const Mat3 = math.Mat3;
+const Vec3 = math.as(f32).Vec3;
+const Vec4 = math.as(f32).Vec4;
+const Mat3 = math.as(f32).Mat3;
 const rec2020_from_xyz_d65 = math.color.matrices.rec2020_from_xyz_d65;
 
 pub const def: api.ModuleDef = .{

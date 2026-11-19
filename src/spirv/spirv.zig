@@ -266,7 +266,7 @@ pub inline fn imageFetchVector(image: anytype, coordinate: Vec2u32) Vec4f32 {
 /// Fetch a single texel as the zlm `Vec4` type, with one self-contained asm
 /// block of its own (it does not delegate to `imageFetchVector`).
 /// image must be of type `Image`
-pub inline fn imageFetch(image: anytype, coordinate: Vec2u32) math.Vec4 {
+pub inline fn imageFetch(image: anytype, coordinate: Vec2u32) math.as(f32).Vec4 {
     const InputImage = @TypeOf(image);
     const lod: i32 = 0; // required image operand for non-multisampled fetches
     const texel = asm volatile (
@@ -279,7 +279,7 @@ pub inline fn imageFetch(image: anytype, coordinate: Vec2u32) math.Vec4 {
           [coordinate] "" (coordinate),
           [lod] "" (lod),
     );
-    return math.Vec4.new(texel[0], texel[1], texel[2], texel[3]);
+    return math.as(f32).Vec4.new(texel[0], texel[1], texel[2], texel[3]);
 }
 
 /// Write a texel to a *storage* image, from a SPIR-V vector. Equivalent of
@@ -308,7 +308,7 @@ pub inline fn imageWriteVector(image: anytype, coordinate: Vec2u32, texel: Vec4f
 /// self-contained asm block that builds the SPIR-V vector from the four
 /// scalars (it does not delegate to `imageWriteVector`).
 /// image must be of type `Image`
-pub inline fn imageWrite(image: anytype, coordinate: Vec2u32, texel: math.Vec4) void {
+pub inline fn imageWrite(image: anytype, coordinate: Vec2u32, texel: math.as(f32).Vec4) void {
     const OutputImage = @TypeOf(image);
     asm volatile (
         \\%out = OpLoad %OutputImage %image

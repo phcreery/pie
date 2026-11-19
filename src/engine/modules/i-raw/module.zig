@@ -5,8 +5,8 @@ const RawImage = @import("RawImage.zig");
 
 const api = @import("../api.zig");
 const math = @import("math");
-const Mat3 = math.Mat3;
-const Vec4 = math.Vec4;
+const Mat3 = math.as(f32).Mat3;
+const Vec4 = math.as(f32).Vec4;
 
 pub const def: api.ModuleDef = .{
     .desc = .{
@@ -152,19 +152,19 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
     const xyz_d65_from_cam = Mat3.fromArray(raw_image.xyz_d65_from_cam);
     m.img_param = .{
-        .black = Vec4.new(
+        .black = math.as(f32).Vec4.new(
             @as(f32, @floatFromInt(raw_image.black[0])),
             @as(f32, @floatFromInt(raw_image.black[1])),
             @as(f32, @floatFromInt(raw_image.black[2])),
             @as(f32, @floatFromInt(raw_image.black[3])),
         ),
-        .white = Vec4.new(
+        .white = math.as(f32).Vec4.new(
             @as(f32, @floatFromInt(raw_image.white[0])),
             @as(f32, @floatFromInt(raw_image.white[1])),
             @as(f32, @floatFromInt(raw_image.white[2])),
             @as(f32, @floatFromInt(raw_image.white[3])),
         ),
-        .white_balance = Vec4.fromArray(raw_image.wb_coeffs),
+        .white_balance = math.as(f32).Vec4.fromArray(raw_image.wb_coeffs),
         .orientation = orientation,
         .rec2020_from_cam = computeRec2020FromCam(xyz_d65_from_cam).toVectors(),
         .xyz_d65_from_cam = xyz_d65_from_cam.toVectors(),

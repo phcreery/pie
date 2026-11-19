@@ -5,18 +5,8 @@ pub const color = @import("color.zig");
 
 pub const zlm = @import("zlm/zlm.zig");
 
-const math_f32 = zlm.as(f32);
-
-/// Constructors: `vec3(x, y, z)` is `Vec3.new(x, y, z)`.
-pub const vec2 = math_f32.vec2;
-pub const vec3 = math_f32.vec3;
-pub const vec4 = math_f32.vec4;
-
-pub const Vec2 = math_f32.Vec2;
-pub const Vec3 = math_f32.Vec3;
-pub const Vec4 = math_f32.Vec4;
-pub const Mat3 = math_f32.Mat3;
-pub const Mat4 = math_f32.Mat4;
+// const math_f32 = zlm.as(f32);
+pub const as = zlm.as;
 
 /// Floor for values feeding `powf`/`log2` in `powf` and the curve.
 pub const EPSILON: f32 = 1e-7;

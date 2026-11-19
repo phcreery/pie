@@ -14,7 +14,7 @@ const shd = @import("shader");
 const math = @import("math");
 
 const color = math.color;
-const Vec3 = math.Vec3;
+const Vec3 = math.as(f32).Vec3;
 
 const module_zon: shd.ModuleDesc = @import("module.zon");
 const node_zon: shd.NodeDesc = @import("node.filmcurv.zon");
@@ -91,7 +91,7 @@ export fn main() callconv(shd.call_conv) void {
     const rgb_srgb_linear_display = math.matrices.srgb_from_rec2020.mulVec(rgb_rec2020_linear_display);
     const rgb_srgb_display = color.linearToSrgbVec3(rgb_srgb_linear_display);
 
-    shd.imageWrite(output_image, coord, math.Vec4.new(
+    shd.imageWrite(output_image, coord, math.as(f32).Vec4.new(
         rgb_srgb_display.x,
         rgb_srgb_display.y,
         rgb_srgb_display.z,

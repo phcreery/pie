@@ -10,7 +10,8 @@ pub const def: api.ModuleDef = .{
             .{
                 .name = "output",
                 .access = .source,
-                .resource = .rgba, .datatype = .f16,
+                .resource = .rgba,
+                .datatype = .f16,
             },
         },
     },
@@ -34,12 +35,12 @@ pub fn modifyOut(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
 
     var m = try api.getModule(pipe, mod);
     m.img_param = .{
-        .white = api.math.Vec4.new(1.0, 2.0, 3.0, 4.0),
-        .black = api.math.Vec4.new(1.0, 2.0, 3.0, 4.0),
-        .white_balance = api.math.Vec4.one,
+        .white = api.math.as(f32).Vec4.new(1.0, 2.0, 3.0, 4.0),
+        .black = api.math.as(f32).Vec4.new(1.0, 2.0, 3.0, 4.0),
+        .white_balance = api.math.as(f32).Vec4.one,
         .orientation = .normal,
-        .rec2020_from_cam = api.math.Mat3.identity.toVectors(),
-        .xyz_d65_from_cam = api.math.Mat3.identity.toVectors(),
+        .rec2020_from_cam = api.math.as(f32).Mat3.identity.toVectors(),
+        .xyz_d65_from_cam = api.math.as(f32).Mat3.identity.toVectors(),
     };
 }
 
@@ -60,7 +61,8 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
             .{
                 .name = "output",
                 .access = .source,
-                .resource = .rgba, .datatype = .f16,
+                .resource = .rgba,
+                .datatype = .f16,
             },
         },
     });

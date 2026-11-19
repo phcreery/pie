@@ -16,11 +16,12 @@ pub const Orientation = enum(i32) {
 pub const ImgParams = struct {
     // the color profile is the gamut and white point of the image for any given step in the pipeline
 
-    black: math.Vec4, // black point
-    white: math.Vec4, // clipping threshold
+    // TODO: dont use f32 Vec4s here, these are stored as u32
+    black: math.as(f32).Vec4, // black point
+    white: math.as(f32).Vec4, // clipping threshold
 
     // camera white balance coefficients
-    white_balance: math.Vec4,
+    white_balance: math.as(f32).Vec4,
 
     // orientation from image metadata (EXIF-style): 1 = normal, 3 = 180, 6 = 90 CW, 8 = 270 CW
     orientation: Orientation,
@@ -28,10 +29,10 @@ pub const ImgParams = struct {
     // color filter array multipliers
     // cfa: CFA,
 
-    rec2020_from_cam: math.Mat3.asVectors,
+    rec2020_from_cam: math.as(f32).Mat3.asVectors,
 
     // XYZ <- camera color space conversion matrix. XYZ is in D65 white point, linear. Similar to Adobe DNG ColorMatrix2, but with the two green channels collapsed into one.
-    xyz_d65_from_cam: math.Mat3.asVectors,
+    xyz_d65_from_cam: math.as(f32).Mat3.asVectors,
 
     pub fn print(
         self: *ImgParams,

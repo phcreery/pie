@@ -15,8 +15,8 @@ const shd = @import("shader");
 const math = @import("math");
 const ImgParams = @import("module_types").ImgParamsGpu;
 
-const Vec3 = math.Vec3;
-const Mat3 = math.Mat3;
+const Vec3 = math.as(f32).Vec3;
+const Mat3 = math.as(f32).Mat3;
 
 const module_zon: shd.ModuleDesc = @import("module.zon");
 const node_zon: shd.NodeDesc = @import("node.color.zon");
@@ -84,6 +84,6 @@ export fn main() callconv(shd.call_conv) void {
     }
 
     // Output
-    const out_px = math.Vec4.new(rgb_rec2020_linear.x, rgb_rec2020_linear.y, rgb_rec2020_linear.z, px.w);
+    const out_px = math.as(f32).Vec4.new(rgb_rec2020_linear.x, rgb_rec2020_linear.y, rgb_rec2020_linear.z, px.w);
     shd.imageWrite(output_image, coord, out_px);
 }

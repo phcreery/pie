@@ -1,5 +1,5 @@
 const api = @import("../api.zig");
-const Mat3 = api.math.Mat3;
+const Mat3 = api.math.as(f32).Mat3;
 const libraw = @import("libraw");
 const std = @import("std");
 const RawImage = @import("RawImage.zig");
