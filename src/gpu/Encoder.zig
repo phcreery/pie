@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgpu = @import("wgpu_zig");
-const ROI = @import("types").ROI;
+const ROI = @import("gpu_types").ROI;
 const root = @import("root.zig");
 const GPU = @import("GPU.zig");
 const ComputePipeline = @import("ComputePipeline.zig");
@@ -78,7 +78,7 @@ pub fn enqueueShader(self: *Self, compute_pipeline: *const ComputePipeline, bind
 pub fn enqueueBufToTex(self: *Self, memory: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
     slog.debug("Writing GPU buffer to Shader Buffer", .{});
 
-    const bytes_per_row = roi.w * texture.format.bpp();
+    const bytes_per_row = roi.w * texture.resource.channels() * texture.datatype.elementSize();
     const padded_bytes_per_row = ((bytes_per_row + root.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / root.COPY_BYTES_PER_ROW_ALIGNMENT) * root.COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of COPY_BYTES_PER_ROW_ALIGNMENT
 
     // We add a copy operation to the encoder. This will copy the data from the upload buffer on the
@@ -108,7 +108,7 @@ pub fn enqueueBufToTex(self: *Self, memory: *Buffer, mem_offset: usize, texture:
 pub fn enqueueTexToBuf(self: *Self, buffer: *Buffer, mem_offset: usize, texture: *Texture, roi: ROI) !void {
     slog.debug("Reading GPU buffer from Shader Buffer", .{});
 
-    const bytes_per_row = roi.w * texture.format.bpp();
+    const bytes_per_row = roi.w * texture.resource.channels() * texture.datatype.elementSize();
     const padded_bytes_per_row = ((bytes_per_row + root.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / root.COPY_BYTES_PER_ROW_ALIGNMENT) * root.COPY_BYTES_PER_ROW_ALIGNMENT; // ceil to next multiple of COPY_BYTES_PER_ROW_ALIGNMENT
 
     const copy_size = c.WGPUExtent3D{

@@ -50,8 +50,8 @@ test "simple test modules" {
     defer gpu_instance.deinit();
 
     const pipeline_config: pie.pipeline.PipelineConfig = .{
-        .upload_buffer_size_bytes = 1024,
-        .download_buffer_size_bytes = 1024,
+        .upload_buffer_size_bytes = 8192,
+        .download_buffer_size_bytes = 4096,
     };
 
     var pipeline = try Pipeline.init(allocator, io, &gpu_instance, pipeline_config);
@@ -62,6 +62,8 @@ test "simple test modules" {
     const mod_test_2nodes = try pipeline.addModule("test-2nodes", "01");
     const mod_test_nop_glsl = try pipeline.addModule("test-nop-glsl", "01");
     const mod_test_nop_zig = try pipeline.addModule("test-nop-zig", "01");
+    const mod_test_ssbo_wgsl = try pipeline.addModule("test-ssbo-wgsl", "01");
+    const mod_test_ssbo_zig = try pipeline.addModule("test-ssbo-zig", "01");
     const mod_test_o_2468 = try pipeline.addModule("test-o-2468", "01");
 
     try pipeline.setModuleParam(mod_test_multiply, "multiplier", f32, 2.0);
@@ -77,7 +79,9 @@ test "simple test modules" {
     try pipeline.connectModules(mod_test_multiply, "output", mod_test_2nodes, "input");
     try pipeline.connectModules(mod_test_2nodes, "output", mod_test_nop_glsl, "input");
     try pipeline.connectModules(mod_test_nop_glsl, "output", mod_test_nop_zig, "input");
-    try pipeline.connectModules(mod_test_nop_zig, "output", mod_test_o_2468, "input");
+    try pipeline.connectModules(mod_test_nop_zig, "output", mod_test_ssbo_wgsl, "input");
+    try pipeline.connectModules(mod_test_ssbo_wgsl, "output", mod_test_ssbo_zig, "input");
+    try pipeline.connectModules(mod_test_ssbo_zig, "output", mod_test_o_2468, "input");
 
     try pipeline.run();
     // pipeline.rerouted = true;

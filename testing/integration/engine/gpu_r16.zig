@@ -9,7 +9,7 @@ const Shader = pie.gpu.Shader;
 const ComputePipeline = pie.gpu.ComputePipeline;
 const Texture = pie.gpu.Texture;
 const Bindings = pie.gpu.Bindings;
-const TextureFormat = pie.gpu.TextureFormat;
+const r16u: pie.gpu.Format = .{ .resource = .r, .datatype = .u16 };
 const BindGroupLayoutEntry = pie.gpu.BindGroupLayoutEntry;
 const BindGroupEntry = pie.gpu.BindGroupEntry;
 
@@ -58,8 +58,8 @@ test "r16uint -> r16float -> double -> download" {
     defer shader.deinit();
 
     var layout_group_0_binding: [pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
-    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .r16uint } };
-    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .r16float } };
+    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .resource = .r, .datatype = .u16 } };
+    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .resource = .r, .datatype = .f16 } };
 
     var layout_group: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group[0] = layout_group_0_binding;
@@ -86,9 +86,9 @@ test "r16uint -> r16float -> double -> download" {
 
     // wgpu requires bytesPerRow >= 256 for texel copies; width-4 r16 = 8 bytes
     // -> 256 padded per row
-    const bytes_per_row = roi.w * TextureFormat.r16uint.bpp();
+    const bytes_per_row = roi.w * r16u.bpp();
     const padded_bytes_per_row = ((bytes_per_row + pie.gpu.COPY_BYTES_PER_ROW_ALIGNMENT - 1) / pie.gpu.COPY_BYTES_PER_ROW_ALIGNMENT) * pie.gpu.COPY_BYTES_PER_ROW_ALIGNMENT;
-    const texel_count_per_row = padded_bytes_per_row / TextureFormat.r16uint.bpp();
+    const texel_count_per_row = padded_bytes_per_row / r16u.bpp();
 
     // ALLOCATORS
     var upload_fba = try upload.fixedBufferAllocator(allocator);

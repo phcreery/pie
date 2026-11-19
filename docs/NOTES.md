@@ -40,6 +40,9 @@
 - https://ansel.photos/en/resources/white-balances/#fnref:2
 - https://jackchou00.com/en/posts/cat16-reversibility/
 
+- https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/color-calibration/
+- https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/white-balance/
+
 ### vkdt
 
 - https://github.com/techandy32/vkdt/tree/master/wiki
@@ -88,8 +91,7 @@
 - https://codeberg.org/shahwali/knots
 - https://github.com/knots-ui/knots
 - https://codeberg.org/Games-by-Mason/dear_imgui_zig
-- as of 08-Sep-2025, sokol allows for webgpu on native
-- https://github.com/yappologistic/CUI
+- https://github.com/yappologistic/CUI sloppy, not good
 
 ## Zig
 
@@ -103,6 +105,7 @@
   - https://code.hexops.org/hexops/mach/src/branch/main/src/sysgpu/gpu_allocator.zig
 
 - wgpu bindings
+  - as of 08-Sep-2025, sokol allows for webgpu on native
   - https://git.bouvais.lu/adrien/zig-wgpu
   - https://codeberg.org/Silverclaw/zig-wgpu-native
   - https://github.com/bronter/wgpu_native_zig
@@ -146,12 +149,17 @@
     - https://github.com/floooh/sokol/pull/1326
 
 - math
+  - comtime math: https://codeberg.org/InKryption/comath
+    - https://github.com/ymndoseijin/zilliam
   - https://codeberg.org/ziglang/zig/src/branch/master/lib/std/math.zig
   - https://github.com/zig-gamedev/zmath (more for gamedev but good support. add functions have anytype, has swizzle, top-level function calls)
   - https://codeberg.org/grius/zm/ (barebones)
   - https://github.com/muhammad-fiaz/num.zig (ew)
   - https://github.com/ziglibs/zlm (good abstraction, has swizzle)
   - https://gitlab.com/mass4org/mega4/math-3d/ (3D/physical primitives and functions)
+
+- python bindings
+  - https://codeberg.org/frmdstryr/py.zig
 
 - Examples
   - https://github.com/riverwm/river/
@@ -163,6 +171,7 @@
     - https://github.com/tigerbeetle/tigerbeetle/blob/5b485508373f5eed99cb52a75ec692ec569a6990/docs/TIGER_STYLE.md#cache-invalidation
     - large build.zig
   - https://github.com/foxnne/pixi
+  - https://github.com/fizzyedit/fizzy
   - https://github.com/ghostty-org/ghostty
   - https://github.com/karlseguin/zul
 

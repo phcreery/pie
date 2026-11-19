@@ -1,7 +1,7 @@
 const std = @import("std");
 // const CFA = @import("modules/shared/CFA.zig");
 const slog = std.log.scoped(.imgparam);
-const std140 = @import("std140.zig");
+const std140 = @import("gpu_types").std140;
 const math = @import("math");
 
 // see: https://github.com/hanatos/vkdt/blob/master/src/pipe/module.h#L52
@@ -76,7 +76,7 @@ pub const ImgParams = struct {
 };
 
 /// The `img_params` uniform buffer as the shaders see it: `ImgParams` packed by
-/// `types.std140.layoutStruct` and respelled as an extern struct by `std140`.
+/// `std140.layoutStruct` and respelled as an extern struct by `std140`.
 pub const ImgParamsGpu = std140.GpuStruct(ImgParams);
 
 test "layoutStruct packs ImgParams as its std140 GPU view" {

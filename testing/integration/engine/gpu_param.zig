@@ -10,7 +10,7 @@ const Shader = pie.gpu.Shader;
 const ComputePipeline = pie.gpu.ComputePipeline;
 const Texture = pie.gpu.Texture;
 const Bindings = pie.gpu.Bindings;
-const TextureFormat = pie.gpu.TextureFormat;
+const rgba16f: pie.gpu.Format = .{ .resource = .rgba, .datatype = .f16 };
 const BindGroupLayoutEntry = pie.gpu.BindGroupLayoutEntry;
 const BindGroupEntry = pie.gpu.BindGroupEntry;
 const MAX_BINDINGS = pie.gpu.MAX_BINDINGS;
@@ -24,9 +24,9 @@ test "simple compute test with parameters" {
     // DEFINE
     const param_value = [_]f32{2.0};
     const source = [_]f16{ 1.0, 2.0, 3.0, 4.0 };
-    const source_format = TextureFormat.rgba16float;
+    const source_format = rgba16f;
     var destination = std.mem.zeroes([4]f16);
-    const destination_format = TextureFormat.rgba16float;
+    const destination_format = rgba16f;
     const roi = ROI{
         .w = 1,
         .h = 1,
@@ -50,8 +50,8 @@ test "simple compute test with parameters" {
     const shader = Shader.compile(&gpu, shader_code, .{}) catch unreachable;
 
     var layout_group_0_binding: [MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
-    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
-    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
+    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .resource = .rgba, .datatype = .f16 } };
+    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .resource = .rgba, .datatype = .f16 } };
 
     var layout_group_1_binding: [MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_1_binding[0] = .{ .buffer = .{ .binding_type = .storage } };
@@ -65,9 +65,9 @@ test "simple compute test with parameters" {
 
     // BUFFERS
     // these are intentionally over-provisioned to avoid OOM issues
-    var upload = try Buffer.init(&gpu, 100 * 16 * TextureFormat.rgba16float.bpp() + 16 * @sizeOf(f32), .upload);
+    var upload = try Buffer.init(&gpu, 100 * 16 * rgba16f.bpp() + 16 * @sizeOf(f32), .upload);
     defer upload.deinit();
-    var download = try Buffer.init(&gpu, 100 * 1 * TextureFormat.rgba16float.bpp(), .download);
+    var download = try Buffer.init(&gpu, 100 * 1 * rgba16f.bpp(), .download);
     defer download.deinit();
     var param_buffer = try Buffer.init(&gpu, 100 * @sizeOf(f32), .storage);
     defer param_buffer.deinit();
@@ -97,7 +97,7 @@ test "simple compute test with parameters" {
     var upload_fba = try upload.fixedBufferAllocator(allocator);
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
-    const induced_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
+    const induced_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.channels());
     const induced_offset = @intFromPtr(induced_buf.ptr) - @intFromPtr(upload_fba.ptr);
     std.log.info("Upload induced offset: {d}", .{induced_offset});
 
@@ -111,13 +111,13 @@ test "simple compute test with parameters" {
     std.log.info("Upload params offset: {d}", .{param_offset});
 
     // PREP UPLOAD
-    const src_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.nchannels());
+    const src_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.channels());
     const src_offset = @intFromPtr(src_buf.ptr) - @intFromPtr(upload_fba.ptr);
 
     std.log.info("Upload texture offset: {d}", .{src_offset});
 
     // PREP DOWNLOAD
-    const dest_buf = try download_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * destination_format.nchannels());
+    const dest_buf = try download_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * destination_format.channels());
     const dest_offset = @intFromPtr(dest_buf.ptr) - @intFromPtr(download_fba.ptr);
 
     // UPLOAD

@@ -1,7 +1,7 @@
 pub const std = @import("std");
 
-const ROI = @import("types").ROI;
-pub const ImgParam = @import("types").ImgParam;
+pub const ROI = @import("module_types").ROI;
+pub const ImgParam = @import("module_types").ImgParam;
 pub const Module = @import("Module.zig");
 pub const Node = @import("Node.zig");
 pub const gpu = @import("gpu");

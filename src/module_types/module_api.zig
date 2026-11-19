@@ -1,7 +1,8 @@
-const ui = @import("ui.zig");
+const ui = @import("ui_types").ui;
 pub const ParamUI = ui.ParamUI;
 const ColorProfile = @import("ColorProfile.zig");
-const std = @import("std");
+pub const Resource = @import("gpu_types").Resource;
+pub const DataType = @import("gpu_types").DataType;
 
 /// How a parameter's value bytes are encoded.
 pub const ParamType = enum {
@@ -55,36 +56,11 @@ pub const SocketType = enum {
     sink,
 };
 
-// uhh, this is also duplicate....
-pub const TextureFormat = enum {
-    rgba16float,
-    rgba16uint,
-    r8uint,
-    r16uint,
-    r16float,
-
-    // special cases
-    // NOTE: rggb* are *semantic* formats: the data is RGGB bayer mosaic, but
-    // it is stored single-channel (one photosite per texel) on the GPU. ROI is
-    // the true photosite size (w x h). Shaders decode the bayer phase from
-    // coords; WGSL declares the underlying storage type (not "rggb").
-    //
-    // The float bayer stage is stored as r32_float, not r16_float: r16float is
-    // not a WebGPU core storage-texture format while r32float is. The
-    // u16 raw input stays rggb16uint (r16_uint, which IS core-spec).
-    rggb32float,
-    rggb16uint,
-
-    /// Placeholder for sockets that accept/emit whatever their connection
-    /// resolves to (e.g. the `format` module). The pipeline replaces it with
-    /// the concrete format before any texture/pipeline is created.
-    any,
-};
-
 pub const SocketDesc = struct {
     name: []const u8,
-    type: SocketType,
-    format: TextureFormat,
+    access: SocketType,
+    resource: Resource,
+    datatype: DataType,
     color_profile: ?ColorProfile = null,
 };
 

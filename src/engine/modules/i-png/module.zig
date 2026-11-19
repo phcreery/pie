@@ -18,8 +18,8 @@ pub const def: api.ModuleDef = .{
                 .name = "output",
                 // raw 16-bit samples; the `format` module converts to f16 on
                 // the GPU, so the CPU never touches the samples
-                .type = .source,
-                .format = .rgba16uint,
+                .access = .source,
+                .resource = .rgba, .datatype = .u16,
                 .color_profile = .any,
             },
         },

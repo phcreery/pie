@@ -3,7 +3,7 @@
     .type = .compute,
     .shader = .{ .spirv = .{ .file = "node.color.zig.spv.embed" } },
     .sockets = .{
-        .{ .name = "input", .type = .read, .format = .rgba16float },
-        .{ .name = "output", .type = .write, .format = .rgba16float },
+        .{ .name = "input", .access = .read, .resource = .rgba, .datatype = .f16 },
+        .{ .name = "output", .access = .write, .resource = .rgba, .datatype = .f16 },
     },
 }

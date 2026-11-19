@@ -3,15 +3,16 @@
 const std = @import("std");
 const gpu = @import("gpu");
 pub const math = @import("math");
-pub const ROI = @import("types").ROI;
+pub const ROI = @import("module_types").ROI;
 pub const CFA = @import("CFA");
 
-const ModuleApi = @import("types").ModuleApi;
+const ModuleApi = @import("module_types").ModuleApi;
 pub const ShaderTypeEnum = ModuleApi.ShaderTypeEnum;
 pub const ShaderSource = ModuleApi.ShaderSource;
 pub const ShaderLanguage = ModuleApi.ShaderLanguage;
 pub const ShaderLanguageSource = ModuleApi.ShaderLanguageSource;
-pub const TextureFormat = ModuleApi.TextureFormat;
+pub const Resource = ModuleApi.Resource;
+pub const DataType = ModuleApi.DataType;
 pub const NodeType = ModuleApi.NodeType;
 pub const NodeDesc = ModuleApi.NodeDesc;
 pub const Sockets = ModuleApi.Sockets;
@@ -23,7 +24,7 @@ pub const ModuleType = ModuleApi.ModuleType;
 pub const ModuleDesc = ModuleApi.ModuleDesc;
 pub const MAX_SOCKETS = ModuleApi.MAX_SOCKETS;
 
-const ui = @import("types").ui;
+const ui = @import("module_types").ui;
 pub const ParamUI = ui.ParamUI;
 pub const Control = ui.Control;
 pub const Slider = ui.Slider;
@@ -41,7 +42,7 @@ pub const Connector = @import("../Connector.zig");
 pub const Param = @import("../Param.zig");
 pub const HistoryConfig = @import("../histlist.zig").HistoryConfig;
 
-pub const ImgParam = @import("types").ImgParam;
+pub const ImgParam = @import("module_types").ImgParam;
 
 comptime {
     std.debug.assert(gpu.MAX_BINDINGS == MAX_SOCKETS);

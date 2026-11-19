@@ -1,8 +1,8 @@
 const std = @import("std");
 const gpu = @import("gpu");
-const types = @import("types");
-const ROI = @import("types").ROI;
-const ColorProfile = @import("types").ColorProfile;
+const types = @import("module_types");
+const ROI = @import("module_types").ROI;
+const ColorProfile = @import("module_types").ColorProfile;
 const api = @import("modules/api.zig");
 const print = @import("pipeline_print.zig");
 const perf = @import("pipeline_perf.zig");
@@ -729,12 +729,12 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runNodesBuildExecutionOrder");
             try self.runNodesCompileShaders();
             try self.perf.timerLap("runNodesCompileShaders");
-            try self.runNodesInitConnectorTextures(.{});
-            try self.perf.timerLap("runNodesInitConnectorTextures");
+            try self.runNodesAllocateConnectors(.{});
+            try self.perf.timerLap("runNodesAllocateConnectors");
             try self.runNodesCreateBindings();
             try self.perf.timerLap("runNodesCreateBindings");
-            try self.runNodesAllocateStagingBuffersForTextures();
-            try self.perf.timerLap("runNodesAllocateStagingBuffersForTextures");
+            try self.runNodesAllocateStagingBuffers();
+            try self.perf.timerLap("runNodesAllocateStagingBuffers");
 
             // try self.freeUnusedConnectors(arena);
             try self.perf.timerLap("freeUnusedConnectors");
@@ -750,8 +750,8 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runModulesModifyOut");
             try self.runNodeSyncSockets();
             try self.perf.timerLap("runNodeSyncSockets");
-            try self.runNodesInitConnectorTextures(.{ .refresh = true });
-            try self.perf.timerLap("runNodesInitConnectorTextures(refresh)");
+            try self.runNodesAllocateConnectors(.{ .refresh = true });
+            try self.perf.timerLap("runNodesAllocateConnectors(refresh)");
             try self.runModulesCommitParams();
             try self.perf.timerLap("runModulesCommitParams");
 
@@ -1015,9 +1015,10 @@ pub const Pipeline = struct {
                         // slog.debug("Setting input ROI for module '{s} > {s}' from previous connected module '{s}'", .{ module.name, sock.name, connected_to_module.name });
                         const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse unreachable;
                         socket_ptr.roi = connected_to_socket.roi;
-                        // resolve a `.any` input (e.g. `format`) to the concrete
-                        // format flowing in, before nodes/textures are built
-                        socket_ptr.format = connected_to_socket.format;
+                        // Resolve a `.any` input (for example `format`) to the
+                        // concrete resource and datatype that flow in.
+                        socket_ptr.resource = connected_to_socket.resource;
+                        socket_ptr.datatype = connected_to_socket.datatype;
                         // carry the actual color profile of what is flowing in
                         socket_ptr.color_profile = connected_to_socket.color_profile;
 
@@ -1063,6 +1064,7 @@ pub const Pipeline = struct {
             for (module.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .input) {
+                        if (sock.resource == .buffer) continue;
                         if (sock.connected_to_module) |connection| {
                             const connected_to_module = self.module_pool.getPtr(connection.item) catch return error.InvariantViolated;
                             const connected_to_socket = connected_to_module.sockets[connection.socket_idx] orelse continue;
@@ -1078,6 +1080,7 @@ pub const Pipeline = struct {
             for (module.sockets) |socket| {
                 if (socket) |sock| {
                     if (sock.type.direction() == .output) {
+                        if (sock.resource == .buffer) continue;
                         const output_socket = module.getSocketPtr(sock.name) catch |err| {
                             slog.err("run: socket '{s}' lookup failed: {s}", .{ sock.name, @errorName(err) });
                             return error.InvalidGraph;
@@ -1295,18 +1298,18 @@ pub const Pipeline = struct {
         }
     }
 
-    const InitConnectorTexturesOptions = struct {
-        /// refresh mode: only (re)create textures whose roi/format no longer
-        /// match the module socket (authoritative after modifyOut), free stale
-        /// textures, sync node socket roi/format, and mark the node dirty.
+    const AllocateConnectorsOptions = struct {
+        /// Refresh mode replaces only resources with a new extent or format.
+        /// It frees the old resource, syncs the node socket, and marks the
+        /// node dirty.
         refresh: bool = false,
     };
 
-    /// Allocates output textures and creates compute shaders for each node
-    /// also creates bindings for each shader
+    /// Allocate one output resource per output socket. A texture socket gets a
+    /// texture. A buffer socket gets a storage buffer.
     ///
-    /// similar to vkdt dt_graph_run_nodes_allocate()
-    fn runNodesInitConnectorTextures(self: *Pipeline, options: InitConnectorTexturesOptions) RunError!void {
+    /// Similar to vkdt dt_graph_run_nodes_allocate().
+    fn runNodesAllocateConnectors(self: *Pipeline, options: AllocateConnectorsOptions) RunError!void {
         const gpu_inst = self.gpu orelse return error.NoGpuInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = self.node_pool.getPtr(node_handle) catch return error.InvariantViolated;
@@ -1314,32 +1317,39 @@ pub const Pipeline = struct {
             for (&node.sockets) |*socket| {
                 if (socket.*) |*output_sock| {
                     if (output_sock.type.direction() != .output) continue;
-                    // const connector_handle = self.getNodeSocketConnectorHandle(sock.*) orelse return error.NodeOutputSocketMissingConnectorHandle;
-                    // const conn = try self.connector_pool.getPtr(connector_handle);
                     const conn = self.getNodeSocketConnector(output_sock.*) orelse {
                         slog.err("node '{s}' socket '{s}' has no output connector", .{ node.name, output_sock.name });
                         return error.InvalidGraph;
                     };
 
-                    // resolve the authoritative roi/format: in refresh mode the
-                    // module socket (updated by modifyOut) wins; otherwise the
-                    // node socket (as created by createNodes)
-                    var roi: ?api.ROI = null;
-                    var fmt: gpu.TextureFormat = output_sock.format;
+                    // In refresh mode, the module socket is authoritative.
+                    // Otherwise, use the node socket from createNodes().
+                    var extent: ?api.ROI = null;
+                    var resource: gpu.Resource = output_sock.resource;
+                    var datatype: gpu.DataType = output_sock.datatype;
                     if (options.refresh) {
                         const mod_sock = mod.getSocketPtr(output_sock.name) catch continue;
-                        roi = mod_sock.roi;
-                        fmt = mod_sock.format;
+                        extent = mod_sock.roi;
+                        resource = mod_sock.resource;
+                        datatype = mod_sock.datatype;
                     } else {
-                        roi = output_sock.roi;
+                        extent = output_sock.roi;
                     }
-                    const expected_roi = roi orelse continue;
+                    const expected_extent = extent orelse continue;
 
                     const need_alloc = blk: {
+                        if (resource == .buffer) {
+                            const buffer = conn.*.buffer orelse break :blk true;
+                            if (options.refresh) {
+                                if (buffer.buffer_size != gpu.Buffer.sizeFor(datatype, expected_extent)) break :blk true;
+                            }
+                            break :blk false;
+                        }
                         const tex = conn.*.texture orelse break :blk true;
                         if (options.refresh) {
-                            if (!std.meta.eql(tex.roi, expected_roi)) break :blk true;
-                            if (tex.format != fmt) break :blk true;
+                            if (!std.meta.eql(tex.roi, expected_extent)) break :blk true;
+                            if (tex.resource != resource) break :blk true;
+                            if (tex.datatype != datatype) break :blk true;
                         }
                         break :blk false;
                     };
@@ -1348,27 +1358,33 @@ pub const Pipeline = struct {
                     var buf: [256]u8 = undefined;
                     const str = std.fmt.bufPrint(&buf, "node: {s} > {s}", .{ node.name, output_sock.name }) catch return error.InvariantViolated;
                     if (options.refresh) {
-                        slog.debug("Refreshing output texture for node '{s} > {s}' (roi/format changed)", .{ node.name, output_sock.name });
+                        slog.debug("Refreshing output resource for node '{s} > {s}' (extent/format changed)", .{ node.name, output_sock.name });
                     } else {
-                        slog.debug("Allocating output texture for node '{s} > {s}'", .{ node.name, output_sock.name });
+                        slog.debug("Allocating output resource for node '{s} > {s}'", .{ node.name, output_sock.name });
                     }
-                    // free the old texture before replacing (refresh only; full
-                    // init starts with a null texture)
-                    if (output_sock.connector_handle) |*old_handle| {
-                        var old = self.connector_pool.getPtr(old_handle.*) catch return error.InvariantViolated;
-                        old.deinit();
+                    // Free the old resource before replacement.
+                    conn.deinit();
+
+                    if (resource == .buffer) {
+                        const size_bytes = gpu.Buffer.sizeFor(datatype, expected_extent);
+                        const buffer = gpu.Buffer.init(gpu_inst, size_bytes, .storage) catch |err| {
+                            slog.err("node '{s} > {s}' buffer creation failed: {s}", .{ node.name, output_sock.name, @errorName(err) });
+                            return error.GpuFailure;
+                        };
+                        conn.*.buffer = buffer;
+                    } else {
+                        const texture = gpu.Texture.init(gpu_inst, str, resource, datatype, expected_extent) catch |err| {
+                            slog.err("node '{s} > {s}' texture creation failed: {s}", .{ node.name, output_sock.name, @errorName(err) });
+                            return error.GpuFailure;
+                        };
+                        conn.*.texture = texture;
                     }
-                    const texture = gpu.Texture.init(gpu_inst, str, fmt, expected_roi) catch |err| {
-                        slog.err("node '{s} > {s}' texture creation failed: {s}", .{ node.name, output_sock.name, @errorName(err) });
-                        return error.GpuFailure;
-                    };
-                    conn.*.texture = texture;
-                    // the texture a node bound is gone: invalidate the cache
+                    // A resource that a node bound is gone. Invalidate the cache.
                     self.bumpAllocEpoch();
                     if (options.refresh) {
-                        // keep the node socket in sync so run_size/bindings use the new roi
+                        // Keep the node socket in sync with the new extent.
                         var sock_ptr = node.getSocketPtr(output_sock.name) catch continue;
-                        sock_ptr.roi = expected_roi;
+                        sock_ptr.roi = expected_extent;
                         self.markNodeDirty(node);
                     }
                     self.perf.recordConnectorTextureAllocation();
@@ -1390,7 +1406,8 @@ pub const Pipeline = struct {
                 if (maybe_sock.*) |*sock| {
                     if (mod.getSocketPtr(sock.name)) |mod_sock| {
                         sock.roi = mod_sock.roi;
-                        sock.format = mod_sock.format;
+                        sock.resource = mod_sock.resource;
+                        sock.datatype = mod_sock.datatype;
                         sock.color_profile = mod_sock.color_profile;
                     } else |_| {}
                 }
@@ -1466,27 +1483,38 @@ pub const Pipeline = struct {
             var bind_group_1_binds: [gpu.MAX_BINDINGS]?gpu.BindGroupEntry = @splat(null);
             for (node.sockets, 0..) |socket, binding_number| {
                 if (socket) |sock| {
-                    // prepare shader pipe connections
-                    layout_group_1_binding[binding_number] = gpu.BindGroupLayoutEntry{
-                        .texture = .{
-                            .access = sock.type.toComputePipelineBindGroupLayoutEntryAccess(),
-                            .format = sock.format,
-                        },
-                    };
-                    // slog.debug("Added bind group layout entry for binding {d}", .{binding_number});
-
+                    const access = sock.type.toComputePipelineBindGroupLayoutEntryAccess();
                     const conn = self.getNodeSocketConnector(sock) orelse {
                         slog.err("node '{s}' socket '{s}' has no connector", .{ node.name, sock.name });
                         return error.InvalidGraph;
                     };
-                    const texture = conn.*.texture orelse {
-                        slog.err("node '{s}' socket '{s}' connector has no texture", .{ node.name, sock.name });
-                        return error.InvalidGraph;
-                    };
-                    bind_group_1_binds[binding_number] = gpu.BindGroupEntry{
-                        .texture = texture,
-                    };
-                    // slog.debug("Added bind group entry for binding {d} {any}", .{ binding_number, bind_group_1_binds[binding_number] });
+
+                    if (sock.resource == .buffer) {
+                        const buffer = conn.*.buffer orelse {
+                            slog.err("node '{s}' socket '{s}' connector has no buffer", .{ node.name, sock.name });
+                            return error.InvalidGraph;
+                        };
+                        layout_group_1_binding[binding_number] = .{
+                            .buffer = .{ .binding_type = switch (access) {
+                                .read => .read_only_storage,
+                                .write => .storage,
+                            } },
+                        };
+                        bind_group_1_binds[binding_number] = .{ .buffer = buffer };
+                    } else {
+                        const texture = conn.*.texture orelse {
+                            slog.err("node '{s}' socket '{s}' connector has no texture", .{ node.name, sock.name });
+                            return error.InvalidGraph;
+                        };
+                        layout_group_1_binding[binding_number] = .{
+                            .texture = .{
+                                .access = access,
+                                .resource = sock.resource,
+                                .datatype = sock.datatype,
+                            },
+                        };
+                        bind_group_1_binds[binding_number] = .{ .texture = texture };
+                    }
                 }
             }
 
@@ -1529,7 +1557,7 @@ pub const Pipeline = struct {
         }
     }
 
-    fn runNodesAllocateStagingBuffersForTextures(self: *Pipeline) RunError!void {
+    fn runNodesAllocateStagingBuffers(self: *Pipeline) RunError!void {
         const arena = self.run_arena.allocator();
 
         if (self.upload_fba) |*upload_fba| {
@@ -1552,10 +1580,9 @@ pub const Pipeline = struct {
                     if (this_sock.*) |*sock| {
                         if (sock.type == .source) {
                             // typically...
-                            // const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
                             // but I think the stride is aligned to COPY_BYTES_PER_ROW_ALIGNMENT
                             // need to review if this is needed. it initially seemed to work without it
-                            const bytes_per_row = sock.roi.?.w * sock.format.bpp();
+                            const bytes_per_row = sock.roi.?.w * sock.resource.channels() * sock.datatype.elementSize();
                             const aligned_bytes_per_row = gpu.alignBytesPerRow(bytes_per_row);
                             const size_bytes = aligned_bytes_per_row * sock.roi.?.h;
 
@@ -1597,10 +1624,9 @@ pub const Pipeline = struct {
                         if (sock.type == .sink) {
 
                             // typically...
-                            // const size_bytes = sock.roi.?.w * sock.roi.?.h * sock.format.bpp();
                             // but I think the stride is aligned to COPY_BYTES_PER_ROW_ALIGNMENT
                             // need to review if this is needed. it initially seemed to work without it
-                            const bytes_per_row = sock.roi.?.w * sock.format.bpp();
+                            const bytes_per_row = sock.roi.?.w * sock.resource.channels() * sock.datatype.elementSize();
                             const aligned_bytes_per_row = gpu.alignBytesPerRow(bytes_per_row);
                             const size_bytes = aligned_bytes_per_row * sock.roi.?.h;
                             slog.debug("Allocating {d} bytes download buffer for sink socket '{s} > {s}'", .{ size_bytes, last_node_ptr.name, sock.name });
@@ -1854,39 +1880,62 @@ pub const Pipeline = struct {
                 );
             },
             .source => {
-                slog.debug("Enqueueing source node '{s}' buffer to texture copy", .{node.name});
-                const connector = self.getNodeSocketConnector(node.sockets[0].?) orelse return error.InvalidGraph;
-                var tex = connector.*.texture orelse return error.InvalidGraph;
-                const staging_offset = node.sockets[0].?.staging_offset orelse unreachable;
-                const roi = node.sockets[0].?.roi orelse unreachable;
+                const sock = node.sockets[0].?;
+                const connector = self.getNodeSocketConnector(sock) orelse return error.InvalidGraph;
+                const staging_offset = sock.staging_offset orelse unreachable;
+                const roi = sock.roi orelse unreachable;
                 slog.debug("Source node staging offset: {d}", .{staging_offset});
-                encoder.enqueueBufToTex(upload_buffer, staging_offset, &tex, roi) catch |err| {
-                    slog.err("source node '{s}' upload enqueue failed: {s}", .{ node.name, @errorName(err) });
-                    return error.GpuFailure;
-                };
+
+                if (sock.resource == .buffer) {
+                    slog.debug("Enqueueing source node '{s}' staging to buffer copy", .{node.name});
+                    var buffer = connector.*.buffer orelse return error.InvalidGraph;
+                    const size_bytes: usize = @intCast(gpu.Buffer.sizeFor(sock.datatype, roi));
+                    encoder.enqueueBufToBuf(upload_buffer, staging_offset, &buffer, 0, size_bytes) catch |err| {
+                        slog.err("source node '{s}' buffer upload enqueue failed: {s}", .{ node.name, @errorName(err) });
+                        return error.GpuFailure;
+                    };
+                } else {
+                    slog.debug("Enqueueing source node '{s}' staging to texture copy", .{node.name});
+                    var tex = connector.*.texture orelse return error.InvalidGraph;
+                    encoder.enqueueBufToTex(upload_buffer, staging_offset, &tex, roi) catch |err| {
+                        slog.err("source node '{s}' upload enqueue failed: {s}", .{ node.name, @errorName(err) });
+                        return error.GpuFailure;
+                    };
+                }
             },
             .sink => {
-                // if last node is o-display, just return
+                // If the last node is o-display, there is nothing to download.
                 if (std.mem.eql(u8, node.name, "o-display")) {
                     return;
                 }
-                slog.debug("Enqueueing sink node '{s}' texture to buffer copy", .{node.name});
-                const connector = self.getNodeSocketConnector(node.sockets[0].?) orelse return error.InvalidGraph;
-                var tex = connector.*.texture orelse return error.InvalidGraph;
-                const staging_offset = node.sockets[0].?.staging_offset orelse unreachable;
-                // slog.debug("Sink node staging offset: {d}", .{staging_offset});
-                const roi = node.sockets[0].?.roi orelse unreachable;
-                encoder.enqueueTexToBuf(download_buffer, staging_offset, &tex, roi) catch |err| {
-                    slog.err("sink node '{s}' download enqueue failed: {s}", .{ node.name, @errorName(err) });
-                    return error.GpuFailure;
-                };
+                const sock = node.sockets[0].?;
+                const connector = self.getNodeSocketConnector(sock) orelse return error.InvalidGraph;
+                const staging_offset = sock.staging_offset orelse unreachable;
+                const roi = sock.roi orelse unreachable;
+
+                if (sock.resource == .buffer) {
+                    slog.debug("Enqueueing sink node '{s}' buffer to staging copy", .{node.name});
+                    var buffer = connector.*.buffer orelse return error.InvalidGraph;
+                    const size_bytes: usize = @intCast(gpu.Buffer.sizeFor(sock.datatype, roi));
+                    encoder.enqueueBufToBuf(&buffer, 0, download_buffer, staging_offset, size_bytes) catch |err| {
+                        slog.err("sink node '{s}' buffer download enqueue failed: {s}", .{ node.name, @errorName(err) });
+                        return error.GpuFailure;
+                    };
+                } else {
+                    slog.debug("Enqueueing sink node '{s}' texture to staging copy", .{node.name});
+                    var tex = connector.*.texture orelse return error.InvalidGraph;
+                    encoder.enqueueTexToBuf(download_buffer, staging_offset, &tex, roi) catch |err| {
+                        slog.err("sink node '{s}' download enqueue failed: {s}", .{ node.name, @errorName(err) });
+                        return error.GpuFailure;
+                    };
+                }
             },
         }
     }
 
-    /// Download the sink texture to CPU and call the sink module's writeSink.
-    /// NOTE: allocates a full trimmed copy (`mapped_trimmed`) every dirty frame
-    /// to strip row padding — biggest per-frame allocation in the hot path.
+    /// Download the sink resource to CPU and call the sink module's writeSink.
+    /// Textures get a dense copy without row padding. Buffers are already
+    /// dense.
     fn runNodesDownloadSink(self: *Pipeline) RunError!void {
         var download_buffer = self.download_buffer orelse {
             slog.err("run: download buffer is not allocated", .{});
@@ -1912,33 +1961,29 @@ pub const Pipeline = struct {
                     slog.debug("Downloading sink data for last node", .{});
                     const mapped_ptr = sock.*.staging_ptr orelse unreachable;
 
-                    // we are going to help out the module author by removing the padding bytes if they exist since wgpu
-                    // requires bytes per row to be aligned to 256 bytes, but this is not ideal since it requires an extra
-                    // copy and extra memory allocation. in the future, we should consider allowing users to handle the
-                    // padding themselves in their writeSink function by providing them with the aligned bytes per row and
-                    // the total size of the mapped buffer.
-                    const mapped_trimmed = try self.allocator.alloc(u8, sock.roi.?.w * sock.roi.?.h * sock.format.bpp());
-                    defer self.allocator.free(mapped_trimmed);
-                    {
-                        // wgpu requires bytes per row to be aligned to 256 bytes, so we need to remove the padding bytes if they exist
-                        const bytes_per_row = sock.roi.?.w * sock.format.bpp();
+                    // Textures use 256-byte aligned rows. Give the module a
+                    // dense copy. Buffers are dense already.
+                    var mapped_trimmed: ?[]u8 = null;
+                    defer if (mapped_trimmed) |trimmed| self.allocator.free(trimmed);
+                    const sink_ptr: *anyopaque = if (sock.resource == .buffer) mapped_ptr else trimmed: {
+                        const bytes_per_texel = sock.resource.channels() * sock.datatype.elementSize();
+                        const bytes_per_row = sock.roi.?.w * bytes_per_texel;
                         const aligned_bytes_per_row = gpu.alignBytesPerRow(bytes_per_row);
+                        const trimmed = try self.allocator.alloc(u8, bytes_per_row * sock.roi.?.h);
+                        mapped_trimmed = trimmed;
 
-                        const aligned_size_bytes = aligned_bytes_per_row * sock.roi.?.h;
                         const download_buffer_padded_ptr: [*]u8 = @ptrCast(@alignCast(mapped_ptr));
-                        const download_buffer_padded_slice = download_buffer_padded_ptr[0..aligned_size_bytes];
-
-                        // copy each row of the byte array with the aligned bytes per row to the output slice
                         for (0..sock.roi.?.h) |row| {
                             const src_start = row * aligned_bytes_per_row;
                             const src_end = src_start + bytes_per_row;
                             const dst_start = row * bytes_per_row;
                             const dst_end = dst_start + bytes_per_row;
-                            @memcpy(mapped_trimmed[dst_start..dst_end], download_buffer_padded_slice[src_start..src_end]);
+                            @memcpy(trimmed[dst_start..dst_end], download_buffer_padded_ptr[src_start..src_end]);
                         }
-                    }
+                        break :trimmed trimmed.ptr;
+                    };
 
-                    writeSinkFn(self.allocator, self.io, self, last_node.mod, mapped_trimmed.ptr) catch |err| {
+                    writeSinkFn(self.allocator, self.io, self, last_node.mod, sink_ptr) catch |err| {
                         slog.err("module '{s}' writeSink failed: {s}", .{ last_node_mod.name, @errorName(err) });
                         return error.InvalidGraph;
                     };

@@ -1,7 +1,7 @@
 const std = @import("std");
 const wgpu = @import("wgpu_zig");
 const GPU = @import("GPU.zig");
-// const types = @import("types");
+// const gpu_types = @import("gpu_types");
 
 const slog = std.log.scoped(.gpu);
 

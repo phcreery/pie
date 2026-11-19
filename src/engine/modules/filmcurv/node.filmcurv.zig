@@ -1,8 +1,13 @@
 //!   zig build-obj -target spirv32-vulkan -mcpu generic+v1_1 -ofmt=spirv -fno-llvm \
 //!     -femit-bin=filmcurv.comp.spv \
-//!     --dep shader --dep math -Mroot=src/engine/modules/filmcurv/filmcurv.comp.zig \
-//!     --dep math --dep types -Mshader=src/spirv/spirv.zig \
-//!     -Mmath=src/math/root.zig -Mtypes=src/types/root.zig
+//!     --dep shader --dep math --dep module_types --dep gpu_types --dep ui_types \
+//!     -Mroot=src/engine/modules/filmcurv/filmcurv.comp.zig \
+//!     --dep math --dep module_types --dep gpu_types --dep ui_types \
+//!     -Mshader=src/spirv/spirv.zig \
+//!     -Mmath=src/math/root.zig \
+//!     --dep gpu_types --dep ui_types --dep math \
+//!     -Mmodule_types=src/module_types/root.zig \
+//!     -Mgpu_types=src/gpu_types/root.zig -Mui_types=src/ui_types/root.zig
 //!   spirv-dis filmcurv.comp.spv | less
 
 const shd = @import("shader");

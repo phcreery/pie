@@ -1,8 +1,7 @@
 //! Recommended default pipelines, keyed by input file type.
 
 const std = @import("std");
-const api = @import("modules/api.zig");
-const gpu = @import("gpu");
+
 const pipeline = @import("pipeline.zig");
 const serdes = @import("serdes.zig");
 
@@ -142,10 +141,10 @@ fn upstream(pipe: *pipeline.Pipeline, handle: pipeline.ModuleHandle) !Link {
     return error.GraphSinkMissingInput;
 }
 
-/// Insert a `downscale` capping the longest edge at the end of the raw/CFA
-/// domain: after the last producer that already emits working rgb
-/// (`rgba16float`). Falls back to just upstream of the sink when the chain
-/// never leaves the raw domain.
+/// Insert a `downscale` that caps the longest edge at the end of the raw/CFA
+/// domain. The insertion point is after the last producer that emits working
+/// RGB (`.rgba`/`.f16`). If the chain never leaves the raw domain, insert just
+/// upstream of the sink.
 fn insertDownscale(pipe: *pipeline.Pipeline, sink: pipeline.ModuleHandle, max_edge: u32) !void {
     var producer = try upstream(pipe, sink);
     var consumer = sink;
@@ -157,7 +156,7 @@ fn insertDownscale(pipe: *pipeline.Pipeline, sink: pipeline.ModuleHandle, max_ed
 
     // walk upstream while the producer is already in working rgb; stop at the
     // first raw-domain producer, which is where the thumbnail should start
-    while (try producerSocketFormat(pipe, producer) == .rgba16float) {
+    while (try producerSocketIsWorkingRgb(pipe, producer)) {
         insert_after = producer;
         insert_consumer = consumer;
         insert_socket = consumer_socket;
@@ -180,10 +179,10 @@ fn insertDownscale(pipe: *pipeline.Pipeline, sink: pipeline.ModuleHandle, max_ed
     try pipe.connectModulesNoRecord(downscale, "output", insert_consumer, insert_socket);
 }
 
-fn producerSocketFormat(pipe: *pipeline.Pipeline, link: Link) !gpu.TextureFormat {
+fn producerSocketIsWorkingRgb(pipe: *pipeline.Pipeline, link: Link) !bool {
     const mod = try pipe.module_pool.getPtr(link.module);
     const sock = try mod.getSocketPtr(link.socket);
-    return sock.format;
+    return sock.resource == .rgba and sock.datatype == .f16;
 }
 
 /// Name of `consumer`'s input socket that is connected to `producer`.

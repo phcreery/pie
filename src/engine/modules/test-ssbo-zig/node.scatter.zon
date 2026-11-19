@@ -1,0 +1,9 @@
+.{
+    .name = "scatter",
+    .type = .compute,
+    .shader = .{ .spirv = .{ .file = "scatter.zig.spv.embed" } },
+    .sockets = .{
+        .{ .name = "input", .access = .read, .resource = .rgba, .datatype = .f16 },
+        .{ .name = "tmp", .access = .write, .resource = .buffer, .datatype = .f32 },
+    },
+}

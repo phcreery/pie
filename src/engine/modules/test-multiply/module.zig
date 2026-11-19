@@ -16,13 +16,13 @@ pub const def: api.ModuleDef = .{
         .sockets = &.{
             .{
                 .name = "input",
-                .type = .read,
-                .format = .rgba16float,
+                .access = .read,
+                .resource = .rgba, .datatype = .f16,
             },
             .{
                 .name = "output",
-                .type = .write,
-                .format = .rgba16float,
+                .access = .write,
+                .resource = .rgba, .datatype = .f16,
             },
         },
     },
@@ -80,13 +80,13 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .sockets = &.{
             .{
                 .name = "input",
-                .type = .read,
-                .format = .rgba16float,
+                .access = .read,
+                .resource = .rgba, .datatype = .f16,
             },
             .{
                 .name = "output",
-                .type = .write,
-                .format = .rgba16float,
+                .access = .write,
+                .resource = .rgba, .datatype = .f16,
             },
         },
     });

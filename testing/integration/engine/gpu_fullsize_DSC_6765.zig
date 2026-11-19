@@ -10,7 +10,9 @@ const Encoder = pie.gpu.Encoder;
 const Shader = pie.gpu.Shader;
 const ComputePipeline = pie.gpu.ComputePipeline;
 const Texture = pie.gpu.Texture;
-const TextureFormat = pie.gpu.TextureFormat;
+const rgba16f: pie.gpu.Format = .{ .resource = .rgba, .datatype = .f16 };
+const r16f: pie.gpu.Format = .{ .resource = .r, .datatype = .f16 };
+const rgba16u: pie.gpu.Format = .{ .resource = .rgba, .datatype = .u16 };
 const Bindings = pie.gpu.Bindings;
 const BindGroupEntry = pie.gpu.BindGroupEntry;
 const BindGroupLayoutEntry = pie.gpu.BindGroupLayoutEntry;
@@ -82,8 +84,8 @@ test "load raw, demosaic, save" {
     // SIZES
     const image_size_in_w = @as(u32, @intCast(pie_raw_image.width));
     const image_size_in_h = @as(u32, @intCast(pie_raw_image.height));
-    const source_format = TextureFormat.rgba16float;
-    const destination_format = TextureFormat.rgba16float;
+    const source_format = rgba16f;
+    const destination_format = rgba16f;
 
     var roi_in = pie.ROI.full(image_size_in_w, image_size_in_h);
 
@@ -111,7 +113,7 @@ test "load raw, demosaic, save" {
     defer gpu.deinit();
 
     // these are intentionally over-provisioned to avoid OOM issues
-    const some_size_larger_than_needed = 20 * pie_raw_image.width * pie_raw_image.height * TextureFormat.r16float.bpp();
+    const some_size_larger_than_needed = 20 * pie_raw_image.width * pie_raw_image.height * r16f.bpp();
     var upload = try Buffer.init(&gpu, some_size_larger_than_needed, .upload);
     defer upload.deinit();
     var download = try Buffer.init(&gpu, some_size_larger_than_needed, .download);
@@ -148,8 +150,8 @@ test "load raw, demosaic, save" {
 
     // UPLOAD
     upload.map();
-    @memcpy(upload_buf_upper, @as([*]u8, @ptrCast(@alignCast(init_contents_u16[0 .. roi_in_upper.w * roi_in_upper.h * source_format.nchannels()]))));
-    @memcpy(upload_buf_lower, @as([*]u8, @ptrCast(@alignCast(init_contents_u16[roi_in_upper.w * roi_in_upper.h * source_format.nchannels() ..]))));
+    @memcpy(upload_buf_upper, @as([*]u8, @ptrCast(@alignCast(init_contents_u16[0 .. roi_in_upper.w * roi_in_upper.h * source_format.channels()]))));
+    @memcpy(upload_buf_lower, @as([*]u8, @ptrCast(@alignCast(init_contents_u16[roi_in_upper.w * roi_in_upper.h * source_format.channels() ..]))));
     upload.unmap();
 
     var encoder = try pie.gpu.Encoder.start(&gpu);
@@ -189,8 +191,8 @@ test "load raw, demosaic, save" {
     defer shader_convert.deinit();
 
     var layout_group_0_binding_convert: [pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
-    layout_group_0_binding_convert[0] = .{ .texture = .{ .access = .read, .format = .rgba16uint } };
-    layout_group_0_binding_convert[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
+    layout_group_0_binding_convert[0] = .{ .texture = .{ .access = .read, .resource = .rgba, .datatype = .u16 } };
+    layout_group_0_binding_convert[1] = .{ .texture = .{ .access = .write, .resource = .rgba, .datatype = .f16 } };
 
     var layout_group_convert: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_convert[0] = layout_group_0_binding_convert;
@@ -397,8 +399,8 @@ test "load raw, demosaic, save" {
     defer shader_demosaic.deinit();
 
     var layout_group_0_binding: [pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
-    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .format = .rgba16float } };
-    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .format = .rgba16float } };
+    layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .resource = .rgba, .datatype = .f16 } };
+    layout_group_0_binding[1] = .{ .texture = .{ .access = .write, .resource = .rgba, .datatype = .f16 } };
 
     var layout_group: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group[0] = layout_group_0_binding;
@@ -456,7 +458,7 @@ test "load raw, demosaic, save" {
     gpu.run(encoder.finish()) catch unreachable;
 
     // DOWNLOAD
-    var destination = try allocator.alloc(f16, roi_out.w * roi_out.h * destination_format.nchannels());
+    var destination = try allocator.alloc(f16, roi_out.w * roi_out.h * destination_format.channels());
     defer allocator.free(destination);
 
     download.map();

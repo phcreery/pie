@@ -21,8 +21,8 @@ pub const def: api.ModuleDef = .{
         .sockets = &.{
             .{
                 .name = "output",
-                .type = .source,
-                .format = .rggb16uint,
+                .access = .source,
+                .resource = .rggb, .datatype = .u16,
                 // the raw output is in the camera's color space, WB unknown/as-shot, and linear (sensor response)
                 .color_profile = .{ .white_point = .any, .primaries = .camera, .trc = .linear },
             },

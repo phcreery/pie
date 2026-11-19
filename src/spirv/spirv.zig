@@ -2,7 +2,7 @@
 //! Shaders import this as `@import("shader")`.
 
 const std = @import("std");
-const types = @import("types");
+const types = @import("module_types");
 
 pub const spirv = std.spirv; // TODO: remove this line
 pub const NodeDesc = types.ModuleApi.NodeDesc;
@@ -73,7 +73,7 @@ pub fn getParams(comptime module_desc: ModuleDesc) *addrspace(.storage_buffer) G
 /// A uniform block requires every array stride to be a multiple of 16.
 pub fn getImgParams(comptime module_desc: ModuleDesc, comptime T: type) *addrspace(.uniform) const T {
     comptime {
-        if (T != @import("types").ImgParamsGpu) {
+        if (T != @import("module_types").ImgParamsGpu) {
             @compileError("getImgParams expects types.ImgParamsGpu, got '" ++ @typeName(T) ++ "'");
         }
         const info = @typeInfo(T).@"struct";
@@ -102,8 +102,7 @@ fn getSocketIdx(comptime desc: NodeDesc, comptime name: []const u8) usize {
 }
 
 pub fn toSpirvUsage(socket: types.ModuleApi.SocketDesc) std.lang.Type.Spirv.Image.Usage {
-    // const T = self.format.toBaseType();
-    return switch (socket.type) {
+    return switch (socket.access) {
         // .read => .{ .sampled = T },
         .read => .{ .sampled = f32 },
         // 'storage' field value must be a 32-bit int, 64-bit int or 32-bit float under the 'vulkan' os
@@ -112,41 +111,53 @@ pub fn toSpirvUsage(socket: types.ModuleApi.SocketDesc) std.lang.Type.Spirv.Imag
     };
 }
 
-pub fn toSpirvImageFormat(texture_format: types.ModuleApi.TextureFormat) std.lang.Type.Spirv.Image.Format {
-    return switch (texture_format) {
-        .rgba16float => .rgba16f,
-        .rgba16uint => .rgba16u,
-        .r8uint => .unknown,
-        .r16uint => .unknown,
-        .r16float => .unknown,
-
-        // special cases: bayer mosaic stored single-channel
-        .rggb32float => .r32f,
-        .rggb16uint => .unknown,
-        .any => .unknown,
+pub fn toSpirvImageFormat(resource: types.Resource, datatype: types.DataType) std.lang.Type.Spirv.Image.Format {
+    if (resource == .buffer) return .unknown;
+    return switch (resource) {
+        .rgba => switch (datatype) {
+            .f16 => .rgba16f,
+            .u16 => .rgba16u,
+            .f32 => .rgba32f,
+            .u32 => .rgba32u,
+            .i32 => .rgba32i,
+            .u8, .any => .unknown,
+        },
+        .r, .rggb => switch (datatype) {
+            .f32 => .r32f,
+            .u32 => .r32u,
+            .i32 => .r32i,
+            else => .unknown,
+        },
+        .buffer, .any => .unknown,
     };
 }
 
-pub fn toBaseType(texture_format: types.ModuleApi.TextureFormat) type {
-    return switch (texture_format) {
-        .rgba16float => f16,
-        .rgba16uint => u16,
-        .r8uint => u8,
-        .r16uint => u16,
-        .r16float => f16,
-
-        // special cases: bayer mosaic stored single-channel
-        .rggb32float => f32,
-        .rggb16uint => u16,
-        .any => u16,
+/// The Zig type of one scalar element.
+pub fn toBaseType(datatype: types.DataType) type {
+    return switch (datatype) {
+        .u8 => u8,
+        .u16 => u16,
+        .u32 => u32,
+        .i32 => i32,
+        .f16 => f16,
+        .f32 => f32,
+        .any => @compileError("cannot deduce a base type from `.any`"),
     };
 }
 
 pub fn Image(comptime desc: NodeDesc, comptime name: []const u8) type {
     const socket = desc.sockets[getSocketIdx(desc, name)];
+    comptime {
+        if (socket.resource == .buffer) {
+            @compileError("socket '" ++ name ++ "' is a buffer; use spirv.Buffer()");
+        }
+        if (socket.resource == .any) {
+            @compileError("socket '" ++ name ++ "' has an unresolved `.any` resource");
+        }
+    }
     return *addrspace(.constant) const @SpirvType(.{ .image = .{
         .usage = toSpirvUsage(socket),
-        .format = toSpirvImageFormat(socket.format),
+        .format = toSpirvImageFormat(socket.resource, socket.datatype),
         .dim = .@"2d",
         .depth = .not_depth,
         .arrayed = false,
@@ -161,6 +172,73 @@ pub fn getImageFromZon(comptime zon: NodeDesc, comptime name: []const u8) Image(
         .name = name,
         .decoration = .{ .descriptor = .{ .set = 1, .binding = socket_idx } },
     });
+}
+
+/// A storage buffer type for one socket. SPIR-V requires the runtime array to
+/// be the last field of an extern struct.
+pub fn BufferType(comptime T: type) type {
+    return extern struct {
+        data: @SpirvType(.{ .runtime_array = T }),
+
+        pub const Element = T;
+
+        pub inline fn fetch(self: *addrspace(.storage_buffer) const @This(), index: u32) T {
+            return self.data[index];
+        }
+
+        pub inline fn write(self: *addrspace(.storage_buffer) @This(), index: u32, value: T) void {
+            self.data[index] = value;
+        }
+    };
+}
+
+/// The pointer type for a buffer socket.
+pub fn Buffer(comptime desc: NodeDesc, comptime name: []const u8) type {
+    const socket = desc.sockets[getSocketIdx(desc, name)];
+    comptime {
+        if (socket.resource != .buffer) {
+            @compileError("socket '" ++ name ++ "' is not a buffer");
+        }
+    }
+    const Element = BufferType(toBaseType(socket.datatype));
+    // A const pointer emits SPIR-V `NonWritable`. Naga then maps a read
+    // socket to a read-only storage binding.
+    return switch (socket.access) {
+        .read => *addrspace(.storage_buffer) const Element,
+        .write => *addrspace(.storage_buffer) Element,
+        .source, .sink => @compileError("source and sink buffers need no shader binding"),
+    };
+}
+
+pub fn getBufferFromZon(comptime zon: NodeDesc, comptime name: []const u8) Buffer(zon, name) {
+    const socket_idx = getSocketIdx(zon, name);
+    return @extern(Buffer(zon, name), .{
+        .name = name,
+        .decoration = .{ .descriptor = .{ .set = 1, .binding = socket_idx } },
+    });
+}
+
+pub inline fn bufferFetch(buffer: anytype, index: u32) @TypeOf(buffer.*).Element {
+    return buffer.data[index];
+}
+
+pub inline fn bufferWrite(buffer: anytype, index: u32, value: @TypeOf(buffer.*).Element) void {
+    buffer.data[index] = value;
+}
+
+/// Width and height of a 2D image.
+pub inline fn imageSize(image: anytype) Vec2u32 {
+    const ImageType = @TypeOf(image);
+    const lod: i32 = 0;
+    return asm volatile (
+        \\%in  = OpLoad %ImageType %image
+        \\%ret = OpImageQuerySizeLod %Vec2u32 %in %lod
+        : [ret] "" (-> Vec2u32),
+        : [ImageType] "t" (ImageType),
+          [Vec2u32] "t" (Vec2u32),
+          [image] "" (image),
+          [lod] "" (lod),
+    );
 }
 
 /// Fetch a single texel from a *sampled* image at integer coordinates,

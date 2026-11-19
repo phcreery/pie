@@ -9,8 +9,8 @@ pub const def: api.ModuleDef = .{
         .sockets = &.{
             .{
                 .name = "output",
-                .type = .source,
-                .format = .rgba16float,
+                .access = .source,
+                .resource = .rgba, .datatype = .f16,
             },
         },
     },
@@ -59,8 +59,8 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .sockets = &.{
             .{
                 .name = "output",
-                .type = .source,
-                .format = .rgba16float,
+                .access = .source,
+                .resource = .rgba, .datatype = .f16,
             },
         },
     });

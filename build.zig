@@ -90,12 +90,30 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{},
     });
 
-    // TYPES MODULE
-    const mod_types = b.createModule(.{
-        .root_source_file = b.path("src/types/root.zig"),
+    // GPU TYPES MODULE
+    const mod_gpu_types = b.createModule(.{
+        .root_source_file = b.path("src/gpu_types/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
+    // UI TYPES MODULE
+    const mod_ui_types = b.createModule(.{
+        .root_source_file = b.path("src/ui_types/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
+    // MODULE TYPES MODULE
+    const mod_module_types = b.createModule(.{
+        .root_source_file = b.path("src/module_types/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "gpu_types", .module = mod_gpu_types },
+            .{ .name = "ui_types", .module = mod_ui_types },
             .{ .name = "math", .module = mod_math },
         },
     });
@@ -149,7 +167,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .optimize = optimize,
         .imports = &.{
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
-            .{ .name = "types", .module = mod_types },
+            .{ .name = "gpu_types", .module = mod_gpu_types },
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
@@ -185,7 +203,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{
             .{ .name = "console", .module = mod_console },
             .{ .name = "gpu", .module = mod_gpu },
-            .{ .name = "types", .module = mod_types },
+            .{ .name = "module_types", .module = mod_module_types },
             .{ .name = "math", .module = mod_math },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
@@ -213,7 +231,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         @import("src/engine/modules/modules.zon"),
         &.{
             .{ .name = "math", .module = mod_math },
-            .{ .name = "types", .module = mod_types },
+            .{ .name = "module_types", .module = mod_module_types },
         },
     );
 
@@ -235,7 +253,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .optimize = optimize,
         .imports = &.{
             .{ .name = "pie", .module = mod_pie },
-            .{ .name = "types", .module = mod_types },
             .{ .name = "texview_shader", .module = mod_texview_shd },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
@@ -251,7 +268,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{
             .{ .name = "session", .module = mod_session },
             .{ .name = "pie", .module = mod_pie },
-            .{ .name = "types", .module = mod_types },
+            .{ .name = "ui_types", .module = mod_ui_types },
             .{ .name = "nodes", .module = mod_nodes },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
@@ -322,15 +339,35 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     const run_gpu_unit_tests = b.addRunArtifact(gpu_unit_tests);
     test_step.dependOn(&run_gpu_unit_tests.step);
 
-    // TYPES
-    const types_unit_tests = b.addTest(.{
-        .name = "types unit tests",
+    // GPU TYPES
+    const gpu_types_unit_tests = b.addTest(.{
+        .name = "gpu types unit tests",
         .use_llvm = true,
-        .root_module = mod_types,
+        .root_module = mod_gpu_types,
         .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
     });
-    const run_types_unit_tests = b.addRunArtifact(types_unit_tests);
-    test_step.dependOn(&run_types_unit_tests.step);
+    const run_gpu_types_unit_tests = b.addRunArtifact(gpu_types_unit_tests);
+    test_step.dependOn(&run_gpu_types_unit_tests.step);
+
+    // UI TYPES
+    const ui_types_unit_tests = b.addTest(.{
+        .name = "ui types unit tests",
+        .use_llvm = true,
+        .root_module = mod_ui_types,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_ui_types_unit_tests = b.addRunArtifact(ui_types_unit_tests);
+    test_step.dependOn(&run_ui_types_unit_tests.step);
+
+    // MODULE TYPES
+    const module_types_unit_tests = b.addTest(.{
+        .name = "module types unit tests",
+        .use_llvm = true,
+        .root_module = mod_module_types,
+        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
+    });
+    const run_module_types_unit_tests = b.addRunArtifact(module_types_unit_tests);
+    test_step.dependOn(&run_module_types_unit_tests.step);
 
     // POOL
     const pool_unit_tests = b.addTest(.{

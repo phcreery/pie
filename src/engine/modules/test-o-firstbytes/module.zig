@@ -10,8 +10,8 @@ pub const def: api.ModuleDef = .{
         .sockets = &.{
             .{
                 .name = "input",
-                .type = .sink,
-                .format = .rgba16float,
+                .access = .sink,
+                .resource = .rgba, .datatype = .f16,
             },
         },
     },
@@ -24,7 +24,7 @@ pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHan
     _ = io;
     const sock = try api.getModSocket(pipe, mod, "input");
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
-    const download_buffer_slice = download_buffer_ptr[0..(sock.roi.?.w * sock.roi.?.h * sock.format.nchannels())];
+    const download_buffer_slice = download_buffer_ptr[0..(sock.roi.?.w * sock.roi.?.h * sock.resource.channels())];
     std.debug.print("Downloaded buffer [0..4]: {any}\n", .{download_buffer_slice[0..4]});
 }
 

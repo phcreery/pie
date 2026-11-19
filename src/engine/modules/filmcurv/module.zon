@@ -14,13 +14,13 @@
         .{ .name = "colormode", .control = .{ .combo = .{ .items = .{ "AgX", "Per Channel" } } } },
     },
     .sockets = .{
-        .{ .name = "input", .type = .read, .format = .rgba16float, .color_profile = .{
+        .{ .name = "input", .access = .read, .resource = .rgba, .datatype = .f16, .color_profile = .{
             .primaries = .rec2020,
             .trc = .linear,
             .white_point = .d65,
         } },
         // the curve encodes sRGB for display (see node.filmcurv.zig)
-        .{ .name = "output", .type = .write, .format = .rgba16float, .color_profile = .{
+        .{ .name = "output", .access = .write, .resource = .rgba, .datatype = .f16, .color_profile = .{
             .primaries = .srgb,
             .trc = .gamma_srgb,
             .white_point = .d65,

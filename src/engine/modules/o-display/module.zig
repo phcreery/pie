@@ -11,8 +11,8 @@ pub const def: api.ModuleDef = .{
         .sockets = &.{
             .{
                 .name = "input",
-                .type = .sink,
-                .format = .rgba16float,
+                .access = .sink,
+                .resource = .rgba, .datatype = .f16,
                 .color_profile = .any,
             },
         },
@@ -35,7 +35,7 @@ pub fn writeSink(
     _ = mapped;
 
     // const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
-    // const download_buffer_slice = download_buffer_ptr[0..(socket.roi.?.w * socket.roi.?.h * socket.format.nchannels())];
+    // const download_buffer_slice = download_buffer_ptr[0..(socket.roi.?.w * socket.roi.?.h * socket.resource.channels())];
 
 }
 

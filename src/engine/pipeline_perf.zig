@@ -293,7 +293,7 @@ pub const PerfMetrics = struct {
             n_nodes_ran,
             self.number_of_nodes orelse 0,
         });
-        printFn(" {d: >5.2}% {d}/{d} connector textures created", .{
+        printFn(" {d: >5.2}% {d}/{d} connector resources created", .{
             @as(f64, @floatFromInt(n_connector_textures_created)) / @as(f64, @floatFromInt(self.number_of_connectors orelse 1)) * 100.0,
             n_connector_textures_created,
             self.number_of_connectors orelse 0,

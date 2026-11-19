@@ -1,0 +1,9 @@
+.{
+    .name = "gather",
+    .type = .compute,
+    .shader = .{ .spirv = .{ .file = "gather.zig.spv.embed" } },
+    .sockets = .{
+        .{ .name = "tmp", .access = .read, .resource = .buffer, .datatype = .f32 },
+        .{ .name = "output", .access = .write, .resource = .rgba, .datatype = .f16 },
+    },
+}

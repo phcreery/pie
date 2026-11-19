@@ -3,10 +3,12 @@
 const std = @import("std");
 const wgpu = @import("wgpu_zig");
 const zuballoc = @import("zuballoc");
-const ROI = @import("types").ROI;
+const gpu_types = @import("gpu_types");
+const ROI = gpu_types.ROI;
+const Resource = gpu_types.Resource;
+const DataType = gpu_types.DataType;
 const GPU = @import("GPU.zig");
 const Texture = @import("Texture.zig");
-const TextureFormat = Texture.TextureFormat;
 
 const c = wgpu.c;
 const slog = std.log.scoped(.gpu);
@@ -28,7 +30,9 @@ pub const MemoryType = enum {
         return switch (self) {
             .upload => .{ .copy_src = true, .map_write = true },
             .download => .{ .copy_dst = true, .map_read = true },
-            .storage => .{ .copy_dst = true, .storage = true },
+            // copy_src so a buffer sink can be copied back to the download
+            // staging buffer; harmless for module parameter buffers.
+            .storage => .{ .copy_dst = true, .copy_src = true, .storage = true },
             .uniform => .{ .copy_dst = true, .uniform = true },
         };
     }
@@ -42,6 +46,15 @@ pub const MemoryType = enum {
         };
     }
 };
+
+/// Bytes needed for `extent` scalar elements of `datatype`. WebGPU requires
+/// buffer sizes (and `copyBufferToBuffer` sizes) to be multiples of 4. Align
+/// to 8 so mapped staging slices stay aligned too. WebGPU cannot create a
+/// 0-byte buffer, so clamp zero-length sources to one aligned element.
+pub fn sizeFor(datatype: DataType, extent: ROI) u64 {
+    const bytes = @as(u64, extent.w) * @as(u64, extent.h) * datatype.elementSize();
+    return std.mem.alignForward(u64, @max(bytes, 1), 8);
+}
 
 /// size in bytes of the buffer
 pub fn init(gpu: *GPU, size_bytes: ?u64, memory_type: MemoryType) !Self {
@@ -133,16 +146,17 @@ pub fn upload(
     self: *Self,
     comptime T: type,
     data: []const T,
-    comptime format: TextureFormat,
+    comptime resource: Resource,
+    comptime datatype: DataType,
     roi: ROI,
 ) void {
     // print the first 4 values
     slog.debug("First 4 values to upload: {any}, {any}, {any}, {any}", .{ data[0], data[1], data[2], data[3] });
 
-    const size_bytes = roi.w * roi.h * format.bpp();
+    const size_bytes = roi.w * roi.h * resource.channels() * datatype.elementSize();
     const upload_mapped_ptr: *anyopaque = self.mapSize(size_bytes);
     const upload_buffer_ptr: [*]T = @ptrCast(@alignCast(upload_mapped_ptr));
-    const upload_buffer_slice = upload_buffer_ptr[0..(roi.w * roi.h * format.nchannels())];
+    const upload_buffer_slice = upload_buffer_ptr[0..(roi.w * roi.h * resource.channels())];
     defer self.unmap();
 
     @memcpy(upload_buffer_slice, data);
@@ -169,7 +183,8 @@ pub fn mapUploadTexture(
     comptime T: type,
     data: []const T,
     texture: Texture,
-    comptime format: TextureFormat,
+    comptime resource: Resource,
+    comptime datatype: DataType,
     roi: ROI,
 ) void {
     if (self.memory_type != .upload) {
@@ -178,7 +193,7 @@ pub fn mapUploadTexture(
     }
     slog.debug("Writing data to GPU Texture", .{});
 
-    const bytes_per_row = roi.w * format.bpp();
+    const bytes_per_row = roi.w * resource.channels() * datatype.elementSize();
     self.gpu.queue.writeTexture(
         T,
         .{
@@ -188,7 +203,7 @@ pub fn mapUploadTexture(
         },
         data,
         .{
-            .offset = @as(u64, roi.y) * bytes_per_row + roi.x * format.bpp(),
+            .offset = @as(u64, roi.y) * bytes_per_row + roi.x * resource.channels() * datatype.elementSize(),
             .bytes_per_row = bytes_per_row,
             .rows_per_image = roi.h,
         },
@@ -198,6 +213,13 @@ pub fn mapUploadTexture(
             .depth_or_array_layers = 1,
         },
     );
+}
+
+test "sizeFor aligns storage buffer sizes" {
+    try std.testing.expectEqual(@as(u64, 8), sizeFor(.u32, .{ .w = 1, .h = 1 }));
+    try std.testing.expectEqual(@as(u64, 16), sizeFor(.u32, .{ .w = 4, .h = 1 }));
+    try std.testing.expectEqual(@as(u64, 16), sizeFor(.f32, .{ .w = 4, .h = 1 }));
+    try std.testing.expectEqual(@as(u64, 8), sizeFor(.u16, .{ .w = 3, .h = 1 }));
 }
 
 fn handleBufferMap(status: c.WGPUMapAsyncStatus, _: c.WGPUStringView, userdata1: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {

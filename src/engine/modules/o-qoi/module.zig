@@ -15,8 +15,8 @@ pub const def: api.ModuleDef = .{
         .sockets = &.{
             .{
                 .name = "input",
-                .type = .sink,
-                .format = .rgba16float,
+                .access = .sink,
+                .resource = .rgba, .datatype = .f16,
                 .color_profile = .any,
             },
         },
@@ -39,7 +39,7 @@ pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHan
     // rather than through the float32 pixel format, whose rgba32 conversion
     // truncates instead of clamping and so traps on samples above white.
     const samples: [*]const f16 = @ptrCast(@alignCast(mapped));
-    const rgba = try allocator.alloc(u8, roi.w * roi.h * socket.format.nchannels());
+    const rgba = try allocator.alloc(u8, roi.w * roi.h * socket.resource.channels());
     defer allocator.free(rgba);
     for (samples[0..rgba.len], rgba) |sample, *byte| {
         byte.* = @intFromFloat(std.math.clamp(@as(f32, sample), 0.0, 1.0) * 255.0 + 0.5);

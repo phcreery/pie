@@ -3,7 +3,10 @@ const wgpu = @import("wgpu_zig");
 const root = @import("root.zig");
 const GPU = @import("GPU.zig");
 const Shader = @import("Shader.zig");
-const TextureFormat = @import("Texture.zig").TextureFormat;
+const Texture = @import("Texture.zig");
+const gpu_types = @import("gpu_types");
+const Resource = gpu_types.Resource;
+const DataType = gpu_types.DataType;
 
 const slog = std.log.scoped(.gpu);
 
@@ -24,20 +27,23 @@ pub const BindGroupLayoutEntry = struct {
     };
 
     pub const BindGroupLayoutTextureEntry = struct {
-        format: TextureFormat,
+        resource: Resource,
+        datatype: DataType,
         access: BindGroupLayoutEntryAccess,
     };
 
     pub const BindGroupLayoutBufferEntryType = enum {
+        /// WGSL `var<storage, read_write>`.
         storage,
+        /// WGSL `var<storage, read>`.
+        read_only_storage,
         uniform,
-        // read_only_storage,
 
         pub fn toWGPUBufferBindingType(self: BindGroupLayoutBufferEntryType) wgpu.BindGroupLayout.BufferBindingType {
             return switch (self) {
                 .storage => .storage,
+                .read_only_storage => .read_only_storage,
                 .uniform => .uniform,
-                // .read_only_storage => .read_only_storage,
             };
         }
     };
@@ -88,7 +94,7 @@ pub fn init(
                             .visibility = .{ .compute = true },
                             .texture = .{
                                 .view_dimension = .@"2d",
-                                .sample_type = bgle_texture.format.toWGPUSampleType(),
+                                .sample_type = try Texture.toWGPUSampleType(bgle_texture.resource, bgle_texture.datatype),
                             },
                         };
                     },
@@ -99,7 +105,7 @@ pub fn init(
                             .storage_texture = .{
                                 // .access = .write_only,
                                 .access = .read_write,
-                                .format = bgle_texture.format.toWGPUFormat(),
+                                .format = try Texture.toWGPUFormat(bgle_texture.resource, bgle_texture.datatype),
                                 .view_dimension = .@"2d",
                             },
                         };

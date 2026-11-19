@@ -14,8 +14,8 @@ pub const def: api.ModuleDef = .{
         .sockets = &.{
             .{
                 .name = "input",
-                .type = .sink,
-                .format = .rgba16float,
+                .access = .sink,
+                .resource = .rgba, .datatype = .f16,
                 .color_profile = .any,
             },
         },
@@ -36,7 +36,7 @@ pub fn writeSink(allocator: std.mem.Allocator, io: std.Io, pipe: api.PipelineHan
     slog.info("Filename param value: {s}", .{filename});
 
     const download_buffer_ptr: [*]f16 = @ptrCast(@alignCast(mapped));
-    const download_buffer_slice = download_buffer_ptr[0..(socket.roi.?.w * socket.roi.?.h * socket.format.nchannels())];
+    const download_buffer_slice = download_buffer_ptr[0..(socket.roi.?.w * socket.roi.?.h * socket.resource.channels())];
 
     // EXPORT PPM
     {
@@ -69,8 +69,8 @@ pub fn createNodes(pipe: api.PipelineHandle, mod: api.ModuleHandle) !void {
         .sockets = &.{
             .{
                 .name = "input",
-                .type = .sink,
-                .format = .rgba16float,
+                .access = .sink,
+                .resource = .rgba, .datatype = .f16,
             },
         },
     };

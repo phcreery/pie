@@ -2,7 +2,7 @@ const std = @import("std");
 const api = @import("modules/api.zig");
 const Module = @import("Module.zig");
 const pipeline = @import("pipeline.zig");
-const types = @import("types");
+const types = @import("module_types");
 const slog = std.log.scoped(.param);
 
 // =================

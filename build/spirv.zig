@@ -112,5 +112,19 @@ pub fn compileAndEmbedZigSpirVModules(
                 patcher,
             );
         }
+        if (@hasField(@TypeOf(m), "zig_shaders")) {
+            inline for (m.zig_shaders) |shader| {
+                try compileAndEmbedModuleSpirVShader(
+                    b,
+                    optimize,
+                    mod,
+                    m.name,
+                    shader,
+                    shader ++ ".spv.embed",
+                    imports,
+                    patcher,
+                );
+            }
+        }
     }
 }

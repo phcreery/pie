@@ -14,8 +14,8 @@
     .sockets = .{
         .{
             .name = "input",
-            .type = .read,
-            .format = .rgba16float,
+            .access = .read,
+            .resource = .rgba, .datatype = .f16,
             .color_profile = .{
                 .white_point = .any,
                 .primaries = .camera,
@@ -25,8 +25,8 @@
         },
         .{
             .name = "output",
-            .type = .write,
-            .format = .rgba16float,
+            .access = .write,
+            .resource = .rgba, .datatype = .f16,
             .color_profile = .{
                 .white_point = .d65,
                 .primaries = .rec2020,
