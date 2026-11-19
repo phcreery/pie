@@ -9,7 +9,20 @@ const Shader = pie.gpu.Shader;
 const ComputePipeline = pie.gpu.ComputePipeline;
 const Texture = pie.gpu.Texture;
 const Bindings = pie.gpu.Bindings;
-const r16u: pie.gpu.Format = .{ .resource = .r, .datatype = .u16 };
+const Fmt = struct {
+    resource: pie.gpu.Resource,
+    datatype: pie.gpu.DataType,
+
+    fn bpp(self: Fmt) u32 {
+        return self.resource.channels() * self.datatype.elementSize();
+    }
+
+    fn channels(self: Fmt) u32 {
+        return self.resource.channels();
+    }
+};
+
+const r16u: Fmt = .{ .resource = .r, .datatype = .u16 };
 const BindGroupLayoutEntry = pie.gpu.BindGroupLayoutEntry;
 const BindGroupEntry = pie.gpu.BindGroupEntry;
 
@@ -68,10 +81,10 @@ test "r16uint -> r16float -> double -> download" {
     defer compute_pipeline.deinit();
 
     // MEMORY
-    var texture_in = try Texture.init(&gpu, "in", .r16uint, roi);
+    var texture_in = try Texture.init(&gpu, "in", .r, .u16, roi);
     defer texture_in.deinit();
 
-    var texture_out = try Texture.init(&gpu, "out", .r16float, roi);
+    var texture_out = try Texture.init(&gpu, "out", .r, .f16, roi);
     defer texture_out.deinit();
 
     var bind_group_0_binds: [pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
@@ -92,8 +105,10 @@ test "r16uint -> r16float -> double -> download" {
 
     // ALLOCATORS
     var upload_fba = try upload.fixedBufferAllocator(allocator);
+    defer upload_fba.deinit(allocator);
     var upload_allocator = upload_fba.allocator();
     var download_fba = try download.fixedBufferAllocator(allocator);
+    defer download_fba.deinit(allocator);
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD (padded rows of u16)

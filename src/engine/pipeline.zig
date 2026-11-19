@@ -644,21 +644,18 @@ pub const Pipeline = struct {
         self: *Pipeline,
         mod_handle: ModuleHandle,
     ) OperationError!void {
-        _ = self.module_pool.getPtr(mod_handle) catch {
-            slog.err("removeModule: dead module handle {any}", .{mod_handle});
-            return OperationError.InvalidModule;
-        };
-        self.runModuleDeinitHook(mod_handle);
-        self.module_pool.remove(self.allocator, mod_handle);
-
-        // drop the name map entry too, otherwise a dead handle stays reachable
-        // by name (and blocks re-adding the same name:id)
         const mod = self.module_pool.getPtr(mod_handle) catch {
             slog.err("removeModule: dead module handle {any}", .{mod_handle});
             return OperationError.InvalidModule;
         };
+        // Copy the identity before the pool releases the module.
         const fullname = try std.mem.concat(self.allocator, u8, &.{ mod.name, ":", mod.id });
         defer self.allocator.free(fullname);
+
+        self.runModuleDeinitHook(mod_handle);
+        self.module_pool.remove(self.allocator, mod_handle);
+
+        // Drop the name map entry too. A dead handle must not stay reachable.
         if (self.module_name_map.fetchRemove(fullname)) |kv| self.allocator.free(kv.key);
 
         // the execution order and every derived resource list still reference

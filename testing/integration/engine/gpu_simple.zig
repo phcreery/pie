@@ -9,13 +9,28 @@ const Shader = pie.gpu.Shader;
 const ComputePipeline = pie.gpu.ComputePipeline;
 const Texture = pie.gpu.Texture;
 const Bindings = pie.gpu.Bindings;
-const rgba16f: pie.gpu.Format = .{ .resource = .rgba, .datatype = .f16 };
+const Fmt = struct {
+    resource: pie.gpu.Resource,
+    datatype: pie.gpu.DataType,
+
+    fn bpp(self: Fmt) u32 {
+        return self.resource.channels() * self.datatype.elementSize();
+    }
+
+    fn channels(self: Fmt) u32 {
+        return self.resource.channels();
+    }
+};
+
+const rgba16f: Fmt = .{ .resource = .rgba, .datatype = .f16 };
 const BindGroupLayoutEntry = pie.gpu.BindGroupLayoutEntry;
 const BindGroupEntry = pie.gpu.BindGroupEntry;
 
 test "simple compute test" {
+    const allocator = std.testing.allocator;
+
     // INIT
-    var gpu = try GPU.init(std.testing.allocator, std.testing.io);
+    var gpu = try GPU.init(allocator, std.testing.io);
     defer gpu.deinit();
 
     // these are intentionally over-provisioned to avoid OOM issues
@@ -45,7 +60,7 @@ test "simple compute test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    const shader = Shader.compile(&gpu, shader_code, .{}) catch unreachable;
+    const shader = Shader.compile(&gpu, .{ .wgsl = shader_code }) catch unreachable;
 
     var layout_group_0_binding: [pie.gpu.MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .resource = .rgba, .datatype = .f16 } };
@@ -58,10 +73,10 @@ test "simple compute test" {
     defer compute_pipeline.deinit();
 
     // MEMORY
-    var texture_in = try Texture.init(&gpu, "in", source_format, roi);
+    var texture_in = try Texture.init(&gpu, "in", source_format.resource, source_format.datatype, roi);
     defer texture_in.deinit();
 
-    var texture_out = try Texture.init(&gpu, "out", destination_format, roi);
+    var texture_out = try Texture.init(&gpu, "out", destination_format.resource, destination_format.datatype, roi);
     defer texture_out.deinit();
 
     var bind_group_0_binds: [pie.gpu.MAX_BINDINGS]?BindGroupEntry = @splat(null);
@@ -76,11 +91,13 @@ test "simple compute test" {
 
     // ALLOCATORS
     var upload_fba = try upload.fixedBufferAllocator(allocator);
+    defer upload_fba.deinit(allocator);
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to intentionally induce a change in offset
     _ = try upload_allocator.alloc(f16, roi.w * roi.h * source_format.channels());
 
     var download_fba = try download.fixedBufferAllocator(allocator);
+    defer download_fba.deinit(allocator);
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD

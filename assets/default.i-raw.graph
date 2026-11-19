@@ -16,6 +16,7 @@ connect:filmcurv:01:output:o-display:01:input
 param:i-raw:01:filename:input.raw
 param:crop:01:rotation:0
 param:crop:01:meta_rotation_deg:0
+param:color:01:wb_mode:0
 param:color:01:wb_coeff:0:0:0
 param:filmcurv:01:brightness:3.8
 param:filmcurv:01:contrast:1.3

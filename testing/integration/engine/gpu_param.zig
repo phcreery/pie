@@ -1,6 +1,5 @@
 const std = @import("std");
 const pie = @import("pie");
-const pretty = @import("pretty");
 
 const ROI = pie.ROI;
 const GPU = pie.gpu.GPU;
@@ -10,15 +9,30 @@ const Shader = pie.gpu.Shader;
 const ComputePipeline = pie.gpu.ComputePipeline;
 const Texture = pie.gpu.Texture;
 const Bindings = pie.gpu.Bindings;
-const rgba16f: pie.gpu.Format = .{ .resource = .rgba, .datatype = .f16 };
+const Fmt = struct {
+    resource: pie.gpu.Resource,
+    datatype: pie.gpu.DataType,
+
+    fn bpp(self: Fmt) u32 {
+        return self.resource.channels() * self.datatype.elementSize();
+    }
+
+    fn channels(self: Fmt) u32 {
+        return self.resource.channels();
+    }
+};
+
+const rgba16f: Fmt = .{ .resource = .rgba, .datatype = .f16 };
 const BindGroupLayoutEntry = pie.gpu.BindGroupLayoutEntry;
 const BindGroupEntry = pie.gpu.BindGroupEntry;
 const MAX_BINDINGS = pie.gpu.MAX_BINDINGS;
 const MAX_BIND_GROUPS = pie.gpu.MAX_BIND_GROUPS;
 
 test "simple compute test with parameters" {
+    const allocator = std.testing.allocator;
+
     // INIT
-    var gpu = try GPU.init(std.testing.io);
+    var gpu = try GPU.init(allocator, std.testing.io);
     defer gpu.deinit();
 
     // DEFINE
@@ -47,7 +61,7 @@ test "simple compute test with parameters" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    const shader = Shader.compile(&gpu, shader_code, .{}) catch unreachable;
+    const shader = Shader.compile(&gpu, .{ .wgsl = shader_code }) catch unreachable;
 
     var layout_group_0_binding: [MAX_BINDINGS]?BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .resource = .rgba, .datatype = .f16 } };
@@ -73,9 +87,9 @@ test "simple compute test with parameters" {
     defer param_buffer.deinit();
 
     // TEXTURES
-    var texture_in = try Texture.init(&gpu, "in", source_format, roi);
+    var texture_in = try Texture.init(&gpu, "in", source_format.resource, source_format.datatype, roi);
     defer texture_in.deinit();
-    var texture_out = try Texture.init(&gpu, "out", destination_format, roi);
+    var texture_out = try Texture.init(&gpu, "out", destination_format.resource, destination_format.datatype, roi);
     defer texture_out.deinit();
 
     // BINDINGS
@@ -95,6 +109,7 @@ test "simple compute test with parameters" {
 
     // ALLOCATORS
     var upload_fba = try upload.fixedBufferAllocator(allocator);
+    defer upload_fba.deinit(allocator);
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
     const induced_buf = try upload_allocator.alignedAlloc(f16, pie.gpu.COPY_BUFFER_ALIGNMENT, roi.w * roi.h * source_format.channels());
@@ -102,6 +117,7 @@ test "simple compute test with parameters" {
     std.log.info("Upload induced offset: {d}", .{induced_offset});
 
     var download_fba = try download.fixedBufferAllocator(allocator);
+    defer download_fba.deinit(allocator);
     var download_allocator = download_fba.allocator();
 
     // PREP PARAMS

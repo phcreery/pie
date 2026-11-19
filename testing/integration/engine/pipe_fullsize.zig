@@ -32,7 +32,6 @@ test "fullsize through pipeline" {
     const mod_o_png = try pipeline.addModule("o-png", "01");
 
     try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, "testing/images/DSC_6765.NEF");
-    try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 1);
 
     try pipeline.setModuleParam(mod_filmcurv, "colormode", u32, 1);
     try pipeline.setModuleParam(mod_filmcurv, "brightness", f32, 2.22);

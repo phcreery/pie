@@ -1,6 +1,13 @@
 const std = @import("std");
 const api = @import("api.zig");
 
+/// Raw image loading for integration tests and tools.
+pub const i_raw = struct {
+    pub const RawImage = @import("i-raw/RawImage.zig");
+    pub const read = @import("i-raw/image_libraw.zig").read;
+    pub const deinit = @import("i-raw/image_libraw.zig").deinit;
+};
+
 pub fn populateRepository(repo: *Repository) !void {
     // built-in modules
     try repo.add(@import("i-raw/module.zig").def);

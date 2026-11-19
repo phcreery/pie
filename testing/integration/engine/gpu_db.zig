@@ -8,13 +8,26 @@ const Encoder = pie.gpu.Encoder;
 const Shader = pie.gpu.Shader;
 const ComputePipeline = pie.gpu.ComputePipeline;
 const Texture = pie.gpu.Texture;
-const rgba16f: pie.gpu.Format = .{ .resource = .rgba, .datatype = .f16 };
+const Fmt = struct {
+    resource: pie.gpu.Resource,
+    datatype: pie.gpu.DataType,
+
+    fn bpp(self: Fmt) u32 {
+        return self.resource.channels() * self.datatype.elementSize();
+    }
+
+    fn channels(self: Fmt) u32 {
+        return self.resource.channels();
+    }
+};
+
+const rgba16f: Fmt = .{ .resource = .rgba, .datatype = .f16 };
 const Bindings = pie.gpu.Bindings;
 
 test "simple compute double buffer test" {
     const allocator = std.testing.allocator;
 
-    var gpu = try GPU.init(std.testing.io);
+    var gpu = try GPU.init(std.testing.allocator, std.testing.io);
     defer gpu.deinit();
 
     var upload = try Buffer.init(&gpu, 100 * 4 * rgba16f.bpp(), .upload);
@@ -43,7 +56,7 @@ test "simple compute double buffer test" {
         \\    textureStore(output, coords, pixel);
         \\}
     ;
-    const shader = Shader.compile(&gpu, shader_code, .{}) catch unreachable;
+    const shader = Shader.compile(&gpu, .{ .wgsl = shader_code }) catch unreachable;
 
     var layout_group_0_binding: [pie.gpu.MAX_BINDINGS]?pie.gpu.BindGroupLayoutEntry = @splat(null);
     layout_group_0_binding[0] = .{ .texture = .{ .access = .read, .resource = .rgba, .datatype = .f16 } };
@@ -61,10 +74,10 @@ test "simple compute double buffer test" {
     defer compute_pipeline.deinit();
 
     // MEMORY
-    var texture_a = try Texture.init(&gpu, "a", format, roi);
+    var texture_a = try Texture.init(&gpu, "a", format.resource, format.datatype, roi);
     defer texture_a.deinit();
 
-    var texture_b = try Texture.init(&gpu, "b", format, roi);
+    var texture_b = try Texture.init(&gpu, "b", format.resource, format.datatype, roi);
     defer texture_b.deinit();
 
     var bind_group_a_to_b: [pie.gpu.MAX_BIND_GROUPS]?[pie.gpu.MAX_BINDINGS]?pie.gpu.BindGroupEntry = @splat(null);
@@ -83,11 +96,13 @@ test "simple compute double buffer test" {
 
     // ALLOCATORS
     var upload_fba = try upload.fixedBufferAllocator(allocator);
+    defer upload_fba.deinit(allocator);
     var upload_allocator = upload_fba.allocator();
     // pre-allocate to induce a change in offset
     _ = try upload_allocator.alloc(f16, roi.w * roi.h * format.channels());
 
     var download_fba = try download.fixedBufferAllocator(allocator);
+    defer download_fba.deinit(allocator);
     var download_allocator = download_fba.allocator();
 
     // PREP UPLOAD

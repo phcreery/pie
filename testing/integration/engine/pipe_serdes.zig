@@ -18,9 +18,7 @@ fn buildChain(p: *Pipeline) !void {
     const odisplay = try p.addModule("o-display", "01");
 
     try p.setModuleParam(iraw, "filename", []const u8, "testing/images/DSC_6765.NEF");
-    try p.setModuleParam(iraw, "wb_mode", i32, 0);
 
-    try p.setModuleParam(color, "wb_tint", f32, 0.0);
     try p.setModuleParam(color, "wb_coeff", [3]f32, .{ 0.70393723, 1, 1.3611937 });
 
     try p.setModuleParam(filmcurv, "colormode", u32, 1);

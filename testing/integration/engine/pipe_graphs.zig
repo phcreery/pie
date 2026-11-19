@@ -65,13 +65,25 @@ test "options rewrite the graph's tail" {
     try std.testing.expectEqualStrings("o-qoi", sink.name);
     try std.testing.expectEqualStrings(out_path, (try sink.getParamPtr("filename")).get([]const u8));
 
-    // ... filmcurv -> downscale -> sink
-    const downscale_handle = sink.sockets[0].?.connected_to_module.?;
+    // demosaic -> downscale -> crop -> color -> filmcurv -> sink
+    const filmcurv_handle = sink.sockets[0].?.connected_to_module.?;
+    const filmcurv = try pipeline.module_pool.getPtr(filmcurv_handle.item);
+    try std.testing.expectEqualStrings("filmcurv", filmcurv.name);
+
+    const color_handle = filmcurv.sockets[0].?.connected_to_module.?;
+    const color = try pipeline.module_pool.getPtr(color_handle.item);
+    try std.testing.expectEqualStrings("color", color.name);
+
+    const crop_handle = color.sockets[0].?.connected_to_module.?;
+    const crop = try pipeline.module_pool.getPtr(crop_handle.item);
+    try std.testing.expectEqualStrings("crop", crop.name);
+
+    const downscale_handle = crop.sockets[0].?.connected_to_module.?;
     const downscale = try pipeline.module_pool.getPtr(downscale_handle.item);
     try std.testing.expectEqualStrings("downscale", downscale.name);
     try std.testing.expectEqual(@as(i32, 256), (try downscale.getParamPtr("max_edge")).get(i32));
 
     const upstream_handle = downscale.sockets[0].?.connected_to_module.?;
     const upstream = try pipeline.module_pool.getPtr(upstream_handle.item);
-    try std.testing.expectEqualStrings("filmcurv", upstream.name);
+    try std.testing.expectEqualStrings("demosaic", upstream.name);
 }
