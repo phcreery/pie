@@ -259,28 +259,32 @@ pub const PerfMetrics = struct {
             total_time_ns += @as(f64, @floatFromInt(entry.value_ptr.*));
         }
 
-        printFn("Pipeline Performance Report:", .{});
+        const banner: [50]u8 = @splat("#"[0]);
+        printFn("{s}", .{banner});
+        // printFn("Pipeline Performance Report:", .{});
         for (self.time_keys.items) |key| {
             const entry = self.times.getPtr(key) orelse continue;
-            printFn(" {d: >5.2}% {d: >8.2} ms  {s}", .{
+            printFn(" {d: >6.2}% {d: >8.2} ms  {s}", .{
                 @as(f64, @floatFromInt(entry.*)) / total_time_ns * 100.0,
                 @as(f64, @floatFromInt(entry.*)) / std.time.ns_per_ms,
                 key,
             });
         }
-        printFn(" Total time: {d:.2} ms  (<33.33 ms for 30fps, <16.67 ms for 60fps)", .{total_time_ns / std.time.ns_per_ms});
+        // printFn(" Total time: {d:.2} ms  (<33.33 ms for 30fps, <16.67 ms for 60fps)", .{total_time_ns / std.time.ns_per_ms});
+        printFn("         {d: >8.2} ms  Total", .{total_time_ns / std.time.ns_per_ms});
 
+        printFn("{s}", .{banner});
         const upload_buffer_usage_size_bytes = self.upload_buffer_usage_size_bytes orelse 0;
         const upload_buffer_size_bytes = self.upload_buffer_size_bytes orelse 0;
         const download_buffer_usage_size_bytes = self.download_buffer_usage_size_bytes orelse 0;
         const download_buffer_size_bytes = self.download_buffer_size_bytes orelse 0;
-        printFn(" {d: >5.2}% {B:>6.2}/{B:.2}  {s}", .{
+        printFn(" {d: >6.2}% {B:>8.2}/{B:.2}  {s}", .{
             @as(f64, @floatFromInt(upload_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(upload_buffer_size_bytes)) * 100.0,
             upload_buffer_usage_size_bytes,
             upload_buffer_size_bytes,
             "upload_buffer_size_bytes",
         });
-        printFn(" {d: >5.2}% {B:>6.2}/{B:.2}  {s}", .{
+        printFn(" {d: >6.2}% {B:>8.2}/{B:.2}  {s}", .{
             @as(f64, @floatFromInt(download_buffer_usage_size_bytes)) / @as(f64, @floatFromInt(download_buffer_size_bytes)) * 100.0,
             download_buffer_usage_size_bytes,
             download_buffer_size_bytes,
@@ -288,12 +292,12 @@ pub const PerfMetrics = struct {
         });
         const n_nodes_ran = self.n_nodes_ran orelse 0;
         const n_connector_textures_created = self.n_connector_textures_created orelse 0;
-        printFn(" {d: >5.2}% {d}/{d} nodes ran", .{
+        printFn(" {d: >6.2}% {d}/{d} nodes ran", .{
             @as(f64, @floatFromInt(n_nodes_ran)) / @as(f64, @floatFromInt(self.number_of_nodes orelse 1)) * 100.0,
             n_nodes_ran,
             self.number_of_nodes orelse 0,
         });
-        printFn(" {d: >5.2}% {d}/{d} connector resources created", .{
+        printFn(" {d: >6.2}% {d}/{d} connector resources created", .{
             @as(f64, @floatFromInt(n_connector_textures_created)) / @as(f64, @floatFromInt(self.number_of_connectors orelse 1)) * 100.0,
             n_connector_textures_created,
             self.number_of_connectors orelse 0,
@@ -313,6 +317,7 @@ pub const PerfMetrics = struct {
         printFn(" {d} nodes", .{self.number_of_nodes orelse 0});
         printFn(" {d} connectors", .{self.number_of_connectors orelse 0});
 
+        printFn("{s}", .{banner});
         // per-node stopwatch, sorted slowest first
         if (self.node_cpu_ns.count() > 0) {
             const Entry = struct { name: []const u8, ns: u64 };
@@ -329,11 +334,12 @@ pub const PerfMetrics = struct {
             }.lessThan);
             printFn(" Per-node CPU time:", .{});
             for (entries.items) |entry| {
-                printFn("  {d: >8.3} ms  {s}", .{
+                printFn("          {d: >8.3} ms  {s}", .{
                     @as(f64, @floatFromInt(entry.ns)) / std.time.ns_per_ms,
                     entry.name,
                 });
             }
         }
+        printFn("{s}", .{banner});
     }
 };
