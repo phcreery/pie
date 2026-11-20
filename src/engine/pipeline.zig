@@ -464,13 +464,8 @@ pub const Pipeline = struct {
         // perform copy
         node_socket.* = mod_socket.*;
 
-        // The copy above also carries the module socket's own links. They
-        // describe the module skeleton, not this node, so drop them.
+        // define inheritance, dont copy inherited_by_node
         node_socket.inherited_by_node = null;
-
-        // For every node socket (input or output), record the module socket it
-        // came from by index. Allocation and socket sync resolve the module
-        // side through this link instead of re-looking it up by name.
         node_socket.inherited_from_module = .{
             .item = mod_handle,
             .socket_idx = mod_socket_idx,
@@ -749,7 +744,7 @@ pub const Pipeline = struct {
         if (self.dirty) {
             try self.runModulesModifyOut();
             try self.perf.timerLap("runModulesModifyOut");
-            try self.runNodeSyncSockets();
+            try self.runNodesSyncSockets();
             try self.perf.timerLap("runNodeSyncSockets");
             try self.runNodesAllocateConnectors(.{ .reconcile = true });
             try self.perf.timerLap("runNodesAllocateConnectors(reconcile)");
@@ -882,9 +877,7 @@ pub const Pipeline = struct {
         return self.connector_pool.get(connector_handle) orelse return null;
     }
 
-    /// Resolve the module socket a node socket was inherited from. Returns
-    /// null for node-local sockets with no module counterpart (for example the
-    /// intermediate sockets inside a module's node chain).
+    /// Resolve the module socket a node socket was inherited from.
     fn getInheritedModuleSocket(self: *Pipeline, socket: *const Socket) ?*Socket {
         const link = socket.inherited_from_module orelse return null;
         const mod = self.module_pool.getPtr(link.item) catch return null;
@@ -1321,15 +1314,19 @@ pub const Pipeline = struct {
     }
 
     const AllocateConnectorsOptions = struct {
-        /// Reconcile existing resources against the module socket instead of
-        /// allocating from the node socket created by createNodes(). Reads the
-        /// live module roi/resource/datatype, replaces only mismatches, syncs
-        /// the node socket, and marks the node dirty.
+        /// Replace output resources whose roi/resource/datatype no longer match
+        /// the node socket, then mark the node dirty. Without it, only missing
+        /// resources are allocated.
+        ///
+        /// Requires runNodesSyncSockets() in the same pass: it is what propagates
+        /// the authoritative module socket state into the node sockets. `run()`
+        /// guarantees this ordering.
         reconcile: bool = false,
     };
 
     /// Allocate one output resource per output socket. A texture socket gets a
-    /// texture. A buffer socket gets a storage buffer.
+    /// texture. A buffer socket gets a storage buffer. Node sockets are the
+    /// source of truth for extent/format in both modes.
     ///
     /// Similar to vkdt dt_graph_run_nodes_allocate().
     fn runNodesAllocateConnectors(self: *Pipeline, options: AllocateConnectorsOptions) RunError!void {
@@ -1339,42 +1336,34 @@ pub const Pipeline = struct {
             for (&node.sockets) |*socket| {
                 if (socket.*) |*node_output_sock| {
                     if (node_output_sock.type.direction() != .output) continue;
+
+                    // Node sockets were synced from their module sockets by
+                    // runNodesSyncSockets in this same pass; diff against them.
+                    const expected_roi = node_output_sock.roi orelse continue;
+                    const resource: gpu.Resource = node_output_sock.resource;
+                    const datatype: gpu.DataType = node_output_sock.datatype;
+
                     const conn = self.getNodeSocketConnector(node_output_sock.*) orelse {
                         slog.err("node '{s}' socket '{s}' has no output connector", .{ node.name, node_output_sock.name });
                         return error.InvalidGraph;
                     };
-
-                    // In reconcile mode, the module socket is authoritative.
-                    // Otherwise, use the node socket from createNodes().
-                    var extent: ?api.ROI = null;
-                    var resource: gpu.Resource = node_output_sock.resource;
-                    var datatype: gpu.DataType = node_output_sock.datatype;
-                    if (options.reconcile) {
-                        const mod_sock = self.getInheritedModuleSocket(node_output_sock) orelse continue;
-                        extent = mod_sock.roi;
-                        resource = mod_sock.resource;
-                        datatype = mod_sock.datatype;
-                    } else {
-                        extent = node_output_sock.roi;
-                    }
-                    const expected_extent = extent orelse continue;
-
                     const need_alloc = blk: {
                         if (resource == .buffer) {
                             const buffer = conn.*.buffer orelse break :blk true;
                             if (options.reconcile) {
-                                if (buffer.buffer_size != gpu.Buffer.sizeFor(datatype, expected_extent)) break :blk true;
+                                if (buffer.buffer_size != gpu.Buffer.sizeFor(datatype, expected_roi)) break :blk true;
                             }
                         } else {
                             const tex = conn.*.texture orelse break :blk true;
                             if (options.reconcile) {
-                                if (!std.meta.eql(tex.roi, expected_extent)) break :blk true;
+                                if (!std.meta.eql(tex.roi, expected_roi)) break :blk true;
                                 if (tex.resource != resource) break :blk true;
                                 if (tex.datatype != datatype) break :blk true;
                             }
                         }
                         break :blk false;
                     };
+                    // don't re-create buf/tex if we don't need to
                     if (!need_alloc) continue;
 
                     var buf: [256]u8 = undefined;
@@ -1388,14 +1377,14 @@ pub const Pipeline = struct {
                     conn.deinit();
 
                     if (resource == .buffer) {
-                        const size_bytes = gpu.Buffer.sizeFor(datatype, expected_extent);
+                        const size_bytes = gpu.Buffer.sizeFor(datatype, expected_roi);
                         const buffer = gpu.Buffer.init(gpu_inst, size_bytes, .storage) catch |err| {
                             slog.err("node '{s} > {s}' buffer creation failed: {s}", .{ node.name, node_output_sock.name, @errorName(err) });
                             return error.GpuFailure;
                         };
                         conn.*.buffer = buffer;
                     } else {
-                        const texture = gpu.Texture.init(gpu_inst, str, resource, datatype, expected_extent) catch |err| {
+                        const texture = gpu.Texture.init(gpu_inst, str, resource, datatype, expected_roi) catch |err| {
                             slog.err("node '{s} > {s}' texture creation failed: {s}", .{ node.name, node_output_sock.name, @errorName(err) });
                             return error.GpuFailure;
                         };
@@ -1404,8 +1393,8 @@ pub const Pipeline = struct {
                     // A resource that a node bound is gone. Invalidate the cache.
                     self.bumpAllocEpoch();
                     if (options.reconcile) {
-                        // Keep the node socket in sync with the new extent.
-                        node_output_sock.roi = expected_extent;
+                        // The node bound a resource that no longer exists; it
+                        // has to run again to fill the new one.
                         self.markNodeDirty(node);
                     }
                     self.perf.recordConnectorTextureAllocation();
@@ -1420,9 +1409,10 @@ pub const Pipeline = struct {
     /// on dirty runs nodes keep their old sockets. Node-local sockets without
     /// an inherited_from_module link are left untouched.
     /// O(total nodes * sockets) — cheap, but runs every dirty frame.
-    fn runNodeSyncSockets(self: *Pipeline) RunError!void {
-        var node_it = self.node_pool.liveHandles();
-        while (node_it.next()) |node_handle| {
+    fn runNodesSyncSockets(self: *Pipeline) RunError!void {
+        // var node_it = self.node_pool.liveHandles();
+        // while (node_it.next()) |node_handle| {
+        for (self.node_execution_order.items) |node_handle| {
             const node = self.node_pool.getPtr(node_handle) catch return error.InvariantViolated;
             for (&node.sockets) |*maybe_node_sock| {
                 if (maybe_node_sock.*) |*node_sock| {
