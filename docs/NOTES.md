@@ -48,6 +48,7 @@
 
 ### Camera and Lens
 
+- https://ciechanow.ski/cameras-and-lenses/
 - https://exiv2.org/
 - https://lensfun.github.io/
 
@@ -104,10 +105,17 @@
 
 ## UI
 
-- https://codeberg.org/shahwali/knots
+- Currently
+  - https://github.com/floooh/sokol-zig
+  - https://github.com/floooh/dcimgui
+  - https://github.com/floooh/sokol-zig-imgui-sample
 - https://github.com/knots-ui/knots
+  - https://codeberg.org/shahwali/knots
 - https://codeberg.org/Games-by-Mason/dear_imgui_zig
 - https://github.com/yappologistic/CUI sloppy, not good
+- https://github.com/vercel-labs/native
+- https://github.com/fizzyedit/fizzy
+  - https://github.com/david-vanderson/dvui
 
 ## Zig
 
