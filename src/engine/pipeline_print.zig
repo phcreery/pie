@@ -10,7 +10,16 @@ const ROI = @import("module_types").ROI;
 const console = @import("console");
 const DirectedGraph = @import("zig-graph").DirectedGraph;
 const Node = @import("Node.zig");
+const Connector = @import("Connector.zig");
 const slog = std.log.scoped(.util);
+
+/// Texture payload of a connector, or null when it is empty/buffer-backed.
+fn connectorTexture(conn: *const Connector) ?gpu.Texture {
+    return switch (conn.data orelse return null) {
+        .texture => |texture| texture,
+        .buffer => null,
+    };
+}
 
 pub fn printModules(self: *pipeline.Pipeline) void {
     std.debug.print("MODULE LISTING (ORDERED AS APPEARANCE IN POOL ITERATOR)\n", .{});
@@ -49,9 +58,9 @@ pub fn printModules(self: *pipeline.Pipeline) void {
         const output_texture = if (output_socket) |sock| if (sock.connector_handle) |h| self.connector_pool.get(h) else null else null;
         std.debug.print(module_text, .{
             if (input_socket_traverse) |sock| if (sock.connector_handle) |h| h.id else null else null,
-            if (input_texture_traverse) |input_tex| if (input_tex.*.texture) |tex| tex.roi.w else null else null,
-            if (input_texture_traverse) |input_tex| if (input_tex.*.texture) |tex| tex.roi.h else null else null,
-            if (input_texture_traverse) |input_tex| if (input_tex.*.texture) |tex| tex.texture else null else null,
+            if (input_texture_traverse) |input_tex| if (connectorTexture(input_tex)) |tex| tex.roi.w else null else null,
+            if (input_texture_traverse) |input_tex| if (connectorTexture(input_tex)) |tex| tex.roi.h else null else null,
+            if (input_texture_traverse) |input_tex| if (connectorTexture(input_tex)) |tex| tex.texture else null else null,
             if (input_socket) |sock| sock.name else "null",
             if (input_socket) |sock| sock.type else null,
             if (input_socket) |sock| @tagName(sock.resource) else "null",
@@ -60,7 +69,7 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             if (input_socket) |sock| if (sock.roi) |roi| roi.w else null else null,
             if (input_socket) |sock| if (sock.roi) |roi| roi.h else null else null,
             module.name,
-            module.enabled,
+            module.flags.enabled,
             if (output_socket) |sock| sock.name else "null",
             if (output_socket) |sock| sock.type else null,
             if (output_socket) |sock| @tagName(sock.resource) else "null",
@@ -69,9 +78,9 @@ pub fn printModules(self: *pipeline.Pipeline) void {
             if (output_socket) |sock| if (sock.roi) |roi| roi.w else null else null,
             if (output_socket) |sock| if (sock.roi) |roi| roi.h else null else null,
             if (output_socket) |sock| if (sock.connector_handle) |h| h.id else null else null,
-            if (output_texture) |input_tex| if (input_tex.*.texture) |tex| tex.roi.w else null else null,
-            if (output_texture) |input_tex| if (input_tex.*.texture) |tex| tex.roi.h else null else null,
-            if (output_texture) |output_tex| if (output_tex.*.texture) |tex| tex.texture else null else null,
+            if (output_texture) |input_tex| if (connectorTexture(input_tex)) |tex| tex.roi.w else null else null,
+            if (output_texture) |input_tex| if (connectorTexture(input_tex)) |tex| tex.roi.h else null else null,
+            if (output_texture) |output_tex| if (connectorTexture(output_tex)) |tex| tex.texture else null else null,
         });
     }
 }
@@ -104,16 +113,20 @@ pub fn printNodes(self: *pipeline.Pipeline) void {
                     },
                 };
                 const tex_text = output: {
-                    if (self.getNodeSocketConnectorHandle(s)) |h| {
-                        const conn = self.connector_pool.getPtr(h) catch break;
-                        if (conn.*.texture) |c| {
-                            // tex_text = c.texture;
-                            break :output std.fmt.allocPrint(std.heap.page_allocator, "{any}x{any} ({any})", .{ c.roi.w, c.roi.h, c.texture }) catch "err";
-                        } else {
-                            break :output "null";
-                        }
-                    } else {
-                        break :output "null";
+                    const h = self.getNodeSocketConnectorHandle(s) orelse break :output "null";
+                    const conn = self.connector_pool.getPtr(h) catch break :output "null";
+                    const data = conn.data orelse break :output "null";
+                    switch (data) {
+                        .texture => |tex| break :output std.fmt.allocPrint(
+                            std.heap.page_allocator,
+                            "{any}x{any} ({any})",
+                            .{ tex.roi.w, tex.roi.h, @tagName(tex.resource) },
+                        ) catch "err",
+                        .buffer => |buffer| break :output std.fmt.allocPrint(
+                            std.heap.page_allocator,
+                            "buffer {d}B",
+                            .{buffer.buffer_size},
+                        ) catch "err",
                     }
                 };
 
@@ -179,25 +192,23 @@ fn edgePrinterCb(buf: []u8, edge: pipeline.ConnectorHandle, user_data: *anyopaqu
     var pipe: *pipeline.Pipeline = @ptrCast(@alignCast(user_data));
     const conn = pipe.connector_pool.getPtr(edge) catch unreachable;
 
-    const res = if (conn.*.texture) |tex|
-        std.fmt.bufPrint(buf, "{s} {s} {s} {s}/{s} {d}x{d}", .{
-            @tagName(conn.*.color_profile.primaries),
-            @tagName(conn.*.color_profile.trc),
-            @tagName(conn.*.color_profile.white_point),
+    const res = if (conn.data) |data| switch (data) {
+        .texture => |tex| std.fmt.bufPrint(buf, "{s} {s} {s} {s}/{s} {d}x{d}", .{
+            @tagName(conn.color_profile.primaries),
+            @tagName(conn.color_profile.trc),
+            @tagName(conn.color_profile.white_point),
             @tagName(tex.resource),
             @tagName(tex.datatype),
             tex.roi.h,
             tex.roi.w,
-        }) catch "<error>"
-    else if (conn.*.buffer) |buffer|
-        std.fmt.bufPrint(buf, "{s} {s} {s} buffer {d}B", .{
-            @tagName(conn.*.color_profile.primaries),
-            @tagName(conn.*.color_profile.trc),
-            @tagName(conn.*.color_profile.white_point),
+        }) catch "<error>",
+        .buffer => |buffer| std.fmt.bufPrint(buf, "{s} {s} {s} buffer {d}B", .{
+            @tagName(conn.color_profile.primaries),
+            @tagName(conn.color_profile.trc),
+            @tagName(conn.color_profile.white_point),
             buffer.buffer_size,
-        }) catch "<error>"
-    else
-        "empty";
+        }) catch "<error>",
+    } else "empty";
     return @constCast(res);
 }
 

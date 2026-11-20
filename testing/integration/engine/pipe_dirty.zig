@@ -154,7 +154,10 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
             if (std.mem.eql(u8, n.name, "swap-roi")) {
                 const ch = pipeline.getNodeSocketConnectorHandle(n.sockets[1].?) orelse return error.TestUnexpectedResult;
                 const c = try pipeline.connector_pool.getPtr(ch);
-                break :blk c.texture.?.roi;
+                break :blk switch (c.data orelse return error.TestUnexpectedResult) {
+                    .texture => |tex| tex.roi,
+                    .buffer => return error.TestUnexpectedResult,
+                };
             }
         }
         return error.TestUnexpectedResult;
@@ -172,7 +175,10 @@ test "swap-roi output change refreshes connector texture and re-runs downstream"
             if (std.mem.eql(u8, n.name, "swap-roi")) {
                 const ch = pipeline.getNodeSocketConnectorHandle(n.sockets[1].?) orelse return error.TestUnexpectedResult;
                 const c = try pipeline.connector_pool.getPtr(ch);
-                break :blk c.texture.?.roi;
+                break :blk switch (c.data orelse return error.TestUnexpectedResult) {
+                    .texture => |tex| tex.roi,
+                    .buffer => return error.TestUnexpectedResult,
+                };
             }
         }
         return error.TestUnexpectedResult;

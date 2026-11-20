@@ -5,10 +5,16 @@
 const gpu = @import("gpu");
 const ColorProfile = @import("module_types").ColorProfile;
 
-/// The allocated resource. A null slot is a lazy connector that the pipeline
-/// fills during allocation.
-texture: ?gpu.Texture = null,
-buffer: ?gpu.Buffer = null,
+/// The allocated GPU resource. Exactly one variant is live; `null` in
+/// `Connector.data` is a lazy connector that the pipeline fills during
+/// allocation.
+pub const Data = union(enum) {
+    texture: gpu.Texture,
+    buffer: gpu.Buffer,
+};
+
+/// The allocated resource, or null before allocation.
+data: ?Data = null,
 color_profile: ColorProfile,
 
 const Self = @This();
@@ -22,13 +28,14 @@ pub fn initNull(color_profile: ColorProfile) Self {
 }
 
 pub fn deinit(self: *Self) void {
-    if (self.texture) |*t| t.deinit();
-    self.texture = null;
-    if (self.buffer) |*b| b.deinit();
-    self.buffer = null;
+    if (self.data) |*data| switch (data.*) {
+        .texture => |*texture| texture.deinit(),
+        .buffer => |*buffer| buffer.deinit(),
+    };
+    self.data = null;
 }
 
 /// True when no resource is allocated.
 pub fn isEmpty(self: *const Self) bool {
-    return self.texture == null and self.buffer == null;
+    return self.data == null;
 }

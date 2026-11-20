@@ -790,12 +790,11 @@ pub const Pipeline = struct {
         const sock = last_node.sockets[0] orelse return error.NodeOutputSocketMissingConnectorHandle;
         const connector_handle = self.getNodeSocketConnectorHandle(sock) orelse return error.NodeOutputSocketMissingConnectorHandle;
         const display_texture = try self.connector_pool.getPtr(connector_handle);
-        if (display_texture.*.texture) |tex| {
-            return tex;
-        } else {
-            return error.PipelineMissingDisplaySinkTexture;
-        }
-        return error.NodeOutputSocketMissingConnectorHandle;
+        const data = display_texture.data orelse return error.PipelineMissingDisplaySinkTexture;
+        return switch (data) {
+            .texture => |texture| texture,
+            .buffer => error.PipelineMissingDisplaySinkTexture,
+        };
     }
 
     pub fn modulesOfType(self: *Pipeline, kind: api.ModuleType) !std.ArrayList(ModuleHandle) {
@@ -1348,18 +1347,24 @@ pub const Pipeline = struct {
                         return error.InvalidGraph;
                     };
                     const need_alloc = blk: {
-                        if (resource == .buffer) {
-                            const buffer = conn.*.buffer orelse break :blk true;
-                            if (options.reconcile) {
-                                if (buffer.buffer_size != gpu.Buffer.sizeFor(datatype, expected_roi)) break :blk true;
-                            }
-                        } else {
-                            const tex = conn.*.texture orelse break :blk true;
-                            if (options.reconcile) {
-                                if (!std.meta.eql(tex.roi, expected_roi)) break :blk true;
-                                if (tex.resource != resource) break :blk true;
-                                if (tex.datatype != datatype) break :blk true;
-                            }
+                        const data = conn.*.data orelse break :blk true;
+                        switch (data) {
+                            .buffer => |buffer| {
+                                // socket says texture but a buffer is bound
+                                if (resource != .buffer) break :blk true;
+                                if (options.reconcile) {
+                                    if (buffer.buffer_size != gpu.Buffer.sizeFor(datatype, expected_roi)) break :blk true;
+                                }
+                            },
+                            .texture => |tex| {
+                                // socket says buffer but a texture is bound
+                                if (resource == .buffer) break :blk true;
+                                if (options.reconcile) {
+                                    if (!std.meta.eql(tex.roi, expected_roi)) break :blk true;
+                                    if (tex.resource != resource) break :blk true;
+                                    if (tex.datatype != datatype) break :blk true;
+                                }
+                            },
                         }
                         break :blk false;
                     };
@@ -1382,13 +1387,13 @@ pub const Pipeline = struct {
                             slog.err("node '{s} > {s}' buffer creation failed: {s}", .{ node.name, node_output_sock.name, @errorName(err) });
                             return error.GpuFailure;
                         };
-                        conn.*.buffer = buffer;
+                        conn.*.data = .{ .buffer = buffer };
                     } else {
                         const texture = gpu.Texture.init(gpu_inst, str, resource, datatype, expected_roi) catch |err| {
                             slog.err("node '{s} > {s}' texture creation failed: {s}", .{ node.name, node_output_sock.name, @errorName(err) });
                             return error.GpuFailure;
                         };
-                        conn.*.texture = texture;
+                        conn.*.data = .{ .texture = texture };
                     }
                     // A resource that a node bound is gone. Invalidate the cache.
                     self.bumpAllocEpoch();
@@ -1500,10 +1505,17 @@ pub const Pipeline = struct {
                         return error.InvalidGraph;
                     };
 
+                    const data = conn.*.data orelse {
+                        slog.err("node '{s}' socket '{s}' connector has no resource", .{ node.name, sock.name });
+                        return error.InvalidGraph;
+                    };
                     if (sock.resource == .buffer) {
-                        const buffer = conn.*.buffer orelse {
-                            slog.err("node '{s}' socket '{s}' connector has no buffer", .{ node.name, sock.name });
-                            return error.InvalidGraph;
+                        const buffer = switch (data) {
+                            .buffer => |buffer| buffer,
+                            .texture => {
+                                slog.err("node '{s}' socket '{s}' expects a buffer, connector holds a texture", .{ node.name, sock.name });
+                                return error.InvalidGraph;
+                            },
                         };
                         layout_group_1_binding[binding_number] = .{
                             .buffer = .{ .binding_type = switch (access) {
@@ -1513,9 +1525,12 @@ pub const Pipeline = struct {
                         };
                         bind_group_1_binds[binding_number] = .{ .buffer = buffer };
                     } else {
-                        const texture = conn.*.texture orelse {
-                            slog.err("node '{s}' socket '{s}' connector has no texture", .{ node.name, sock.name });
-                            return error.InvalidGraph;
+                        const texture = switch (data) {
+                            .texture => |texture| texture,
+                            .buffer => {
+                                slog.err("node '{s}' socket '{s}' expects a texture, connector holds a buffer", .{ node.name, sock.name });
+                                return error.InvalidGraph;
+                            },
                         };
                         layout_group_1_binding[binding_number] = .{
                             .texture = .{
@@ -1897,9 +1912,13 @@ pub const Pipeline = struct {
                 const roi = sock.roi orelse unreachable;
                 slog.debug("Source node staging offset: {d}", .{staging_offset});
 
+                const data = connector.*.data orelse return error.InvalidGraph;
                 if (sock.resource == .buffer) {
                     slog.debug("Enqueueing source node '{s}' staging to buffer copy", .{node.name});
-                    var buffer = connector.*.buffer orelse return error.InvalidGraph;
+                    var buffer = switch (data) {
+                        .buffer => |buffer| buffer,
+                        .texture => return error.InvalidGraph,
+                    };
                     const size_bytes: usize = @intCast(gpu.Buffer.sizeFor(sock.datatype, roi));
                     encoder.enqueueBufToBuf(upload_buffer, staging_offset, &buffer, 0, size_bytes) catch |err| {
                         slog.err("source node '{s}' buffer upload enqueue failed: {s}", .{ node.name, @errorName(err) });
@@ -1907,7 +1926,10 @@ pub const Pipeline = struct {
                     };
                 } else {
                     slog.debug("Enqueueing source node '{s}' staging to texture copy", .{node.name});
-                    var tex = connector.*.texture orelse return error.InvalidGraph;
+                    var tex = switch (data) {
+                        .texture => |texture| texture,
+                        .buffer => return error.InvalidGraph,
+                    };
                     encoder.enqueueBufToTex(upload_buffer, staging_offset, &tex, roi) catch |err| {
                         slog.err("source node '{s}' upload enqueue failed: {s}", .{ node.name, @errorName(err) });
                         return error.GpuFailure;
@@ -1924,9 +1946,13 @@ pub const Pipeline = struct {
                 const staging_offset = sock.staging_offset orelse unreachable;
                 const roi = sock.roi orelse unreachable;
 
+                const data = connector.*.data orelse return error.InvalidGraph;
                 if (sock.resource == .buffer) {
                     slog.debug("Enqueueing sink node '{s}' buffer to staging copy", .{node.name});
-                    var buffer = connector.*.buffer orelse return error.InvalidGraph;
+                    var buffer = switch (data) {
+                        .buffer => |buffer| buffer,
+                        .texture => return error.InvalidGraph,
+                    };
                     const size_bytes: usize = @intCast(gpu.Buffer.sizeFor(sock.datatype, roi));
                     encoder.enqueueBufToBuf(&buffer, 0, download_buffer, staging_offset, size_bytes) catch |err| {
                         slog.err("sink node '{s}' buffer download enqueue failed: {s}", .{ node.name, @errorName(err) });
@@ -1934,7 +1960,10 @@ pub const Pipeline = struct {
                     };
                 } else {
                     slog.debug("Enqueueing sink node '{s}' texture to staging copy", .{node.name});
-                    var tex = connector.*.texture orelse return error.InvalidGraph;
+                    var tex = switch (data) {
+                        .texture => |texture| texture,
+                        .buffer => return error.InvalidGraph,
+                    };
                     encoder.enqueueTexToBuf(download_buffer, staging_offset, &tex, roi) catch |err| {
                         slog.err("sink node '{s}' download enqueue failed: {s}", .{ node.name, @errorName(err) });
                         return error.GpuFailure;
