@@ -751,8 +751,8 @@ pub const Pipeline = struct {
             try self.perf.timerLap("runModulesModifyOut");
             try self.runNodeSyncSockets();
             try self.perf.timerLap("runNodeSyncSockets");
-            try self.runNodesAllocateConnectors(.{ .refresh = true });
-            try self.perf.timerLap("runNodesAllocateConnectors(refresh)");
+            try self.runNodesAllocateConnectors(.{ .reconcile = true });
+            try self.perf.timerLap("runNodesAllocateConnectors(reconcile)");
             try self.runModulesCommitParams();
             try self.perf.timerLap("runModulesCommitParams");
 
@@ -1321,10 +1321,11 @@ pub const Pipeline = struct {
     }
 
     const AllocateConnectorsOptions = struct {
-        /// Refresh mode replaces only resources with a new extent or format.
-        /// It frees the old resource, syncs the node socket, and marks the
-        /// node dirty.
-        refresh: bool = false,
+        /// Reconcile existing resources against the module socket instead of
+        /// allocating from the node socket created by createNodes(). Reads the
+        /// live module roi/resource/datatype, replaces only mismatches, syncs
+        /// the node socket, and marks the node dirty.
+        reconcile: bool = false,
     };
 
     /// Allocate one output resource per output socket. A texture socket gets a
@@ -1343,12 +1344,12 @@ pub const Pipeline = struct {
                         return error.InvalidGraph;
                     };
 
-                    // In refresh mode, the module socket is authoritative.
+                    // In reconcile mode, the module socket is authoritative.
                     // Otherwise, use the node socket from createNodes().
                     var extent: ?api.ROI = null;
                     var resource: gpu.Resource = node_output_sock.resource;
                     var datatype: gpu.DataType = node_output_sock.datatype;
-                    if (options.refresh) {
+                    if (options.reconcile) {
                         const mod_sock = self.getInheritedModuleSocket(node_output_sock) orelse continue;
                         extent = mod_sock.roi;
                         resource = mod_sock.resource;
@@ -1361,12 +1362,12 @@ pub const Pipeline = struct {
                     const need_alloc = blk: {
                         if (resource == .buffer) {
                             const buffer = conn.*.buffer orelse break :blk true;
-                            if (options.refresh) {
+                            if (options.reconcile) {
                                 if (buffer.buffer_size != gpu.Buffer.sizeFor(datatype, expected_extent)) break :blk true;
                             }
                         } else {
                             const tex = conn.*.texture orelse break :blk true;
-                            if (options.refresh) {
+                            if (options.reconcile) {
                                 if (!std.meta.eql(tex.roi, expected_extent)) break :blk true;
                                 if (tex.resource != resource) break :blk true;
                                 if (tex.datatype != datatype) break :blk true;
@@ -1378,8 +1379,8 @@ pub const Pipeline = struct {
 
                     var buf: [256]u8 = undefined;
                     const str = std.fmt.bufPrint(&buf, "node: {s} > {s}", .{ node.name, node_output_sock.name }) catch return error.InvariantViolated;
-                    if (options.refresh) {
-                        slog.debug("Refreshing output resource for node '{s} > {s}' (extent/format changed)", .{ node.name, node_output_sock.name });
+                    if (options.reconcile) {
+                        slog.debug("Reconciling output resource for node '{s} > {s}' (extent/format changed)", .{ node.name, node_output_sock.name });
                     } else {
                         slog.debug("Allocating output resource for node '{s} > {s}'", .{ node.name, node_output_sock.name });
                     }
@@ -1402,7 +1403,7 @@ pub const Pipeline = struct {
                     }
                     // A resource that a node bound is gone. Invalidate the cache.
                     self.bumpAllocEpoch();
-                    if (options.refresh) {
+                    if (options.reconcile) {
                         // Keep the node socket in sync with the new extent.
                         node_output_sock.roi = expected_extent;
                         self.markNodeDirty(node);
