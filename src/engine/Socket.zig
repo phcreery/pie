@@ -34,7 +34,9 @@ connected_to_node: ?SocketConnection(pipeline.NodeHandle) = null,
 /// populated with pipe.inheritSocket()
 inherited_by_node: ?SocketConnection(pipeline.NodeHandle) = null,
 
-/// for input sockets of nodes
+/// for sockets of nodes that were inherited from a module socket, input or
+/// output. Resolves to the module socket by index, so later passes never have
+/// to re-derive the relation from names.
 /// populated with pipe.inheritSocket()
 inherited_from_module: ?SocketConnection(pipeline.ModuleHandle) = null,
 

@@ -464,13 +464,17 @@ pub const Pipeline = struct {
         // perform copy
         node_socket.* = mod_socket.*;
 
-        // for input sockets on nodes
-        if (node_socket.type.direction() == .input) {
-            node_socket.inherited_from_module = .{
-                .item = mod_handle,
-                .socket_idx = mod_socket_idx,
-            };
-        }
+        // The copy above also carries the module socket's own links. They
+        // describe the module skeleton, not this node, so drop them.
+        node_socket.inherited_by_node = null;
+
+        // For every node socket (input or output), record the module socket it
+        // came from by index. Allocation and socket sync resolve the module
+        // side through this link instead of re-looking it up by name.
+        node_socket.inherited_from_module = .{
+            .item = mod_handle,
+            .socket_idx = mod_socket_idx,
+        };
 
         // for output sockets on modules
         if (mod_socket.type.direction() == .output) {
@@ -878,6 +882,16 @@ pub const Pipeline = struct {
         return self.connector_pool.get(connector_handle) orelse return null;
     }
 
+    /// Resolve the module socket a node socket was inherited from. Returns
+    /// null for node-local sockets with no module counterpart (for example the
+    /// intermediate sockets inside a module's node chain).
+    fn getInheritedModuleSocket(self: *Pipeline, socket: *const Socket) ?*Socket {
+        const link = socket.inherited_from_module orelse return null;
+        const mod = self.module_pool.getPtr(link.item) catch return null;
+        if (mod.sockets[link.socket_idx]) |*mod_socket| return mod_socket;
+        return null;
+    }
+
     /// pub for debugging purposes
     pub fn getConnectedNode(pipe: *Pipeline, socket: Socket) ?Socket.SocketConnection(NodeHandle) {
         if (socket.connected_to_node) |src_node_handle_connection| {
@@ -1197,6 +1211,17 @@ pub const Pipeline = struct {
             try old_node_handles.append(arena, node_handle);
         }
 
+        // Drop the previous build's node links first: the nodes are about to be
+        // removed, and a module that no longer creates a node for a socket must
+        // not keep pointing at a dead handle. createNodes re-records them.
+        var module_it = self.module_pool.liveHandles();
+        while (module_it.next()) |module_handle| {
+            const module = self.module_pool.getPtr(module_handle) catch return error.InvariantViolated;
+            for (&module.sockets) |*maybe_socket| {
+                if (maybe_socket.*) |*socket| socket.inherited_by_node = null;
+            }
+        }
+
         for (old_node_handles.items) |node_handle| {
             // remove node
             // we leave connectors alone for now since they are shared with modules and may be reused
@@ -1310,27 +1335,26 @@ pub const Pipeline = struct {
         const gpu_inst = self.gpu orelse return error.NoGpuInstance;
         for (self.node_execution_order.items) |node_handle| {
             const node = self.node_pool.getPtr(node_handle) catch return error.InvariantViolated;
-            const mod = self.module_pool.getPtr(node.mod) catch return error.InvariantViolated;
             for (&node.sockets) |*socket| {
-                if (socket.*) |*output_sock| {
-                    if (output_sock.type.direction() != .output) continue;
-                    const conn = self.getNodeSocketConnector(output_sock.*) orelse {
-                        slog.err("node '{s}' socket '{s}' has no output connector", .{ node.name, output_sock.name });
+                if (socket.*) |*node_output_sock| {
+                    if (node_output_sock.type.direction() != .output) continue;
+                    const conn = self.getNodeSocketConnector(node_output_sock.*) orelse {
+                        slog.err("node '{s}' socket '{s}' has no output connector", .{ node.name, node_output_sock.name });
                         return error.InvalidGraph;
                     };
 
                     // In refresh mode, the module socket is authoritative.
                     // Otherwise, use the node socket from createNodes().
                     var extent: ?api.ROI = null;
-                    var resource: gpu.Resource = output_sock.resource;
-                    var datatype: gpu.DataType = output_sock.datatype;
+                    var resource: gpu.Resource = node_output_sock.resource;
+                    var datatype: gpu.DataType = node_output_sock.datatype;
                     if (options.refresh) {
-                        const mod_sock = mod.getSocketPtr(output_sock.name) catch continue;
+                        const mod_sock = self.getInheritedModuleSocket(node_output_sock) orelse continue;
                         extent = mod_sock.roi;
                         resource = mod_sock.resource;
                         datatype = mod_sock.datatype;
                     } else {
-                        extent = output_sock.roi;
+                        extent = node_output_sock.roi;
                     }
                     const expected_extent = extent orelse continue;
 
@@ -1340,24 +1364,24 @@ pub const Pipeline = struct {
                             if (options.refresh) {
                                 if (buffer.buffer_size != gpu.Buffer.sizeFor(datatype, expected_extent)) break :blk true;
                             }
-                            break :blk false;
-                        }
-                        const tex = conn.*.texture orelse break :blk true;
-                        if (options.refresh) {
-                            if (!std.meta.eql(tex.roi, expected_extent)) break :blk true;
-                            if (tex.resource != resource) break :blk true;
-                            if (tex.datatype != datatype) break :blk true;
+                        } else {
+                            const tex = conn.*.texture orelse break :blk true;
+                            if (options.refresh) {
+                                if (!std.meta.eql(tex.roi, expected_extent)) break :blk true;
+                                if (tex.resource != resource) break :blk true;
+                                if (tex.datatype != datatype) break :blk true;
+                            }
                         }
                         break :blk false;
                     };
                     if (!need_alloc) continue;
 
                     var buf: [256]u8 = undefined;
-                    const str = std.fmt.bufPrint(&buf, "node: {s} > {s}", .{ node.name, output_sock.name }) catch return error.InvariantViolated;
+                    const str = std.fmt.bufPrint(&buf, "node: {s} > {s}", .{ node.name, node_output_sock.name }) catch return error.InvariantViolated;
                     if (options.refresh) {
-                        slog.debug("Refreshing output resource for node '{s} > {s}' (extent/format changed)", .{ node.name, output_sock.name });
+                        slog.debug("Refreshing output resource for node '{s} > {s}' (extent/format changed)", .{ node.name, node_output_sock.name });
                     } else {
-                        slog.debug("Allocating output resource for node '{s} > {s}'", .{ node.name, output_sock.name });
+                        slog.debug("Allocating output resource for node '{s} > {s}'", .{ node.name, node_output_sock.name });
                     }
                     // Free the old resource before replacement.
                     conn.deinit();
@@ -1365,13 +1389,13 @@ pub const Pipeline = struct {
                     if (resource == .buffer) {
                         const size_bytes = gpu.Buffer.sizeFor(datatype, expected_extent);
                         const buffer = gpu.Buffer.init(gpu_inst, size_bytes, .storage) catch |err| {
-                            slog.err("node '{s} > {s}' buffer creation failed: {s}", .{ node.name, output_sock.name, @errorName(err) });
+                            slog.err("node '{s} > {s}' buffer creation failed: {s}", .{ node.name, node_output_sock.name, @errorName(err) });
                             return error.GpuFailure;
                         };
                         conn.*.buffer = buffer;
                     } else {
                         const texture = gpu.Texture.init(gpu_inst, str, resource, datatype, expected_extent) catch |err| {
-                            slog.err("node '{s} > {s}' texture creation failed: {s}", .{ node.name, output_sock.name, @errorName(err) });
+                            slog.err("node '{s} > {s}' texture creation failed: {s}", .{ node.name, node_output_sock.name, @errorName(err) });
                             return error.GpuFailure;
                         };
                         conn.*.texture = texture;
@@ -1380,8 +1404,7 @@ pub const Pipeline = struct {
                     self.bumpAllocEpoch();
                     if (options.refresh) {
                         // Keep the node socket in sync with the new extent.
-                        var sock_ptr = node.getSocketPtr(output_sock.name) catch continue;
-                        sock_ptr.roi = expected_extent;
+                        node_output_sock.roi = expected_extent;
                         self.markNodeDirty(node);
                     }
                     self.perf.recordConnectorTextureAllocation();
@@ -1390,23 +1413,23 @@ pub const Pipeline = struct {
         }
     }
 
-    /// Sync each node's socket roi/format from its module's socket (the
-    /// authoritative state after runModulesModifyOut). On reroute this happens
-    /// naturally via createNodes; on dirty runs nodes keep their old sockets.
+    /// Sync each node socket that was inherited from a module socket with that
+    /// module socket's roi/format (the authoritative state after
+    /// runModulesModifyOut). On reroute this happens naturally via createNodes;
+    /// on dirty runs nodes keep their old sockets. Node-local sockets without
+    /// an inherited_from_module link are left untouched.
     /// O(total nodes * sockets) — cheap, but runs every dirty frame.
     fn runNodeSyncSockets(self: *Pipeline) RunError!void {
         var node_it = self.node_pool.liveHandles();
         while (node_it.next()) |node_handle| {
             const node = self.node_pool.getPtr(node_handle) catch return error.InvariantViolated;
-            const mod = self.module_pool.getPtr(node.mod) catch return error.InvariantViolated;
-            for (&node.sockets) |*maybe_sock| {
-                if (maybe_sock.*) |*sock| {
-                    if (mod.getSocketPtr(sock.name)) |mod_sock| {
-                        sock.roi = mod_sock.roi;
-                        sock.resource = mod_sock.resource;
-                        sock.datatype = mod_sock.datatype;
-                        sock.color_profile = mod_sock.color_profile;
-                    } else |_| {}
+            for (&node.sockets) |*maybe_node_sock| {
+                if (maybe_node_sock.*) |*node_sock| {
+                    const mod_sock = self.getInheritedModuleSocket(node_sock) orelse continue;
+                    node_sock.roi = mod_sock.roi;
+                    node_sock.resource = mod_sock.resource;
+                    node_sock.datatype = mod_sock.datatype;
+                    node_sock.color_profile = mod_sock.color_profile;
                 }
             }
         }
