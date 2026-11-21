@@ -1,6 +1,7 @@
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const gpu = @import("gpu");
+const ztracy = @import("ztracy");
 
 const ModulePool = pipeline.ModulePool;
 const Node = @import("Node.zig");
@@ -237,6 +238,20 @@ pub const PerfMetrics = struct {
         } else {
             self.n_param_copies = 1;
         }
+    }
+
+    /// Feed the run's numbers to Tracy as one sample per plot. Plots survive
+    /// across runs, so the profiler shows trends next to the zone timeline.
+    /// No-ops when Tracy is disabled.
+    pub fn emitTracyPlots(self: *const PerfMetrics) void {
+        var run_ns: u64 = 0;
+        var it = self.times.iterator();
+        while (it.next()) |entry| run_ns += entry.value_ptr.*;
+
+        ztracy.PlotF("pipeline.run_ms", @as(f64, @floatFromInt(run_ns)) / 1_000_000.0);
+        ztracy.PlotU("pipeline.upload_kib", @as(u64, @intCast(self.upload_buffer_usage_size_bytes orelse 0)) / 1024);
+        ztracy.PlotU("pipeline.download_kib", @as(u64, @intCast(self.download_buffer_usage_size_bytes orelse 0)) / 1024);
+        ztracy.PlotU("pipeline.nodes_ran", @intCast(self.n_nodes_ran orelse 0));
     }
 
     /// Print the performance report.

@@ -10,6 +10,7 @@ const simgui = sokol.imgui;
 const pie = @import("pie");
 const console = @import("console");
 const wgpu = @import("wgpu_zig");
+const ztracy = @import("ztracy");
 
 const session = @import("session");
 const Session = session.Session;
@@ -60,6 +61,8 @@ pub const AppState = struct {
 
 export fn init_fn(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
+    ztracy.SetThreadName("main");
+    ztracy.MessageC("pie init", 0x00_66_99_ff);
 
     // initialize sokol-gfx
     sg.setup(.{
@@ -95,16 +98,23 @@ export fn init_fn(ptr: ?*anyopaque) void {
 
 export fn frame(ptr: ?*anyopaque) void {
     const state: *AppState = @ptrCast(@alignCast(ptr));
+    const tracy_frame = ztracy.ZoneNC(@src(), "frame", 0x00_33_33_33);
+    defer tracy_frame.End();
 
     // Move catalog thumbnails along (uploads happen on this thread), then build
     // the graph once and re-run the editor pipeline if a parameter changed in
     // the previous frame. All of that submits GPU work, which is only legal
     // before the render pass starts.
-    state.session.tick();
+    {
+        const tracy_tick = ztracy.ZoneNC(@src(), "session.tick", 0x00_66_99_ff);
+        defer tracy_tick.End();
+        state.session.tick();
+    }
     if (state.session.ensureBuilt()) {
         if (state.session.consumeRun()) {
             state.session.run() catch |err| {
                 std.log.err("pipeline re-run failed: {s}", .{@errorName(err)});
+                ztracy.MessageC("pipeline re-run failed", 0x00_00_00_ff);
             };
         }
     }
@@ -127,6 +137,9 @@ export fn frame(ptr: ?*anyopaque) void {
 
     sg.endPass();
     sg.commit();
+
+    ztracy.PlotF("frame_ms", sapp.frameDuration() * 1000.0);
+    ztracy.FrameMark();
 }
 
 export fn cleanup(ptr: ?*anyopaque) void {

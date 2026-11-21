@@ -56,10 +56,6 @@
             .url = "git+https://github.com/flying-swallow/zigimg#d441b531cebd7a51bee32826d18841a18e3196d0",
             .hash = "zigimg-0.1.0-8_eo2o7CFwAqoFP7jU_FBBy3YyU9qO6HOsfthhOKZ77v",
         },
-        // .ztracy = .{
-        //     .url = "git+https://github.com/zig-gamedev/ztracy#3cc6a4a1502fdea2e4d3869099e39d9c5e8b98a5",
-        //     .hash = "ztracy-0.14.0-dev-zHJSq8SJGADr475eGiGJzmX_-P5sDoU564IQSVfZxmYC",
-        // },
         .zbench = .{
             .url = "git+https://github.com/hendriknielaender/zBench/#f12a2262bcd9d300207890555c577da5e29de453",
             .hash = "zbench-0.14.1-YTdc781OAQCR6wxqkgAwm9bG4TnFGzm8c9aE-ZPiTAU1",
@@ -122,6 +118,10 @@
             .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v29.0.1.1/wgpu-linux-x86_64-release.zip",
             .hash = "N-V-__8AAAVLrgM9jWFLs7n4rHyodpjIYxtBBE1No8nK0pRz",
             .lazy = true,
+        },
+        .ztracy = .{
+            .url = "git+https://github.com/zig-gamedev/ztracy#bdfdda4a26efa0313b2a946ea6e20b17ca662610",
+            .hash = "ztracy-0.14.0-dev-zHJSq9z8HABbd1ox7CLCQ3TnAI732qPPAjkY1PyaMibf",
         },
     },
 

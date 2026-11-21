@@ -15,6 +15,7 @@ const Modules = @import("modules/modules.zig");
 const Pool = @import("pool").Pool;
 const PipelineHistory = @import("pipeline_history.zig").PipelineHistory;
 const DirectedGraph = @import("zig-graph").DirectedGraph;
+const ztracy = @import("ztracy");
 const slog = std.log.scoped(.pipe);
 
 // TYPES
@@ -683,6 +684,8 @@ pub const Pipeline = struct {
     /// out-of-memory; the specific cause is logged with `slog.err` where it
     /// occurs.
     pub fn run(self: *Pipeline) RunError!void {
+        const tracy_run = ztracy.ZoneNC(@src(), "Pipeline.run", 0x00_00_99_ff);
+        defer tracy_run.End();
 
         // reset the scratch arena: all per-run temporaries (graphs, ordering,
         // staging lists) are freed and reused
@@ -694,6 +697,9 @@ pub const Pipeline = struct {
         try self.perf.startRun();
 
         if (self.rerouted) {
+            const tracy_reroute = ztracy.ZoneNC(@src(), "Pipeline.reroute", 0x00_99_66_00);
+            defer tracy_reroute.End();
+
             self.bumpAllocEpoch();
 
             // A reroute tears down and reallocates every module's upload staging
@@ -742,6 +748,9 @@ pub const Pipeline = struct {
         }
 
         if (self.dirty) {
+            const tracy_execute = ztracy.ZoneNC(@src(), "Pipeline.execute", 0x00_ff_99_00);
+            defer tracy_execute.End();
+
             try self.runModulesModifyOut();
             try self.perf.timerLap("runModulesModifyOut");
             try self.runNodesSyncSockets();
@@ -773,6 +782,7 @@ pub const Pipeline = struct {
             self.perf.countNodes(&self.node_pool);
             // self.perf.countConnectors(&self.connector_pool);
             self.perf.printReport();
+            self.perf.emitTracyPlots();
         }
     }
 
@@ -1841,6 +1851,9 @@ pub const Pipeline = struct {
             if (options.only_dirty and !self.nodeIsDirty(node)) continue;
             slog.debug("Enqueueing node '{s}'", .{node.name});
             nodes_ran += 1;
+            const tracy_node = ztracy.ZoneC(@src(), 0x00_99_99_ff);
+            tracy_node.Text(node.name);
+            defer tracy_node.End();
             const node_started = std.Io.Clock.awake.now(self.io);
             try self.enqueueNode(&encoder, node, &upload_buffer, &download_buffer);
             const node_cpu_ns: u64 = @intCast(node_started.untilNow(self.io, .awake).toNanoseconds());

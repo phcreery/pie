@@ -14,6 +14,7 @@ const sg = sokol.gfx;
 const simgui = sokol.imgui;
 const zigimg = @import("zigimg");
 const pie = @import("pie");
+const ztracy = @import("ztracy");
 
 const slog = std.log.scoped(.catalog);
 
@@ -367,6 +368,7 @@ pub const Catalog = struct {
     /// valid until `stopWorker` joins us; the hand-off to the main thread is a
     /// single atomic publish per entry.
     fn workerMain(self: *Self) void {
+        ztracy.SetThreadName("catalog");
         for (self.entries) |*entry| {
             if (self.stop.load(.acquire)) return;
             if (entry.status.load(.acquire) != Status.pending) continue;

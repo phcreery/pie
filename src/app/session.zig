@@ -14,6 +14,7 @@ const Blit = @import("blit.zig").Blit;
 pub const Rect = @import("blit.zig").Rect;
 const Catalog = @import("catalog.zig").Catalog;
 const nfd = @import("nfd");
+const ztracy = @import("ztracy");
 
 const slog = std.log.scoped(.session);
 
@@ -116,10 +117,12 @@ pub const Session = struct {
         if (self.built) return true;
         self.buildEditorGraph() catch |err| {
             slog.err("could not build the editor pipeline: {s}", .{@errorName(err)});
+            ztracy.MessageC("editor pipeline build failed", 0x00_00_00_ff);
             return false;
         };
         self.run() catch |err| {
             slog.err("could not run the editor pipeline: {s}", .{@errorName(err)});
+            ztracy.MessageC("editor pipeline run failed", 0x00_00_00_ff);
             return false;
         };
         self.built = true;
@@ -131,6 +134,13 @@ pub const Session = struct {
     fn buildEditorGraph(self: *Self) !void {
         self.pipeline.clear();
         _ = try pie.graphs.recommend(&self.pipeline, self.source_path, .{});
+        var buf: [256]u8 = undefined;
+        const msg = std.fmt.bufPrint(
+            &buf,
+            "build graph: {s}",
+            .{std.fs.path.basename(self.source_path)},
+        ) catch "build graph";
+        ztracy.MessageC(msg, 0x00_66_99_ff);
     }
 
     /// Run the editor pipeline and publish the (possibly new) display texture.
@@ -194,6 +204,9 @@ pub const Session = struct {
             return;
         };
         slog.info("catalog directory is now '{s}'", .{picked});
+        var buf: [256]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, "catalog: {s}", .{picked}) catch "catalog changed";
+        ztracy.MessageC(msg, 0x00_66_99_ff);
     }
 
     fn openImageNow(self: *Self, index: u32) void {
@@ -210,14 +223,19 @@ pub const Session = struct {
 
         self.buildEditorGraph() catch |err| {
             slog.err("cannot build the pipeline for '{s}': {s}", .{ path, @errorName(err) });
+            ztracy.MessageC("image pipeline build failed", 0x00_00_00_ff);
             return;
         };
         self.needs_run = true;
         slog.info("opening '{s}'", .{path});
+        var msg_buf: [256]u8 = undefined;
+        const msg = std.fmt.bufPrint(&msg_buf, "open: {s}", .{path}) catch "open image";
+        ztracy.MessageC(msg, 0x00_99_66_00);
     }
 
     fn reloadCatalogNow(self: *Self) void {
         slog.info("reloading the catalog", .{});
+        ztracy.MessageC("reload catalog", 0x00_66_99_ff);
         self.catalog.reload();
     }
 };

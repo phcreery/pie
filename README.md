@@ -12,100 +12,53 @@ The input sockets of modules/nodes can only be connected to one upstream module/
 
 The current status of pie allows us to build a basic pipeline. Adding an `i-*` module sets the source, the pipeline does basic raw -> srgb, then hands the last texture to an `o-*` sink module. The gui uses sokol which expects an sRGB texture to pass to the display.
 
-```zig
-const allocator = std.testing.allocator;
-const io = std.testing.io;
-
-
-const cp_out = console.console.UTF8ConsoleOutput.init();
-defer cp_out.deinit();
-
-var gpu_instance = try gpu.GPU.init(allocator, io);
-defer gpu_instance.deinit();
-
-
-const pipeline_config: pie.pipeline.PipelineConfig = .{
-    .upload_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
-    .download_buffer_size_bytes = 128 * 1024 * 1024, // 128 MB
-};
-
-var pipeline = Pipeline.init(allocator, std.testing.io, &gpu_instance, pipeline_config) catch unreachable;
-defer pipeline.deinit();
-
-const mod_i_raw = try pipeline.addModule("01", "i-raw");
-const mod_format = try pipeline.addModule("01", "format");
-const mod_denoise = try pipeline.addModule("01", "denoise");
-const mod_demosaic = try pipeline.addModule("01", "demosaic");
-const mod_color = try pipeline.addModule("01", "color");
-const mod_filmcurv = try pipeline.addModule("01", "filmcurv");
-const mod_o_png = try pipeline.addModule("01", "o-png");
-
-try pipeline.setModuleParam(mod_i_raw, "filename", []const u8, "testing/images/DSC_6765.NEF");
-try pipeline.setModuleParam(mod_i_raw, "wb_mode", i32, 1);
-
-try pipeline.setModuleParam(mod_filmcurv, "colormode", u32, 1);
-try pipeline.setModuleParam(mod_filmcurv, "brightness", f32, 2.22);
-try pipeline.setModuleParam(mod_filmcurv, "contrast", f32, 1.0);
-try pipeline.setModuleParam(mod_filmcurv, "bias", f32, 0.0);
-
-try pipeline.setModuleParam(mod_o_png, "filename", []const u8, "testing/images/DSC_6765_debayered.png");
-
-try pipeline.connectModules(mod_i_raw, "output", mod_format, "input");
-try pipeline.connectModules(mod_format, "output", mod_denoise, "input");
-try pipeline.connectModules(mod_denoise, "output", mod_demosaic, "input");
-try pipeline.connectModules(mod_demosaic, "output", mod_color, "input");
-try pipeline.connectModules(mod_color, "output", mod_filmcurv, "input");
-try pipeline.connectModules(mod_filmcurv, "output", mod_o_png, "input");
-try pipeline.run();
 ```
-
-```
-▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ NODES ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
-┌───────────────────────────────────────────────────────┐
-│ [x] i-raw : source                                    │
-└─▼─────────────────────────────────────────────────────┘
+▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ NODES ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+┌───────────────────────────────────────────────────┐
+│ [x] i-raw : source                                │
+└─▼─────────────────────────────────────────────────┘
   │
-  ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rggb16uint 4016x6016
+  ├┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rggb/u16 4016x6016
   │
-┌─▼─────────────────────────────────────────────────────┐
-│ [x] format : format                                   │
-└─▼─────────────────────────────────────────────────────┘
+┌─▼─────────────────────────────────────────────────┐
+│ [x] format : format                               │
+└─▼─────────────────────────────────────────────────┘
   │
-  ├┄┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rggb32float 4016x6016
+  ├┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rggb/f32 4016x6016
   │
-┌─▼─────────────────────────────────────────────────────┐
-│ [x] denoise : interpolation                           │
-└─▼─────────────────────────────────────────────────────┘
+┌─▼─────────────────────────────────────────────────┐
+│ [x] denoise : interpolation                       │
+└─▼─────────────────────────────────────────────────┘
   │
-  ├┄┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rggb32float 4016x6016
+  ├┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rggb/f32 4016x6016
   │
-┌─▼─────────────────────────────────────────────────────┐
-│ [x] demosaic : halfsize                               │
-└─▼─────────────────────────────────────────────────────┘
+┌─▼─────────────────────────────────────────────────┐
+│ [x] demosaic : halfsize                           │
+└─▼─────────────────────────────────────────────────┘
   │
-  ├┄┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rgba/f16 2008x3008
+  ├┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rgba/f16 2008x3008
   │
-┌─▼─────────────────────────────────────────────────────┐
-│ [x] crop : rotate_center                              │
-└─▼─────────────────────────────────────────────────────┘
+┌─▼─────────────────────────────────────────────────┐
+│ [x] crop : rotate_center                          │
+└─▼─────────────────────────────────────────────────┘
   │
-  ├┄┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rgba/f16 3008x2008
+  ├┄┄┄┄┄┄┄┄┄┄┄┄ camera linear any rgba/f16 3008x2008
   │
-┌─▼─────────────────────────────────────────────────────┐
-│ [x] color : color                                     │
-└─▼─────────────────────────────────────────────────────┘
+┌─▼─────────────────────────────────────────────────┐
+│ [x] color : color                                 │
+└─▼─────────────────────────────────────────────────┘
   │
-  ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ srgb linear d65 rgba/f16 3008x2008
+  ├┄┄┄┄┄┄┄┄┄┄┄ rec2020 linear d65 rgba/f16 3008x2008
   │
-┌─▼─────────────────────────────────────────────────────┐
-│ [x] filmcurv : filmcurv                               │
-└─▼─────────────────────────────────────────────────────┘
+┌─▼─────────────────────────────────────────────────┐
+│ [x] filmcurv : filmcurv                           │
+└─▼─────────────────────────────────────────────────┘
   │
-  ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ srgb linear d65 rgba/f16 3008x2008
+  ├┄┄┄┄┄┄┄┄┄┄ srgb gamma_srgb d65 rgba/f16 3008x2008
   │
-┌─▼─────────────────────────────────────────────────────┐
-│ [x] o-display : o-display                             │
-└───────────────────────────────────────────────────────┘
+┌─▼─────────────────────────────────────────────────┐
+│ [x] o-display : o-display                         │
+└───────────────────────────────────────────────────┘
 ```
 
 ## Development
@@ -121,6 +74,23 @@ zig build integration --watch --error-style minimal_clear -freference-trace=100
 zig build app --error-style minimal_clear
 ```
 
+### Profiling
+
+`-Denable_ztracy` compiles in [Tracy](https://github.com/wolfpld/tracy) markers; without it the hooks compile to no-ops.
+
+```
+zig build app -Denable_ztracy=true
+```
+
+Run the Tracy profiler (0.15.x) and attach, before or after launching the app — the client only records while a profiler is connected (`TRACY_ON_DEMAND`). The trace contains:
+
+- zones: `frame` → `session.tick`, `Pipeline.run` → `Pipeline.reroute`/`Pipeline.execute`, one zone per executed node, and the thumbnail worker thread (`catalog`)
+- memory: all host allocations through `util.allocator` (`src/mem.zig`) are reported as alloc/free events, visible in the Memory view
+- plots: `frame_ms` and per-run `pipeline.run_ms`, `pipeline.upload_kib`, `pipeline.download_kib`, `pipeline.nodes_ran`
+- messages: app start, graph build, image open, catalog changes, pipeline failures
+
+Every zone, message, and allocation also carries a callstack (`-Dtracy_callstack=N`, default 8, `0` disables). macOS and Windows use the client's native port; grab the matching profiler build from the Tracy releases.
+
 ### Linux
 
 `alsa-lib-devel libX11-devel mesa-libGL mesa-libGL-devel libXi-devel libXcursor-devel`
@@ -128,4 +98,9 @@ zig build app --error-style minimal_clear
 
 ### TODO
 
-[ ] colorbalance before demosaic and denoise but divide them back out so color owns the whitebalancing
+- colorbalance before demosaic and denoise but divide them back out so color owns the whitebalancing
+- patch sokol:
+  - support wgpu-native. see https://github.com/phcreery/sokol-zig/tree/pie-wgpu
+  - For tracy gpu profiling, add the two timestamp features to requiredFeatures when wgpuAdapterHasFeature reports them (sokol_app.h:4250), and add sapp_wgpu_get_instance().
+    - WGPUNativeFeature_TimestampQueryInsideEncoders
+    - the WGPUInstance at context creation (it calls wgpuInstanceProcessEvents while mapping readback buffers)

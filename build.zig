@@ -16,6 +16,8 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     const opts = .{ .target = target, .optimize = optimize };
 
     const opt_docking = b.option(bool, "docking", "Build with docking support") orelse false;
+    const opt_ztracy = b.option(bool, "enable_ztracy", "Enable Tracy profiling markers") orelse false;
+    const opt_tracy_callstack = b.option(u32, "tracy_callstack", "Tracy callstack depth per zone (0 = off)") orelse 8;
 
     // Get the matching Zig module name, C header search path and C library for
     // vanilla imgui vs the imgui docking branch.
@@ -44,6 +46,14 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     const dep_zigimg = b.dependency("zigimg", dep_opts_fast);
     const dep_zbench = b.dependency("zbench", opts);
     const dep_zuballoc = b.dependency("zuballoc", opts);
+    const tracy = @import("build/ztracy.zig").create(b, .{
+        .dependency = b.dependency("ztracy", .{ .target = target, .optimize = optimize }),
+        .target = target,
+        .optimize = optimize,
+        .enable = opt_ztracy,
+        .on_demand = true,
+        .callstack = if (opt_ztracy) opt_tracy_callstack else 0,
+    });
     // const dep_zmath = b.dependency("zmath", opts);
 
     // inject the cimgui header search path into the sokol C library compile step
@@ -212,6 +222,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "colonconfig", .module = mod_colonconfig },
             .{ .name = "pool", .module = mod_pool },
             .{ .name = "CFA", .module = mod_cfa },
+            .{ .name = "ztracy", .module = tracy.module },
         },
     });
 
@@ -259,6 +270,7 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "nfd", .module = mod_nfd },
         },
     });
+    mod_session.addImport("ztracy", tracy.module);
 
     // GUI MODULE
     const mod_gui = b.createModule(.{
@@ -312,9 +324,13 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
             .{ .name = "gpu", .module = mod_gpu },
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
+            .{ .name = "ztracy", .module = tracy.module },
         },
     });
     mod_app.addOptions("build_options", mod_options);
+
+    // both app and pie import tracy, but this link resolves both
+    if (opt_ztracy) mod_app.linkLibrary(tracy.lib);
 
     // UNIT TESTS
     const test_step = b.step("test", "Run unit tests");
