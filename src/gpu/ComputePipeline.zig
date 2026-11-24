@@ -4,7 +4,7 @@ const root = @import("root.zig");
 const GPU = @import("GPU.zig");
 const Shader = @import("Shader.zig");
 const Texture = @import("Texture.zig");
-const gpu_types = @import("gpu_types");
+const gpu_types = @import("types.zig");
 const Resource = gpu_types.Resource;
 const DataType = gpu_types.DataType;
 

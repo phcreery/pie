@@ -3,8 +3,8 @@
 //! Undo/redo are a cursor into the list: committed items are `items[0..cursor]`
 //! and `items[cursor..]` is the redo tail. Any new append drops the redo tail
 //! first (standard undo-buffer semantics). Rolling back to an item is done by
-//! replaying every recorded delta 0..cursor onto a cleared pipeline — the same
-//! replay-from-empty model vkdt uses — so the history is the *source of truth*
+//! replaying every recorded delta 0..cursor onto a cleared pipeline - the same
+//! replay-from-empty model vkdt uses - so the history is the *source of truth*
 //! and can be reserialized/round-tripped like a config file.
 
 const std = @import("std");

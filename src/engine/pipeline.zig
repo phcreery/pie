@@ -1,8 +1,8 @@
 const std = @import("std");
 const gpu = @import("gpu");
-const types = @import("module_types");
-const ROI = @import("module_types").ROI;
-const ColorProfile = @import("module_types").ColorProfile;
+const std140 = @import("gpu").std140;
+const ROI = @import("gpu").ROI;
+const ColorProfile = @import("ColorProfile.zig");
 const api = @import("modules/api.zig");
 const print = @import("pipeline_print.zig");
 const perf = @import("pipeline_perf.zig");
@@ -1152,7 +1152,7 @@ pub const Pipeline = struct {
             { // IMG PARAM BUFFER INIT
                 var size_bytes: usize = 0;
                 if (module.img_param) |img_param| {
-                    size_bytes = try types.std140.layoutStruct(null, img_param);
+                    size_bytes = try std140.layoutStruct(null, img_param);
                 }
                 const img_param_buffer = gpu.Buffer.init(gpu_inst, size_bytes, .uniform) catch |err| {
                     slog.err("module '{s}' img param buffer creation failed: {s}", .{ module.name, @errorName(err) });
@@ -1738,9 +1738,9 @@ pub const Pipeline = struct {
             if (module.img_param) |img_param| {
                 if (!module.flags.img_param_dirty) continue;
                 slog.debug("Uploading img params for module '{s}':", .{module.name});
-                var buf = try arena.alloc(u8, try types.std140.layoutStruct(null, img_param));
+                var buf = try arena.alloc(u8, try std140.layoutStruct(null, img_param));
                 defer arena.free(buf);
-                const used_len = try types.std140.layoutStruct(buf, img_param);
+                const used_len = try std140.layoutStruct(buf, img_param);
 
                 const img_param_mapped_slice_ptr = module.img_param_mapped_slice_ptr orelse return error.InvalidGraph;
                 const mapped_ptr: [*]u8 = @ptrCast(@alignCast(img_param_mapped_slice_ptr));

@@ -1,5 +1,6 @@
-/// A directed graph implementation in Zig.
-/// https://github.com/mitchellh/zig-graph
+//! A directed graph implementation in Zig.
+//! https://github.com/mitchellh/zig-graph
+
 const std = @import("std");
 const hash_map = std.hash_map;
 const math = std.math;

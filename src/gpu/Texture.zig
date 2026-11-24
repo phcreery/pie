@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgpu = @import("wgpu_zig");
-const gpu_types = @import("gpu_types");
+const gpu_types = @import("types.zig");
 const ROI = gpu_types.ROI;
 const Resource = gpu_types.Resource;
 const DataType = gpu_types.DataType;

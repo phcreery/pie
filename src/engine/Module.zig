@@ -2,7 +2,7 @@ const std = @import("std");
 const api = @import("modules/api.zig");
 const pipeline = @import("pipeline.zig");
 const Param = @import("Param.zig");
-const ImgParams = @import("module_types").ImgParams;
+const ImgParams = @import("ImgParam.zig").ImgParams;
 const Socket = api.Socket;
 const slog = std.log.scoped(.mod);
 

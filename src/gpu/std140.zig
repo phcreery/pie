@@ -227,6 +227,7 @@ pub fn GpuStruct(comptime Cpu: type) type {
 
     const Gpu = structType(&gpu_names, &gpu_types, &gpu_attrs);
 
+    // Verify at comptime that the GPU struct matches the CPU struct layout according to std140 rules.
     comptime {
         var offset: usize = 0;
         var struct_alignment: usize = 1;

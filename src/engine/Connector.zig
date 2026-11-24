@@ -3,7 +3,7 @@
 //! storage buffer. The pipeline owns the resource and `deinit` frees it.
 
 const gpu = @import("gpu");
-const ColorProfile = @import("module_types").ColorProfile;
+const ColorProfile = @import("ColorProfile.zig");
 
 /// The allocated GPU resource. Exactly one variant is live; `null` in
 /// `Connector.data` is a lazy connector that the pipeline fills during

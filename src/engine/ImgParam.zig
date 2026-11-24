@@ -1,7 +1,6 @@
 const std = @import("std");
-// const CFA = @import("modules/shared/CFA.zig");
 const slog = std.log.scoped(.imgparam);
-const std140 = @import("gpu_types").std140;
+const std140 = @import("gpu").std140;
 const math = @import("math");
 
 // see: https://github.com/hanatos/vkdt/blob/master/src/pipe/module.h#L52
@@ -81,12 +80,14 @@ pub const ImgParams = struct {
 pub const ImgParamsGpu = std140.GpuStruct(ImgParams);
 
 test "layoutStruct packs ImgParams as its std140 GPU view" {
-    const rec2020 = math.Mat3.fromArray(.{ .{ 1, 2, 3 }, .{ 4, 5, 6 }, .{ 7, 8, 9 } });
-    const xyz = math.Mat3.fromArray(.{ .{ 9, 8, 7 }, .{ 6, 5, 4 }, .{ 3, 2, 1 } });
+    const Vec4 = math.as(f32).Vec4;
+    const Mat3 = math.as(f32).Mat3;
+    const rec2020 = Mat3.fromArray(.{ .{ 1, 2, 3 }, .{ 4, 5, 6 }, .{ 7, 8, 9 } });
+    const xyz = Mat3.fromArray(.{ .{ 9, 8, 7 }, .{ 6, 5, 4 }, .{ 3, 2, 1 } });
     const params: ImgParams = .{
-        .black = math.Vec4.new(0.1, 0.2, 0.3, 0.4),
-        .white = math.Vec4.new(1.1, 1.2, 1.3, 1.4),
-        .white_balance = math.Vec4.new(2.1, 2.2, 2.3, 2.4),
+        .black = Vec4.new(0.1, 0.2, 0.3, 0.4),
+        .white = Vec4.new(1.1, 1.2, 1.3, 1.4),
+        .white_balance = Vec4.new(2.1, 2.2, 2.3, 2.4),
         .orientation = .rotate90CW,
         .rec2020_from_cam = rec2020.toVectors(),
         .xyz_d65_from_cam = xyz.toVectors(),
@@ -95,12 +96,12 @@ test "layoutStruct packs ImgParams as its std140 GPU view" {
     // The GPU matrix type is `[3]@Vector(3, f32)`, which native code cannot
     // place in an extern struct. `Columns` has the same bytes.
     const Expected = extern struct {
-        black: math.Vec4 align(16),
-        white: math.Vec4 align(16),
-        white_balance: math.Vec4 align(16),
+        black: Vec4 align(16),
+        white: Vec4 align(16),
+        white_balance: Vec4 align(16),
         orientation: Orientation,
-        rec2020_from_cam: math.Mat3.Columns align(16),
-        xyz_d65_from_cam: math.Mat3.Columns align(16),
+        rec2020_from_cam: Mat3.Columns align(16),
+        xyz_d65_from_cam: Mat3.Columns align(16),
     };
 
     var buf: [@sizeOf(Expected)]u8 = @splat(0);

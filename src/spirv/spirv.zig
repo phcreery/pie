@@ -2,11 +2,12 @@
 //! Shaders import this as `@import("shader")`.
 
 const std = @import("std");
-const types = @import("module_types");
+const gpu = @import("gpu");
+const pie_spirv = @import("pie_spirv");
 
 pub const spirv = std.spirv; // TODO: remove this line
-pub const NodeDesc = types.ModuleApi.NodeDesc;
-pub const ModuleDesc = types.ModuleApi.ModuleDesc;
+pub const NodeDesc = pie_spirv.ModuleApi.NodeDesc;
+pub const ModuleDesc = pie_spirv.ModuleApi.ModuleDesc;
 
 pub const math = @import("math");
 
@@ -34,11 +35,11 @@ pub fn GpuParams(comptime module_desc: ModuleDesc) type {
         len += 1;
     }
     const Cpu = @Struct(.auto, null, names[0..len], field_types[0..len], attrs[0..len]);
-    return types.std140.GpuStruct(Cpu);
+    return gpu.std140.GpuStruct(Cpu);
 }
 
 /// The shader type of `param`. Its std140 layout is the layout the engine packs.
-fn paramType(comptime param: types.ModuleApi.ParamDesc) type {
+fn paramType(comptime param: pie_spirv.ModuleApi.ParamDesc) type {
     const Elem = switch (param.typ) {
         .f32 => f32,
         .i32 => i32,
@@ -48,7 +49,7 @@ fn paramType(comptime param: types.ModuleApi.ParamDesc) type {
     return if (param.len == 1) Elem else [param.len]Elem;
 }
 
-fn enumType(comptime param: types.ModuleApi.ParamDesc) type {
+fn enumType(comptime param: pie_spirv.ModuleApi.ParamDesc) type {
     if (param.enum_names.len == 0) {
         @compileError("enum_u32 param '" ++ param.name ++ "' has no enum_names");
     }
@@ -69,12 +70,12 @@ pub fn getParams(comptime module_desc: ModuleDesc) *addrspace(.storage_buffer) G
     });
 }
 
-/// `T` must be the std140 view of the CPU struct: `types.ImgParamsGpu`.
+/// `T` must be the std140 view of the CPU struct: `pie_spirv.ImgParamsGpu`.
 /// A uniform block requires every array stride to be a multiple of 16.
 pub fn getImgParams(comptime module_desc: ModuleDesc, comptime T: type) *addrspace(.uniform) const T {
     comptime {
-        if (T != @import("module_types").ImgParamsGpu) {
-            @compileError("getImgParams expects types.ImgParamsGpu, got '" ++ @typeName(T) ++ "'");
+        if (T != @import("pie_spirv").ImgParamsGpu) {
+            @compileError("getImgParams expects pie_spirv.ImgParamsGpu, got '" ++ @typeName(T) ++ "'");
         }
         const info = @typeInfo(T).@"struct";
         for (info.field_types, info.field_names) |F, name| {
@@ -101,7 +102,7 @@ fn getSocketIdx(comptime desc: NodeDesc, comptime name: []const u8) usize {
     unreachable;
 }
 
-pub fn toSpirvUsage(socket: types.ModuleApi.SocketDesc) std.lang.Type.Spirv.Image.Usage {
+pub fn toSpirvUsage(socket: pie_spirv.ModuleApi.SocketDesc) std.lang.Type.Spirv.Image.Usage {
     return switch (socket.access) {
         // .read => .{ .sampled = T },
         .read => .{ .sampled = f32 },
@@ -111,7 +112,7 @@ pub fn toSpirvUsage(socket: types.ModuleApi.SocketDesc) std.lang.Type.Spirv.Imag
     };
 }
 
-pub fn toSpirvImageFormat(resource: types.Resource, datatype: types.DataType) std.lang.Type.Spirv.Image.Format {
+pub fn toSpirvImageFormat(resource: gpu.Resource, datatype: gpu.DataType) std.lang.Type.Spirv.Image.Format {
     if (resource == .buffer) return .unknown;
     return switch (resource) {
         .rgba => switch (datatype) {
@@ -133,7 +134,7 @@ pub fn toSpirvImageFormat(resource: types.Resource, datatype: types.DataType) st
 }
 
 /// The Zig type of one scalar element.
-pub fn toBaseType(datatype: types.DataType) type {
+pub fn toBaseType(datatype: gpu.DataType) type {
     return switch (datatype) {
         .u8 => u8,
         .u16 => u16,

@@ -2,7 +2,7 @@ const std = @import("std");
 const api = @import("modules/api.zig");
 const Module = @import("Module.zig");
 const pipeline = @import("pipeline.zig");
-const types = @import("module_types");
+const std140 = @import("gpu").std140;
 const slog = std.log.scoped(.param);
 
 // =================
@@ -106,21 +106,21 @@ pub fn size_cpu(len: u32, typ: api.ParamType) usize {
 pub fn size(self: Self) usize {
     return switch (self.desc.typ) {
         .i32 => switch (self.desc.len) {
-            1 => types.std140.size(i32),
-            // 2 => types.std140.size([2]i32)
+            1 => std140.size(i32),
+            // 2 => std140.size([2]i32)
             else => unreachable,
         },
         .f32 => switch (self.desc.len) {
-            1 => types.std140.size(f32),
-            3 => types.std140.size([3]f32),
-            4 => types.std140.size([4]f32),
+            1 => std140.size(f32),
+            3 => std140.size([3]f32),
+            4 => std140.size([4]f32),
             else => unreachable,
         },
         .enum_u32 => switch (self.desc.len) {
-            1 => types.std140.size(u32),
-            2 => types.std140.size([2]u32),
-            3 => types.std140.size([3]u32),
-            4 => types.std140.size([4]u32),
+            1 => std140.size(u32),
+            2 => std140.size([2]u32),
+            3 => std140.size([3]u32),
+            4 => std140.size([4]u32),
             else => unreachable,
         },
         else => unreachable,
@@ -130,20 +130,20 @@ pub fn size(self: Self) usize {
 pub fn alignment(self: Self) usize {
     return switch (self.desc.typ) {
         .i32 => switch (self.desc.len) {
-            1 => types.std140.alignment(i32),
+            1 => std140.alignment(i32),
             else => unreachable,
         },
         .f32 => switch (self.desc.len) {
-            1 => types.std140.alignment(f32),
-            3 => types.std140.alignment([3]f32),
-            4 => types.std140.alignment([4]f32),
+            1 => std140.alignment(f32),
+            3 => std140.alignment([3]f32),
+            4 => std140.alignment([4]f32),
             else => unreachable,
         },
         .enum_u32 => switch (self.desc.len) {
-            1 => types.std140.alignment(u32),
-            2 => types.std140.alignment([2]u32),
-            3 => types.std140.alignment([3]u32),
-            4 => types.std140.alignment([4]u32),
+            1 => std140.alignment(u32),
+            2 => std140.alignment([2]u32),
+            3 => std140.alignment([3]u32),
+            4 => std140.alignment([4]u32),
             else => unreachable,
         },
         else => unreachable,

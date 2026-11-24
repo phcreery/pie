@@ -84,48 +84,12 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .slang = .{ .wgsl = true },
     });
 
-    // CFA MODULE
-    const mod_cfa = b.createModule(.{
-        .root_source_file = b.path("src/cfa/CFA.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{},
-    });
-
     // MATH MODULE
     const mod_math = b.createModule(.{
         .root_source_file = b.path("src/math/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{},
-    });
-
-    // GPU TYPES MODULE
-    const mod_gpu_types = b.createModule(.{
-        .root_source_file = b.path("src/gpu_types/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{},
-    });
-
-    // UI TYPES MODULE
-    const mod_ui_types = b.createModule(.{
-        .root_source_file = b.path("src/ui_types/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{},
-    });
-
-    // MODULE TYPES MODULE
-    const mod_module_types = b.createModule(.{
-        .root_source_file = b.path("src/module_types/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "gpu_types", .module = mod_gpu_types },
-            .{ .name = "ui_types", .module = mod_ui_types },
-            .{ .name = "math", .module = mod_math },
-        },
     });
 
     // CONSOLE MODULE
@@ -177,7 +141,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .optimize = optimize,
         .imports = &.{
             .{ .name = "wgpu_zig", .module = dep_wgpu_zig.module("wgpu") },
-            .{ .name = "gpu_types", .module = mod_gpu_types },
             .{ .name = "zuballoc", .module = dep_zuballoc.module("zuballoc") },
         },
     });
@@ -213,7 +176,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{
             .{ .name = "console", .module = mod_console },
             .{ .name = "gpu", .module = mod_gpu },
-            .{ .name = "module_types", .module = mod_module_types },
             .{ .name = "math", .module = mod_math },
             .{ .name = "libraw", .module = dep_libraw.module("libraw") },
             .{ .name = "zigimg", .module = dep_zigimg.module("zigimg") },
@@ -221,18 +183,48 @@ pub fn build(b: *Build) !void { // $ls root_id 0
             .{ .name = "zig-graph", .module = mod_zig_graph },
             .{ .name = "colonconfig", .module = mod_colonconfig },
             .{ .name = "pool", .module = mod_pool },
-            .{ .name = "CFA", .module = mod_cfa },
             .{ .name = "ztracy", .module = tracy.module },
         },
     });
 
     // DEFAULT PIPELINE GRAPHS
-    // `graphs.zig` builds its recommended pipelines by deserializing these
-    // assets (one per `i-*` family, named after it), so they are compiled into
-    // the module. Adding a decoder means adding an asset and a table row there,
-    // plus the import below.
     mod_pie.addAnonymousImport("default.i-raw.graph", .{ .root_source_file = b.path("assets/default.i-raw.graph") });
     mod_pie.addAnonymousImport("default.i-png.graph", .{ .root_source_file = b.path("assets/default.i-png.graph") });
+
+    // typically, wehn we import a .zig file in multiple modules,
+    // we get `error: file exists in multiple modules`, but here we are
+    // using these modules in a seperate compilation unit, so it is ok
+
+    // SPIR-V-FACING GPU MODULE
+    const mod_gpu_spirv = b.createModule(.{
+        .root_source_file = b.path("src/gpu/types.zig"),
+        .target = b.resolveTargetQuery(spv.target_query),
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
+    // SPIR-V-FACING ENGINE MODULE
+    const mod_pie_spirv = b.createModule(.{
+        .root_source_file = b.path("src/engine/shader_api.zig"),
+        .target = b.resolveTargetQuery(spv.target_query),
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "gpu", .module = mod_gpu_spirv },
+            .{ .name = "math", .module = mod_math },
+        },
+    });
+
+    // SPIR-V MODULE
+    const mod_spirv = b.createModule(.{
+        .root_source_file = b.path("src/spirv/spirv.zig"),
+        .target = b.resolveTargetQuery(spv.target_query),
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "gpu", .module = mod_gpu_spirv },
+            .{ .name = "pie_spirv", .module = mod_pie_spirv },
+            .{ .name = "math", .module = mod_math },
+        },
+    });
 
     // PIE MODULES SPIR-V SHADERS
     try spv.compileAndEmbedZigSpirVModules(
@@ -241,8 +233,10 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         optimize,
         @import("src/engine/modules/modules.zon"),
         &.{
+            .{ .name = "shader", .module = mod_spirv },
+            .{ .name = "gpu", .module = mod_gpu_spirv },
             .{ .name = "math", .module = mod_math },
-            .{ .name = "module_types", .module = mod_module_types },
+            .{ .name = "pie_spirv", .module = mod_pie_spirv },
         },
     );
 
@@ -280,7 +274,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
         .imports = &.{
             .{ .name = "session", .module = mod_session },
             .{ .name = "pie", .module = mod_pie },
-            .{ .name = "ui_types", .module = mod_ui_types },
             .{ .name = "nodes", .module = mod_nodes },
             .{ .name = cimgui_conf.module_name, .module = dep_cimgui.module(cimgui_conf.module_name) },
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
@@ -355,36 +348,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     const run_gpu_unit_tests = b.addRunArtifact(gpu_unit_tests);
     test_step.dependOn(&run_gpu_unit_tests.step);
 
-    // GPU TYPES
-    const gpu_types_unit_tests = b.addTest(.{
-        .name = "gpu types unit tests",
-        .use_llvm = true,
-        .root_module = mod_gpu_types,
-        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
-    });
-    const run_gpu_types_unit_tests = b.addRunArtifact(gpu_types_unit_tests);
-    test_step.dependOn(&run_gpu_types_unit_tests.step);
-
-    // UI TYPES
-    const ui_types_unit_tests = b.addTest(.{
-        .name = "ui types unit tests",
-        .use_llvm = true,
-        .root_module = mod_ui_types,
-        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
-    });
-    const run_ui_types_unit_tests = b.addRunArtifact(ui_types_unit_tests);
-    test_step.dependOn(&run_ui_types_unit_tests.step);
-
-    // MODULE TYPES
-    const module_types_unit_tests = b.addTest(.{
-        .name = "module types unit tests",
-        .use_llvm = true,
-        .root_module = mod_module_types,
-        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
-    });
-    const run_module_types_unit_tests = b.addRunArtifact(module_types_unit_tests);
-    test_step.dependOn(&run_module_types_unit_tests.step);
-
     // POOL
     const pool_unit_tests = b.addTest(.{
         .name = "pool unit tests",
@@ -404,16 +367,6 @@ pub fn build(b: *Build) !void { // $ls root_id 0
     });
     const run_nodes_unit_tests = b.addRunArtifact(nodes_unit_tests);
     test_step.dependOn(&run_nodes_unit_tests.step);
-
-    // CFA
-    const cfa_unit_tests = b.addTest(.{
-        .name = "cfa unit tests",
-        .use_llvm = true,
-        .root_module = mod_cfa,
-        .test_runner = .{ .path = b.path("testing/test_runner.zig"), .mode = .simple },
-    });
-    const run_cfa_unit_tests = b.addRunArtifact(cfa_unit_tests);
-    test_step.dependOn(&run_cfa_unit_tests.step);
 
     // MATH
     const math_unit_tests = b.addTest(.{

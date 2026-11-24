@@ -11,6 +11,7 @@ var gpa = std.heap.DebugAllocator(.{
     .safety = true,
     .verbose_log = true,
 }){};
+
 // Every host allocation made through this allocator shows up in Tracy's
 // Memory view (live bytes, alloc/free timeline, leak candidates). With Tracy
 // disabled the wrapper is bypassed entirely.

@@ -1,10 +1,10 @@
 const std = @import("std");
 const api = @import("modules/api.zig");
 const gpu = @import("gpu");
-const ROI = @import("module_types").ROI;
-const ColorProfile = @import("module_types").ColorProfile;
-const Resource = @import("module_types").Resource;
-const DataType = @import("module_types").DataType;
+const ROI = gpu.ROI;
+const ColorProfile = @import("ColorProfile.zig");
+const Resource = gpu.Resource;
+const DataType = gpu.DataType;
 const pipeline = @import("pipeline.zig");
 const util = @import("util.zig");
 

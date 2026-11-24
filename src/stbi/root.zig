@@ -1,9 +1,4 @@
 //! Thin Zig wrapper over the vendored stb_image (v2.28).
-//!
-//! The C implementation is built as its own optimized static library
-//! (`src/stbi/stb_image_impl.c`, see build.zig), so decoding stays fast even
-//! when the importing module is compiled Debug. This wrapper exposes just the
-//! entry points the engine uses; add more `extern` declarations as needed.
 
 const std = @import("std");
 

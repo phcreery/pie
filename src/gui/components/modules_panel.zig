@@ -1,14 +1,14 @@
 //! Renders one collapsible section per module in the live pipeline.
 //!
 //! The module list comes from the session's pipeline pool; each parameter's
-//! descriptor and UI hint are the engine's own `ui_types/ui.zig` types, read
+//! descriptor and UI hint are the engine's own `ui.zig` types, read
 //! through live `Param.bytes`. Edits go straight to the session.
 
 const std = @import("std");
 const ig = @import("cimgui");
 const session = @import("session");
 const pie = @import("pie");
-const ui = @import("ui_types").ui;
+const ui = pie.ui;
 
 /// Inline capacity of a string parameter, matching the engine's `max_str_bytes`.
 const max_str_bytes = 256;

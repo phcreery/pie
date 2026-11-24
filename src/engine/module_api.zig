@@ -1,8 +1,9 @@
-const ui = @import("ui_types").ui;
+const ui = @import("ui.zig");
 pub const ParamUI = ui.ParamUI;
 const ColorProfile = @import("ColorProfile.zig");
-pub const Resource = @import("gpu_types").Resource;
-pub const DataType = @import("gpu_types").DataType;
+const gpu = @import("gpu");
+pub const Resource = gpu.Resource;
+pub const DataType = gpu.DataType;
 
 /// How a parameter's value bytes are encoded.
 pub const ParamType = enum {

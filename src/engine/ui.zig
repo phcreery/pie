@@ -3,9 +3,6 @@
 //! The parameter *description* (`ParamType`/`ParamDesc`) lives with the module
 //! API in `module_api.zig`; this file is only the editor-facing side: the
 //! widgets a parameter can be drawn with.
-//!
-//! Kept dependency-free on purpose: it lives in the `types` module, which has
-//! no imports.
 
 const std = @import("std");
 

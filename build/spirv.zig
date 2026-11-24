@@ -1,35 +1,29 @@
 const std = @import("std");
 const builtin = @import("builtin");
+
+pub const target_query: std.Target.Query = .{
+    .cpu_arch = .spirv32,
+    .cpu_model = .{ .explicit = &std.Target.spirv.cpu.generic },
+    .cpu_features_add = std.Target.spirv.featureSet(&.{.v1_1}),
+    .os_tag = .vulkan,
+    .ofmt = .spirv,
+};
+
 pub fn compileZigToSpirv(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     name: []const u8,
     file: std.Build.LazyPath,
-    comptime features: []const std.Target.spirv.Feature,
     imports: []const std.Build.Module.Import,
 ) std.Build.LazyPath {
-    const target = b.resolveTargetQuery(.{
-        .cpu_arch = .spirv32,
-        .cpu_model = .{ .explicit = &std.Target.spirv.cpu.generic },
-        .cpu_features_add = std.Target.spirv.featureSet([_]std.Target.spirv.Feature{.v1_1} ++ features),
-        .os_tag = .vulkan,
-        .ofmt = .spirv,
-    });
-    const mod_spirv = b.createModule(.{
-        .root_source_file = b.path("src/spirv/spirv.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const target = b.resolveTargetQuery(target_query);
     const mod = b.createModule(.{
         .root_source_file = file,
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            .{ .name = "shader", .module = mod_spirv },
-        },
+        .imports = &.{},
     });
     for (imports) |imp| {
-        mod_spirv.addImport(imp.name, imp.module);
         mod.addImport(imp.name, imp.module);
     }
     const obj = b.addExecutable(.{
@@ -75,7 +69,6 @@ pub fn compileAndEmbedModuleSpirVShader(
         optimize,
         file_name,
         file_name_path,
-        &[_]std.Target.spirv.Feature{},
         imports,
     );
     const spv_patched = try patchSpirvForNaga(b, patcher, spv, file_name);
