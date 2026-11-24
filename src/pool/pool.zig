@@ -1,9 +1,7 @@
 const std = @import("std");
 
+/// floooh-style slot pool.
 /// Generational handle pool with dense storage for live items.
-///
-/// This keeps the old `Pool` API shape for compatibility with existing
-/// pipeline code while replacing the internals with a floooh-style slot pool.
 pub fn Pool(comptime T: type) type {
     return struct {
         // allocator: std.mem.Allocator,
