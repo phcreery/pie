@@ -92,6 +92,7 @@
 - https://hugin.sourceforge.io/download/
 - https://github.com/krupkat/xpano
 - https://github.com/stanleyedward/panorama-image-stitching
+- https://github.com/phcreery/vkdt/tree/align_surf
 
 ## Misc
 
